@@ -89,7 +89,7 @@ function conversation(): MockChatEventInput[] {
   }).flat();
 }
 
-test("Loading older messages restores agent references and attachment navigation", async () => {
+test("A restored historical turn displays the saved mention name and both resolved attachments", async () => {
   installMessageExperienceChat({
     threadId: THREAD_ID,
     chatEvents: conversation(),
@@ -128,14 +128,12 @@ test("Loading older messages restores agent references and attachment navigation
   const turn = question.closest<HTMLElement>(
     "[data-role='user']",
   ) as HTMLElement;
-  const ada = queryAllByRoleFast("link", turn).find((link) => {
-    return link.getAttribute("aria-label") === "Open agent Ada";
-  });
-  expect(ada).toHaveAttribute("href", `/agents/${ADA_AGENT_ID}/chat`);
-  expect(ada?.querySelector("img")).toHaveAttribute(
-    "src",
-    "https://cdn.vm7.io/avatars/ada.png",
-  );
+  expect(within(turn).getByText("Ada")).toBeVisible();
+  expect(
+    queryAllByRoleFast("link", turn).find((link) => {
+      return link.getAttribute("aria-label") === "Open agent Ada";
+    }),
+  ).toBeUndefined();
   const [before, after] = IMAGES;
 
   click(

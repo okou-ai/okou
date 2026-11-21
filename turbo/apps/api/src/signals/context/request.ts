@@ -124,7 +124,7 @@ type InferBody<R> = R extends { readonly body: infer S }
   ? SchemaOutput<S>
   : never;
 
-type BodyResult<T> =
+export type BodyResult<T> =
   | { readonly ok: true; readonly data: T }
   | { readonly ok: false; readonly response: BadRequestResponse };
 

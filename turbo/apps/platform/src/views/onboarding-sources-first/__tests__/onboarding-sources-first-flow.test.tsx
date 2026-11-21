@@ -1,3 +1,4 @@
+import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorCatalogConnectItem } from "../../../mocks/handlers/api-connectors.ts";
 import { expect, test } from "vitest";
@@ -6,7 +7,6 @@ import {
   onboardingRecommendationContract,
   onboardingSourcesContract,
   onboardingCompleteContract,
-  onboardingStatusContract,
   onboardingDraftContract,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { billingRedeemCodeContract } from "@okouai/api-contracts/contracts/billing";
@@ -178,29 +178,27 @@ test.each([
     const release = createDeferredPromise<void>(context.signal);
     context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
       completed = true;
+      context.mocks.data.onboardingStatus({
+        onboardingComplete: true,
+        needsOnboarding: false,
+      });
       return respond(200, { needsOnboarding: false, onboardingComplete: true });
     });
-    context.mocks.api(
-      onboardingStatusContract.getStatus,
-      async ({ respond }) => {
-        const done = completed;
-        if (done) {
-          if (!held.settled()) {
-            held.resolve();
-          }
-          await release.promise;
+    context.mocks.api(userModelPreferenceContract.get, async ({ respond }) => {
+      if (completed) {
+        if (!held.settled()) {
+          held.resolve();
         }
-        return respond(200, {
-          isAdmin: true,
-          hasOrg: true,
-          hasDefaultAgent: true,
-          defaultAgentId: "c0000000-0000-4000-a000-000000000001",
-          defaultAgentMetadata: { displayName: "Okou" },
-          needsOnboarding: !done,
-          onboardingComplete: done,
-        });
-      },
-    );
+        await release.promise;
+      }
+      return respond(200, {
+        selectedModel: null,
+        serviceTier: null,
+        modelSettings: {},
+        selectedImageModel: null,
+        updatedAt: null,
+      });
+    });
     const sent = receiveFirstChat(context);
     await setupPage({
       context,

@@ -1,7 +1,6 @@
 import { uuid } from "zod";
 
 export interface ChatActionContext {
-  readonly agentId?: string;
   readonly threadId: string;
 }
 

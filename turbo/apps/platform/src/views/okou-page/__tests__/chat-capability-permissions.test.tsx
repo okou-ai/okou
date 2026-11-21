@@ -22,7 +22,6 @@ import { mockNow } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { permissionMetadata } from "./chat-capability-connector-test-helpers.ts";
 import {
-  CAPABILITY_AGENT_ID,
   completedConversation,
   createChatCapabilityHelpers,
   readyChat,
@@ -30,6 +29,7 @@ import {
   RUN_THREAD_ID,
 } from "./chat-capability-test-helpers.ts";
 
+import { mockAuthorizationCallbackThread } from "./authorization-callback-test-helpers.ts";
 const context = testContext();
 const { installCapabilityChat } = createChatCapabilityHelpers(context);
 const NOW = "2026-11-20T08:00:00.000Z";
@@ -46,10 +46,9 @@ function permissionLink(args: {
   readonly expiresIn?: string;
   readonly callbackPrompt?: string;
 }): string {
-  const url = new URL(
-    `/agents/${CAPABILITY_AGENT_ID}/permissions`,
-    "https://app.okou.ai",
-  );
+  const url = new URL("/connectors/permissions", "https://app.okou.ai");
+  url.searchParams.set("orgId", "org_default");
+  url.searchParams.set("userId", "test-user-123");
   url.searchParams.set("connectorSlug", args.connectorSlug);
   url.searchParams.set("permission", args.permission);
   url.searchParams.set("action", args.action ?? "allow");
@@ -169,6 +168,7 @@ async function openPermissionChat(links: readonly string[]): Promise<void> {
   installCapabilityChat({
     events: completedConversation([ASSISTANT_TEXT, ...links].join("\n\n")),
   });
+  mockAuthorizationCallbackThread(context, RUN_THREAD_ID);
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
   await readyChat();
   await expect(screen.findByText(ASSISTANT_TEXT)).resolves.toBeInTheDocument();

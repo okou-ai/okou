@@ -95,86 +95,104 @@ export const feishuCustomEnabled$ = computed(async (get) => {
   ];
 });
 
+interface FeishuWorkspaceStatus {
+  readonly isAdmin: boolean;
+  readonly installations: FeishuBotInstallation[];
+}
+
+export interface FeishuBotInstallation extends Pick<
+  FeishuInstallationStatus,
+  | "isConnected"
+  | "connectedUserName"
+  | "appId"
+  | "botName"
+  | "botAvatarUrl"
+  | "callbackUrl"
+  | "oauthScopes"
+  | "callbackVerified"
+  | "messageReceived"
+  | "tenantKey"
+  | "tenantName"
+> {
+  readonly id: string | null;
+  readonly connectUrl: string | null;
+  readonly oauthRedirectUrl: string | null;
+  readonly setupCompleted: boolean;
+}
+
+function toFeishuBotInstallation(
+  data: FeishuBotInstallation,
+): FeishuBotInstallation {
+  return {
+    id: data.id,
+    isConnected: data.isConnected,
+    connectedUserName: data.connectedUserName ?? null,
+    appId: data.appId,
+    botName: data.botName,
+    botAvatarUrl: data.botAvatarUrl,
+    callbackUrl: data.callbackUrl,
+    oauthScopes: data.oauthScopes,
+    connectUrl: data.connectUrl,
+    oauthRedirectUrl: data.oauthRedirectUrl,
+    callbackVerified: data.callbackVerified,
+    setupCompleted: data.setupCompleted,
+    messageReceived: data.messageReceived,
+    tenantKey: data.tenantKey,
+    tenantName: data.tenantName,
+  };
+}
+
 export const feishuOrgData$ = computed(
-  async (get): Promise<FeishuConnectStatus> => {
+  async (get): Promise<FeishuWorkspaceStatus> => {
     get(reload$);
     if (!(await get(feishuCustomEnabled$))) {
-      return {
-        platform: get(feishuPlatform$),
-        isInstalled: false,
-        isConnected: false,
-        isAdmin: false,
-        appId: null,
-        callbackUrl: null,
-        callbackVerified: false,
-        messageReceived: false,
-        tenantKey: null,
-        tenantName: null,
-        defaultAgentId: null,
-        defaultAgentName: null,
-        installations: [],
-      };
+      return { isAdmin: false, installations: [] };
     }
     const client = get(apiClient$)(
       get(feishuPlatform$) === "lark"
         ? larkConnectContract
         : feishuConnectContract,
     );
-    const result = await accept(client.getStatus({}), [200]);
-    return result.body;
+    const { body: data } = await accept(client.getStatus({}), [200]);
+    if (data.installations) {
+      return {
+        isAdmin: data.isAdmin,
+        installations: data.installations.map((installation) => {
+          return toFeishuBotInstallation({
+            ...installation,
+            connectUrl: installation.connectUrl ?? null,
+            oauthRedirectUrl: installation.oauthRedirectUrl ?? null,
+            setupCompleted:
+              installation.setupCompleted ?? installation.messageReceived,
+          });
+        }),
+      };
+    }
+    if (!data.isInstalled || !data.appId || !data.callbackUrl) {
+      return { isAdmin: data.isAdmin, installations: [] };
+    }
+    return {
+      isAdmin: data.isAdmin,
+      installations: [
+        toFeishuBotInstallation({
+          ...data,
+          id: data.installationId ?? null,
+          appId: data.appId,
+          callbackUrl: data.callbackUrl,
+          connectUrl: data.connectUrl ?? null,
+          oauthRedirectUrl: data.oauthRedirectUrl ?? null,
+          setupCompleted: data.messageReceived,
+        }),
+      ],
+    };
   },
 );
-
-export interface FeishuBotInstallation extends Omit<
-  FeishuInstallationStatus,
-  "connectUrl" | "id" | "oauthRedirectUrl" | "setupCompleted" | "defaultAgentId"
-> {
-  readonly id: string | null;
-  readonly defaultAgentId: string | null;
-  readonly connectUrl: string | null;
-  readonly oauthRedirectUrl: string | null;
-  readonly setupCompleted: boolean;
-}
 
 const internalInstallations$ = state<FeishuBotInstallation[] | null>(null);
 
-export const feishuInstallations$ = computed(
-  async (get): Promise<FeishuBotInstallation[]> => {
-    const data = await get(feishuOrgData$);
-    if (data.installations) {
-      return data.installations.map((installation) => {
-        return {
-          ...installation,
-          connectUrl: installation.connectUrl ?? null,
-          oauthRedirectUrl: installation.oauthRedirectUrl ?? null,
-          setupCompleted:
-            installation.setupCompleted ?? installation.messageReceived,
-        };
-      });
-    }
-    if (!data.isInstalled || !data.appId || !data.callbackUrl) {
-      return [];
-    }
-    return [
-      {
-        id: data.installationId ?? null,
-        isConnected: data.isConnected,
-        connectedUserName: data.connectedUserName ?? null,
-        appId: data.appId,
-        callbackUrl: data.callbackUrl,
-        connectUrl: data.connectUrl ?? null,
-        oauthRedirectUrl: data.oauthRedirectUrl ?? null,
-        callbackVerified: data.callbackVerified,
-        setupCompleted: data.messageReceived,
-        messageReceived: data.messageReceived,
-        tenantKey: data.tenantKey,
-        tenantName: data.tenantName,
-        defaultAgentId: data.defaultAgentId,
-        defaultAgentName: data.defaultAgentName,
-      },
-    ];
-  },
-);
+export const feishuInstallations$ = computed(async (get) => {
+  return (await get(feishuOrgData$)).installations;
+});
 
 export const disconnectFeishuOrg$ = command(
   async ({ get, set }, installationId: string | null, signal: AbortSignal) => {

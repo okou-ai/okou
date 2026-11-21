@@ -20,7 +20,6 @@ import {
 const context = testContext();
 const sourceChat = "fafdf133-ca5d-4ed7-8b5b-1e170a99c239";
 const author = "cc255d19-87df-42fc-9f12-f7df818a2445";
-const portrait = "https://cdn.vm7.io/avatars/review-author.png";
 const reference = {
   type: "chat_thread",
   threadId: sourceChat,
@@ -40,9 +39,6 @@ function entry(
   };
 }
 async function openReview(events: AttachmentChatEvent[]) {
-  context.mocks.data.agents([
-    { agentId: author, displayName: "Ada", avatarUrl: portrait },
-  ]);
   mockSplitAttachmentChats(
     context,
     { threadId: ATTACHMENT_THREAD_ID, title: "Review desk", events },
@@ -61,32 +57,6 @@ async function messageAt(text: string) {
     '[data-role="user"]',
   )!;
 }
-
-test("chat-message-structured-content-001 identifies Ada in the request and its feedback", async () => {
-  const ada = { type: "agent", agentId: author, nameSnapshot: "Ada" } as const;
-  await openReview([
-    entry([
-      { type: "text", text: "Assign review to " },
-      ada,
-      {
-        type: "feedback",
-        quote: "Check the totals",
-        note: [{ type: "text", text: "Reviewed by " }, ada],
-      },
-    ]),
-  ]);
-  const message = await messageAt("Check the totals");
-  for (const caption of ["Assign review to", "Reviewed by"]) {
-    const section = within(message).getByText(caption).nextElementSibling!;
-    const link = getNamedLink("Open agent Ada", section);
-    expect(link).toHaveTextContent("Ada");
-    expect(link).toHaveAttribute("href", "/agents/" + author + "/chat");
-    await waitFor(() => {
-      return expect(link.querySelector("img")).toHaveAttribute("src", portrait);
-    });
-  }
-  expect(message).not.toHaveTextContent(author);
-});
 
 test("chat-message-structured-content-002 associates each prompt with its own MCP client badge", async () => {
   const longName =

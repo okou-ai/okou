@@ -23,7 +23,6 @@ import { mockNow } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { permissionMetadata } from "./chat-capability-connector-test-helpers.ts";
 import {
-  CAPABILITY_AGENT_ID,
   completedConversation,
   createChatCapabilityHelpers,
   readyChat,
@@ -48,10 +47,9 @@ const ASSISTANT_TEXT = "I need a few permissions to build the weekly report.";
 type GrantWrites = Record<string, ApplyConnectorPermissions["grants"]>;
 
 function batchLink(items: readonly unknown[], expiresIn?: string): string {
-  const url = new URL(
-    `/agents/${CAPABILITY_AGENT_ID}/permissions/batch`,
-    "https://app.okou.ai",
-  );
+  const url = new URL("/connectors/permissions/batch", "https://app.okou.ai");
+  url.searchParams.set("orgId", "org_default");
+  url.searchParams.set("userId", "test-user-123");
   url.searchParams.set("items", JSON.stringify(items));
   url.searchParams.set("action", "allow");
   if (expiresIn) {
@@ -340,7 +338,7 @@ test("Keep the whole batch unavailable when one connector's delayed authoritativ
   expect(
     new URL(details?.getAttribute("href") ?? "", "https://app.okou.ai")
       .pathname,
-  ).toBe(`/agents/${CAPABILITY_AGENT_ID}/permissions/batch`);
+  ).toBe("/connectors/permissions/batch");
   expect(within(review).queryByRole("status")).not.toBeInTheDocument();
 });
 

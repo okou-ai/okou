@@ -103,7 +103,7 @@ const connectStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const body = await set(
     walletConnectStatus$,
-    { orgId: auth.orgId, userId: auth.userId, agentId: input.data.agentId },
+    { orgId: auth.orgId, userId: auth.userId },
     input.data.state,
   );
   signal.throwIfAborted();

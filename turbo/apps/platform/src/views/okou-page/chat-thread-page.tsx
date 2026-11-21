@@ -303,7 +303,6 @@ import {
   sameSelectedModel,
 } from "@okouai/core/auto-run-model";
 import type { ChatRunModelSelection } from "../../signals/chat-page/chat-event-state.ts";
-import type { AgentReferenceSignals } from "../../signals/chat-page/agent-reference-signals.ts";
 import type { AssistantErrorRecovery } from "../../signals/chat-page/assistant-error-recovery.ts";
 import { localizedRunError } from "../../lib/run-error.ts";
 import { PlainTextWithLinks } from "../components/plain-text-with-links.tsx";
@@ -3522,8 +3521,7 @@ function ChatThreadNotFound() {
 
 function ChatThreadFeedbackSlot({ thread }: { thread: ChatPanelSignals }) {
   const sharingPhase = useGet(thread.sharing.phase$);
-  const agentId = useGet(thread.threadAgentId$);
-  if (sharingPhase !== "idle" || agentId === null) {
+  if (sharingPhase !== "idle") {
     return null;
   }
   return <ChatFeedbackSelection feedback={thread.feedback} />;
@@ -7226,42 +7224,6 @@ function UserMessageFileReference({
   );
 }
 
-function UserMessageAgentReference({
-  agentId,
-  name,
-  signals,
-}: {
-  agentId: string;
-  name: string;
-  signals: AgentReferenceSignals;
-}) {
-  const { t } = useTranslation();
-  const agent = useLastResolved(signals.agent$);
-  return (
-    <span className={STRUCTURED_INLINE_REFERENCE_CONTAINER_CLASS}>
-      <Link
-        pathname={ROUTES.agentChat}
-        options={{ pathParams: { agentId } }}
-        aria-label={t(
-          ($) => {
-            return $.chat.thread.openNamedAgent;
-          },
-          { name },
-        )}
-        className={STRUCTURED_INLINE_LINK_REFERENCE_CLASS}
-      >
-        <AvatarFromUrl
-          avatarUrl={agent?.avatarUrl}
-          alt=""
-          className="size-4 shrink-0 overflow-hidden rounded-full object-cover object-top"
-          size={16}
-        />
-        <span className="min-w-0 truncate">{name}</span>
-      </Link>
-    </span>
-  );
-}
-
 function UserMessageFeedbackNote({
   note,
 }: {
@@ -7290,16 +7252,6 @@ function UserMessageFeedbackNote({
               key={key}
               part={renderPart.part}
               className={STRUCTURED_INLINE_LINK_REFERENCE_CLASS}
-            />
-          );
-        }
-        if (renderPart.type === "agent") {
-          return (
-            <UserMessageAgentReference
-              key={key}
-              agentId={renderPart.part.agentId}
-              name={renderPart.part.nameSnapshot}
-              signals={renderPart.signals}
             />
           );
         }
@@ -7482,15 +7434,6 @@ function UserMessagePartView({
       <ProjectReference
         part={renderPart.part}
         className={STRUCTURED_INLINE_LINK_REFERENCE_CLASS}
-      />
-    );
-  }
-  if (renderPart.type === "agent") {
-    return (
-      <UserMessageAgentReference
-        agentId={renderPart.part.agentId}
-        name={renderPart.part.nameSnapshot}
-        signals={renderPart.signals}
       />
     );
   }

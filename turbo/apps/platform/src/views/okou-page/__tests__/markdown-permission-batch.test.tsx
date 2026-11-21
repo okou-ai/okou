@@ -13,29 +13,20 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  createMarkdownChatFixture,
-  MARKDOWN_AGENT_ID,
-} from "./markdown-page-test-helpers.ts";
-import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
-import {
-  permissionMetadataFixture,
-  agentFixture,
-} from "../../team-page/__tests__/team-page-test-helpers.ts";
+import { createMarkdownChatFixture } from "./markdown-page-test-helpers.ts";
+import { permissionMetadataFixture } from "../../team-page/__tests__/team-page-test-helpers.ts";
 
 const context = testContext();
 
 async function showRequest({
   serviceCount = 2,
   bothSlack = false,
-  member = false,
   slackAllowed = false,
   catalogReady,
   saveReady,
 }: {
   serviceCount?: number;
   bothSlack?: boolean;
-  member?: boolean;
   slackAllowed?: boolean;
   catalogReady?: Promise<void>;
   saveReady?: Promise<void>;
@@ -97,23 +88,13 @@ async function showRequest({
     });
   });
   const chat = createMarkdownChatFixture(context);
-  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-    return params.id !== MARKDOWN_AGENT_ID
-      ? respond(404, { error: { code: "NOT_FOUND", message: "Unknown agent" } })
-      : respond(200, agentFixture(MARKDOWN_AGENT_ID, "Markdown Agent"));
-  });
   const params = new URLSearchParams({
     items: JSON.stringify(items),
     action: "allow",
   });
-  if (member) {
-    params.set("orgId", "org_default");
-    params.set("userId", "test-user-123");
-  }
-  const path = member
-    ? "/connectors/permissions/batch"
-    : "/agents/" + MARKDOWN_AGENT_ID + "/permissions/batch";
-  const link = path + "?" + params;
+  params.set("orgId", "org_default");
+  params.set("userId", "test-user-123");
+  const link = "/connectors/permissions/batch?" + params;
   chat.install({
     rows: () => {
       return [
@@ -192,37 +173,31 @@ test("markdown-permission-batch-004 review displays the two requested groups bef
   ).toBeEnabled();
 });
 
-test.each([
-  { label: "markdown-permission-batch-005", member: false },
-  { label: "Member batch link", member: true },
-])(
-  "$label the approval dialog shows saved access back on its card",
-  async ({ member }) => {
-    const release = context.mocks.deferred<void>();
-    await showRequest({ member, saveReady: release.promise });
-    await screen.findByText("2 permissions to allow");
-    click(getAction("button", "Review permissions"));
-    const dialog = await screen.findByRole("dialog");
-    const view = within(dialog);
-    click(getAction("button", "Allow all 2 permissions", dialog));
-    await expect(
-      findAction("button", "Saving...", dialog),
-    ).resolves.toBeDisabled();
-    expect(
-      view.getByRole("combobox", { name: "Permission duration" }),
-    ).toBeDisabled();
-    expect(
-      screen.getByText("Saving...", { selector: "div" }),
-    ).toBeInTheDocument();
-    release.resolve();
-    await expect(
-      view.findByText("Permissions allowed"),
-    ).resolves.toBeInTheDocument();
-    click(getAction("button", "Close", dialog));
-    await waitFor(() => {
-      return expect(screen.queryByRole("dialog")).toBeNull();
-    });
-    expect(screen.getByText("Permissions allowed")).toBeInTheDocument();
-    expect(getAction("button", "View permission details")).toBeEnabled();
-  },
-);
+test("markdown-permission-batch-005 the approval dialog shows saved access back on its card", async () => {
+  const release = context.mocks.deferred<void>();
+  await showRequest({ saveReady: release.promise });
+  await screen.findByText("2 permissions to allow");
+  click(getAction("button", "Review permissions"));
+  const dialog = await screen.findByRole("dialog");
+  const view = within(dialog);
+  click(getAction("button", "Allow all 2 permissions", dialog));
+  await expect(
+    findAction("button", "Saving...", dialog),
+  ).resolves.toBeDisabled();
+  expect(
+    view.getByRole("combobox", { name: "Permission duration" }),
+  ).toBeDisabled();
+  expect(
+    screen.getByText("Saving...", { selector: "div" }),
+  ).toBeInTheDocument();
+  release.resolve();
+  await expect(
+    view.findByText("Permissions allowed"),
+  ).resolves.toBeInTheDocument();
+  click(getAction("button", "Close", dialog));
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(screen.getByText("Permissions allowed")).toBeInTheDocument();
+  expect(getAction("button", "View permission details")).toBeEnabled();
+});

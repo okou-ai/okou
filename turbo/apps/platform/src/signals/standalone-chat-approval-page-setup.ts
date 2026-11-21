@@ -40,7 +40,7 @@ const loadApprovalCard$ = command(
     }
 
     const href = `${path}?${params.toString()}`;
-    const context = { threadId: thread.body.id, agentId: thread.body.agentId };
+    const context = { threadId: thread.body.id };
     const banking = parseBankingActionUrl(href, context);
     if (banking.status === "valid") {
       const signals = createBankingSignals(banking.descriptor);

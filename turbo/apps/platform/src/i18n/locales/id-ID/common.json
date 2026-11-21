@@ -378,7 +378,6 @@
         "openAutomations": "Buka otomatisasi mobile"
       },
       "navigation": {
-        "agents": "Agen",
         "artifacts": "Artifact",
         "connectors": "Konektor",
         "settings": "Pengaturan",
@@ -1811,7 +1810,7 @@
       "repair": "Perbaiki",
       "repairRequired": "{{institution}} perlu diperbaiki",
       "revoke": "Cabut",
-      "revokeConfirm": "Cabut akses perbankan Agen ini?",
+      "revokeConfirm": "Cabut akses perbankan untuk ruang kerja ini?",
       "selectAccounts": "Pilih rekening",
       "sevenDays": "7 hari",
       "thirtyDays": "30 hari",
@@ -2786,7 +2785,6 @@
       "noEmojiFound": "Emoji tidak ditemukan",
       "notFound": "Utas chat tidak ditemukan",
       "openBrowser": "Buka browser",
-      "openNamedAgent": "Buka agen {{name}}",
       "openNamedChat": "Buka chat {{title}}",
       "pickEmoji": "Pilih emoji",
       "scrollToBottom": "Gulir ke bawah",

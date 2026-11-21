@@ -5,8 +5,11 @@
 
 import type { AppRouter } from "../contracts/trpc-contract";
 import type { ClientRouter } from "./types";
-import { agentDraftContract as OriginalAgentDraftContract } from "../contracts/agent-draft";
-import { agentDraftContract } from "./agent-draft";
+import {
+  agentDraftContract as OriginalAgentDraftContract,
+  composerDraftContract as OriginalComposerDraftContract,
+} from "../contracts/agent-draft";
+import { agentDraftContract, composerDraftContract } from "./agent-draft";
 import { agentSetupPromptsContract as OriginalAgentSetupPromptsContract } from "../contracts/agent-setup-prompts";
 import { agentSetupPromptsContract } from "./agent-setup-prompts";
 import {
@@ -41,11 +44,13 @@ import {
   bankingContract as OriginalBankingContract,
   bankingPublicContract as OriginalBankingPublicContract,
   bankingUserContract as OriginalBankingUserContract,
+  bankingWorkspaceContract as OriginalBankingWorkspaceContract,
 } from "../contracts/banking";
 import {
   bankingContract,
   bankingPublicContract,
   bankingUserContract,
+  bankingWorkspaceContract,
 } from "./banking";
 import {
   billingAutoRechargeContract as OriginalBillingAutoRechargeContract,
@@ -805,6 +810,7 @@ export const clientDescriptorContracts: readonly (readonly [
   AppRouter,
 ])[] = [
   [agentDraftContract, OriginalAgentDraftContract],
+  [composerDraftContract, OriginalComposerDraftContract],
   [agentSetupPromptsContract, OriginalAgentSetupPromptsContract],
   [agentInstructionsContract, OriginalAgentInstructionsContract],
   [agentsByIdContract, OriginalAgentsByIdContract],
@@ -821,6 +827,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [bankingContract, OriginalBankingContract],
   [bankingPublicContract, OriginalBankingPublicContract],
   [bankingUserContract, OriginalBankingUserContract],
+  [bankingWorkspaceContract, OriginalBankingWorkspaceContract],
   [billingAutoRechargeContract, OriginalBillingAutoRechargeContract],
   [billingCheckoutContract, OriginalBillingCheckoutContract],
   [

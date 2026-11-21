@@ -56,8 +56,10 @@ import {
 import { setupFeishuOAuthCallbackPage$ } from "./okou-page/feishu-oauth-callback-page.ts";
 import { setupActivityDetailPage$ } from "./activity-page/activity-detail-page-setup.ts";
 import { setupActivityInspectPage$ } from "./activity-page/activity-inspect-page-setup.ts";
-import { setupAgentsPage$ } from "./agents-page/agents-page-setup.ts";
-import { setupAgentDetailPage$ } from "./agents-page/agent-detail-page-setup.ts";
+import {
+  redirectLegacyAgentDetail$,
+  setupAgentsPage$,
+} from "./agents-page/agents-page-setup.ts";
 import { setupArtifactsPage$ } from "./artifacts-page/artifacts-page-setup.ts";
 import { setupWorkflowsPage$ } from "./workflows-page/workflows-page-setup.ts";
 import { setupWorkflowDetailPage$ } from "./workflows-page/workflow-detail-page-setup.ts";
@@ -390,11 +392,7 @@ const ROUTE_CONFIG = [
     setup: setupPwaMeRoute$,
   },
   {
-    path: ROUTES.agentIdeas,
-    setup: setupAuthSidebarPageWrapper(setupIdeationPage$),
-  },
-  {
-    path: ROUTES.agentChat,
+    path: "/agents/:id/chat",
     setup: setupAuthPageWrapper(setupAgentChatPage$),
   },
   {
@@ -404,14 +402,6 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.connectorPermissionsBatch,
     setup: setupAuthPageWrapper(setupPermissionBatchPage$),
-  },
-  {
-    path: "/agents/:agentId/permissions/batch",
-    setup: setupAuthPageWrapper(setupPermissionBatchPage$),
-  },
-  {
-    path: ROUTES.agentPermissions,
-    setup: setupAuthPageWrapper(setupPermissionAllowPage$),
   },
   {
     path: ROUTES.workflowDetail,
@@ -432,10 +422,6 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.workflows,
     setup: setupAuthSidebarPageWrapper(setupWorkflowsPage$),
-  },
-  {
-    path: ROUTES.agentDetail,
-    setup: setupAuthSidebarPageWrapper(setupAgentDetailPage$),
   },
   {
     path: ROUTES.agents,
@@ -597,11 +583,15 @@ const ROUTE_CONFIG = [
 
   // --- Redirect routes (backward compatibility) ---
   { path: "/team", setup: redirectTo(ROUTES.agents) },
-  { path: "/team/:id", setup: redirectWithId(ROUTES.agentDetail, "agentId") },
   {
-    path: "/firewall-allow/:id",
-    setup: redirectWithId(ROUTES.agentPermissions, "agentId", true),
+    path: "/team/:id",
+    setup: setupAuthSidebarPageWrapper(redirectLegacyAgentDetail$),
   },
+  {
+    path: "/agents/:id",
+    setup: setupAuthSidebarPageWrapper(redirectLegacyAgentDetail$),
+  },
+  { path: "/agents/:id/ideas", setup: redirectTo(ROUTES.ideas) },
   {
     path: "/activity/:id",
     setup: redirectWithId(ROUTES.activityDetail, "activityRunId"),

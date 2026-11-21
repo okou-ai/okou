@@ -8,7 +8,7 @@ import {
   connectorAccountsContract,
   type ConnectorAccountConnection,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import { bankingUserContract } from "@okouai/api-contracts/contracts/banking";
+import { bankingWorkspaceContract } from "@okouai/api-contracts/contracts/banking";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
@@ -31,10 +31,8 @@ import {
 
 const context = testContext();
 const permit =
-  "/agents/" +
-  AGENT_ID +
-  "/permissions?connectorSlug=slack&permission=files:read";
-const github = "/connectors/github/authorize?agentId=" + AGENT_ID;
+  "/connectors/permissions?orgId=org_default&userId=test-user-123&connectorSlug=slack&permission=files:read";
+const github = "/connectors/github/authorize?threadId=" + RUN_THREAD_ID;
 const origin = "https://app.okou.ai";
 const ref = "https://handbook.example/references";
 const ticks = String.fromCharCode(96);
@@ -154,15 +152,15 @@ test("chat-cards-010 a bare GitHub action leaves the Chinese continuation in the
     screen.queryByTestId("unavailable-action-card"),
   ).not.toBeInTheDocument();
 });
-test("chat-cards-011 escaped and heading-like labels remain literal across valid and mismatched actions", async () => {
+test("Escaped and heading-like labels remain literal across valid and mismatched thread actions", async () => {
   const mismatch = github.replace(
-    AGENT_ID,
+    RUN_THREAD_ID,
     "82000000-0000-4000-8000-000000000019",
   );
   await open(
     String.raw`Read [Review \[patch\]](` +
       github +
-      ") now.\n\nChoose [# Other agent](" +
+      ") now.\n\nChoose [# Other chat](" +
       mismatch +
       ") later.\n\nSee [www.portal.example][other]\n\n[other]: " +
       mismatch +
@@ -176,7 +174,7 @@ test("chat-cards-011 escaped and heading-like labels remain literal across valid
   expect(targets(ref)).toHaveLength(0);
   for (const label of [
     "Review [patch]",
-    "# Other agent",
+    "# Other chat",
     "www.portal.example",
   ]) {
     expect(
@@ -228,9 +226,9 @@ test("chat-cards-012 examples, an image and table links stay content alongside o
   expect(examples).toStrictEqual(
     expect.arrayContaining([origin + permit, github, origin + github]),
   );
-  expect(screen.getByText(/text_\/agents\//)).toHaveTextContent(
-    "text_" + permit,
-  );
+  expect(
+    screen.getByText("text_" + permit, { exact: false }),
+  ).toHaveTextContent("text_" + permit);
   expect(screen.getByAltText("Overview diagram")).toHaveAttribute(
     "src",
     imageUrl,
@@ -330,7 +328,6 @@ function reconnectRequest(id: string) {
     id +
     "?" +
     new URLSearchParams({
-      agentId: AGENT_ID,
       threadId: RUN_THREAD_ID,
       callbackPrompt: "Continue account maintenance",
     }).toString()
@@ -409,7 +406,7 @@ test("chat-cards-025 an account removed after rendering cannot open a reconnect 
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(window.location.pathname).toBe(RUN_PATH);
 });
-test("chat-cards-033 the banking card identifies the requesting agent, purpose and read-only data scope", async () => {
+test("The workspace banking card identifies its purpose and read-only data scope", async () => {
   const reason = "Reconcile the October statements";
   const path =
     "/banking/access?" +
@@ -418,17 +415,20 @@ test("chat-cards-033 the banking card identifies the requesting agent, purpose a
       threadId: RUN_THREAD_ID,
       callbackPrompt: "Resume reconciliation",
     }).toString();
-  context.mocks.api(bankingUserContract.accessRequestStatus, ({ respond }) => {
-    return respond(200, {
-      agent: { id: AGENT_ID, name: "Finance Assistant" },
-      connection: null,
-      session: null,
-      grant: null,
-    });
-  });
+  context.mocks.api(
+    bankingWorkspaceContract.accessRequestStatus,
+    ({ respond }) => {
+      return respond(200, {
+        agent: { id: AGENT_ID, name: "Finance Assistant" },
+        connection: null,
+        session: null,
+        grant: null,
+      });
+    },
+  );
   await open(origin + path);
   const card = within(await screen.findByTestId("banking-action-card"));
-  expect(card.getByText("Finance Assistant")).toBeInTheDocument();
+
   expect(card.getByText(reason)).toBeInTheDocument();
   expect(
     card.getByText(/accounts, balances, and transactions · read only/i),
@@ -476,15 +476,14 @@ function approvalPath(
   );
 }
 
-test("A standalone bank review uses the chat owner and displays its read-only scope", async () => {
+test("A standalone workspace bank review names the requested purpose and its read-only scope", async () => {
   const reason = "Prepare the refund ledger";
   mockAuthorizationCallbackThread(context, RUN_THREAD_ID);
   context.mocks.api(
-    bankingUserContract.accessRequestStatus,
-    ({ params, respond }) => {
-      expect(params.agentId).toBe("90000000-0000-4000-8000-000000000001");
+    bankingWorkspaceContract.accessRequestStatus,
+    ({ respond }) => {
       return respond(200, {
-        agent: { id: params.agentId, name: "Bookkeeping reviewer" },
+        agent: { id: AGENT_ID, name: "Okou" },
         grant: null,
         connection: null,
         session: null,
@@ -496,9 +495,7 @@ test("A standalone bank review uses the chat owner and displays its read-only sc
   });
   await setupPage({ context, host: "app.okou.ai", path });
   const card = await screen.findByTestId("banking-action-card");
-  await expect(
-    within(card).findByText("Bookkeeping reviewer"),
-  ).resolves.toBeVisible();
+  await expect(within(card).findByText(reason)).resolves.toBeVisible();
   expect(card).toHaveTextContent(reason);
   expect(card).toHaveTextContent(
     /accounts, balances, and transactions · read only/i,

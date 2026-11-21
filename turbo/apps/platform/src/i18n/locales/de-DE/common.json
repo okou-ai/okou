@@ -378,7 +378,6 @@
         "openAutomations": "Automatisierungen auf dem Mobilgerät öffnen"
       },
       "navigation": {
-        "agents": "Agenten",
         "artifacts": "Artefakte",
         "connectors": "Integrationen",
         "settings": "Einstellungen",
@@ -1817,7 +1816,7 @@
       "repair": "Reparieren",
       "repairRequired": "{{institution}} muss repariert werden",
       "revoke": "Widerrufen",
-      "revokeConfirm": "Banking-Zugriff dieses Agenten widerrufen?",
+      "revokeConfirm": "Banking-Zugriff für diesen Arbeitsbereich widerrufen?",
       "selectAccounts": "Konten auswählen",
       "sevenDays": "7 Tage",
       "thirtyDays": "30 Tage",
@@ -2801,7 +2800,6 @@
       "noEmojiFound": "Kein Emoji gefunden",
       "notFound": "Chat-Thread nicht gefunden",
       "openBrowser": "Browser öffnen",
-      "openNamedAgent": "Agent {{name}} öffnen",
       "openNamedChat": "Chat {{title}} öffnen",
       "pickEmoji": "Ein Emoji auswählen",
       "scrollToBottom": "Nach unten scrollen",

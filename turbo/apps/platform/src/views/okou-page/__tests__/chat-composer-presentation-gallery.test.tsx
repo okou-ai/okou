@@ -10,20 +10,20 @@ import {
   serveDeck,
   presentationPart,
 } from "./template-submission-fixtures.ts";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 const context = testContext();
 
 test("chat-composer-presentation-gallery-001 Deep dive is persisted with the selected template without sending", async () => {
   const sent = captureTemplateSubmission(context);
   serveDeck(context, "<section data-slide>Revenue</section>");
   const saved = context.mocks.deferred<void>();
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: { version: 1, parts: [presentationPart()] },
       draftAttachments: [],
     });
   });
-  context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
+  context.mocks.api(composerDraftContract.patch, ({ body, respond }) => {
     if (
       body.draftUserMessage?.parts.some((p) => {
         return (
@@ -56,7 +56,7 @@ test("chat-composer-presentation-gallery-002 the restored ocean theme reaches th
   const sent = captureTemplateSubmission(context);
   const part = presentationPart("color-system:ocean-deep");
   const prompt = "Create the quarterly presentation.";
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: {
         version: 1,

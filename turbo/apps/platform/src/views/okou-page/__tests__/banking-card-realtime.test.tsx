@@ -1,4 +1,4 @@
-import { bankingUserContract } from "@okouai/api-contracts/contracts/banking";
+import { bankingWorkspaceContract } from "@okouai/api-contracts/contracts/banking";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -21,29 +21,39 @@ function bankingLink(): string {
     callbackPrompt: "Continue the cash flow review.",
     threadId: THREAD_ID,
   });
-  return `https://app.okou.ai/agents/${AGENT_ID}/banking?${params}`;
+  return `https://app.okou.ai/banking/access?${params}`;
 }
 
-async function expectBothCards(agentName: string): Promise<void> {
+async function expectBothCards(summary: string): Promise<void> {
   await waitFor(() => {
     const cards = screen.queryAllByTestId("banking-action-card");
     expect(cards).toHaveLength(2);
     for (const card of cards) {
-      expect(card).toHaveTextContent(agentName);
+      expect(card).toHaveTextContent(summary);
     }
   });
 }
 
 test("Duplicate banking cards update together on events and recover after a continuity gap", async () => {
-  const server = { agentName: "Finance Assistant" };
-  context.mocks.api(bankingUserContract.accessRequestStatus, ({ respond }) => {
-    return respond(200, {
-      agent: { id: AGENT_ID, name: server.agentName },
-      connection: null,
-      session: null,
-      grant: null,
-    });
-  });
+  let pending = false;
+  context.mocks.api(
+    bankingWorkspaceContract.accessRequestStatus,
+    ({ respond }) => {
+      return respond(200, {
+        agent: { id: AGENT_ID, name: "Okou" },
+        connection: null,
+        session: pending
+          ? {
+              id: AGENT_ID,
+              mode: "connect",
+              status: "pending",
+              institutionLoginId: null,
+            }
+          : null,
+        grant: null,
+      });
+    },
+  );
   installMessageExperienceChat({
     threadId: THREAD_ID,
     chatEvents: [
@@ -64,24 +74,26 @@ test("Duplicate banking cards update together on events and recover after a cont
     // Continuity recovery runs through the complete SharedWorker port host.
     sharedWorkerTestTransport: "message-port",
   });
-  await expectBothCards("Finance Assistant");
+  await expectBothCards("Review this month's cash flow");
   await waitFor(() => {
     expect(
       context.mocks.ably.hasSubscriptionOnChannel(CHANNEL, TOPIC),
     ).toBeTruthy();
   });
 
-  server.agentName = "Updated Finance Assistant";
+  pending = true;
   context.mocks.ably.triggerOnChannel(CHANNEL, TOPIC, {});
 
-  await expectBothCards("Updated Finance Assistant");
+  await expectBothCards(
+    "Waiting for Mastercard Data Connect. Finish there, then return to Chat.",
+  );
 
-  // The rename happens while realtime is suspended, so no event reaches the page.
+  // The external session finishes before realtime reconnects.
   context.mocks.ably.triggerConnectionState("suspended", {
     channelName: CHANNEL,
   });
-  server.agentName = "Recovered Finance Assistant";
+  pending = false;
   context.mocks.ably.triggerReconnect();
 
-  await expectBothCards("Recovered Finance Assistant");
+  await expectBothCards("Review this month's cash flow");
 });

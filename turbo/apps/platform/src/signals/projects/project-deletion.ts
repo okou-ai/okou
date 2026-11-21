@@ -218,7 +218,6 @@ export const deleteProjectAndThreads$ = command(
         id: eventId,
         kind: "deleted",
         chatThreadId: thread.id,
-        agentId: thread.agentId,
       });
       set(session.deletedThreadIds$, (ids) => {
         return [...ids, thread.id];

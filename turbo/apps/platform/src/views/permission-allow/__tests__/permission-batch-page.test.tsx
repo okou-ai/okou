@@ -4,8 +4,6 @@ import {
   getAction,
   queryAction,
 } from "../../okou-page/__tests__/connector-integrations-test-helpers.ts";
-import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
-import { agentFixture } from "../../team-page/__tests__/team-page-test-helpers.ts";
 import { mockAuthorizationCallbackThread } from "../../okou-page/__tests__/authorization-callback-test-helpers.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -37,17 +35,11 @@ async function openReview(continuation = false) {
     query.set("threadId", "2e6d73b1-23cd-42b0-beaa-f1aad7bc766c");
     query.set("callbackPrompt", "Publish the issue summary");
   }
-  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-    return params.id !== context.resourceId
-      ? respond(404, { error: { code: "NOT_FOUND", message: "Unknown agent" } })
-      : respond(200, agentFixture(context.resourceId, "Issue reporter"));
-  });
-  context.mocks.data.agents([
-    { agentId: context.resourceId, displayName: "Issue reporter" },
-  ]);
+  query.set("orgId", "org_default");
+  query.set("userId", "test-user-123");
   await setupPage({
     context,
-    path: "/agents/" + context.resourceId + "/permissions/batch?" + query,
+    path: "/connectors/permissions/batch?" + query,
     featureSwitches: { [FeatureSwitchKey.BatchConnectorPermissions]: true },
   });
   return within(screen.getByRole("main"));

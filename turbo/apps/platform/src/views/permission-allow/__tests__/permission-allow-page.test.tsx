@@ -1,5 +1,3 @@
-import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
-import { agentFixture } from "../../team-page/__tests__/team-page-test-helpers.ts";
 import { mockAuthorizationCallbackThread } from "../../okou-page/__tests__/authorization-callback-test-helpers.ts";
 import {
   getAction,
@@ -22,25 +20,18 @@ import {
 
 const context = testContext();
 
-function permissionLink(query: Record<string, string>, firewall = false) {
-  const agentId = context.resourceId;
+function permissionLink(query: Record<string, string>) {
   if (query.threadId) {
     mockAuthorizationCallbackThread(context, query.threadId);
   }
-  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-    return params.id === agentId
-      ? respond(200, agentFixture(agentId, "Analytics reviewer"))
-      : respond(404, {
-          error: { code: "NOT_FOUND", message: "Unknown agent" },
-        });
-  });
-  context.mocks.data.agents([{ agentId, displayName: "Analytics reviewer" }]);
   return (
-    (firewall
-      ? "/firewall-allow/" + agentId
-      : "/agents/" + agentId + "/permissions") +
-    "?" +
-    new URLSearchParams({ permission: ANALYTICS, ...query })
+    "/connectors/permissions?" +
+    new URLSearchParams({
+      permission: ANALYTICS,
+      orgId: "org_default",
+      userId: "test-user-123",
+      ...query,
+    })
   );
 }
 
@@ -90,39 +81,6 @@ test("permission-allow-page-007 a permanent denial needs no confirmation or expi
   expect(screen.queryByRole("combobox")).toBeNull();
   expect(screen.queryByText(/expires|expired/i)).toBeNull();
 });
-
-test.each([
-  { label: "permission-allow-page-008", firewall: false },
-  { label: "Firewall alias", firewall: true },
-])(
-  "$label a legacy Slack link replaces its saved allow with a permanent denial",
-  async ({ firewall }) => {
-    mockPermissionCatalog(context);
-    const grants = mockPermissionGrants(context, {
-      initial: [{ permission: ANALYTICS, action: "allow", expiresAt: null }],
-    });
-    await setupPage({
-      context,
-      path: permissionLink({ action: "deny", ref: "slack" }, firewall),
-    });
-    await expect(screen.findByText(ANALYTICS)).resolves.toBeInTheDocument();
-    click(getAction("button", "Confirm"));
-    await expect(
-      screen.findByText("Permissions denied"),
-    ).resolves.toBeInTheDocument();
-    expect(grants.writes).toStrictEqual([
-      {
-        target: { kind: "builtin", connectorSlug: "slack" },
-        mode: "patch",
-        grants: [{ permission: ANALYTICS, action: "deny" }],
-      },
-    ]);
-    expect(grants.saved.get("slack")).toStrictEqual([
-      { permission: ANALYTICS, action: "deny", expiresAt: null },
-    ]);
-    expect(screen.queryByText(/expires|expired/i)).toBeNull();
-  },
-);
 
 test.each([
   ["permission-allow-page-003", "delivered"],

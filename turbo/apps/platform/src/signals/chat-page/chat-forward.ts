@@ -3,7 +3,6 @@ import type { FeedbackInput } from "../okou-page/chat-feedback.ts";
 import type { ChatAgentRunSource } from "./chat-event-signals.ts";
 
 export interface ChatForwardTarget {
-  readonly id: string;
   readonly title: string;
 }
 

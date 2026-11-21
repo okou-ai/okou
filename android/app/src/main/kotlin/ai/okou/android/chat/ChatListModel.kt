@@ -247,7 +247,8 @@ internal fun ChatListUiState.rowActions(
                 source == ChatListSource.Network &&
                 listPhase != ChatReadPhase.Failed &&
                 listReadFailure == null &&
-                projectsSource != null
+                projectsSource != null &&
+                (group.projectId == null || group.project != null)
         ) {
             if (!pinned) add(ChatRowAction.Pin)
             else if (filter == ChatListFilter.Inbox) {
@@ -1199,7 +1200,7 @@ class ChatListModel(
         if (cacheRead) return
         cacheRead = true
         viewModelScope.launch { restoreUnread() }
-        restoreJob =
+        val chatRestore =
             viewModelScope.launch {
                 try {
                     val startup = prepared?.await()?.takeIf { it.identity == identity }
@@ -1232,7 +1233,8 @@ class ChatListModel(
                     if (current()) mutable.value = mutable.value.copy(cacheUnavailable = true)
                 }
             }
-        projectOwner.restore()
+        restoreJob = chatRestore
+        projectOwner.restore(afterChatCache = chatRestore)
     }
 
     private suspend fun restoreUnread() {

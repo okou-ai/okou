@@ -18,7 +18,7 @@ import {
   type ChatActionCallback,
   type ChatActionCallbackIds,
 } from "../chat-page/action-callback.ts";
-import { pathParams$, searchParams$ } from "../route.ts";
+import { searchParams$ } from "../route.ts";
 import { accept } from "../../lib/accept.ts";
 import { clerk$ } from "../auth.ts";
 import {
@@ -49,10 +49,6 @@ import type {
 
 export const permissionAllowOwner$ = computed(
   (get): PermissionActionOwner | null => {
-    const agentId = get(pathParams$)?.agentId;
-    if (typeof agentId === "string") {
-      return { kind: "agent", agentId };
-    }
     return memberPermissionOwner(get(searchParams$));
   },
 );
@@ -98,12 +94,7 @@ export const permissionAllowTarget$ = computed((get) => {
   if (!owner || !callback) {
     return Promise.resolve(null);
   }
-  return get(
-    permissionActionTarget(
-      owner,
-      owner.kind === "member" ? callback.threadId : null,
-    ),
-  );
+  return get(permissionActionTarget(owner, callback.threadId));
 });
 
 // ---------------------------------------------------------------------------
@@ -315,7 +306,7 @@ export const applyPermissionAndResumeChat$ = command(
     },
     signal: AbortSignal,
   ): Promise<PlatformUserPermissionGrant> => {
-    if (params.owner.kind === "member" && callback.threadId) {
+    if (callback.threadId) {
       await verifyPermissionCallbackThread(
         get(apiClient$),
         callback.threadId,

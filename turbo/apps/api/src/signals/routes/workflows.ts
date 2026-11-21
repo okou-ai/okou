@@ -260,7 +260,11 @@ const listWorkflowsInner$ = computed(async (get) => {
 
 const listComposerWorkflowsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  const { agentId } = get(queryOf(workflowsCollectionContract.composer));
+  const query = get(queryOf(workflowsCollectionContract.composer));
+  const agentId = query.agentId ?? (await get(workflowNamespace$));
+  if (!agentId) {
+    return forbidden("A workspace Workflow namespace is required");
+  }
   const workflows = await get(
     workflowList({
       orgId: auth.orgId,

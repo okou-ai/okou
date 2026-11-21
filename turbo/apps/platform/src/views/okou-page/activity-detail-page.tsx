@@ -394,14 +394,14 @@ function prepareRenderData(
 }
 
 function resolveDisplayName(
-  detail: { displayName: string | null; agentId: string | null } | null,
+  detail: { displayName: string | null } | null,
   isStale: boolean,
   fallback: string,
 ): string {
   if (!detail || isStale) {
     return fallback;
   }
-  return detail.displayName ?? detail.agentId ?? fallback;
+  return detail.displayName ?? fallback;
 }
 
 type ActivityTab = "steps" | "context" | "runner" | "network";
@@ -1192,7 +1192,6 @@ function downloadJson(
       createdAt: detail.createdAt,
       startedAt: detail.startedAt,
       completedAt: detail.completedAt,
-      agentId: detail.agentId,
       sessionId: detail.sessionId,
     },
     events,

@@ -12,7 +12,7 @@ import {
   presentationPart,
 } from "./template-submission-fixtures.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 const context = testContext();
 
 const owner = {
@@ -140,7 +140,7 @@ test("presentation-output-format-004 changing the format updates the embedded fe
       { type: "text" as const, text: " then add results." },
     ],
   };
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: { version: 1, parts: [note] },
       draftAttachments: [],

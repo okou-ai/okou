@@ -9,13 +9,13 @@ import {
   serveDeck,
 } from "./template-submission-fixtures.ts";
 
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 
 const context = testContext();
 
 async function secondSlide(html: string) {
   serveDeck(context, html);
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: { version: 1, parts: [presentationPart()] },
       draftAttachments: [],
