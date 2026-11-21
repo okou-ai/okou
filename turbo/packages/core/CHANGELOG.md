@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.858.5](https://github.com/okou-ai/okou/compare/core-v8.858.4...core-v8.858.5) (2026-11-21)
+
+
+### Bug Fixes
+
+* **app:** support member-scoped connector permission approvals ([#49815](https://github.com/okou-ai/okou/issues/49815)) ([d264a98](https://github.com/okou-ai/okou/commit/d264a981e964c318ca2535b8e0651315c09fcf19))
+
 ## [8.858.4](https://github.com/okou-ai/okou/compare/core-v8.858.3...core-v8.858.4) (2026-11-21)
 
 
