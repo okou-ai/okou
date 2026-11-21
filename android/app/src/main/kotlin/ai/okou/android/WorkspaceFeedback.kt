@@ -152,18 +152,14 @@ internal fun WorkspaceFeedbackHost(state: SnackbarHostState, modifier: Modifier)
         val visuals = data.visuals
         val style = MaterialTheme.typography.bodyMedium.copy(letterSpacing = 0.sp)
         Surface(
-            modifier =
-                modifier
-                    .padding(horizontal = 12.dp)
-                    .widthIn(max = 480.dp)
-                    .fillMaxWidth()
-                    .animateContentSize(alignment = Alignment.BottomCenter),
+            modifier = modifier.padding(horizontal = 12.dp).widthIn(max = 480.dp).fillMaxWidth(),
             shape = MaterialTheme.shapes.medium,
             color = MaterialTheme.colorScheme.inverseSurface,
             contentColor = MaterialTheme.colorScheme.inverseOnSurface,
             shadowElevation = 4.dp,
         ) {
             FeedbackLayout(
+                modifier = Modifier.animateContentSize(alignment = Alignment.BottomCenter),
                 textSize = style.fontSize,
                 message = {
                     Text(visuals.message, Modifier.padding(vertical = 12.dp), style = style)
@@ -221,6 +217,7 @@ private fun FeedbackActions(data: SnackbarData, style: TextStyle) {
 
 @Composable
 private fun FeedbackLayout(
+    modifier: Modifier,
     textSize: TextUnit,
     message: @Composable () -> Unit,
     actions: @Composable () -> Unit,
@@ -230,7 +227,7 @@ private fun FeedbackLayout(
             message()
             actions()
         },
-        modifier = Modifier.heightIn(min = 48.dp).padding(horizontal = 12.dp),
+        modifier = modifier.heightIn(min = 48.dp).padding(horizontal = 12.dp),
     ) { children, bounds ->
         val loose = bounds.copy(minWidth = 0, minHeight = 0)
         val buttons = children.getOrNull(1)?.measure(loose)
