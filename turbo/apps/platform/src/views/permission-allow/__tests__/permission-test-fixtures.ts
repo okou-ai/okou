@@ -3,25 +3,13 @@ import {
   connectorPermissionsContract,
   type ConnectorPermissions,
 } from "@okouai/api-contracts/contracts/connector-permissions";
-import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 
-export const APPROVING_AGENT = "c0000000-0000-4000-a000-000000000001";
 export const ANALYTICS = "admin.analytics:read";
 export const PERMISSION_NOW = "2030-01-01T00:00:00.000Z";
 export const PERMISSION_LATER = "2030-01-01T01:00:00.000Z";
 
 type Grant = ConnectorPermissions["grants"][number];
-
-export function permissionButton(name: string): HTMLElement {
-  const button = queryAllByRoleFast("button", document.body).find((item) => {
-    return item.textContent?.trim() === name;
-  });
-  if (!button) {
-    throw new Error(`Missing permission button: ${name}`);
-  }
-  return button;
-}
 
 export function mockPermissionCatalog(
   context: TestContext,
