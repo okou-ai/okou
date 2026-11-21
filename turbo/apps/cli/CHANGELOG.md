@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.35.9](https://github.com/okou-ai/okou/compare/cli-v10.35.8...cli-v10.35.9) (2026-11-21)
+
+
+### Bug Fixes
+
+* **cli:** remove legacy agent ids from cli requests ([#49830](https://github.com/okou-ai/okou/issues/49830)) ([fad4dc9](https://github.com/okou-ai/okou/commit/fad4dc9a841aac86dcdaf62f17d07ff200c287e3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.98.1
+    * @okouai/core bumped to 8.858.6
+    * @okouai/pi-agent-runtime bumped to 1.52.25
+
 ## [10.35.8](https://github.com/okou-ai/okou/compare/cli-v10.35.7...cli-v10.35.8) (2026-11-21)
 
 
