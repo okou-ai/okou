@@ -36,7 +36,6 @@ function PwaBackLink({
   );
 }
 
-
 export function PwaBackToChats() {
   const { t } = useTranslation();
 

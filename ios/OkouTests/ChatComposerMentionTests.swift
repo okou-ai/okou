@@ -295,7 +295,8 @@ final class ChatComposerMentionTests: XCTestCase {
     delivery.release()
     try await waitForBusinessResult {
       originalComposer.document.parts.contains {
-        $0["type"]?.string == "chat_thread" && $0["threadId"]?.string == MentionNavigationFixture.thread(3)
+        $0["type"]?.string == "chat_thread"
+          && $0["threadId"]?.string == MentionNavigationFixture.thread(3)
       }
     }
     try await eventually { mentionTable(in: host.view) == nil }

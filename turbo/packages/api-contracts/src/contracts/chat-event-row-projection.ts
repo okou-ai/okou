@@ -79,7 +79,11 @@ export function chatEventFromRow(source: ChatEventRow): ChatEvent {
   };
   const userMessage = (): UserMessageDocument => {
     return readStoredMessageParts(
-      requiredRowField(payload?.userMessage ?? null, row.eventType, "userMessage"),
+      requiredRowField(
+        payload?.userMessage ?? null,
+        row.eventType,
+        "userMessage",
+      ),
     ) as UserMessageDocument;
   };
   const candidates: Record<ChatEventType, () => ChatEvent> = {

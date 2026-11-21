@@ -372,10 +372,7 @@ test("A pinned chat moves past another pinned chat in the same Project", async (
   await screen.findByRole("menu");
   click(menuItemByText("Move up"));
   await waitFor(() => {
-    expect(projectChatTitles()).toStrictEqual([
-      "Second pin",
-      "First pin",
-    ]);
+    expect(projectChatTitles()).toStrictEqual(["Second pin", "First pin"]);
   });
 });
 

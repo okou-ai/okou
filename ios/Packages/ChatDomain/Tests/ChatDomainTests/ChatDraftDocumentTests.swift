@@ -26,7 +26,8 @@ final class ChatDraftDocumentTests: XCTestCase {
       "clientId": .string("client"), "clientName": .string("Research")
     ])
     let reference: MessageJSON = .object([
-      "type": .string("chat_thread"), "threadId": .string("thread"), "titleSnapshot": .string("Chat")
+      "type": .string("chat_thread"), "threadId": .string("thread"),
+      "titleSnapshot": .string("Chat")
     ])
     let spacing: MessageJSON = .object([
       "type": .string("text"), "text": .string(" \n  Keep this spacing. \n ")

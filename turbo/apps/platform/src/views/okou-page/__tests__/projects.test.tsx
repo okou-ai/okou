@@ -2079,9 +2079,7 @@ test("A Project chat can be dragged onto another collapsed Project", async () =>
     "aria-expanded",
     "true",
   );
-  expect(
-    namedLink(projectRows(), "Design research"),
-  ).not.toBeInTheDocument();
+  expect(namedLink(projectRows(), "Design research")).not.toBeInTheDocument();
   expect(location.pathname).toBe(`/chats/${ordinary.id}`);
 });
 
@@ -2242,7 +2240,7 @@ test("Home, Project, and conversation navigation preserves the correct draft and
   });
   metadata();
   // Each owner supplies its own persisted draft. Home and Projects share the
-  // agent draft; a conversation has its own draft.
+  // workspace draft; a conversation has its own draft.
   context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
     return respond(200, textContinuityDraft("Conversation-only draft"));
   });

@@ -266,7 +266,6 @@ final class ChatClientTests: XCTestCase {
     XCTAssertEqual(result.eventIDs, Set((1...101).map(eventIdentity)))
   }
 
-
 }
 
 @MainActor

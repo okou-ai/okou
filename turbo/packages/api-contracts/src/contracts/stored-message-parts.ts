@@ -17,7 +17,10 @@ const messagePartTypes = {
   source: true,
 } satisfies Record<UserMessagePart["type"], true>;
 
-function keepStoredPart(value: unknown, types: Readonly<Record<string, true>>): boolean {
+function keepStoredPart(
+  value: unknown,
+  types: Readonly<Record<string, true>>,
+): boolean {
   // Keep malformed parts for normal validation. Only unknown discriminants are skipped.
   return (
     typeof value !== "object" ||
@@ -42,7 +45,9 @@ export function readStoredMessageParts(value: unknown): unknown {
   return {
     ...value,
     parts: parts
-      .filter((part) => {return keepStoredPart(part, messagePartTypes)})
+      .filter((part) => {
+        return keepStoredPart(part, messagePartTypes);
+      })
       .map((part) => {
         if (
           typeof part !== "object" ||
@@ -56,9 +61,9 @@ export function readStoredMessageParts(value: unknown): unknown {
         }
         return {
           ...part,
-          note: part.note.filter((note: unknown) =>
-            {return keepStoredPart(note, notePartTypes)},
-          ),
+          note: part.note.filter((note: unknown) => {
+            return keepStoredPart(note, notePartTypes);
+          }),
         };
       }),
   };
