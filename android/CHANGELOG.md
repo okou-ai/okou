@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.0](https://github.com/okou-ai/okou/compare/android-v0.35.0...android-v0.36.0) (2026-11-21)
+
+
+### Features
+
+* **android:** render markdown while editing personal instructions ([#49812](https://github.com/okou-ai/okou/issues/49812)) ([cb9be3d](https://github.com/okou-ai/okou/commit/cb9be3d9d81b7abeeed5bcbc79aed452babad37c))
+
 ## [0.35.0](https://github.com/okou-ai/okou/compare/android-v0.34.2...android-v0.35.0) (2026-11-21)
 
 
