@@ -387,7 +387,7 @@ function ForYouHeader() {
   return (
     // The header sits on the cover, so its title and progress each carry
     // their own translucent surface instead of a scrim over the artwork.
-    <header className="absolute inset-x-0 top-0 z-10 grid h-18 grid-flow-col grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 px-4 pt-2 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8 sm:px-8">
+    <header className="absolute inset-x-0 top-0 z-10 grid h-18 grid-flow-col grid-cols-[auto_minmax(0,1fr)] items-center gap-3 px-4 pt-2 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8 sm:px-8">
       <div className="w-fit min-w-0 max-w-full rounded-xl bg-card/75 px-3 py-1.5 shadow-surface backdrop-blur-md">
         <h1 className="text-base font-semibold sm:text-lg">
           {t(($) => {
