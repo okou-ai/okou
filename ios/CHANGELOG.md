@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.51.8](https://github.com/okou-ai/okou/compare/ios-v0.51.7...ios-v0.51.8) (2026-11-21)
+
+
+### Refactoring
+
+* stage retirement of chat and run agent identity ([#49839](https://github.com/okou-ai/okou/issues/49839)) ([01b34f9](https://github.com/okou-ai/okou/commit/01b34f9b9f1a7f7b117739ad834931fa646a1b8b))
+
 ## [0.51.7](https://github.com/okou-ai/okou/compare/ios-v0.51.6...ios-v0.51.7) (2026-11-21)
 
 
