@@ -667,7 +667,7 @@ separate evidence; a configured Secret name proves only its presence.
 
 The native text composer reads and saves the same server draft as Web. Existing
 conversations use their thread ID; My Okou and Project new-chat editors share the
-default agent draft. Project selection only changes the new conversation context.
+workspace composer draft. Project selection only changes the new conversation context.
 Draft GET does not delay the initial screen. Edits persist locally before PATCH,
 with Web's 500ms debounce and immediate explicit clears. Requests are serialized
 per target, and delayed hydration/save completions cannot replace newer local

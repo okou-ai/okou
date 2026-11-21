@@ -84,7 +84,7 @@ internal interface CanonicalApi {
     ): Response<InputStatus>
 
     @GET("/api/onboarding/member-status")
-    suspend fun `onboardingStatus`(
+    suspend fun `memberOnboardingStatus`(
         @Header("Authorization") token: String
     ): Response<OnboardingStatus>
 
@@ -109,16 +109,18 @@ internal interface CanonicalApi {
     ): Response<RealtimeToken>
 
     @GET("/api/member/preferences")
-    suspend fun `preferences`(@Header("Authorization") token: String): Response<UserPreferences>
+    suspend fun `memberPreferences`(
+        @Header("Authorization") token: String
+    ): Response<UserPreferences>
 
     @POST("/api/member/preferences/initialize")
-    suspend fun `initializePreferences`(
+    suspend fun `initializeMemberPreferences`(
         @Header("Authorization") token: String,
         @Body body: InitializePreferencesRequest,
     ): Response<UserPreferences>
 
     @POST("/api/member/preferences")
-    suspend fun `updatePreferences`(
+    suspend fun `updateMemberPreferences`(
         @Header("Authorization") token: String,
         @Body body: UpdatePreferencesRequest,
     ): Response<UserPreferences>

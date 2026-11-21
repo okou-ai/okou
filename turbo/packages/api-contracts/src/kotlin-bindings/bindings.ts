@@ -182,7 +182,7 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: chatInputStatusContract.get,
   },
   {
-    name: "onboardingStatus",
+    name: "memberOnboardingStatus",
     response: "OnboardingStatus",
     route: memberOnboardingContract.getStatus,
   },
@@ -205,18 +205,18 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: platformRealtimeTokenContract.create,
   },
   {
-    name: "preferences",
+    name: "memberPreferences",
     response: "UserPreferences",
     route: memberPreferencesContract.get,
   },
   {
-    name: "initializePreferences",
+    name: "initializeMemberPreferences",
     response: "UserPreferences",
     request: "InitializePreferencesRequest",
     route: memberPreferencesContract.initialize,
   },
   {
-    name: "updatePreferences",
+    name: "updateMemberPreferences",
     response: "UserPreferences",
     request: "UpdatePreferencesRequest",
     route: memberPreferencesContract.update,

@@ -4372,7 +4372,6 @@ export function registerFeishuIntegrationTests(
               setupCompleted: true,
               isConnected: true,
               tenantKey: TENANT_KEY,
-              defaultAgentId: fixture.defaultAgentId,
             });
             const connectorsAfter = await own(() => {
               return accept(
@@ -4680,7 +4679,7 @@ export function registerFeishuIntegrationTests(
 
       it("preserves member permissions and retries welcome when reconnecting", async () => {
         const fixture = await setupFeishuRunFixture();
-        const { actor, appId, defaultAgentId } = fixture;
+        const { actor, appId } = fixture;
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
         );
@@ -4841,7 +4840,6 @@ export function registerFeishuIntegrationTests(
           expect.objectContaining({
             id: fixture.installationId,
             appId,
-            defaultAgentId,
             isConnected: true,
             connectedUserName: "Feishu User",
           }),
@@ -5045,7 +5043,7 @@ export function registerFeishuIntegrationTests(
 
       it("rejects account rebinding and replaces the connected identity", async () => {
         const fixture = await setupFeishuRunFixture();
-        const { actor, appId, callbackUrl, defaultAgentId } = fixture;
+        const { actor, appId, callbackUrl } = fixture;
         const connectUrl = await connectFixtureUser(fixture);
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
@@ -5200,7 +5198,6 @@ export function registerFeishuIntegrationTests(
           callbackVerified: true,
           messageReceived: true,
           tenantKey: TENANT_KEY,
-          defaultAgentId,
         });
         await own(() => {
           return accept(

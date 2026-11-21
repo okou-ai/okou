@@ -177,7 +177,6 @@ class ChatListApiFixture : Closeable {
         )
     }
     @Volatile
-    @Volatile
     var projects: () -> MockResponse = {
         jsonResponse(
             """{"projects":[{"id":"$CHAT_PROJECT","name":"Research","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}],"latestEventId":null,"latestSeqId":0}"""

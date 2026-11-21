@@ -183,7 +183,7 @@ class ApiClient(
         reads.inputStatus(it, threadId, eventId)
     }
 
-    suspend fun onboardingStatus() = execute { reads.onboardingStatus(it) }
+    suspend fun onboardingStatus() = execute { reads.memberOnboardingStatus(it) }
 
     suspend fun composerDraft(target: ServerDraftTarget): ComposerDraft = execute {
         if (target.threadId != null) reads.threadDraft(it, target.threadId)
@@ -292,15 +292,15 @@ class ApiClient(
         }
     }
 
-    suspend fun preferences(): UserPreferences = execute { reads.preferences(it) }
+    suspend fun preferences(): UserPreferences = execute { reads.memberPreferences(it) }
 
     suspend fun initializePreferences(body: InitializePreferencesRequest): UserPreferences =
         execute {
-            api.initializePreferences(it, body)
+            api.initializeMemberPreferences(it, body)
         }
 
     suspend fun updatePreferences(body: UpdatePreferencesRequest): UserPreferences = execute {
-        api.updatePreferences(it, body)
+        api.updateMemberPreferences(it, body)
     }
 
     private fun checkAccess() {

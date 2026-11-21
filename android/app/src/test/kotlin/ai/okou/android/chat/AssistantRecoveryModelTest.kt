@@ -30,7 +30,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], application = TestOkouApplication::class)
 class AssistantRecoveryModelTest {
     @get:Rule val temporary = TemporaryFolder()
-    private val target = ComposerTarget(threadId = CHAT_PERSONAL, agentId = CHAT_AGENT)
+    private val target = ComposerTarget(threadId = CHAT_PERSONAL)
 
     private class Fixture(
         val api: ChatListApiFixture,
