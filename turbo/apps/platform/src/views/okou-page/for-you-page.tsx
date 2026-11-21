@@ -109,7 +109,7 @@ function ForYouStack() {
     ...settled,
   ];
   return (
-    <div className="relative mx-auto -mt-26 w-full max-w-176 pb-6 sm:-mt-38">
+    <div className="relative mx-auto -mt-26 w-full max-w-176 pb-6 sm:-mt-44 @min-[64rem]/for-you:-mt-52">
       <div
         className="relative isolate mb-6 grid min-h-(--for-you-card-min-height)"
         style={
