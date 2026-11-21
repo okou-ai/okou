@@ -174,6 +174,20 @@ class NativeChatListTest {
         val savedPreferences = app.snapshotApiPreferences()
         val savedCache = ChatCacheSnapshot(app.noBackupFilesDir.resolve("chat-list"), app.chatCache)
         val fixture = ChatListApiFixture()
+        val rowEvents = fixture.rowEventTail()
+        fixture.commandResponse = { request ->
+            when (request.requestUrl?.encodedPath) {
+                "/api/chat-threads/$CHAT_PERSONAL/archive" -> {
+                    rowEvents.add(24L to request.rowEvent(24, CHAT_PERSONAL, "archived"))
+                    MockResponse().setResponseCode(204)
+                }
+                "/api/chat-threads/$CHAT_PERSONAL/unarchive" -> {
+                    rowEvents.add(25L to request.rowEvent(25, CHAT_PERSONAL, "unarchived"))
+                    MockResponse().setResponseCode(204)
+                }
+                else -> null
+            }
+        }
         val gate = CountDownLatch(1)
         fixture.beforeResponse = { gate.await() }
         app.chatService = fixture.service
@@ -420,6 +434,61 @@ class NativeChatListTest {
             revealText("Research")
             clickText("Research")
             assertTrue(device.wait(Until.gone(By.text("Project chat")), 10_000))
+
+            revealText("Personal chat")
+            text("Personal chat").longClick()
+            clickText(app.getString(R.string.chat_archive))
+            val message = By.pkg(app.packageName).text(app.getString(R.string.chat_undo_archived))
+            val undo = By.pkg(app.packageName).text(app.getString(R.string.chat_undo))
+            val dismiss =
+                By.pkg(app.packageName).desc(app.getString(R.string.chat_feedback_dismiss))
+            fun awaitUndoLayout(stacked: Boolean) {
+                assertTrue(
+                    "Expected the Undo action group to be ${if (stacked) "stacked" else "inline"}",
+                    device.wait(
+                        object : Condition<UiDevice, Boolean> {
+                            override fun apply(device: UiDevice): Boolean {
+                                val body = device.findObject(message)?.visibleBounds ?: return false
+                                val button = device.findObject(undo)?.visibleBounds ?: return false
+                                val close =
+                                    device.findObject(dismiss)?.visibleBounds ?: return false
+                                val sameActions =
+                                    kotlin.math.abs(button.centerY() - close.centerY()) <= 1 &&
+                                        button.right <= close.left
+                                return sameActions &&
+                                    if (stacked) body.bottom <= button.top
+                                    else body.centerY() in button.top until button.bottom
+                            }
+                        },
+                        10_000,
+                    ),
+                )
+            }
+            awaitUndoLayout(stacked = false)
+            takeScreenshot().writeToTestStorage("android-chat-list-undo")
+            val fontScale = device.executeShellCommand("settings get system font_scale").trim()
+            try {
+                device.executeShellCommand("wm size 320x800")
+                device.executeShellCommand("wm density 160")
+                device.executeShellCommand("settings put system font_scale 2.0")
+                device.awaitChatList(app)
+                awaitUndoLayout(stacked = true)
+                scenario.onActivity { activity ->
+                    assertTrue(activity.resources.configuration.fontScale >= 2f)
+                    assertTrue(activity.resources.configuration.screenWidthDp <= 320)
+                }
+                takeScreenshot().writeToTestStorage("android-chat-list-undo-large-text")
+                checkNotNull(device.findObject(undo)).click()
+                assertTrue(device.wait(Until.gone(undo), 10_000))
+                revealText("Personal chat")
+                assertTrue(rowEvents.size == 2)
+            } finally {
+                if (fontScale.toFloatOrNull() == null)
+                    device.executeShellCommand("settings delete system font_scale")
+                else device.executeShellCommand("settings put system font_scale $fontScale")
+                device.executeShellCommand("wm size ${originalSize ?: "reset"}")
+                device.executeShellCommand("wm density ${originalDensity ?: "reset"}")
+            }
         } catch (error: Throwable) {
             failures.add(error)
             try {

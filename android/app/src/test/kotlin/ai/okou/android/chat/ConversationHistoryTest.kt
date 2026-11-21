@@ -705,7 +705,8 @@ class ConversationHistoryTest {
             model.uiState.first { it.phase == HistoryPhase.Ready }
             visit.confirmDisplayed(checkNotNull(model.uiState.value.confirmation))
             started.await()
-            val stopped = checkNotNull(model.stopAutomaticRead(CHAT_PERSONAL))
+            val stopped = checkNotNull(visit.pendingAutomaticRead)
+            visit.stopAutomaticRead()
             assertFalse(stopped.isCompleted)
 
             val nextId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"

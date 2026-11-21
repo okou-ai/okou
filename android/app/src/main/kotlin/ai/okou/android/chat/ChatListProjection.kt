@@ -41,6 +41,10 @@ internal class ChatListProjection {
 
     fun hasUnsettledEdits(edits: List<ChatRowEdit>) = edits.any { it in rowEdits }
 
+    fun discardEdits(edits: List<ChatRowEdit>) {
+        settleRowEdits(emptySet(), edits.mapTo(hashSetOf()) { it.eventId })
+    }
+
     fun recordRejectedEdits(edits: List<ChatRowEdit>) {
         for (edit in edits) {
             if (edit in rowEdits) rejectedRowEvents.add(edit.eventId)
