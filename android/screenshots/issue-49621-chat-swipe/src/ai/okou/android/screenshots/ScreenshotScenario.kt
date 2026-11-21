@@ -134,6 +134,7 @@ class ScreenshotScenario {
                 assertTrue(device.wait(object : Condition<UiDevice, Boolean> {
                     override fun apply(device: UiDevice) = requests.toList() == listOf("archive", "unarchive")
                 }, 10_000))
+                assertTrue(device.wait(Until.gone(text(app.getString(R.string.chat_undo))), 10_000))
                 ScreenshotCapture.capture("list-restored.png")
             }
         } finally {
