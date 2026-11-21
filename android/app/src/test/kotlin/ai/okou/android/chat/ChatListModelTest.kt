@@ -153,12 +153,16 @@ class ChatListModelTest {
                     ),
             )
         var beforeArchive: suspend (String) -> Unit = {}
+        var beforeUnarchive: suspend () -> Unit = {}
+        var beforeEvents: suspend () -> Unit = {}
 
-        override suspend fun chatEvents(since: Long?) =
-            page(events.filter { it.first > (since ?: 0) }.map { it.second })
+        override suspend fun chatEvents(since: Long?): ChatEvents {
+            beforeEvents()
+            return page(events.filter { it.first > (since ?: 0) }.map { it.second })
+        }
 
         override suspend fun setArchived(threadId: String, archived: Boolean, eventId: String) {
-            if (archived) beforeArchive(threadId)
+            if (archived) beforeArchive(threadId) else beforeUnarchive()
             val seq = events.last().first + 1
             events.add(
                 seq to
@@ -437,6 +441,65 @@ class ChatListModelTest {
             assertNull(model.uiState.value.rowUndo)
             indicators.complete(Indicators(emptyMap(), emptyMap(), emptyMap()))
             advanceUntilIdle()
+        }
+    }
+
+    @Test
+    fun archiveUndoWaitsForTheNetworkAndDistinguishesRejectionFromAnUnknownResult() = runTest {
+        for (error in
+            listOf(ApiFailure.Http(403, null, null, null), IOException("Lost response"))) {
+            val connectivity = MutableStateFlow(true)
+            val source = ArchiveService()
+            val release = CompletableDeferred<Unit>()
+            var inverseWrites = 0
+            source.beforeUnarchive = {
+                inverseWrites++
+                release.await()
+                throw error
+            }
+            withCatchUpModel(source, connectivity = connectivity) { model ->
+                model.refresh()
+                advanceUntilIdle()
+                assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Archive))
+                advanceUntilIdle()
+                val offer = checkNotNull(model.uiState.value.rowUndo)
+
+                connectivity.value = false
+                runCurrent()
+                model.undoRowAction(offer)
+                runCurrent()
+                assertSame(offer, model.uiState.value.rowUndo)
+                assertEquals(0, inverseWrites)
+
+                connectivity.value = true
+                advanceUntilIdle()
+                assertSame(offer, model.uiState.value.rowUndo)
+                assertEquals(0, inverseWrites)
+                model.undoRowAction(offer)
+                runCurrent()
+                val checking = checkNotNull(model.uiState.value.rowUndo)
+                assertEquals(ChatUndoPhase.Checking, checking.phase)
+                assertEquals(offer.sequence, checking.sequence)
+                model.undoRowAction(offer)
+                model.undoRowAction(checking)
+                assertEquals(1, inverseWrites)
+
+                // An explicit rejection must restore the last confirmed archive even if readback
+                // fails.
+                val rejected = error is ApiFailure.Http
+                if (rejected) source.beforeEvents = { throw IOException("Readback unavailable") }
+                release.complete(Unit)
+                advanceUntilIdle()
+                val state = model.uiState.value
+                assertEquals(
+                    if (rejected) ChatUndoPhase.Failed else ChatUndoPhase.Unconfirmed,
+                    state.rowUndo?.phase,
+                )
+                if (rejected) assertTrue(state.threads.single { it.id == CHAT_PERSONAL }.archived)
+                assertNull(state.failedRowAction)
+                assertTrue(state.pendingRowActions.isEmpty())
+                assertEquals(1, inverseWrites)
+            }
         }
     }
 
