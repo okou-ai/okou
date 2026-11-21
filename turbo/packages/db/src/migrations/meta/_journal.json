@@ -3697,6 +3697,13 @@
       "when": 1795213062932,
       "tag": "1606_retire_secondary_agent_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 1607,
+      "version": "7",
+      "when": 1795232889487,
+      "tag": "1607_custom_connector_skill_publications",
+      "breakpoints": true
     }
   ]
 }

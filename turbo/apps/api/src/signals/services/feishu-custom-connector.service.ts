@@ -22,7 +22,6 @@ import {
   gte,
   inArray,
   isNull,
-  lt,
   exists,
   sql,
   type SQL,
@@ -32,6 +31,7 @@ import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   pgBooleanDecoder,
   pgIntegerDecoder,
+  pgTextDecoder,
 } from "../../lib/db-structured-result";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { FEISHU_OAUTH_SCOPES } from "@okouai/api-contracts/contracts/feishu-connect";
@@ -41,6 +41,7 @@ import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { orgCustomConnectorSkillPublications } from "@okouai/db/schema/org-custom-connector-skill-publication";
 import { secrets } from "@okouai/db/schema/secret";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
@@ -50,6 +51,7 @@ import {
   type PreparedCustomConnectorSkill,
 } from "./custom-connector-skill-bundle.service";
 import {
+  customConnectorSkillPublicationJoin,
   customConnectorSkillBundleSelection,
   customConnectorSkillBundleValues,
   type CustomConnectorSkillBundleRow,
@@ -236,7 +238,7 @@ function desiredOAuthConfig(installation: FeishuConnectorInstallation) {
 }
 
 function connectorDefinitionMatches(
-  connector: FeishuCustomConnectorDefinitionRow,
+  { connector, publication }: ExistingFeishuCustomConnector,
   installation: FeishuConnectorInstallation,
   skill: PreparedCustomConnectorSkill,
 ): boolean {
@@ -251,9 +253,8 @@ function connectorDefinitionMatches(
     connector.enabled === desired.enabled &&
     connector.permissionBundleRef === desired.permissionBundleRef &&
     connector.skillMarkdown === desired.skillMarkdown &&
-    connector.skillStorageVersionId === skill.sourceVersionId &&
-    connector.skillContentBundleSourceVersionId === skill.sourceVersionId &&
-    isDeepStrictEqual(connector.skillContentBundle, skill.contentBundle)
+    publication?.skillContentBundleSourceVersionId === skill.sourceVersionId &&
+    isDeepStrictEqual(publication.skillContentBundle, skill.contentBundle)
   );
 }
 
@@ -294,11 +295,10 @@ function feishuCustomConnectorIdCondition(
   );
 }
 
-type FeishuCustomConnectorDefinitionRow = CustomConnectorDefinitionRow &
-  CustomConnectorSkillBundleRow;
-
 interface ExistingFeishuCustomConnector {
-  readonly connector: FeishuCustomConnectorDefinitionRow;
+  readonly connector: CustomConnectorDefinitionRow;
+  readonly revision: string;
+  readonly publication: CustomConnectorSkillBundleRow | null;
   readonly oauthConfig:
     typeof orgCustomConnectorOauthConfigs.$inferSelect | null;
 }
@@ -390,10 +390,9 @@ function feishuExistingConnectorPlan(
   return {
     from: orgCustomConnectors,
     columns: {
-      connector: {
-        ...customConnectorDefinitionSelection(),
-        ...customConnectorSkillBundleSelection(),
-      },
+      connector: customConnectorDefinitionSelection(),
+      revision: sql`${orgCustomConnectors}.xmin::text`.mapWith(pgTextDecoder),
+      publication: customConnectorSkillBundleSelection(),
       oauthConfig: orgCustomConnectorOauthConfigs,
     },
     join: and(
@@ -432,11 +431,8 @@ function feishuConnectorMutation(
     } as const;
   }
   const needsRepair =
-    !connectorDefinitionMatches(
-      existing.connector,
-      installation,
-      prepared.skill,
-    ) || !oauthConfigMatches(existing.oauthConfig, installation);
+    !connectorDefinitionMatches(existing, installation, prepared.skill) ||
+    !oauthConfigMatches(existing.oauthConfig, installation);
   if (!needsRepair) {
     return { kind: "unchanged" } as const;
   }
@@ -488,32 +484,6 @@ function feishuObservedInstallationCondition(
   );
 }
 
-/** Definition writers publish OAuth changes with this existing row version. */
-function feishuObservedDefinitionCondition(
-  connector: FeishuCustomConnectorDefinitionRow,
-) {
-  return and(
-    eq(orgCustomConnectors.id, connector.id),
-    eq(orgCustomConnectors.orgId, connector.orgId),
-    eq(orgCustomConnectors.storageVersion, connector.storageVersion),
-    gte(orgCustomConnectors.updatedAt, connector.updatedAt),
-    lt(
-      orgCustomConnectors.updatedAt,
-      new Date(connector.updatedAt.getTime() + 1),
-    ),
-    eq(orgCustomConnectors.displayName, connector.displayName),
-    eq(orgCustomConnectors.prefixTemplates, connector.prefixTemplates),
-    eq(orgCustomConnectors.fields, connector.fields),
-    eq(orgCustomConnectors.headerInjections, connector.headerInjections),
-    eq(orgCustomConnectors.queryInjections, connector.queryInjections),
-    eq(orgCustomConnectors.authMode, connector.authMode),
-    eq(orgCustomConnectors.enabled, connector.enabled),
-    sql`${orgCustomConnectors.permissionBundleRef} IS NOT DISTINCT FROM ${connector.permissionBundleRef}`,
-    sql`${orgCustomConnectors.skillMarkdown} IS NOT DISTINCT FROM ${connector.skillMarkdown}`,
-    sql`${orgCustomConnectors.skillStorageVersionId} IS NOT DISTINCT FROM ${connector.skillStorageVersionId}`,
-  );
-}
-
 function feishuReconciliationPublicationPlan(
   args: EnsureFeishuCustomConnectorArgs,
   installed: FeishuConnectorInstallation,
@@ -546,7 +516,9 @@ function feishuReconciliationPublicationPlan(
           .from(orgCustomConnectors)
           .where(
             and(
-              feishuObservedDefinitionCondition(existing.connector),
+              eq(orgCustomConnectors.id, existing.connector.id),
+              eq(orgCustomConnectors.orgId, existing.connector.orgId),
+              eq(sql`${orgCustomConnectors}.xmin::text`, existing.revision),
               installationPresent,
             ),
           )
@@ -603,6 +575,10 @@ const prepareFeishuReconciliation$ = command(
       ? await db
           .select(e.columns)
           .from(e.from)
+          .leftJoin(
+            orgCustomConnectorSkillPublications,
+            customConnectorSkillPublicationJoin(),
+          )
           .leftJoin(orgCustomConnectorOauthConfigs, e.join)
           .where(e.condition)
           .limit(1)

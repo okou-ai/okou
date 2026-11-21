@@ -1,7 +1,8 @@
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { prepareContentBundle } from "@okouai/core/content-bundle";
-import { orgCustomConnectorSkillBundles } from "@okouai/db/runtime/org-custom-connector-skill-bundle";
+import { orgCustomConnectorSkillPublications } from "@okouai/db/schema/org-custom-connector-skill-publication";
+import { customConnectorSkillBundleSelection } from "./custom-connector-skill-bundle-columns";
 import { db$ } from "../external/db";
 import { getCustomConnectorSkillName } from "@okouai/core/storage-names";
 import { synthesizeSkillMd } from "@okouai/core/skill-document";
@@ -58,18 +59,12 @@ export const prepareCustomConnectorSkillBundle$ = command(
     const prepared = await prepareContentBundle(files);
     signal.throwIfAborted();
     const [registered] = await get(db$)
-      .select({
-        contentBundle: orgCustomConnectorSkillBundles.skillContentBundle,
-        sourceVersionId:
-          orgCustomConnectorSkillBundles.skillContentBundleSourceVersionId,
-        selectedSourceVersionId:
-          orgCustomConnectorSkillBundles.skillStorageVersionId,
-      })
-      .from(orgCustomConnectorSkillBundles)
+      .select(customConnectorSkillBundleSelection())
+      .from(orgCustomConnectorSkillPublications)
       .where(
         and(
-          eq(orgCustomConnectorSkillBundles.id, args.connectorId),
-          eq(orgCustomConnectorSkillBundles.orgId, args.orgId),
+          eq(orgCustomConnectorSkillPublications.id, args.connectorId),
+          eq(orgCustomConnectorSkillPublications.orgId, args.orgId),
         ),
       )
       .limit(1);
@@ -77,19 +72,17 @@ export const prepareCustomConnectorSkillBundle$ = command(
     // Reuse a publication attested by this owner, including its historical source
     // ID. An unchanged edit must not require a successful remote object read.
     if (
-      registered?.contentBundle?.sha256 === prepared.descriptor.sha256 &&
-      registered.contentBundle.archiveBytes ===
+      registered?.skillContentBundle?.sha256 === prepared.descriptor.sha256 &&
+      registered.skillContentBundle.archiveBytes ===
         prepared.descriptor.archiveBytes &&
-      registered.sourceVersionId !== null &&
-      registered.sourceVersionId === registered.selectedSourceVersionId
+      registered.skillContentBundleSourceVersionId !== null
     ) {
       return {
-        contentBundle: registered.contentBundle,
-        sourceVersionId: registered.sourceVersionId,
+        contentBundle: registered.skillContentBundle,
+        sourceVersionId: registered.skillContentBundleSourceVersionId,
       };
     }
     const contentBundle = await set(publishContentBundle$, files, signal);
-    // Keep both captured-source fields equal for the serving claim reader.
     // New publications derive that identity from the canonical bundle bytes;
     // it no longer names a generic Storage version. Historical IDs stay intact.
     return { contentBundle, sourceVersionId: contentBundle.sha256 };
