@@ -179,7 +179,6 @@ export const deleteChatThread$ = command(
         id: eventId,
         kind: "deleted",
         chatThreadId: threadId,
-        agentId: existingThread.agentId,
       });
     }
 
@@ -247,7 +246,6 @@ export const setChatThreadPinned$ = command(
         pinOrder,
         kind: pinned ? "pinned" : "unpinned",
         chatThreadId: threadId,
-        agentId: existingThread.agentId,
       });
     }
     // Render every click immediately, but preserve the order of header saves.
@@ -315,7 +313,6 @@ export const setChatThreadArchived$ = command(
         id: eventId,
         kind: archived ? "archived" : "unarchived",
         chatThreadId: threadId,
-        agentId: existingThread.agentId,
       });
     }
     const client = get(apiClient$)(chatThreadArchiveContract);
@@ -351,7 +348,6 @@ export const setChatThreadMuted$ = command(
         id: eventId,
         kind: "sort_touched",
         chatThreadId: threadId,
-        agentId: thread.agentId,
         muted,
         createdAt: thread.sortAt,
       });
