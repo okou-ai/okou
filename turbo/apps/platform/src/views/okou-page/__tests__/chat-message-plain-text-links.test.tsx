@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
   queryAllByRoleFast,
@@ -80,3 +80,20 @@ test.each([
     expect(queryAllByRoleFast("link", message)).toHaveLength(0);
   },
 );
+
+test("A long URL typed into chat keeps its full link target", async () => {
+  const destination = "https://example.com/search?q=" + "x".repeat(100);
+  installRunChat();
+  await setupPage({ context, path: RUN_PATH });
+  await sendText(destination);
+  await waitFor(() => {
+    const link = queryAllByRoleFast("link").find((candidate) => {
+      return (
+        candidate.closest('[data-role="user"]') &&
+        candidate.getAttribute("href") === destination
+      );
+    });
+    expect(link).toBeVisible();
+    expect(link?.textContent).toBe(destination.slice(0, 77) + "...");
+  });
+});

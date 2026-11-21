@@ -1,8 +1,7 @@
 import type { ReactNode } from "react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { useLastResolved, useGet, useSet, useLoadable } from "ccstate-react";
+import { useGet, useSet, useLoadable } from "ccstate-react";
 import { Button, Input, Popover, PopoverContent } from "@okouai/ui";
 import {
   Drawer,
@@ -38,7 +37,6 @@ import {
   type ProjectDialog,
 } from "../../signals/projects/project-ui.ts";
 import { eventDrivenChatThreads$ } from "../../signals/chat-page/chat-thread-event-sourcing.ts";
-import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import {
   projectDeletionThreads$,
   initializeProjectDeletion$,
@@ -397,8 +395,6 @@ function ProjectDeleteChoices({
   const threads = useLoadable(projectDeletionThreads$);
   const confirmThreads = useSet(confirmProjectThreadDeletion$);
   const refresh = useSet(refreshProjectDeletion$);
-  const features = useLastResolved(featureSwitches$);
-  const enabled = features?.[FeatureSwitchKey.ProjectThreadDeletion] ?? false;
   const signal = useGet(pageSignal$);
   return (
     <>
@@ -408,29 +404,28 @@ function ProjectDeleteChoices({
             return $.projects.deleteProjectOnly;
           })}
         </Button>
-        {enabled &&
-          (threads.state !== "hasData" || threads.data.length > 0) && (
-            <Button
-              variant="outline"
-              disabled={pending || threads.state !== "hasData"}
-              onClick={() => {
-                detach(confirmThreads(signal), Reason.DomCallback);
-              }}
-            >
-              {threads.state === "hasData"
-                ? t(
-                    ($) => {
-                      return $.projects.deleteProjectAndThreads;
-                    },
-                    { count: threads.data.length },
-                  )
-                : t(($) => {
-                    return $.projects.loadingThreads;
-                  })}
-            </Button>
-          )}
+        {(threads.state !== "hasData" || threads.data.length > 0) && (
+          <Button
+            variant="outline"
+            disabled={pending || threads.state !== "hasData"}
+            onClick={() => {
+              detach(confirmThreads(signal), Reason.DomCallback);
+            }}
+          >
+            {threads.state === "hasData"
+              ? t(
+                  ($) => {
+                    return $.projects.deleteProjectAndThreads;
+                  },
+                  { count: threads.data.length },
+                )
+              : t(($) => {
+                  return $.projects.loadingThreads;
+                })}
+          </Button>
+        )}
       </div>
-      {enabled && threads.state === "hasError" && (
+      {threads.state === "hasError" && (
         <div
           role="alert"
           className="flex flex-col gap-2 text-sm text-destructive"
@@ -560,8 +555,6 @@ function DeleteProjectDialog({
   const confirmation = useGet(projectDeletionConfirmation$);
   const initialize = useSet(initializeProjectDeletion$);
   const back = useSet(backFromProjectThreadDeletion$);
-  const features = useLastResolved(featureSwitches$);
-  const enabled = features?.[FeatureSwitchKey.ProjectThreadDeletion] ?? false;
   const signal = useGet(pageSignal$);
   const pending =
     deletion.state === "loading" || threadDeletion.state === "loading";
@@ -589,13 +582,9 @@ function DeleteProjectDialog({
             })}
           </DialogTitle>
           <DialogDescription>
-            {enabled
-              ? t(($) => {
-                  return $.projects.deleteChoiceDescription;
-                })
-              : t(($) => {
-                  return $.projects.deleteDescription;
-                })}
+            {t(($) => {
+              return $.projects.deleteChoiceDescription;
+            })}
           </DialogDescription>
         </DialogHeader>
         <ProjectDeleteChoices

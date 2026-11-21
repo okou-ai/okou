@@ -97,3 +97,15 @@ test("markdown-content-006 the image loads alongside separate media links", asyn
   expect(getAction("link", "Watch clip")).toHaveAttribute("href", clip);
   expect(getAction("link", "Poster file")).toHaveAttribute("href", poster);
 });
+
+test("Long bare URLs show a short label and retain their destination", async () => {
+  const short = "https://example.com/".padEnd(80, "a");
+  const long = short + "?callback=" + "b".repeat(200);
+  const name = "Read the full document";
+  await read([short, long, `[${name}](${long})`].join("\n\n"));
+
+  const clipped = await findAction("link", long.slice(0, 77) + "...");
+  expect(clipped).toHaveAttribute("href", long);
+  expect(getAction("link", short)).toHaveAttribute("href", short);
+  expect(getAction("link", name)).toHaveAttribute("href", long);
+});

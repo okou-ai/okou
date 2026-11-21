@@ -2440,3 +2440,9 @@ The targeted run and complete three-file run each passed 30 rows. Seed 63017 pas
 Post-write review covered the frozen revision, both pre-withdrawal trees, the opening PR, main and current helpers. The source comparison covered 2,373 revision/path pairs and 355 other current files. The longest normalized overlap is eight lines in the concurrency preview fixture, comprising the typed local response required for the frozen prices and the next contract registration. The iOS link necessarily opens Settings on Billing. The new case supplies an iPhone browser and signed-in workspace, and the purchased-credit case navigates from Billing into Credit balance before the pointer identifies its segment. The new helper contains local service data, Router setup and action queries. The case bodies own their interactions and outcomes.
 
 App type checks, changed-source ESLint, Oxlint, type-aware Oxlint, build-config checks and formatting were verified for this batch.
+
+### Batch 63 late main changes
+
+Main #49870 added two App registrations. They keep their upstream titles and use the independent page fixtures on this branch. The typed chat URL shows the abbreviated label with its complete destination. Markdown checks the 80-character boundary, an abbreviated longer address, and a named link to the same destination. These are separate upstream rows with zero frozen credit. The open chat-session-output-stream BDD retains the original requirements for live cards and signed destinations. Main #49871 makes project deletion generally available. Its existing upstream-only scenarios remain in the 68-item pending ledger.
+
+Following these main changes, seed 63070 passed 114 rows across 21 files, including the same 30 billing IDs and the two new upstream rows.
