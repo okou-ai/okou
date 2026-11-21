@@ -41,7 +41,13 @@ data class CachedChats(
 
 data class CachedProjects(val checkpoint: ProjectCheckpoint, val confirmedAt: Long)
 
-data class CachedHistory(val checkpoint: HistoryCheckpoint, val confirmedAt: Long)
+internal class HistoryCacheRevision
+
+internal data class CachedHistory(
+    val checkpoint: HistoryCheckpoint,
+    val confirmedAt: Long,
+    val cacheRevision: HistoryCacheRevision? = null,
+)
 
 @Serializable data class CachedUnread(val confirmedAt: Long, val unreadAt: Map<String, String>)
 
@@ -123,6 +129,8 @@ internal constructor(
         private var rebuild = false
         private var rebuildProjects = false
         private val rebuildHistories = hashSetOf<String>()
+        // Replacing a cached prefix can change its rows without advancing the cursor.
+        private var historyRevision = HistoryCacheRevision()
         private val unreadFile = AtomicFile(directory.resolve("$key-unread.json"))
 
         private fun current() = !retired && active.get() === this && authorized()
@@ -183,15 +191,9 @@ internal constructor(
                 }
             }
 
-        suspend fun loadHistory(threadId: String): CachedHistory? = readHistory(threadId)
-
-        /** A matching persisted cursor identifies the already decoded canonical history. */
-        internal suspend fun loadHistoryAfterSync(checkpoint: HistoryCheckpoint): CachedHistory? =
-            readHistory(checkpoint.threadId, checkpoint)
-
-        private suspend fun readHistory(
+        internal suspend fun loadHistory(
             threadId: String,
-            candidate: HistoryCheckpoint? = null,
+            committed: CachedHistory? = null,
         ): CachedHistory? =
             withContext(dispatcher) {
                 lock.withLock {
@@ -209,26 +211,31 @@ internal constructor(
                                         stored.eventVersion == ApiHeaders.CHAT_EVENT_SCHEMA_VERSION
                                 )
                                 val cursor = HistoryCursor(stored.eventId, stored.seqId)
-                                val checkpoint =
-                                    if (candidate != null && candidate.cursor == cursor) {
-                                        if (candidate.replaced) candidate.copy(replaced = false)
-                                        else candidate
-                                    } else {
-                                        val rows =
-                                            dao.historyEvents(key, threadId).map { entry ->
-                                                HistoryEvent.decode(entry.payload).also {
-                                                    requireChatWire(
-                                                        it.id == entry.id && it.seqId == entry.seqId
-                                                    )
-                                                }
-                                            }
-                                        HistoryCheckpoint(threadId, rows, cursor).also {
-                                            it.validate()
-                                        }
+                                val reusable =
+                                    committed?.checkpoint?.takeIf {
+                                        committed.cacheRevision === historyRevision &&
+                                            it.threadId == threadId &&
+                                            it.cursor == cursor
                                     }
+                                val checkpoint =
+                                    reusable
+                                        ?: run {
+                                            val rows =
+                                                dao.historyEvents(key, threadId).map { entry ->
+                                                    HistoryEvent.decode(entry.payload).also {
+                                                        requireChatWire(
+                                                            it.id == entry.id &&
+                                                                it.seqId == entry.seqId
+                                                        )
+                                                    }
+                                                }
+                                            HistoryCheckpoint(threadId, rows, cursor).also {
+                                                it.validate()
+                                            }
+                                        }
                                 currentCoroutineContext().ensureActive()
                                 checkCurrent()
-                                CachedHistory(checkpoint, stored.confirmedAt)
+                                CachedHistory(checkpoint, stored.confirmedAt, historyRevision)
                             }
                         }
                     } catch (cancelled: CancellationException) {
@@ -240,18 +247,23 @@ internal constructor(
                 }
             }
 
-        suspend fun saveHistory(checkpoint: HistoryCheckpoint, confirmedAt: Long) =
-            writeHistory(checkpoint, confirmedAt) { true }
+        /** Returns the decoded rows when this commit is known to contain the whole checkpoint. */
+        internal suspend fun saveHistory(
+            checkpoint: HistoryCheckpoint,
+            confirmedAt: Long,
+            baseline: CachedHistory? = null,
+        ): CachedHistory? = writeHistory(checkpoint, confirmedAt, baseline) { true }
 
         suspend fun saveWarmedHistory(
             checkpoint: HistoryCheckpoint,
             confirmedAt: Long,
             expected: HistoryCursor?,
             selected: () -> String?,
-        ) =
+        ) {
             writeHistory(checkpoint, confirmedAt) { stored ->
                 selected() != checkpoint.threadId && usableHistoryCursor(stored) == expected
             }
+        }
 
         private fun usableHistoryCursor(stored: HistoryScopeRecord?): HistoryCursor? {
             if (
@@ -294,15 +306,22 @@ internal constructor(
             withContext(dispatcher) {
                 require(confirmedAt > 0)
                 val written = hashSetOf<String>()
+                var replacesPrefix = false
                 persist(
                     clear = { dao -> written.forEach { dao.deleteHistory(key, it) } },
-                    saved = { rebuildHistories.removeAll(written) },
+                    saved = {
+                        if (replacesPrefix) historyRevision = HistoryCacheRevision()
+                        rebuildHistories.removeAll(written)
+                    },
                 ) { dao ->
                     for ((threadId, rows) in events) {
                         if (rows.isEmpty() || selected() == threadId) continue
                         val stored = dao.historyScope(key, threadId)
                         if (usableHistoryCursor(stored) != expected[threadId]) continue
-                        if (expected[threadId] == null) dao.clearHistoryEvents(key, threadId)
+                        if (expected[threadId] == null) {
+                            if (stored != null) replacesPrefix = true
+                            dao.clearHistoryEvents(key, threadId)
+                        }
                         val last = rows.last()
                         dao.putHistoryScope(
                             HistoryScopeRecord(
@@ -330,38 +349,33 @@ internal constructor(
             threadId: String,
             expected: HistoryCursor?,
             selected: () -> String?,
-        ): Unit =
-            withContext(dispatcher) {
-                var removed = false
-                persist(
-                    clear = { it.deleteHistory(key, threadId) },
-                    saved = { if (removed) rebuildHistories.remove(threadId) },
-                ) { dao ->
-                    if (
-                        selected() == threadId ||
-                            usableHistoryCursor(dao.historyScope(key, threadId)) != expected
-                    )
-                        return@persist false
-                    dao.deleteHistory(key, threadId)
-                    removed = true
-                    true
-                }
+        ) =
+            removeHistory(threadId) { dao ->
+                selected() != threadId &&
+                    usableHistoryCursor(dao.historyScope(key, threadId)) == expected
             }
 
         private suspend fun writeHistory(
             checkpoint: HistoryCheckpoint,
             confirmedAt: Long,
+            baseline: CachedHistory? = null,
             accepts: (HistoryScopeRecord?) -> Boolean,
-        ): Unit =
+        ): CachedHistory? =
             withContext(dispatcher) {
                 checkpoint.validate()
                 require(confirmedAt > 0)
-                var written = false
+                val threadId = checkpoint.threadId
+                var replacesPrefix = false
+                var canReuseRows = false
+                var committedRevision: HistoryCacheRevision? = null
                 persist(
-                    clear = { it.deleteHistory(key, checkpoint.threadId) },
-                    saved = { if (written) rebuildHistories.remove(checkpoint.threadId) },
+                    clear = { it.deleteHistory(key, threadId) },
+                    saved = {
+                        if (replacesPrefix) historyRevision = HistoryCacheRevision()
+                        rebuildHistories.remove(threadId)
+                        if (canReuseRows) committedRevision = historyRevision
+                    },
                 ) { dao ->
-                    val threadId = checkpoint.threadId
                     val stored = dao.historyScope(key, threadId)
                     if (!accepts(stored)) return@persist false
                     val replacement =
@@ -372,7 +386,18 @@ internal constructor(
                     if (!replacement && stored.seqId > checkpoint.cursor.seqId) return@persist false
                     if (!replacement && stored.seqId == checkpoint.cursor.seqId)
                         requireChatWire(stored.eventId == checkpoint.cursor.eventId)
-                    if (replacement) dao.clearHistoryEvents(key, threadId)
+                    if (replacement) {
+                        replacesPrefix = stored != null
+                        dao.clearHistoryEvents(key, threadId)
+                    }
+                    // Room can already contain rows absent from the network baseline.
+                    canReuseRows =
+                        replacement ||
+                            (baseline != null &&
+                                baseline.cacheRevision === historyRevision &&
+                                baseline.checkpoint.threadId == threadId &&
+                                baseline.checkpoint.cursor.seqId == stored.seqId &&
+                                baseline.checkpoint.cursor.eventId == stored.eventId)
                     dao.putHistoryScope(
                         HistoryScopeRecord(
                             key,
@@ -391,17 +416,30 @@ internal constructor(
                                 HistoryEventRecord(key, threadId, it.id, it.seqId, it.archiveJson())
                             }
                     )
-                    written = true
                     true
+                }
+                committedRevision?.let {
+                    val persisted =
+                        if (checkpoint.replaced) checkpoint.copy(replaced = false) else checkpoint
+                    CachedHistory(persisted, confirmedAt, it)
                 }
             }
 
-        suspend fun deleteHistory(threadId: String): Unit =
+        suspend fun deleteHistory(threadId: String) = removeHistory(threadId) { true }
+
+        private suspend fun removeHistory(
+            threadId: String,
+            accepts: suspend (ChatCacheDao) -> Boolean,
+        ): Unit =
             withContext(dispatcher) {
                 persist(
                     clear = { it.deleteHistory(key, threadId) },
-                    saved = { rebuildHistories.remove(threadId) },
+                    saved = {
+                        historyRevision = HistoryCacheRevision()
+                        rebuildHistories.remove(threadId)
+                    },
                 ) { dao ->
+                    if (!accepts(dao)) return@persist false
                     dao.deleteHistory(key, threadId)
                     true
                 }
@@ -647,7 +685,7 @@ internal constructor(
                             }
                         }
                         committed = true
-                        saved()
+                        if (writing) saved()
                     } finally {
                         if (writing && committed && !current()) clear(db.chats())
                     }
