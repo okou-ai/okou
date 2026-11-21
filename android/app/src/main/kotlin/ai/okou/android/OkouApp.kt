@@ -11,6 +11,7 @@ import ai.okou.android.chat.ChatListScreen
 import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.ChatRowAction
+import ai.okou.android.chat.ChatRowUndo
 import ai.okou.android.chat.ChatTitleSearch
 import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.ConfirmedChat
@@ -58,6 +59,7 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.SnackbarVisuals
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -207,10 +209,8 @@ internal fun OkouApp(
             val label = stringResource(R.string.chat_undo)
             LaunchedEffect(chats, undo, message, label) {
                 snackbar.currentSnackbarData?.dismiss()
-                when (snackbar.showSnackbar(message, label, withDismissAction = true)) {
-                    SnackbarResult.ActionPerformed -> chats?.undoRowAction(undo)
-                    SnackbarResult.Dismissed -> chats?.dismissRowUndo(undo)
-                }
+                snackbar.showSnackbar(ChatUndoSnackbar(undo, message, label))
+                chats?.dismissRowUndo(undo)
             }
         }
     list.failedRowAction
@@ -594,6 +594,11 @@ internal fun OkouApp(
                                             snackbar,
                                             Modifier.padding(horizontal = 16.dp)
                                                 .testTag("chat_list_feedback"),
+                                            undoEnabled = { undo ->
+                                                list.rowUndo === undo &&
+                                                    undo.threadId !in list.pendingRowActions
+                                            },
+                                            onUndo = { chats?.undoRowAction(it) },
                                         )
                                     },
                                 )
@@ -723,8 +728,22 @@ internal fun OkouApp(
     }
 }
 
+private data class ChatUndoSnackbar(
+    val undo: ChatRowUndo,
+    override val message: String,
+    override val actionLabel: String,
+) : SnackbarVisuals {
+    override val withDismissAction = true
+    override val duration = SnackbarDuration.Indefinite
+}
+
 @Composable
-private fun WorkspaceFeedbackHost(state: SnackbarHostState, modifier: Modifier) {
+private fun WorkspaceFeedbackHost(
+    state: SnackbarHostState,
+    modifier: Modifier,
+    undoEnabled: (ChatRowUndo) -> Boolean = { false },
+    onUndo: (ChatRowUndo) -> Unit = {},
+) {
     val accessibility = LocalAccessibilityManager.current
     val current = state.currentSnackbarData
     LaunchedEffect(current, accessibility) {
@@ -763,8 +782,10 @@ private fun WorkspaceFeedbackHost(state: SnackbarHostState, modifier: Modifier) 
                         ),
                 )
                 if (action != null) {
+                    val undo = (data.visuals as? ChatUndoSnackbar)?.undo
                     TextButton(
-                        onClick = data::performAction,
+                        onClick = { if (undo == null) data.performAction() else onUndo(undo) },
+                        enabled = undo == null || undoEnabled(undo),
                         colors =
                             ButtonDefaults.textButtonColors(
                                 contentColor =
