@@ -24,10 +24,7 @@ BEGIN
   SELECT thread.id INTO authorized_id
   FROM public.chat_threads AS thread
   WHERE thread.id = p_thread_id AND thread.user_id = p_user_id
-    AND EXISTS (
-      SELECT agent.id FROM public.agents AS agent
-      WHERE agent.id = thread.agent_id AND agent.org_id = p_org_id
-    );
+    AND thread.org_id = p_org_id;
   IF NOT FOUND THEN
     RETURN jsonb_build_object('deleted', false, 'activeRuns', '[]'::jsonb,
       'disabledAutomations', '[]'::jsonb);
@@ -39,15 +36,12 @@ BEGIN
   PERFORM sequence.chat_thread_id FROM public.chat_event_sequences AS sequence
   WHERE sequence.chat_thread_id = p_thread_id FOR UPDATE;
 
-  SELECT thread.id, thread.agent_id INTO owned_thread
+  SELECT thread.id INTO owned_thread
   FROM public.chat_threads AS thread
   WHERE thread.id = p_thread_id AND thread.user_id = p_user_id
-    AND EXISTS (
-      SELECT agent.id FROM public.agents AS agent
-      WHERE agent.id = thread.agent_id AND agent.org_id = p_org_id
-    )
+    AND thread.org_id = p_org_id
   FOR UPDATE;
-  IF NOT FOUND OR owned_thread.agent_id IS NULL THEN
+  IF NOT FOUND THEN
     RETURN jsonb_build_object('deleted', false, 'activeRuns', '[]'::jsonb,
       'disabledAutomations', '[]'::jsonb);
   END IF;
@@ -111,14 +105,13 @@ BEGIN
       RETURNING last_seq_id
     )
     INSERT INTO public.chat_thread_events (
-      id, user_id, org_id, seq_id, chat_thread_id, kind, agent_id,
-      title, pin_order, muted, hidden, selected_model,
+      id, user_id, org_id, seq_id, chat_thread_id, kind, title, pin_order, muted, hidden, selected_model,
       model_settings, model_settings_patch, service_tier, computer_use_host_id,
       cloud_browser_enabled, created_at
     )
     SELECT COALESCE(p_event_id, gen_random_uuid()::text)::uuid,
       p_user_id, p_org_id, reserved.last_seq_id, owned_thread.id,
-      'deleted'::public.chat_thread_event_kind, owned_thread.agent_id,
+      'deleted'::public.chat_thread_event_kind,
       NULL, NULL, NULL, NULL, NULL,
       NULL::jsonb, NULL::jsonb, NULL, NULL::uuid,
       false, timezone('UTC', now())

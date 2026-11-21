@@ -29,7 +29,7 @@ const {
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 describe("batched identity preload through chat entry", () => {
-  it("preserves missing-Agent rejection with no metadata or plan and settles the empty preload", async () => {
+  it("accepts member chat input without Agent metadata and settles the empty preload", async () => {
     const actor = bdd.user();
     const result = await chat.requestSendEvent(
       actor,
@@ -38,11 +38,9 @@ describe("batched identity preload through chat entry", () => {
         model: "claude-fable-5-1",
         prompt: "missing organization snapshots",
       },
-      [404],
+      [201],
     );
-    expect(result.body).toMatchObject({
-      error: { code: "NOT_FOUND", message: "Agent not found" },
-    });
+    expect(result.body).toMatchObject({ threadId: expect.any(String) });
     await expect(flushWaitUntilForTest()).resolves.toBeUndefined();
   });
 

@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 import { mkdtempSync, rmSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,7 +24,6 @@ import { listCommand } from "../list";
 import { RUN_CONNECTOR_ACCOUNT_CONTEXT_MAX_BYTES } from "../run-account-context";
 import { statusCommand } from "../status";
 
-const AGENT_ID = "550e8400-e29b-41d4-a716-446655440000";
 const PINNED_CONNECTION_ID = "11111111-1111-4111-8111-111111111111";
 const DELETED_CONNECTION_ID = "22222222-2222-4222-8222-222222222222";
 
@@ -86,8 +86,8 @@ describe("run connector account inspection", () => {
     contextPath = join(directory, "context.json");
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
-    vi.stubEnv("OKOU_TOKEN", "test-token");
-    vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken(["connector:read"]));
+    vi.stubEnv("OKOU_AGENT_ID", undefined);
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
     listCommand.setOptionValue("json", false);
     statusCommand.setOptionValue("json", false);

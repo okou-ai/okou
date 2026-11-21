@@ -5,7 +5,6 @@ import {
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
-import { agents } from "@okouai/db/schema/agent";
 import { agentphoneGroupMessageReceipts } from "@okouai/db/schema/agentphone-group-message-receipt";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-message-visibility";
@@ -62,7 +61,6 @@ import {
   isValidAgentPhoneHandle,
   normalizeAgentPhoneHandle,
   resolveAgentPhoneConversationVisibilityRecipients$,
-  resolveOrgDefaultComposeId$,
   storeOutboundAgentPhoneMessage$,
   type AgentPhoneChannel,
   type AgentPhoneUserLink,
@@ -137,13 +135,6 @@ export interface AgentPhoneMessageEvent {
   readonly mediaUrl: string | null;
   readonly receivedAt: Date | null;
   readonly recentHistory: readonly AgentPhoneRecentHistoryMessage[];
-}
-
-interface WorkspaceAgent {
-  readonly composeId: string;
-  readonly agentId: string;
-  readonly name: string;
-  readonly displayName: string | null;
 }
 
 function isAgentPhoneGroupEvent(event: AgentPhoneMessageEvent): boolean {
@@ -476,44 +467,6 @@ export const storeInboundAgentPhoneMessage$ = command(
       inserted: result.inserted,
       dispatch: result.inserted,
     };
-  },
-);
-
-const resolveAgentPhoneAgent$ = command(
-  async (
-    { get, set },
-    userLink: AgentPhoneUserLink,
-  ): Promise<WorkspaceAgent | undefined> => {
-    const db = get(db$);
-    const composeId = await set(resolveOrgDefaultComposeId$, userLink.orgId);
-    if (!composeId) {
-      return undefined;
-    }
-
-    return (
-      (await (async (): Promise<WorkspaceAgent | null> => {
-        const [row] = await db
-          .select({
-            composeId: agents.id,
-            name: agents.name,
-            displayName: agents.displayName,
-          })
-          .from(agents)
-          .where(eq(agents.id, composeId))
-          .limit(1);
-
-        if (!row) {
-          return null;
-        }
-
-        return {
-          composeId: row.composeId,
-          agentId: row.composeId,
-          name: row.name,
-          displayName: row.displayName,
-        };
-      })()) ?? undefined
-    );
   },
 );
 
@@ -1365,7 +1318,6 @@ const persistAgentPhoneChatMessage$ = command(
     { set },
     args: {
       readonly userLink: AgentPhoneUserLink;
-      readonly agent: WorkspaceAgent;
       readonly event: AgentPhoneMessageEvent;
       readonly rootMessageId: string;
       readonly prompt: string;
@@ -1393,7 +1345,6 @@ const persistAgentPhoneChatMessage$ = command(
         conversationId: args.event.conversationId,
         userId: args.userLink.userId,
         orgId: args.userLink.orgId,
-        agentId: args.agent.composeId,
         currentTime,
       },
       signal,
@@ -1504,7 +1455,6 @@ const runAgentForAgentPhone$ = command(
     { set },
     args: {
       readonly userLink: AgentPhoneUserLink;
-      readonly agent: WorkspaceAgent;
       readonly event: AgentPhoneMessageEvent;
       readonly rootMessageId: string;
       readonly prompt: string;
@@ -1665,18 +1615,6 @@ export const handleAgentPhoneMessage$ = command(
       );
     }
 
-    const agent = await set(resolveAgentPhoneAgent$, userLink);
-    signal.throwIfAborted();
-    if (!agent) {
-      await set(
-        sendAgentPhoneText$,
-        params.event,
-        `The workspace default agent is not configured. Please choose an agent in ${BRAND_PRESENTATION.brandName} first.`,
-        signal,
-      );
-      return;
-    }
-
     const isGroup = isAgentPhoneGroupEvent(params.event);
     const rootMessageId = await set(
       agentPhoneChatRouteRootMessageId$,
@@ -1717,7 +1655,6 @@ export const handleAgentPhoneMessage$ = command(
       runAgentForAgentPhone$,
       {
         userLink,
-        agent,
         rootMessageId,
         prompt,
         threadContext: executionContext,

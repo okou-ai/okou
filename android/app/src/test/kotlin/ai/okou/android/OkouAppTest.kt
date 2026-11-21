@@ -31,7 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.InputModeManager
-import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
@@ -55,12 +54,10 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
-import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.Density
@@ -557,26 +554,10 @@ class OkouAppTest {
         val editorHeight = bounds.bottom - bounds.top
         assertTrue(editorHeight > 48.dp && editorHeight < 156.dp)
         val send =
-            compose.onNodeWithContentDescription("Send").assertIsDisplayed().assertIsNotEnabled()
+            compose.onNodeWithContentDescription("Send").assertIsDisplayed().assertIsEnabled()
         send.assertHeightIsEqualTo(48.dp)
         val visible = send.fetchSemanticsNode().boundsInRoot
         assertEquals(48 * density, visible.height, 0.5f)
-
-        val retry = compose.onNodeWithText("Try again").assertIsEnabled()
-        val beforeFocus = retry.fetchSemanticsNode()
-        assertTrue(beforeFocus.boundsInRoot.height < beforeFocus.size.height)
-        input.performKeyInput {
-            keyDown(Key.ShiftLeft)
-            pressKey(Key.Tab)
-            keyUp(Key.ShiftLeft)
-        }
-        val afterFocus = retry.assertIsFocused().assertIsDisplayed().fetchSemanticsNode()
-        assertEquals(afterFocus.size.height.toFloat(), afterFocus.boundsInRoot.height, 0.5f)
-        input.performSemanticsAction(SemanticsActions.RequestFocus)
-        val recovery = retry.performScrollTo().assertIsDisplayed().fetchSemanticsNode()
-        assertEquals(recovery.size.height.toFloat(), recovery.boundsInRoot.height, 0.5f)
-        send.performScrollTo().assertIsDisplayed()
-        assertEquals(48 * density, send.fetchSemanticsNode().boundsInRoot.height, 0.5f)
         assertEquals(
             draft,
             input
@@ -585,6 +566,10 @@ class OkouAppTest {
                 .config[SemanticsProperties.EditableText]
                 .text,
         )
+        // The fixture rejects thread creation, leaving the original command available to retry.
+        send.performClick()
+        val retry = compose.onNodeWithText("Retry this same message")
+        retry.performScrollTo().assertIsDisplayed().assertIsEnabled()
     }
 
     @Test

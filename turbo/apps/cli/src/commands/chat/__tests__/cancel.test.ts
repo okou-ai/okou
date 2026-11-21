@@ -51,8 +51,8 @@ describe("okou chat cancel command", () => {
       http.post(SEND_URL, async ({ request }) => {
         const body = (await request.json()) as Record<string, unknown>;
         controlEventId = String(body.clientEventId);
+        expect(body).not.toHaveProperty("agentId");
         expect(body).toStrictEqual({
-          agentId: AGENT_ID,
           threadId: THREAD_ID,
           interruptsRunId: RUN_ID,
           clientEventId: controlEventId,
@@ -91,8 +91,8 @@ describe("okou chat cancel command", () => {
     server.use(
       http.post(SEND_URL, async ({ request }) => {
         const body = (await request.json()) as Record<string, unknown>;
+        expect(body).not.toHaveProperty("agentId");
         expect(body).toMatchObject({
-          agentId: AGENT_ID,
           threadId: THREAD_ID,
           revokesEventId: EVENT_ID,
         });

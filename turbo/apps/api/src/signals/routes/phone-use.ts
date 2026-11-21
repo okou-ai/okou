@@ -29,7 +29,6 @@ import {
   phoneUseOperations as operations,
 } from "@okouai/db/schema/phone-use";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import type { AuthContext } from "../../types/auth";
 
@@ -512,9 +511,11 @@ const chats$ = command(async ({ get }, signal: AbortSignal) => {
   const rows = await get(db$)
     .select({ id: chatThreads.id, title: chatThreads.title })
     .from(chatThreads)
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
     .where(
-      and(eq(chatThreads.userId, auth.userId), eq(agents.orgId, auth.orgId)),
+      and(
+        eq(chatThreads.userId, auth.userId),
+        eq(chatThreads.orgId, auth.orgId),
+      ),
     )
     .orderBy(
       desc(
@@ -532,12 +533,11 @@ const ownedThread$ = command(
     const [thread] = await get(db$)
       .select({ id: chatThreads.id })
       .from(chatThreads)
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .where(
         and(
           eq(chatThreads.id, threadId),
           eq(chatThreads.userId, auth.userId),
-          eq(agents.orgId, auth.orgId),
+          eq(chatThreads.orgId, auth.orgId),
         ),
       )
       .limit(1);

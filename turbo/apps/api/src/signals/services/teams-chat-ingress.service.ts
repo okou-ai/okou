@@ -148,10 +148,10 @@ export const ensureTeamsChatThreadRoute$ = command(
         integrationThreadCreatedEventSql(args.orgId, thread, {
           cte: sql`inserted_teams_route AS (${routeInsert.getSQL()}),
             inserted_teams_thread AS (
-              ${threadInsert} RETURNING ${chatThreads.agentId}
+              ${threadInsert} RETURNING ${chatThreads.id}
             )`,
           gate: sql`EXISTS (SELECT 1 FROM inserted_teams_thread)`,
-          agentId: sql`(SELECT agent_id FROM inserted_teams_thread)`,
+
           result: sql`SELECT id, connection_id AS "connectionId",
             conversation_id AS "conversationId", thread_id AS "threadId",
             user_id AS "userId", chat_thread_id AS "chatThreadId"

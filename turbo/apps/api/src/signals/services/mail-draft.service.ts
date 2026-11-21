@@ -19,7 +19,6 @@ import {
 import { connectorAuthMethodHasRequiredScopes } from "@okouai/connectors/connector-auth-method";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agents } from "@okouai/db/schema/agent";
 import { connectors } from "@okouai/db/schema/connector";
 import { mailDrafts } from "@okouai/db/schema/mail-draft";
 import { command } from "ccstate";
@@ -411,7 +410,7 @@ const loadMailConnections$ = command(
 );
 
 interface OwnedMailThreadContext {
-  readonly agentId: string;
+  readonly id: string;
 }
 
 const loadOwnedMailThreadContext$ = command(
@@ -427,15 +426,14 @@ const loadOwnedMailThreadContext$ = command(
     const db = set(writeDb$);
     const [row] = await db
       .select({
-        agentId: agents.id,
+        id: chatThreads.id,
       })
       .from(chatThreads)
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .where(
         and(
           eq(chatThreads.id, args.threadId),
           eq(chatThreads.userId, args.userId),
-          eq(agents.orgId, args.orgId),
+          eq(chatThreads.orgId, args.orgId),
           args.runId === undefined
             ? undefined
             : exists(
@@ -491,12 +489,11 @@ const loadOwnedMailDraft$ = command(
       })
       .from(mailDrafts)
       .innerJoin(chatThreads, eq(chatThreads.id, mailDrafts.chatThreadId))
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .where(
         and(
           eq(mailDrafts.id, args.mailDraftId),
           eq(chatThreads.userId, args.userId),
-          eq(agents.orgId, args.orgId),
+          eq(chatThreads.orgId, args.orgId),
         ),
       )
       .limit(1);
@@ -2160,7 +2157,7 @@ const resolveMailLinkConnection$ = command(
   > => {
     const thread = await set(loadOwnedMailThreadContext$, args);
     signal.throwIfAborted();
-    if (!thread || (args.agentId && thread.agentId !== args.agentId)) {
+    if (!thread) {
       return { kind: "not_found", message: "Chat thread not found" };
     }
     const connectorSlug = args.provider === "gmail" ? "gmail" : "outlook-mail";

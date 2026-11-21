@@ -109,7 +109,7 @@ interface AuthHeaders {
 
 type BddSendEventBody =
   | {
-      readonly agentId: string;
+      readonly agentId?: string;
       readonly prompt: string;
       readonly threadId?: string;
       readonly clientThreadId?: string;
@@ -128,13 +128,13 @@ type BddSendEventBody =
       readonly sourceRunId?: string;
     }
   | {
-      readonly agentId: string;
+      readonly agentId?: string;
       readonly threadId: string;
       readonly revokesEventId: string;
       readonly clientEventId?: string;
     }
   | {
-      readonly agentId: string;
+      readonly agentId?: string;
       readonly threadId: string;
       readonly interruptsRunId: string;
       readonly clientEventId?: string;
@@ -529,7 +529,7 @@ export function createChatFilesBddApi(context: TestContext) {
     async createThread(
       actor: ApiTestUser,
       body: {
-        readonly agentId: string;
+        readonly agentId?: string;
         readonly title?: string;
         readonly clientThreadId?: string;
         readonly eventId?: string;
@@ -541,7 +541,7 @@ export function createChatFilesBddApi(context: TestContext) {
         threadsClient().create({
           headers: authenticate(context, actor),
           body: {
-            agentId: body.agentId,
+            ...(body.agentId === undefined ? {} : { agentId: body.agentId }),
             ...(body.title === undefined ? {} : { title: body.title }),
             ...(body.clientThreadId === undefined
               ? {}
@@ -561,7 +561,7 @@ export function createChatFilesBddApi(context: TestContext) {
     async requestCreateThread(
       actor: ApiTestUser | null,
       body: {
-        readonly agentId: string;
+        readonly agentId?: string;
         readonly title?: string;
         readonly clientThreadId?: string;
         readonly eventId?: string;
@@ -574,7 +574,7 @@ export function createChatFilesBddApi(context: TestContext) {
         threadsClient().create({
           headers: authenticate(context, actor),
           body: {
-            agentId: body.agentId,
+            ...(body.agentId === undefined ? {} : { agentId: body.agentId }),
             ...(body.title === undefined ? {} : { title: body.title }),
             ...(body.clientThreadId === undefined
               ? {}
@@ -646,59 +646,14 @@ export function createChatFilesBddApi(context: TestContext) {
 
     async listThreadUnreads(
       actor: ApiTestUser,
-      agentId: string,
     ): Promise<readonly { threadId: string; unreadAt: string }[]> {
-      const headers = authenticate(context, actor);
-      const indicators = await accept(
-        threadsClient().indicators({ headers }),
+      const { body } = await accept(
+        threadsClient().indicators({ headers: authenticate(context, actor) }),
         [200],
       );
-      if (Object.keys(indicators.body.unreadAt).length === 0) {
-        return [];
-      }
-
-      const snapshot = await accept(
-        threadsClient().snapshot({ headers }),
-        [200],
-      );
-      const chatThreads =
-        "url" in snapshot.body
-          ? chatThreadSnapshotArchiveSchema.parse(
-              await (await fetch(snapshot.body.url)).json(),
-            ).chatThreads
-          : snapshot.body.chatThreads;
-      const agentByThreadId = new Map(
-        chatThreads.map((thread) => {
-          return [thread.id, thread.agentId];
-        }),
-      );
-      let sinceSeqId = snapshot.body.latestSeqId ?? undefined;
-      let hasMore = true;
-      while (hasMore) {
-        const page = await accept(
-          threadsClient().events({
-            headers,
-            query: sinceSeqId === undefined ? {} : { sinceSeqId },
-          }),
-          [200],
-        );
-        for (const event of page.body.events) {
-          if (event.kind === "deleted") {
-            agentByThreadId.delete(event.chatThreadId);
-          } else {
-            agentByThreadId.set(event.chatThreadId, event.agentId);
-          }
-          sinceSeqId = event.seqId;
-        }
-        hasMore = page.body.hasMore;
-      }
-      return Object.entries(indicators.body.unreadAt).flatMap(
-        ([threadId, unreadAt]) => {
-          return agentByThreadId.get(threadId) === agentId
-            ? [{ threadId, unreadAt }]
-            : [];
-        },
-      );
+      return Object.entries(body.unreadAt).map(([threadId, unreadAt]) => {
+        return { threadId, unreadAt };
+      });
     },
 
     async listActiveChatThreadIds(
@@ -1647,7 +1602,9 @@ export function createChatFilesBddApi(context: TestContext) {
               const selectedModel =
                 body.model === undefined ? defaultModel : body.model;
               return {
-                agentId: body.agentId,
+                ...(body.agentId === undefined
+                  ? {}
+                  : { agentId: body.agentId }),
                 prompt: body.prompt,
                 ...(body.threadId === undefined
                   ? {}
@@ -1699,7 +1656,6 @@ export function createChatFilesBddApi(context: TestContext) {
             })()
           : "interruptsRunId" in body
             ? {
-                agentId: body.agentId,
                 threadId: body.threadId,
                 interruptsRunId: body.interruptsRunId,
                 ...(body.clientEventId === undefined
@@ -1707,7 +1663,6 @@ export function createChatFilesBddApi(context: TestContext) {
                   : { clientEventId: body.clientEventId }),
               }
             : {
-                agentId: body.agentId,
                 threadId: body.threadId,
                 revokesEventId: body.revokesEventId,
                 ...(body.clientEventId === undefined

@@ -14,7 +14,7 @@ final class ComposerConnectorResources {
 
   let store = CCState.Store()
   private let service: ChatComposerAccess
-  private let agentID: String
+  private let agentID: String?
   private let threadID: String?
   private let sleep: @Sendable (Duration) async throws -> Void
   private let didLoadConnected: @MainActor ([ChatComposerConnector]) -> Void
@@ -29,7 +29,7 @@ final class ComposerConnectorResources {
   private var closed = false
 
   init(
-    service: ChatComposerAccess, agentID: String, threadID: String?, options: ChatComposerOptions,
+    service: ChatComposerAccess, agentID: String?, threadID: String?, options: ChatComposerOptions,
     sleep: @escaping @Sendable (Duration) async throws -> Void,
     didLoadConnected: @escaping @MainActor ([ChatComposerConnector]) -> Void,
     didLoadRemote: @escaping @MainActor (Remote) -> Void,

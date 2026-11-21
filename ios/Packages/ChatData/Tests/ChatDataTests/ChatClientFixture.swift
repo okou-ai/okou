@@ -14,7 +14,7 @@ let newThread = "10000000-0000-4000-8000-000000000005"
 let fixtureDate = "2026-09-17T10:00:00.000Z"
 
 struct CapturedSend: Decodable, Sendable {
-  let agentId: String
+  let hasAgentId: Bool
   let prompt: String
   let clientEventId: String
   let cloudBrowserEnabled: Bool
@@ -25,7 +25,7 @@ struct CapturedSend: Decodable, Sendable {
   }
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: Keys.self)
-    agentId = try c.decode(String.self, forKey: .agentId)
+    hasAgentId = c.contains(.agentId)
     prompt = try c.decode(String.self, forKey: .prompt)
     clientEventId = try c.decode(String.self, forKey: .clientEventId)
     cloudBrowserEnabled = try c.decode(Bool.self, forKey: .cloudBrowserEnabled)

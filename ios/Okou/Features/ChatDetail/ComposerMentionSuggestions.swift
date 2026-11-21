@@ -8,7 +8,6 @@ struct ComposerMentionSource: Equatable {
   let threads: [ChatThread]
 
   func suggestions(for query: String) -> [ComposerMentionSuggestion] {
-    guard agentID != nil else { return [] }
     let query = query.lowercased()
     // The PWA reducer orders pinned chats first, then activity and ID; it does
     // not apply the sidebar's fractional pin ranking to mention suggestions.

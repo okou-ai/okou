@@ -19,7 +19,6 @@ export const agentphoneDeliveryTargetSchema = object({
   fromNumber: string().min(1),
   toNumber: string().min(1),
   userLinkId: uuid(),
-  agentId: uuid(),
   agentphoneAgentId: string().min(1),
 });
 

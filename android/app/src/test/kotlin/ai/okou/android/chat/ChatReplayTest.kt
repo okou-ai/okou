@@ -255,6 +255,7 @@ class ChatReplayTest {
     @Test
     fun rankingIncludesHiddenAndArchivedPeersButDoesNotCrossListGroups() {
         val outside = replay(event(1, "created"), event(2, "pinned")).single()
+        val otherOutside = outside.copy(id = "other-outside", agentId = CHAT_OTHER_AGENT)
         val member = outside.copy(id = CHAT_IN_PROJECT, projectId = CHAT_PROJECT)
         val hidden = member.copy(id = "hidden", hidden = true, agentId = CHAT_OTHER_AGENT)
         val archived = member.copy(id = "archived", archived = true)
@@ -262,7 +263,7 @@ class ChatReplayTest {
             ConfirmedProject(CHAT_PROJECT, "Research", outside.createdAt, outside.createdAt)
         val state =
             ChatListUiState(
-                threads = listOf(outside, member, hidden, archived),
+                threads = listOf(outside, otherOutside, member, hidden, archived),
                 listPhase = ChatReadPhase.Ready,
                 source = ChatListSource.Network,
                 agents = agents(),
@@ -272,7 +273,8 @@ class ChatReplayTest {
         val (projectGroup, outsideGroup) = chatListGroups(state)
         assertEquals(listOf(member), projectGroup.threads)
         assertEquals(listOf(member, hidden, archived), projectGroup.rankScope(state))
-        assertEquals(listOf(outside), outsideGroup.rankScope(state))
+        assertEquals(listOf(outside, otherOutside), outsideGroup.threads)
+        assertEquals(listOf(outside, otherOutside), outsideGroup.rankScope(state))
         val actions = state.rowActions(member, projectGroup, 0)
         assertTrue(ChatRowAction.Unpin in actions)
         assertFalse(ChatRowAction.MovePinUp in actions)

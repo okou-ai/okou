@@ -67,8 +67,8 @@ BEGIN
           AND account.connector_slug = slug AND account.id <> resolved_id
           AND coalesce(access.enabled, account.default_enabled_for_chats)
           AND EXISTS (
-            SELECT 1 FROM public.chat_threads AS thread JOIN public.agents AS agent ON agent.id = thread.agent_id
-            WHERE thread.id = selection.chat_thread_id AND thread.user_id = member AND agent.org_id = organization
+            SELECT 1 FROM public.chat_threads AS thread
+            WHERE thread.id = selection.chat_thread_id AND thread.user_id = member AND thread.org_id = organization
           )
         ORDER BY account.is_default DESC, account.created_at, account.id LIMIT 1
       ) AS connector_id

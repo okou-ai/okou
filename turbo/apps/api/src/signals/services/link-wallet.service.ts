@@ -1,3 +1,5 @@
+import { organizationAuthContext$ } from "../auth/auth-context";
+import { db$, writeDb$ } from "../external/db";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { WalletChangedPayload } from "@okouai/api-contracts/contracts/realtime";
 
@@ -34,8 +36,6 @@ import { array, object, string, uuid, type infer as zInfer } from "zod";
 
 import { now, nowDate } from "../../lib/time";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import { organizationAuthContext$ } from "../auth/auth-context";
-import { db$, writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import { onRejection } from "../utils";
 import { isLinkApprovalConfigured } from "./link-approval-config.service";
@@ -86,7 +86,6 @@ export interface WalletOwner {
   readonly agentId?: string | null;
 }
 interface WalletRunOwner extends WalletOwner {
-  readonly agentId: string;
   readonly runId?: string;
   readonly chatThreadId?: string | null;
 }
@@ -107,7 +106,6 @@ function spendOwner(owner: WalletRunOwner) {
   return and(
     eq(linkWalletSpends.orgId, owner.orgId),
     eq(linkWalletSpends.userId, owner.userId),
-    eq(linkWalletSpends.agentId, owner.agentId),
   );
 }
 
@@ -124,7 +122,6 @@ export const walletRunOwner$ = computed(
     const db = get(db$);
     const [run] = await db
       .select({
-        agentId: agentRuns.agentId,
         triggerSource: agentRuns.triggerSource,
         chatThreadId: agentRuns.chatThreadId,
         status: agentRuns.status,
@@ -139,11 +136,7 @@ export const walletRunOwner$ = computed(
         ),
       )
       .limit(1);
-    if (
-      !run?.agentId ||
-      run.triggerSource !== "web" ||
-      run.status !== "running"
-    ) {
+    if (!run || run.triggerSource !== "web" || run.status !== "running") {
       throw new LinkWalletError(
         403,
         "WALLET_INTERACTIVE_RUN_REQUIRED",
@@ -153,7 +146,6 @@ export const walletRunOwner$ = computed(
     return {
       orgId: auth.orgId,
       userId: auth.userId,
-      agentId: run.agentId,
       runId: auth.runId,
       chatThreadId: run.chatThreadId,
     };
@@ -1048,7 +1040,6 @@ export const createWalletSpend$ = command(
       .values({
         orgId: owner.orgId,
         userId: owner.userId,
-        agentId: owner.agentId,
         ...input,
         approvalThreadId: autoContinue ? owner.chatThreadId : null,
         approvalRunId: autoContinue ? owner.runId : null,
@@ -1060,7 +1051,6 @@ export const createWalletSpend$ = command(
         target: [
           linkWalletSpends.orgId,
           linkWalletSpends.userId,
-          linkWalletSpends.agentId,
           linkWalletSpends.intentId,
         ],
       })

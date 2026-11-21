@@ -7,7 +7,6 @@ import {
 } from "@okouai/db/schema/email-integration";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 import {
   isFeatureEnabled,
   type FeatureSwitchContext,
@@ -42,7 +41,6 @@ function createEmailQueuedContext(args: EmailQueuedSource) {
         messageText: chatEmailContext.messageText,
         emailMessageId: chatEmailContext.emailMessageId,
         userLinkId: emailUserLinks.id,
-        agentId: agents.id,
         emailAddress: emailUserLinks.emailAddress,
         subject: emailChannelMessages.subject,
         messageId: emailChannelMessages.messageId,
@@ -67,11 +65,8 @@ function createEmailQueuedContext(args: EmailQueuedSource) {
         and(
           eq(chatThreads.id, chatEvents.chatThreadId),
           eq(chatThreads.userId, args.userId),
+          eq(chatThreads.orgId, args.orgId),
         ),
-      )
-      .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
       )
       .innerJoin(
         emailUserLinks,
@@ -100,7 +95,6 @@ function emailDeliveryFromContext(
   return {
     emailMessageId: row.emailMessageId,
     userLinkId: row.userLinkId,
-    agentId: row.agentId,
   };
 }
 
@@ -160,7 +154,6 @@ export function createEmailThreadContext(
         messageText: chatEmailContext.messageText,
         emailMessageId: chatEmailContext.emailMessageId,
         userLinkId: emailUserLinks.id,
-        agentId: agents.id,
         emailAddress: emailUserLinks.emailAddress,
         subject: emailChannelMessages.subject,
         messageId: emailChannelMessages.messageId,
@@ -187,11 +180,8 @@ export function createEmailThreadContext(
         and(
           eq(chatThreads.id, chatEmailContext.chatThreadId),
           eq(chatThreads.userId, event.userId),
+          eq(chatThreads.orgId, orgId),
         ),
-      )
-      .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, orgId)),
       )
       .where(
         and(

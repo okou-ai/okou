@@ -305,7 +305,10 @@ function connectorIdentity(
 }
 
 export function isRunBoundConnectorContext(): boolean {
-  return getOkouAgentId() !== undefined;
+  return (
+    getOkouConnectorAccountContextFile() !== undefined ||
+    getOkouAgentId() !== undefined
+  );
 }
 
 export async function resolveRunConnectorAccountLookups(

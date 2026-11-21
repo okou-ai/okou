@@ -221,15 +221,9 @@ const ensureEmailThread$ = command(
     if (existing) {
       return existing;
     }
-    const agentId = await set(resolveOrgDefaultComposeId$, args.link.orgId);
-    signal.throwIfAborted();
-    if (!agentId) {
-      throw new Error("Workspace default agent is unavailable");
-    }
     const creation = {
       orgId: args.link.orgId,
       userId: args.link.userId,
-      agentId,
       currentTime: nowDate(),
       initialModel: await set(
         resolveDefaultModelFirstPin$,
@@ -266,9 +260,9 @@ const ensureEmailThread$ = command(
     // The route, canonical thread, and created event publish in one statement.
     await db.execute(
       integrationThreadCreatedEventSql(args.link.orgId, thread, {
-        cte: sql`email_route AS (${insertRoute.getSQL()}), email_thread AS (${integrationChatThreadInsertFromRouteSql(thread, insertedRoute)} RETURNING ${chatThreads.agentId})`,
+        cte: sql`email_route AS (${insertRoute.getSQL()}), email_thread AS (${integrationChatThreadInsertFromRouteSql(thread, insertedRoute)} RETURNING ${chatThreads.id})`,
         gate: sql`EXISTS (SELECT 1 FROM email_thread)`,
-        agentId: sql`(SELECT agent_id FROM email_thread)`,
+
         result: sql`SELECT id FROM email_route WHERE EXISTS (SELECT 1 FROM inserted)`,
       }),
     );

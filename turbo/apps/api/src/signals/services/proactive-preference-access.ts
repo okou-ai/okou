@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -33,7 +33,10 @@ export const proactivePreferenceAccess$ = command(
         orgMetadata,
         and(
           eq(orgMetadata.orgId, auth.orgId),
-          eq(orgMetadata.defaultAgentId, agentRuns.agentId),
+          or(
+            isNull(agentRuns.agentId),
+            eq(orgMetadata.defaultAgentId, agentRuns.agentId),
+          ),
         ),
       )
       .where(

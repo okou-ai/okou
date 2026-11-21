@@ -64,25 +64,26 @@ describe("captured My Okou execution guidance", () => {
     });
   });
 
-  it("retains legacy configuration for a non-default executor", async () => {
+  it("uses member Instructions on a thread with a historical non-default binding", async () => {
     const owned = await publicChatActor(context);
     const { actor, agentId } = owned;
     if (!actor.orgId) {
       throw new Error("Expected a workspace member");
     }
     await owned.run(async () => {
+      const thread = await fixture.chat.createThread(actor, { agentId });
       const run = await owned.sendChatRun(actor, {
-        agentId,
+        threadId: thread.id,
         prompt: "Read this retained executor's history",
       });
       const { execution } = await owned.runExecution(run.runId);
-      expect(execution.appendSystemPrompt).toContain(
+      expect(execution.appendSystemPrompt).not.toContain(
         "Exercises the web chat send route.",
       );
-      expect(execution.appendSystemPrompt).toContain(
+      expect(execution.appendSystemPrompt).not.toContain(
         "Agent instructions are team-shared",
       );
-      expect(execution.appendSystemPrompt).not.toContain(
+      expect(execution.appendSystemPrompt).toContain(
         "# Personal Instructions and memory",
       );
     });

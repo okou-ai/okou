@@ -167,7 +167,7 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
         switch kind {
         case "agent":
           valid =
-            present(titleSnapshot) && identity(agentId) && identity(threadId) && identity(runId)
+            present(titleSnapshot) && identity(threadId) && identity(runId)
         case "slack", "discord", "wechat", "feishu", "lark", "teams", "telegram", "github",
           "agentphone", "mcp":
           valid = true

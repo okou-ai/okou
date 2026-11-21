@@ -38,12 +38,6 @@ type BankingAccessResult =
   | { readonly ok: true; readonly access: AuthorizedBankingAccess }
   | { readonly ok: false; readonly response: BankingErrorResponse };
 
-interface BankingRunContext {
-  readonly runId: string;
-  readonly agentId: string;
-  readonly triggerSource: string | null;
-}
-
 interface BankingGrantContext {
   readonly connectionId: string;
   readonly providerCustomerId: string;
@@ -98,7 +92,6 @@ export const recordBankingAudit$ = command(
 function bankingRunColumns() {
   return {
     runId: agentRuns.id,
-    agentId: agentRuns.agentId,
     triggerSource: agentRuns.triggerSource,
   };
 }
@@ -121,11 +114,7 @@ function bankingGrantColumns() {
   };
 }
 
-function bankingGrantPredicate(
-  auth: BankingAuth,
-  agentId: string,
-  nowValue: Date,
-) {
+function bankingGrantPredicate(auth: BankingAuth, nowValue: Date) {
   return and(
     eq(bankingConnections.orgId, auth.orgId),
     eq(bankingConnections.userId, auth.userId),
@@ -142,7 +131,6 @@ function bankingGrantPredicate(
     ),
     eq(bankingAgentEnablements.orgId, auth.orgId),
     eq(bankingAgentEnablements.userId, auth.userId),
-    eq(bankingAgentEnablements.agentId, agentId),
     isNull(bankingAgentEnablements.revokedAt),
     gt(bankingAgentEnablements.expiresAt, nowValue),
   );
@@ -199,14 +187,11 @@ export const authorizeBankingAccess$ = command(
     providerAccountId: string | undefined,
   ): Promise<BankingAccessResult> => {
     const db = get(db$);
-    const [runRow] = await db
+    const [run] = await db
       .select(bankingRunColumns())
       .from(agentRuns)
       .where(bankingRunPredicate(auth))
       .limit(1);
-    const run: BankingRunContext | null = runRow?.agentId
-      ? { ...runRow, agentId: runRow.agentId }
-      : null;
     if (!run) {
       return await set(denyBankingAccess$, auth, action, providerAccountId, {
         failureCode: "RUN_NOT_FOUND",
@@ -215,44 +200,60 @@ export const authorizeBankingAccess$ = command(
     }
 
     const nowValue = nowDate();
-    const [grantRow] = await db
+    const grants = await db
       .select(bankingGrantColumns())
       .from(bankingConnections)
       .innerJoin(
         bankingAgentEnablements,
         eq(bankingAgentEnablements.connectionId, bankingConnections.id),
       )
-      .where(bankingGrantPredicate(auth, run.agentId, nowValue))
-      .limit(1);
-    const grant: BankingGrantContext | null = grantRow ?? null;
-    if (!grant) {
+      .where(bankingGrantPredicate(auth, nowValue));
+    const [connection] = grants;
+    if (!connection) {
       return await set(denyBankingAccess$, auth, action, providerAccountId, {
         failureCode: "NO_ACTIVE_GRANT",
-        message: "Banking is not enabled for this agent",
+        message: "Banking is not enabled for this member",
       });
     }
 
-    if (!grant.operationScopes.includes(action)) {
+    const scoped = grants.filter((row) => {
+      return row.operationScopes.includes(action);
+    });
+    if (scoped.length === 0) {
       return await set(denyBankingAccess$, auth, action, providerAccountId, {
-        connectionId: grant.connectionId,
+        connectionId: connection.connectionId,
         failureCode: "SCOPE_NOT_ALLOWED",
         message: `Banking operation is not enabled: ${action}`,
       });
     }
 
-    if (
-      isUnattendedTriggerSource(run.triggerSource) &&
-      !grant.allowAutomationRuns
-    ) {
+    const eligible = isUnattendedTriggerSource(run.triggerSource)
+      ? scoped.filter((row) => {
+          return row.allowAutomationRuns;
+        })
+      : scoped;
+    if (eligible.length === 0) {
       // Historical audit rows persist the former "SCHEDULE_NOT_ALLOWED" code;
       // nothing filters on the literal, so new denials emit the automation name.
       return await set(denyBankingAccess$, auth, action, providerAccountId, {
-        connectionId: grant.connectionId,
+        connectionId: connection.connectionId,
         failureCode: "AUTOMATION_NOT_ALLOWED",
         message: "Banking is not enabled for automation runs",
       });
     }
 
+    // The provider connection is unique per member. Combine only accounts
+    // from grants that independently permit this action and trigger.
+    const grant = {
+      ...connection,
+      accountProviderIds: [
+        ...new Set(
+          eligible.flatMap((row) => {
+            return row.accountProviderIds;
+          }),
+        ),
+      ],
+    };
     if (
       providerAccountId &&
       !grant.accountProviderIds.includes(providerAccountId)
@@ -260,7 +261,7 @@ export const authorizeBankingAccess$ = command(
       return await set(denyBankingAccess$, auth, action, providerAccountId, {
         connectionId: grant.connectionId,
         failureCode: "ACCOUNT_NOT_ALLOWED",
-        message: "Banking account is not enabled for this agent",
+        message: "Banking account is not enabled for this member",
       });
     }
 

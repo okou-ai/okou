@@ -1108,7 +1108,6 @@ const registerUserMessageRenderPart$ = command(
               type: part.type,
               kind: "agent",
               part,
-              signals: set(agentReferenceSignals.register$, part.agentId),
             }
           : part.kind === "mcp"
             ? { type: part.type, kind: "mcp", part }
@@ -3210,7 +3209,7 @@ function sendRuntimeOptions(
 
 interface SendMessageDeps {
   readonly threadId: string;
-  readonly agentId: string;
+  readonly agentId?: string;
   modelSelectionForSend$: Command<
     Promise<ModelSelectionForSend>,
     [AbortSignal]
@@ -3224,7 +3223,7 @@ interface SendMessageDeps {
 interface ValidatedSendMessageRequest {
   readonly prompt: string;
   readonly options: SendMessageOptions | undefined;
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly modelSelection: ModelSelectionForSend;
 }
 
@@ -3475,7 +3474,7 @@ function createQueueMessage(deps: SendMessageDeps) {
 
 interface RecallMessageDeps {
   readonly threadId: string;
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly queuedEvents$: ChatEventSignals["queuedEvents$"];
   draft: DraftSignals;
   queueDraftSync$: Command<Promise<void>, [AbortSignal]>;
@@ -3590,7 +3589,7 @@ function createInterruptLiveRuns({
   sendEvent$,
 }: {
   readonly threadId: string;
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly liveRunIds$: ChatEventSignals["liveRunIds$"];
   sendEvent$: Command<Promise<void>, [SendChatEventInput, AbortSignal]>;
 }) {
@@ -3665,7 +3664,7 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
 
 interface CreateChatThreadComposerSignalsOptions {
   readonly chatEvents: ChatEventSignals;
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly draft: DraftSignals;
   readonly loadDraft$: Command<Promise<void>, [AbortSignal]>;
   readonly queueDraftSync$: Command<Promise<void>, [AbortSignal]>;
@@ -3686,7 +3685,7 @@ interface ChatThreadComposerContext {
   readonly threadMeta$: Computed<ThreadMeta | null>;
   /** A dialog composer that leaves the thread's saved draft untouched. */
   readonly inPlace?: boolean;
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly cancellationRecoveryPending$: Computed<Promise<boolean>>;
   readonly forward?: ChatForwardContext;
   readonly onOptimisticSend?: (submission: ComposerSubmission) => void;
@@ -3894,7 +3893,7 @@ function createThreadComposerSignalsWithContext(
  */
 export function createThreadComposerSignals(
   threadId: string,
-  agentId: string,
+  agentId: string | undefined,
   chatEvents: ChatEventSignals,
   options: {
     readonly forward?: ChatForwardContext;
@@ -3955,7 +3954,7 @@ const createChatForwardComposerSignals: ChatForwardComposerFactory = (
  */
 export function createInPlaceThreadComposerSignals(
   threadId: string,
-  agentId: string,
+  agentId: string | undefined,
   onOptimisticSend: (submission: ComposerSubmission) => void,
 ) {
   const chatEvents = createChatEventSignals(threadId);
@@ -3998,7 +3997,7 @@ function publicChatThreadScrollSignals(scroll: ChatThreadScrollSignals) {
 
 export function createChatPanelSignals(
   threadId: string,
-  agentId: string,
+  agentId: string | undefined,
   draft: DraftSignals,
   persistence: ThreadDraftPersistence,
 ): ChatPanelSignals {

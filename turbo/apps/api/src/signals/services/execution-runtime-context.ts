@@ -9,8 +9,8 @@ import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { NATIVE_CONTEXT_RECOVERY_PROMPT } from "./chat-session-continuity.service";
 import { dataRouterEnvironment } from "./data-router-environment";
 import {
-  prepareExecutionMemoryMount$,
   type AcceptedMemoryMount,
+  prepareExecutionMemoryMount$,
 } from "./execution-storage.service";
 import type { ExecutionPackageMounts } from "./execution-workflow-selection";
 import type { ModelFirstPin } from "./model-selection.service";
@@ -41,7 +41,6 @@ export type ExecutionContextRun = Pick<
 > & {
   readonly modelProvider: ModelFirstPin["modelProviderType"];
   readonly selectedModel: string;
-  readonly agentId: string;
   readonly chatThreadId: string;
   readonly framework: "claude-code" | "codex" | "pi";
   readonly vars: Record<string, string>;

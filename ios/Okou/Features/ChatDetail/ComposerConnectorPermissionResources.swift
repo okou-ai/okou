@@ -33,7 +33,7 @@ final class ComposerConnectorPermissionResources {
     let duration: String?
   }
 
-  let agentID: String
+  let agentID: String?
   let slug: String
   let label: String
   let store = CCState.Store()
@@ -52,7 +52,7 @@ final class ComposerConnectorPermissionResources {
   private var closed = false
 
   init(
-    composer: ComposerConnectorStore, agentID: String, slug: String, label: String,
+    composer: ComposerConnectorStore, agentID: String?, slug: String, label: String,
     didFail: @escaping @MainActor (Error) -> Void
   ) {
     self.composer = composer

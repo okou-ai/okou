@@ -6827,8 +6827,8 @@ export function registerFeishuIntegrationTests(
         });
         const receivedExecution = await readRunExecution(run.id);
         expect(receivedExecution.prompt).toBe("do the Feishu task");
-        expect(receivedExecution.platformEnvironment.OKOU_AGENT_ID).toBe(
-          defaultAgentId,
+        expect(receivedExecution.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(
+          chatThreadCreated.chatThreadId,
         );
         expect(
           receivedExecution.platformEnvironment.OKOU_CURRENT_INTEGRATION,

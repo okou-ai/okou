@@ -978,9 +978,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       files: [{ id: "F-MATERIALIZED", title: undefined }],
       channel_id: "C123",
       thread_ts: undefined,
-      initial_comment: expect.stringMatching(
-        /^Sent via .+ · Triggered by <@[^>]+>$/u,
-      ),
+      initial_comment: expect.stringMatching(/^Triggered by <@[^>]+>$/u),
     });
     expect(context.mocks.slack.files.info).toHaveBeenCalledTimes(1);
     expect(
@@ -1672,9 +1670,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
             files: [{ id: fileId, title: undefined }],
             channel_id: channel,
             thread_ts: undefined,
-            initial_comment: expect.stringMatching(
-              /^Sent via .+ · Triggered by <@[^>]+>$/u,
-            ),
+            initial_comment: expect.stringMatching(/^Triggered by <@[^>]+>$/u),
           },
         ],
       ]);
@@ -2041,7 +2037,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         channel_id: "C123",
         thread_ts: "123.456",
         initial_comment: expect.stringMatching(
-          /^Uploaded from a run\n\nSent via Computer Use public authorization · Triggered by <@[^>]+>$/u,
+          /^Uploaded from a run\n\nTriggered by <@[^>]+>$/u,
         ),
       });
 
@@ -2124,7 +2120,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           files: [{ id: fileId, title: "Self report" }],
           channel_id: "D-SELF",
           thread_ts: undefined,
-          initial_comment: `Sent via Computer Use public authorization · Triggered by <@${slackUserId}>`,
+          initial_comment: `Triggered by <@${slackUserId}>`,
         });
       });
     },
@@ -2253,7 +2249,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           files: [{ id: "F-SELF", title: undefined }],
           channel_id: "D-SELF",
           thread_ts: undefined,
-          initial_comment: `Sent via Computer Use public authorization · Triggered by <@${slackUserId}>`,
+          initial_comment: `Triggered by <@${slackUserId}>`,
         });
         expect(context.mocks.slack.conversations.open).toHaveBeenCalledTimes(1);
       });

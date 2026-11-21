@@ -488,7 +488,7 @@ data class SaveAgentDraftDraftUserMessagePartsItemVariant8(
     val `kind`: SaveAgentDraftDraftUserMessagePartsItemVariant8Kind,
     val `runId`: String,
     val `threadId`: String,
-    val `agentId`: String,
+    val `agentId`: String? = null,
     val `titleSnapshot`: String,
     val `href`: String,
 ) : SaveAgentDraftDraftUserMessagePartsItem
@@ -1479,7 +1479,6 @@ object SaveAgentDraftDraftUserMessagePartsItemSerializer :
                     } == true &&
                     value.containsKey("runId") &&
                     value.containsKey("threadId") &&
-                    value.containsKey("agentId") &&
                     value.containsKey("titleSnapshot") &&
                     value.containsKey("href")) &&
                     (value["type"].let { field ->
@@ -2139,7 +2138,7 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant8(
     val `kind`: SaveThreadDraftDraftUserMessagePartsItemVariant8Kind,
     val `runId`: String,
     val `threadId`: String,
-    val `agentId`: String,
+    val `agentId`: String? = null,
     val `titleSnapshot`: String,
     val `href`: String,
 ) : SaveThreadDraftDraftUserMessagePartsItem
@@ -3131,7 +3130,6 @@ object SaveThreadDraftDraftUserMessagePartsItemSerializer :
                     } == true &&
                     value.containsKey("runId") &&
                     value.containsKey("threadId") &&
-                    value.containsKey("agentId") &&
                     value.containsKey("titleSnapshot") &&
                     value.containsKey("href")) &&
                     (value["type"].let { field ->
@@ -3761,8 +3759,8 @@ enum class CreateThreadRequestReasoningEffort {
 
 @Serializable
 data class CreateThreadRequest(
+    val `agentId`: String? = null,
     val `projectId`: String? = null,
-    val `agentId`: String,
     val `clientThreadId`: String? = null,
     val `eventId`: String? = null,
     val `initialRemoteAccessOverrides`: List<CreateThreadRequestInitialRemoteAccessOverridesItem>? =
@@ -4255,7 +4253,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant8(
     val `kind`: SendRequestVariant1UserMessagePartsItemVariant8Kind,
     val `runId`: String,
     val `threadId`: String,
-    val `agentId`: String,
+    val `agentId`: String? = null,
     val `titleSnapshot`: String,
     val `href`: String,
 ) : SendRequestVariant1UserMessagePartsItem
@@ -5264,7 +5262,6 @@ object SendRequestVariant1UserMessagePartsItemSerializer :
                     } == true &&
                     value.containsKey("runId") &&
                     value.containsKey("threadId") &&
-                    value.containsKey("agentId") &&
                     value.containsKey("titleSnapshot") &&
                     value.containsKey("href")) &&
                     (value["type"].let { field ->
@@ -5465,7 +5462,7 @@ data class SendRequestVariant1UserMessage(
 
 @Serializable
 data class SendRequestVariant1(
-    val `agentId`: String,
+    val `agentId`: String? = null,
     val `prompt`: String,
     val `threadId`: String? = null,
     val `clientThreadId`: String? = null,
@@ -5486,7 +5483,7 @@ data class SendRequestVariant1(
 
 @Serializable
 data class SendRequestVariant2(
-    val `agentId`: String,
+    val `agentId`: String? = null,
     val `threadId`: String,
     val `revokesEventId`: String,
     val `clientEventId`: String? = null,
@@ -5494,7 +5491,7 @@ data class SendRequestVariant2(
 
 @Serializable
 data class SendRequestVariant3(
-    val `agentId`: String,
+    val `agentId`: String? = null,
     val `threadId`: String,
     val `interruptsRunId`: String,
     val `clientEventId`: String? = null,
@@ -5513,13 +5510,10 @@ object SendRequestSerializer : KSerializer<SendRequest> {
                 ?: throw SerializationException("Expected object for SendRequest")
         val matches =
             listOf(
-                (value.containsKey("agentId") &&
-                    value.containsKey("prompt") &&
+                (value.containsKey("prompt") &&
                     value.containsKey("userMessage") &&
                     value.containsKey("hasTextContent")) && (!value.containsKey("interruptsRunId")),
-                (value.containsKey("agentId") &&
-                    value.containsKey("threadId") &&
-                    value.containsKey("revokesEventId")) &&
+                (value.containsKey("threadId") && value.containsKey("revokesEventId")) &&
                     (!value.containsKey("prompt")) &&
                     (!value.containsKey("clientThreadId")) &&
                     (!value.containsKey("chatThreadEventId")) &&
@@ -5533,9 +5527,7 @@ object SendRequestSerializer : KSerializer<SendRequest> {
                     (!value.containsKey("realAgentInPreview")) &&
                     (!value.containsKey("captureNetworkBodies")) &&
                     (!value.containsKey("interruptsRunId")),
-                (value.containsKey("agentId") &&
-                    value.containsKey("threadId") &&
-                    value.containsKey("interruptsRunId")) &&
+                (value.containsKey("threadId") && value.containsKey("interruptsRunId")) &&
                     (!value.containsKey("prompt")) &&
                     (!value.containsKey("clientThreadId")) &&
                     (!value.containsKey("chatThreadEventId")) &&
@@ -6084,7 +6076,7 @@ data class ChatEventsEventsItemVariant1(
     val `kind`: ChatEventsEventsItemVariant1Kind,
     val `chatThreadId`: String,
     val `projectId`: String? = null,
-    val `agentId`: String,
+    val `agentId`: String? = null,
     val `reassignedAgentId`: String? = null,
     val `title`: String?,
     val `pinOrder`: String? = null,
@@ -6165,7 +6157,7 @@ data class ChatEventsEventsItemVariant2(
     val `kind`: ChatEventsEventsItemVariant2Kind,
     val `chatThreadId`: String,
     val `projectId`: String?,
-    val `agentId`: String,
+    val `agentId`: String? = null,
     val `reassignedAgentId`: String? = null,
     val `title`: String?,
     val `pinOrder`: String? = null,
@@ -6594,7 +6586,7 @@ enum class ChatArchiveChatThreadsItemServiceTier {
 data class ChatArchiveChatThreadsItem(
     val `id`: String,
     val `projectId`: String? = null,
-    val `agentId`: String,
+    val `agentId`: String? = null,
     val `title`: String?,
     val `sortAt`: String,
     val `createdAt`: String,

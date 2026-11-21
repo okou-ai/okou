@@ -235,8 +235,10 @@ test.each([
 
 test("shares a complete package hash across distinct Workflow owners", async () => {
   const { actor, agent, group, s3 } = await fixture();
-  const other = await bdd.createAgent(actor, {
-    displayName: "Second bundle owner",
+  const other = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
+  await bdd.completeOnboarding(other);
+  await runs.ensurePersonalSubscriptionModel(other, {
+    model: "claude-fable-5-1",
   });
   const name = `shared-${randomUUID().slice(0, 8)}`;
   const body = {
@@ -245,12 +247,11 @@ test("shares a complete package hash across distinct Workflow owners", async () 
     files: [{ path: "notes.md", content: "Identical attachment" }],
   };
   await createWorkflow(actor, agent.agentId, body);
-  await createWorkflow(actor, other.agentId, body);
+  await createWorkflow(other, agent.agentId, body);
   await runs.heartbeatRunner(group);
   const references = [];
-  for (const agentId of [agent.agentId, other.agentId]) {
-    const run = await runs.createThreadRun(actor, {
-      agentId,
+  for (const member of [actor, other]) {
+    const run = await runs.createThreadRun(member, {
       prompt: "Use the shared package",
     });
     const execution = await runs.executionInput(run.runId);
@@ -665,9 +666,13 @@ test("keeps a large non-ASCII Workflow in its complete package without truncatio
 
 test("preserves a running Agent after rejected completion and accepts cancellation acknowledgement", async () => {
   const { actor, agent, group } = await fixture("claude-code", true);
-  const workflow = await createWorkflow(actor, agent.agentId, {
-    files: [{ path: "keep.md", content: "execution attachment" }],
-  });
+  const workflow = await createWorkflow(
+    actor,
+    (await bdd.readOnboardingStatus(actor)).defaultAgentId!,
+    {
+      files: [{ path: "keep.md", content: "execution attachment" }],
+    },
+  );
   const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "Use workflows",
@@ -705,8 +710,7 @@ test("preserves a running Agent after rejected completion and accepts cancellati
   await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
     status: "running",
   });
-  const blocked = await bdd.requestDeleteAgent(actor, agent.agentId, [409]);
-  expect(blocked.body).toMatchObject({ error: { code: "CONFLICT" } });
+  await bdd.deleteAgent(actor, agent.agentId);
   await runs.requestCancelRun(actor, run.runId, [200]);
   await flushWaitUntilForTest();
   await finish(run.runId, execution.sandboxToken);
@@ -714,20 +718,13 @@ test("preserves a running Agent after rejected completion and accepts cancellati
   await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
     status: "cancelled",
   });
-  await bdd.deleteAgent(actor, agent.agentId);
 });
 
-test("preserves another Agent's readable Workflow files after parent deletion", async () => {
+test("preserves member Workflow files after deleting a legacy Agent", async () => {
   const { actor, agent, s3 } = await fixture("claude-code", true);
-  await createWorkflow(actor, agent.agentId, {
-    files: [{ path: "remove.md", content: "remove" }],
-  });
-  bdd.acceptAgentStorageWrites();
-  const otherAgent = await bdd.createAgent(actor, {
-    displayName: "Surviving owner",
-  });
+  const memberAgent = (await bdd.readOnboardingStatus(actor)).defaultAgentId!;
   installWorkflowVolumeS3Fixture(context, s3.objects);
-  const survivor = await createWorkflow(actor, otherAgent.agentId, {
+  const survivor = await createWorkflow(actor, memberAgent, {
     files: [{ path: "keep.md", content: "keep" }],
   });
   await bdd.deleteAgent(actor, agent.agentId);

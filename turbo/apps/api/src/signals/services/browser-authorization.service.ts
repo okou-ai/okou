@@ -263,7 +263,7 @@ export const applyBrowserAuthorizationRequest$ = command(
         and(
           eq(chatThreads.id, loaded.request.chatThreadId),
           eq(chatThreads.userId, args.userId),
-          isNotNull(chatThreads.agentId),
+          eq(chatThreads.orgId, args.orgId),
         ),
       )
       .returning({ id: chatThreads.id, agentId: chatThreads.agentId });

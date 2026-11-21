@@ -407,7 +407,7 @@ describe("DELETE /api/agents/:id", () => {
     });
   });
 
-  it("returns 409 and preserves the agent when a pending run references it", async () => {
+  it("deletes a legacy agent independently of a pending member run", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     api.acceptStorageDownloads();
@@ -420,19 +420,9 @@ describe("DELETE /api/agents/:id", () => {
       agentId: agent.agentId,
       prompt: "keep this run pending",
     });
-    const response = await bdd.requestDeleteAgent(actor, agent.agentId, [409]);
-
-    // Lifecycle ownership can already be busy after creating the run. Both
-    // that retryable conflict and the active-run guard must preserve the Agent.
-    expect(response.body).toMatchObject({
-      error: {
-        code: "CONFLICT",
-      },
-    });
-    await expect(bdd.readAgent(actor, agent.agentId)).resolves.toMatchObject({
-      agentId: agent.agentId,
-    });
-
-    await api.requestCancelRun(actor, run.runId, [200]);
+    await bdd.requestDeleteAgent(actor, agent.agentId, [204]);
+    await bdd.requestReadAgent(actor, agent.agentId, [404]);
+    const cancelled = await api.requestCancelRun(actor, run.runId, [200]);
+    expect(cancelled.status).toBe(200);
   });
 });

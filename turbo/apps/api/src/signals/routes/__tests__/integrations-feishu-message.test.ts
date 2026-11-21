@@ -434,7 +434,7 @@ describe("POST /api/integrations/feishu/message", () => {
           target: "oc_target_chat",
           msgType: "text",
           content: {
-            text: 'Hello chat\n\nSent via API caller credential · Triggered by <at user_id="ou_current_user">Feishu CLI User</at>',
+            text: 'Hello chat\n\nTriggered by <at user_id="ou_current_user">Feishu CLI User</at>',
           },
           replyInThread: false,
         },
@@ -452,8 +452,7 @@ describe("POST /api/integrations/feishu/message", () => {
                 { tag: "hr" },
                 {
                   tag: "markdown",
-                  content:
-                    "Sent via API caller credential · Triggered by <at id=ou_current_user></at>",
+                  content: "Triggered by <at id=ou_current_user></at>",
                   text_size: "notation",
                 },
               ],
@@ -476,8 +475,7 @@ describe("POST /api/integrations/feishu/message", () => {
                 elements: [
                   {
                     tag: "lark_md",
-                    content:
-                      "Sent via API caller credential · Triggered by <at id=ou_current_user></at>",
+                    content: "Triggered by <at id=ou_current_user></at>",
                   },
                 ],
               },
@@ -504,7 +502,7 @@ describe("POST /api/integrations/feishu/message", () => {
           target: "om_parent",
           msgType: "text",
           content: {
-            text: 'Thread reply\n\nSent via API caller credential · Triggered by <at user_id="ou_current_user">Feishu CLI User</at>',
+            text: 'Thread reply\n\nTriggered by <at user_id="ou_current_user">Feishu CLI User</at>',
           },
           replyInThread: true,
         },

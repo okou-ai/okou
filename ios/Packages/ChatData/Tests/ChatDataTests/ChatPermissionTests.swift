@@ -86,11 +86,11 @@ final class ChatPermissionTests: XCTestCase {
     XCTAssertNil(saved.grants.first?.expiresAt)
   }
 
-  func testMissingMetadataOrReassignedThreadCannotWrite() async throws {
+  func testMissingMetadataOrMismatchedThreadCannotWrite() async throws {
     for missingMetadata in [false, true] {
       var state = PermissionHTTPFixture.State()
       state.missingMetadata = missingMetadata
-      if !missingMetadata { state.threadAgentID = UUID().uuidString }
+      if !missingMetadata { state.metadataThreadID = UUID().uuidString }
       let fixture = PermissionHTTPFixture(initial: state)
       do {
         let service = ChatPermissions(client: fixture.http.client)

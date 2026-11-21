@@ -33,7 +33,10 @@ const {
 
 describe("thread-bound Pi Automation execution", () => {
   it("rotates a signed event Automation session into Pi and preserves its user conversation", async () => {
-    const { actor, agentId } = await entitledChatActor({}, "team");
+    const { actor, defaultAgentId: agentId } = await entitledChatActor(
+      {},
+      "team",
+    );
     const workflowId = await createWorkflowsBddApi(context).createWorkflow(
       actor,
       {
@@ -143,7 +146,7 @@ describe("thread-bound Pi Automation execution", () => {
 describe("CHAT effort: automation launches", () => {
   async function startAutomation() {
     const scenario = await entitledChatActor({}, "pro");
-    const { actor, agentId } = scenario;
+    const { actor, defaultAgentId: agentId } = scenario;
     // Fable keeps the automation on the Claude Code Runner execution protocol;
     // the Sonnet fixture default would launch a Pi run instead.
     await api.updateUserModelPreference(actor, "claude-fable-5-1");

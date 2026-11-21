@@ -253,64 +253,46 @@ describe("webhook credential preparation lock isolation", () => {
     30_000,
   );
 
-  it.each(["workflow", "agent"] as const)(
-    "rejects creation when the public %s becomes private during KMS preparation",
-    async (revokedEntity) => {
-      const { actor: owner } = await workflows.setupWorkflowOrg({
-        tier: "team",
-      });
-      const { agentId } = await workflows.createAgent(owner, {
-        visibility: "public",
-      });
-      const workflowId = await workflows.createWorkflow(owner, {
-        agentId,
-        name: "revocable-webhook",
-        visibility: "public",
-      });
-      const actor = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
-      headers(actor);
-      const kms = holdSecretKms(1, context.signal);
-      const creating = startCreation(workflowId, kms);
-      await kms.entered;
-      const visibility = setupApp({ context, routes: workflowsRoutes })(
-        workflowVisibilityContract,
-      );
-      if (revokedEntity === "workflow") {
-        await accept(
-          visibility.demote({
-            headers: headers(owner),
-            params: { workflowId },
-          }),
-          [200],
-        );
-      } else {
-        await bdd.updateAgentMetadata(owner, agentId, {
-          visibility: "private",
-        });
-      }
-      kms.release();
-      await accept(creating, [404]);
+  it("rejects creation when the public workflow becomes private during KMS preparation", async () => {
+    const { actor: owner } = await workflows.setupWorkflowOrg({
+      tier: "team",
+    });
+    const workflowId = await workflows.createWorkflow(owner, {
+      name: "revocable-webhook",
+      visibility: "public",
+    });
+    const actor = bdd.user({ orgId: owner.orgId, orgRole: "org:member" });
+    headers(actor);
+    const kms = holdSecretKms(1, context.signal);
+    const creating = startCreation(workflowId, kms);
+    await kms.entered;
+    const visibility = setupApp({ context, routes: workflowsRoutes })(
+      workflowVisibilityContract,
+    );
+    await accept(
+      visibility.demote({
+        headers: headers(owner),
+        params: { workflowId },
+      }),
+      [200],
+    );
+    kms.release();
+    await accept(creating, [404]);
 
-      if (revokedEntity === "workflow") {
-        await accept(
-          visibility.publish({
-            headers: headers(owner),
-            params: { workflowId },
-          }),
-          [200],
-        );
-      } else {
-        await bdd.updateAgentMetadata(owner, agentId, { visibility: "public" });
-      }
-      const listed = await accept(
-        client().list({ headers: headers(actor), params: { workflowId } }),
-        [200],
-      );
-      expect(listed.body).toStrictEqual([]);
-      await expect(readThreads(actor)).resolves.toStrictEqual([]);
-    },
-    30_000,
-  );
+    await accept(
+      visibility.publish({
+        headers: headers(owner),
+        params: { workflowId },
+      }),
+      [200],
+    );
+    const listed = await accept(
+      client().list({ headers: headers(actor), params: { workflowId } }),
+      [200],
+    );
+    expect(listed.body).toStrictEqual([]);
+    await expect(readThreads(actor)).resolves.toStrictEqual([]);
+  }, 30_000);
 
   it("rejects creation after a downgrade commits while KMS is stalled", async () => {
     const { actor, subscriptionId, workflowId } = await scenario();

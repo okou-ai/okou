@@ -142,7 +142,6 @@ export async function getChatIndicators(): Promise<Indicators> {
 
 export async function createChatThread(options: {
   projectId?: string;
-  agentId: string;
   title: string;
   /** Null selects Auto; omit to use the member default. */
   model?: string | null;
@@ -153,7 +152,6 @@ export async function createChatThread(options: {
   const client = initClient(chatThreadsContract, config);
   const result = await client.create({
     body: {
-      agentId: options.agentId,
       projectId: options.projectId,
       title: options.title,
       ...(options.model === undefined ? {} : { model: options.model }),
@@ -225,13 +223,6 @@ export async function getChatThread(options: {
     return result.body;
   }
   handleError(result, "Failed to get chat thread");
-}
-
-export async function getChatThreadAgentId(options: {
-  threadId: string;
-}): Promise<string> {
-  const thread = await getChatThread(options);
-  return thread.agentId;
 }
 
 export async function sendChatEvent(

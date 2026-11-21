@@ -43,10 +43,14 @@ async function seedChatThread(title: string): Promise<ChatThreadFixture> {
     { orgId: actor.orgId, userId: actor.userId },
     context.signal,
   );
+  const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+  if (!defaultAgentId) {
+    throw new Error("Expected the compatibility Agent for this organization");
+  }
   return {
     userId: actor.userId,
     orgId: actor.orgId,
-    agentId: agent.agentId,
+    agentId: defaultAgentId,
     threadId: thread.id,
   };
 }

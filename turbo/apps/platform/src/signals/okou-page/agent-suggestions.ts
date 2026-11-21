@@ -103,7 +103,7 @@ function showSuggestionSent(): void {
 interface SuggestionThreadTarget {
   readonly kind: "thread";
   readonly id: string;
-  readonly agentId: string;
+  readonly agentId?: string;
 }
 
 /**

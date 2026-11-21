@@ -133,7 +133,6 @@ describe("CHAT-01 chat thread lifecycle", () => {
       "chatThreadReadCursorUpdated",
       {
         threadId: created.id,
-        agentId: agent.agentId,
         lastReadAt: null,
       },
     );
@@ -591,10 +590,9 @@ describe("CHAT-02 chat messages and visible validation", () => {
         prompt: "Reuse a client thread id for another agent",
         clientThreadId,
       },
-      [404],
+      [201],
     );
-    expectApiError(reusedClientThreadForOtherAgent.body);
-    expect(reusedClientThreadForOtherAgent.body.error.code).toBe("NOT_FOUND");
+    expect(reusedClientThreadForOtherAgent.body).toStrictEqual(first.body);
 
     const peer = bdd.user({ orgId: actor.orgId });
     const ownerThread = await api.createThread(actor, {
@@ -659,31 +657,19 @@ describe("CHAT-02 chat messages and visible validation", () => {
     expectApiError(unauthenticated.body);
     expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
 
-    const missingAgent = await api.requestSendEvent(
+    const legacySend = await api.requestSendEvent(
       actor,
       { agentId: randomUUID(), prompt: "hello" },
+      [201],
+    );
+    expect(legacySend.body).toHaveProperty("threadId");
+    const peerSend = await api.requestSendEvent(
+      peer,
+      { threadId: thread.id, prompt: "send to another member's thread" },
       [404],
     );
-    expectApiError(missingAgent.body);
-    expect(missingAgent.body.error.code).toBe("NOT_FOUND");
-
-    const privateAgent = await bdd.createAgent(actor, {
-      displayName: "Private chat send agent",
-      visibility: "private",
-    });
-    const forbiddenPrivateAgent = await api.requestSendEvent(
-      peer,
-      {
-        agentId: privateAgent.agentId,
-        prompt: "Run someone else's private agent",
-      },
-      [403],
-    );
-    expectApiError(forbiddenPrivateAgent.body);
-    expect(forbiddenPrivateAgent.body.error.code).toBe("FORBIDDEN");
-    expect(forbiddenPrivateAgent.body.error.message).toBe(
-      "Only the private agent owner can run this agent",
-    );
+    expectApiError(peerSend.body);
+    expect(peerSend.body.error.code).toBe("NOT_FOUND");
   });
 
   it("given an empty chat thread, when event rows are requested, then only the owner sees zero rows", async () => {

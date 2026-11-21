@@ -137,7 +137,7 @@ export const ensureFeishuChatThreadRoute$ = command(
       const insertedRoute = db.$with("inserted_feishu_route").as(routeInsert);
       // The event and sequence must consume the actual inserted thread, since
       // the statement snapshot cannot read a new row from the base table.
-      const insertedThread = sql`${integrationChatThreadInsertFromRouteSql(thread, insertedRoute)} RETURNING agent_id`;
+      const insertedThread = sql`${integrationChatThreadInsertFromRouteSql(thread, insertedRoute)} RETURNING id`;
       const [inserted] = parseRawRows(
         routeResultSchema,
         await db.execute(
@@ -145,7 +145,7 @@ export const ensureFeishuChatThreadRoute$ = command(
             cte: sql`inserted_feishu_route AS (${routeInsert.getSQL()}),
             inserted_feishu_thread AS (${insertedThread})`,
             gate: sql`EXISTS (SELECT 1 FROM inserted_feishu_thread)`,
-            agentId: sql`(SELECT agent_id FROM inserted_feishu_thread)`,
+
             result: sql`SELECT id, connection_id AS "connectionId",
             chat_id AS "chatId", thread_id AS "threadId", user_id AS "userId",
             chat_thread_id AS "chatThreadId" FROM inserted_feishu_route`,

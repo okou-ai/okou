@@ -1,3 +1,4 @@
+import { db$, writeDb$ } from "../external/db";
 import {
   workflows,
   workflowUserAutomationThreads,
@@ -38,18 +39,17 @@ import {
   pgBooleanDecoder,
 } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$ } from "../external/db";
 import {
   chatThreadServiceTierFromCodex,
   chatThreadEventInsertSql,
 } from "./chat-thread-event.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
-import { loadModelCatalog$, type ModelCatalog } from "./model-catalog.service";
+import { type ModelCatalog, loadModelCatalog$ } from "./model-catalog.service";
 import {
   autoSelectionPin,
-  resolveModelSelectionPin$,
   validateCodexServiceTier,
   type ModelFirstPin,
+  resolveModelSelectionPin$,
 } from "./model-selection.service";
 import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
 import { command } from "ccstate";
@@ -162,7 +162,6 @@ function threadCondition(args: ChatThreadMetadataUpdateArgs) {
   return and(
     eq(chatThreads.id, args.threadId),
     eq(chatThreads.userId, args.principal.userId),
-    isNotNull(chatThreads.agentId),
     chatThreadOrganizationPredicate(args.principal.orgId),
     args.expectedModelState
       ? and(
@@ -244,7 +243,6 @@ function resolveModelColumns(
 
 function metadataEvents(
   args: ChatThreadMetadataUpdateArgs,
-  agentId: string,
   columns: ModelColumns | undefined,
   createdAt: Date,
 ) {
@@ -252,7 +250,6 @@ function metadataEvents(
     userId: args.principal.userId,
     orgId: args.principal.orgId,
     chatThreadId: args.threadId,
-    agentId,
     createdAt,
   };
   return [
@@ -377,7 +374,7 @@ const commitMetadata$ = command(
       .where(threadCondition(args))
       .limit(1);
     signal.throwIfAborted();
-    if (!current?.agentId) {
+    if (!current) {
       return { kind: "not_found" };
     }
     if (
@@ -465,7 +462,7 @@ const commitMetadata$ = command(
     const commitQuery = metadataCommitWithEventsSql({
       updated: updated.getSQL(),
       ...args.principal,
-      events: metadataEvents(args, current.agentId, columns, updatedAt),
+      events: metadataEvents(args, columns, updatedAt),
     });
     const rowSchema = metadataCommitRowSchema;
     const [row] = await (async () => {

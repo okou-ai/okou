@@ -90,7 +90,7 @@ async function readThreadComputerUseHostId(
 }
 
 describe("CHAT-02: default assistant identity", () => {
-  it("keeps the default name as Okou through queued runs without renaming custom agents", async () => {
+  it("uses the fixed Okou identity on immediate, queued and historical threads", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const { actor } = await entitledNativeChatActor();
     bdd.acceptAgentStorageWrites();
@@ -179,14 +179,17 @@ describe("CHAT-02: default assistant identity", () => {
       displayName: "Nova",
       visibility: "private",
     });
-    const customRun = await sendChatRun(actor, {
+    const legacyThread = await chat.createThread(actor, {
       agentId: customAgent.agentId,
+    });
+    const customRun = await sendChatRun(actor, {
+      threadId: legacyThread.id,
       prompt: "keep my custom name",
     });
     const customPrompt = (await api.executionInput(customRun.runId))
       .appendSystemPrompt;
-    expect(customPrompt).toContain("Your name is Nova.");
-    expect(customPrompt).not.toContain("Your name is Okou.");
+    expect(customPrompt).not.toContain("Your name is Nova.");
+    expect(customPrompt).toContain("Your name is Okou.");
     const customExecution = await runExecution(customRun.runId);
     await expectRunAppContext({
       actor,
@@ -223,7 +226,7 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       const createdThread = await accept(
         chatThreadsClient().create({
           headers: { authorization: `Bearer ${okouToken}` },
-          body: { agentId, title: "Run-scoped handoff" },
+          body: { title: "Run-scoped handoff" },
         }),
         [201],
       );
@@ -231,7 +234,6 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       const immediateSend = await requestSendEventWithBearer(
         okouToken,
         {
-          agentId,
           clientEventId: immediateEventId,
           threadId: createdThread.body.id,
           prompt: "immediate run-scoped handoff",
@@ -287,7 +289,6 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       const queued = await requestSendEventWithBearer(
         okouToken,
         {
-          agentId,
           clientEventId: queuedEventId,
           threadId: createdThread.body.id,
           prompt: "queued run-scoped handoff",
@@ -383,7 +384,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
       const nestedSend = await owned.requestSendEventWithBearer(
         plainToken,
         {
-          agentId,
           clientEventId: nestedEventId,
           threadId: plain.threadId,
           prompt: "run tokens can send chat messages",
@@ -396,7 +396,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
           chatEventsClient().send({
             headers: { authorization: `Bearer ${plainToken}` },
             body: {
-              agentId,
               threadId: plain.threadId,
               revokesEventId: nestedEventId,
               clientEventId: randomUUID(),
@@ -606,13 +605,9 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
       await run(() => {
         return api.ensurePersonalSubscriptionModel(actor);
       });
-      bdd.acceptAgentStorageWrites();
-      const agent = await run(() => {
-        return bdd.createAgent(actor, {
-          displayName: "Computer-use guard agent",
-        });
+      const { defaultAgentId: agentId } = await run(() => {
+        return api.grantProEntitlement(actor);
       });
-      const agentId = agent.agentId;
 
       const unknownHost = await run(() => {
         return chat.requestSendEvent(

@@ -1,4 +1,3 @@
-import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatThreadSshAccessOverrides } from "@okouai/db/schema/chat-thread-ssh-access-override";
 import { sshConnections } from "@okouai/db/runtime/ssh-connection";
@@ -23,14 +22,12 @@ export const commitThreadSshOverride$ = command(
     const thread = db
       .select({ id: chatThreads.id })
       .from(chatThreads)
-      .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, owner.orgId)),
-      )
+
       .where(
         and(
           eq(chatThreads.id, owner.chatThreadId),
           eq(chatThreads.userId, owner.userId),
+          eq(chatThreads.orgId, owner.orgId),
         ),
       );
     const host = db.$with("authorized_thread_ssh_host").as(

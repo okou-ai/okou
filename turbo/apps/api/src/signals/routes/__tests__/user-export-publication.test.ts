@@ -149,14 +149,14 @@ test("exports PATCH-created drafts with owned thread timestamps and absent draft
   const peer = actor(owner.orgId);
   const app = setupApp({ context, routes });
   const fixture = initialize(app, [owner, peer]);
-  const agentId = await ownedAgent(fixture, owner);
+  await ownedAgent(fixture, owner);
   const threads = [];
   for (const title of ["Saved draft", "No draft", "Cleared draft"]) {
     threads.push(
       await accept(
         fixture.app(chatThreadsContract).create({
           headers,
-          body: { agentId, title },
+          body: { title },
         }),
         [201],
       ),
@@ -188,11 +188,11 @@ test("exports PATCH-created drafts with owned thread timestamps and absent draft
     }),
     [204],
   );
-  const peerAgentId = await ownedAgent(fixture, peer);
+  await ownedAgent(fixture, peer);
   const peerThread = await accept(
     fixture.app(chatThreadsContract).create({
       headers,
-      body: { agentId: peerAgentId, title: "Peer draft" },
+      body: { title: "Peer draft" },
     }),
     [201],
   );
@@ -257,7 +257,7 @@ test("exports PATCH-created drafts with owned thread timestamps and absent draft
       id: thread.body.id,
       userId: owner.userId,
       title: thread.body.title,
-      agentId,
+      agentId: null,
       orgId: owner.orgId,
       createdAt: thread.body.createdAt,
       sourceScheduleRunId: null,
@@ -321,7 +321,7 @@ test("publishes an owned ZIP, deduplicates concurrent requests and excludes peer
   const thread = await accept(
     fixture.app(chatThreadsContract).create({
       headers,
-      body: { agentId, title: "Exported conversation" },
+      body: { title: "Exported conversation" },
     }),
     [201],
   );

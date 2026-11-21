@@ -88,6 +88,7 @@ async function fundedFreeRuns() {
       firewallBody,
       async settleBalance(remainingCredits: number) {
         const before = await runs.readBillingStatus(actor);
+        const member = await runs.readUsagePackCredits(actor);
         await webhooks.requestAgentUsageEvent(
           {
             runId: peer.run.runId,
@@ -99,7 +100,9 @@ async function fundedFreeRuns() {
                 category: "tokens.input",
                 // The fixed public Auto fixture costs one credit per 1,000
                 // input tokens. Report usage through the real Runner protocol.
-                quantity: (before.credits - remainingCredits) * 1000,
+                quantity:
+                  (before.credits + member.totalCredits - remainingCredits) *
+                  1000,
               },
             ],
           },

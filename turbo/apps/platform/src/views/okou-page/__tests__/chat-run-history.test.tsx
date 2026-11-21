@@ -6,7 +6,7 @@ import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../__tests__/time.ts";
 import { now } from "../../../lib/time.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { AGENT_ID, setupPage } from "./chat-lifecycle-test-helpers.ts";
+import { setupPage } from "./chat-lifecycle-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
   assistantEvent,
@@ -92,12 +92,6 @@ function myOkouAvatarButtons(): HTMLElement[] {
   return queryAllByRoleFast("button").filter((button) => {
     return button.getAttribute("aria-label") === "My Okou";
   });
-}
-
-function agentNameLines(): HTMLElement[] {
-  return Array.from(
-    document.querySelectorAll<HTMLElement>("[data-chat-assistant-name-line]"),
-  );
 }
 
 async function setupCompletedConversationPhases(): Promise<void> {
@@ -573,7 +567,7 @@ test("Count one output.message once when Markdown renders multiple child blocks"
   expect(myOkouAvatarButtons()).toHaveLength(1);
 });
 
-test("A retained conversation links the reply name to its original Agent", async () => {
+test("A retained conversation displays the workspace assistant name on its reply", async () => {
   installRunChat({
     chatEvents: [
       promptEvent({
@@ -602,16 +596,10 @@ test("A retained conversation links the reply name to its original Agent", async
   });
 
   await readyChat();
-  await screen.findByText("The launch notes are summarized.");
-  await waitFor(() => {
-    expect(agentNameLines()).toHaveLength(1);
-  });
-  const [nameLine] = agentNameLines();
-  expect(nameLine).toHaveAccessibleName("Run Agent");
-  expect(nameLine).toHaveAttribute("href", "/agents/" + AGENT_ID);
-  expect(nameLine?.closest('[data-role="assistant"]')).toHaveTextContent(
-    "The launch notes are summarized.",
-  );
+  const reply = await screen.findByText("The launch notes are summarized.");
+  const group = reply.closest('[data-role="assistant"]');
+  expect(group).toHaveTextContent("Okou");
+  expect(group?.querySelector('a[href^="/agents/"]')).toBeNull();
   expect(myOkouAvatarButtons()).toHaveLength(0);
 });
 

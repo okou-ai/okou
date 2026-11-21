@@ -9,6 +9,5 @@ export interface ChatRunFinishedEvent {
   readonly runStatus: ChatRunFinishedRunStatus;
   readonly failureReason: RunFailureReasonToken | null;
   readonly lastResultText: string | null;
-  readonly sourceAgentId: string;
   readonly sourceThreadTitle: string | null;
 }

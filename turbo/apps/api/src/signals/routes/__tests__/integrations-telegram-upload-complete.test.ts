@@ -251,7 +251,7 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
           ),
           caption: fullCaption
             ? caption
-            : `Daily report\n\n<i>Sent via Telegram upload · Triggered by <a href="tg://user?id=${fixture.telegramUserId}">Test</a></i>`,
+            : `Daily report\n\n<i>Triggered by <a href="tg://user?id=${fixture.telegramUserId}">Test</a></i>`,
           parse_mode: "HTML",
           message_thread_id: 42,
         });

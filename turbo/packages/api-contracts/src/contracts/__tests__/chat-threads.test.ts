@@ -71,7 +71,6 @@ describe("chat message response contract", () => {
       createdAt: "2026-07-13T00:00:00.000Z",
     });
     const send = chatEventsContract.send.body.safeParse({
-      agentId: "agent-1",
       hasTextContent: true,
       prompt: "Run the task",
       userMessage,
@@ -152,7 +151,6 @@ describe("chat thread computer access contract", () => {
   it("rejects selecting Cloud browser and Computer Use together", () => {
     expect(
       chatEventsContract.send.body.safeParse({
-        agentId: "agent-1",
         prompt: "Browse from both places",
         computerUseHostId: hostId,
         cloudBrowserEnabled: true,
@@ -160,7 +158,6 @@ describe("chat thread computer access contract", () => {
     ).toMatchObject({ success: false });
     expect(
       chatEventsContract.send.body.safeParse({
-        agentId: "agent-1",
         prompt: "Review this image",
         hasTextContent: true,
         userMessage: {
@@ -351,7 +348,6 @@ describe("chat thread generation template contract", () => {
     });
     expect(
       chatEventsContract.send.body.safeParse({
-        agentId: "agent-1",
         prompt: "Run with this model",
         hasTextContent: true,
         model: "claude-sonnet-4-6",
@@ -415,7 +411,6 @@ describe("chat thread generation template contract", () => {
     ).toMatchObject({ success: true });
     expect(
       chatEventsContract.send.body.safeParse({
-        agentId: "agent-1",
         prompt: "Review this image",
         hasTextContent: true,
         userMessage: draftUserMessage,
@@ -423,7 +418,6 @@ describe("chat thread generation template contract", () => {
     ).toMatchObject({ success: false });
     expect(
       chatEventsContract.send.body.safeParse({
-        agentId: "agent-1",
         prompt: "Review this image",
         hasTextContent: true,
         userMessage: {

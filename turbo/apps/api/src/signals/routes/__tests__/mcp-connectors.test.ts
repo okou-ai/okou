@@ -100,7 +100,7 @@ async function createRunForAgent(
       chatThreadsContract,
     ).create({
       headers: headers("clerk-session"),
-      body: { agentId },
+      body: {},
     }),
     [201],
   );

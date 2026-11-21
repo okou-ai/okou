@@ -1,8 +1,7 @@
 import { AGENT_EXECUTION_TIMEOUT_SECONDS } from "@okouai/api-contracts/contracts/runners";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { computed, type Computed } from "ccstate";
-import type { BootstrapAgent } from "../agent-data.service";
-import { buildAgentIdentityPrompt } from "../agent-identity-prompt.service";
+import { SINGLE_AGENT_IDENTITY_PROMPT } from "../single-agent-scope-prompt";
 import {
   buildAgentToolsPrompt,
   buildAgentToolsPromptInputs,
@@ -22,12 +21,6 @@ function buildExecutionTimeLimitPrompt(): string {
 }
 
 export function createAgentPrompt(
-  agent$: Computed<
-    Promise<Pick<
-      BootstrapAgent,
-      "id" | "defaultAgentId" | "displayName" | "description" | "sound"
-    > | null>
-  >,
   featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
   cloudBrowserEnabled$: Computed<Promise<boolean>>,
   disabledPaidTools$: Computed<Promise<readonly string[]>>,
@@ -35,13 +28,11 @@ export function createAgentPrompt(
 ): Computed<Promise<RunPrompt>> {
   return computed(async (get): Promise<RunPrompt> => {
     const [
-      agent,
       featureSwitchContext,
       cloudBrowserEnabled,
       disabledPaidTools,
       singleAgent,
     ] = await Promise.all([
-      get(agent$),
       get(featureSwitches$),
       get(cloudBrowserEnabled$),
       get(disabledPaidTools$),
@@ -49,9 +40,7 @@ export function createAgentPrompt(
     ]);
     return {
       systemPromptVariables: {
-        agentIdentity: agent
-          ? (buildAgentIdentityPrompt(agent, singleAgent) ?? "")
-          : "",
+        agentIdentity: SINGLE_AGENT_IDENTITY_PROMPT,
         executionLimit: buildExecutionTimeLimitPrompt(),
         tools: buildAgentToolsPrompt(
           buildAgentToolsPromptInputs({

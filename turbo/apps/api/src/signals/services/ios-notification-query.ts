@@ -1,4 +1,4 @@
-import { and, eq, exists, gte, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, eq, exists, gte, isNull, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
@@ -36,7 +36,6 @@ export function unreadIosNotificationThreadCondition(
     );
   return and(
     eq(chatThreads.userId, userId),
-    isNotNull(chatThreads.agentId),
     eq(chatThreads.hidden, false),
     eq(chatThreads.muted, false),
     eq(chatThreads.archived, false),

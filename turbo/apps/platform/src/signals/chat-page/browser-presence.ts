@@ -40,7 +40,7 @@ export function createBrowserPresenceSignals({
   liveRunId$,
   sendEvent$,
 }: {
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly latestRunId$: Computed<string | null>;
   readonly liveRunId$: Computed<string | null>;
   readonly sendEvent$: ChatEventSignals["sendEvent$"];

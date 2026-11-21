@@ -1,5 +1,4 @@
 import { artifacts } from "@okouai/db/schema/artifact";
-import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { and, eq, isNull, isNotNull, or } from "drizzle-orm";
@@ -70,13 +69,10 @@ export const ownedGoogleDriveThreadContext$ = command(
     const [thread] = await get(db$)
       .select({ id: chatThreads.id })
       .from(chatThreads)
-      .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
-      )
       .where(
         and(
           eq(chatThreads.id, args.threadId),
+          eq(chatThreads.orgId, args.orgId),
           eq(chatThreads.userId, args.userId),
         ),
       )

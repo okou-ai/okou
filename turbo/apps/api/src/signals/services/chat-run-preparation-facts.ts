@@ -31,7 +31,6 @@ export interface EnqueuedChatInputFacts {
   readonly orgId: string;
   readonly chatThreadId: string;
   readonly userId: string;
-  readonly agentId: string;
   readonly id: string;
   readonly userMessage: UserMessageDocument;
   readonly modelSelection: ChatInputModelSelection;

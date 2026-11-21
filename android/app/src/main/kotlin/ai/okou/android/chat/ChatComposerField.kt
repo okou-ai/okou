@@ -296,18 +296,6 @@ private fun ComposerFeedback(
             Text(stringResource(R.string.composer_restore_draft))
         }
     }
-    if (target.threadId == null && state.context != ComposerContext.Ready) {
-        Text(
-            stringResource(
-                if (state.context == ComposerContext.Loading) R.string.composer_target_loading
-                else R.string.composer_target_unavailable
-            )
-        )
-        if (state.context != ComposerContext.Loading)
-            TextButton(onClick = { model.open(target) }, colors = actionColors) {
-                Text(stringResource(R.string.retry))
-            }
-    }
     if (entry.pending != null) {
         FlowRow {
             TextButton(

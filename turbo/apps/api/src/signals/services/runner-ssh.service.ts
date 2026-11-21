@@ -12,7 +12,6 @@ import {
 } from "@okouai/api-contracts/contracts/runner-ssh";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
-import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   sshConnectionNeedsRebind,
@@ -77,11 +76,6 @@ const connectionFields = Object.freeze({
     encryptedClientSecret: cloudflareAccessConfigs.encryptedClientSecret,
   },
 });
-const agentAuthority = and(
-  eq(agents.id, agentRuns.agentId),
-  eq(agents.orgId, agentRuns.orgId),
-  or(eq(agents.visibility, "public"), eq(agents.owner, agentRuns.userId)),
-);
 const credentialAuthority = and(
   eq(sshCredentials.id, sshConnections.credentialId),
   eq(sshCredentials.orgId, agentRuns.orgId),
@@ -143,7 +137,6 @@ export function createCurrentRunnerSshConnection(
       .select(connectionFields)
       .from(agentRuns)
 
-      .innerJoin(agents, agentAuthority)
       .innerJoin(sshConnections, connectionAuthority(input))
       .leftJoin(sshCredentials, credentialAuthority)
       .leftJoin(cloudflareAccessConfigs, cloudflareAuthority)

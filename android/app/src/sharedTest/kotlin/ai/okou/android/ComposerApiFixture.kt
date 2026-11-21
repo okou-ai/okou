@@ -181,7 +181,7 @@ class ComposerApiFixture : Closeable {
                                     id = body.getValue("eventId").jsonPrimitive.content,
                                     seq = seq,
                                     thread = body.getValue("clientThreadId").jsonPrimitive.content,
-                                    agent = body.getValue("agentId").jsonPrimitive.content,
+                                    agent = body["agentId"]?.jsonPrimitive?.content,
                                     title = "New conversation",
                                     extra =
                                         body["projectId"]?.let { ",\"projectId\":$it" }.orEmpty(),

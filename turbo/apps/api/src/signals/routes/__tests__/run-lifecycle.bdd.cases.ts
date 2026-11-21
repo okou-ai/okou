@@ -467,13 +467,12 @@ function expectCanonicalOkouRunEnvironment(args: {
   readonly platformEnvironment: Readonly<Record<string, string>>;
   readonly secretValues: readonly string[] | null | undefined;
   readonly appUrl: string;
-  readonly agentId: string;
   readonly userId: string;
   readonly orgId: string;
   readonly runId: string;
 }): void {
   expect(args.platformEnvironment.OKOU_APP_URL).toBe(args.appUrl);
-  expect(args.platformEnvironment.OKOU_AGENT_ID).toBe(args.agentId);
+  expect(args.platformEnvironment).not.toHaveProperty("OKOU_AGENT_ID");
   expect(
     Object.keys(args.environment ?? {}).filter((key) => {
       return key.startsWith("ZERO_");
@@ -1471,11 +1470,16 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           NATIVE_RUNNER_ROUTE,
         );
         const prompt = "storage manifest dimensions should not leak prompt";
-        // An Agent Workflow is distributed as an immutable read-only bundle.
+        const { defaultAgentId } =
+          await createBddApi(context).readOnboardingStatus(actor);
+        if (!defaultAgentId) {
+          throw new Error("Expected a workspace workflow namespace");
+        }
+        // A member Workflow is distributed as an immutable read-only bundle.
         const workflowName = `manifest-shape-${randomUUID().slice(0, 8)}`;
         const workflow = await createMiscRoutesApi(context).createWorkflow(
           actor,
-          agentId,
+          defaultAgentId,
           workflowName,
           { content: "# Manifest shape\nUse for manifest tests." },
           [201],
@@ -2224,34 +2228,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         if (!actor.orgId) {
           throw new Error("Expected session owner to have an organization");
         }
-        const otherAgent = await bdd.createAgent(actor, {
-          displayName: "Mismatched continuation Agent",
-          description: "Must not continue a Session owned by another Agent.",
-          visibility: "private",
-        });
-        const mismatchPrompt = `reject mismatched Agent Session ${randomUUID()}`;
-        const mismatch = await chat.requestSendEvent(
-          actor,
-          {
-            agentId: otherAgent.agentId,
-            threadId: first.threadId,
-            prompt: mismatchPrompt,
-          },
-          [404],
-        );
-        expectApiError(mismatch.body);
-        expect(mismatch.body.error.message).toBe("Chat thread not found");
-        const ownedRuns = await createRunReadsApi(context).requestListLogs(
-          actor,
-          { limit: 100 },
-          [200],
-        );
-        expect(
-          ownedRuns.body.data.filter((run) => {
-            return run.prompt === mismatchPrompt;
-          }),
-        ).toHaveLength(0);
-
         const sameOrgUser = bdd.user({ orgId: actor.orgId });
         const crossUser = await chat.requestSendEvent(
           sameOrgUser,
@@ -2572,7 +2548,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
       });
 
-      it("limits private agents to their owner", async () => {
+      it("prevents another member from continuing an owned thread", async () => {
         const bdd = createBddApi(context);
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
@@ -2582,21 +2558,21 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-        const memberPrompt = `run someone else's private agent ${randomUUID()}`;
-        const memberRejected = await chat.requestSendEvent(
-          member,
-          { agentId, prompt: memberPrompt, model: NATIVE_RUNNER_ROUTE.model },
-          [403],
-        );
-        expectApiError(memberRejected.body);
-        expect(memberRejected.body.error.message).toBe(
-          "Only the private agent owner can run this agent",
-        );
-
         const owned = await api.createThreadRun(actor, {
           agentId,
           prompt: "open a session",
         });
+        const rejected = await chat.requestSendEvent(
+          member,
+          {
+            threadId: owned.threadId,
+            agentId,
+            prompt: "continue another member's thread",
+          },
+          [404],
+        );
+        expectApiError(rejected.body);
+        expect(rejected.body.error.code).toBe("NOT_FOUND");
         await api.requestCancelRun(actor, owned.runId, [200]);
         await finishCancelledRun(
           owned.runId,
@@ -2989,26 +2965,23 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.ensurePersonalSubscriptionModel(actor);
         await api.updateUserModelPreference(actor, "claude-fable-5-1");
 
-        const agent = await bdd.createAgent(actor, {
-          displayName: "BDD codex skills agent",
-          visibility: "private",
-        });
-        // Workflows are created directly under the owning agent (agent-scoped 1:N).
+        const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+        if (!defaultAgentId) {
+          throw new Error("Expected the member workflow namespace");
+        }
         for (const workflowName of workflowNames) {
           await misc.createWorkflow(
             actor,
-            agent.agentId,
+            defaultAgentId,
             workflowName,
             { content: `# ${workflowName}\nUse this workflow for codex runs.` },
             [201],
           );
         }
         const thread = await chat.createThread(actor, {
-          agentId: agent.agentId,
           model: "claude-fable-5-1",
         });
         const sent = await chat.sendAndLaunch(actor, {
-          agentId: agent.agentId,
           threadId: thread.id,
           prompt: "run on the personal Codex subscription",
           model: "gpt-6-astra",
@@ -8337,7 +8310,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const workflowName = "bdd-context-workflow";
         await misc.createWorkflow(
           actor,
-          agent.agentId,
+          (await bdd.readOnboardingStatus(actor)).defaultAgentId!,
           workflowName,
           { content: "# BDD context workflow\nUse the combined run context." },
           [201],
@@ -8351,14 +8324,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const execution = await api.executionInput(run.runId);
 
         const appendSystemPrompt = execution.appendSystemPrompt ?? "";
-        expect(appendSystemPrompt).toContain("# Agent Identity");
-        expect(appendSystemPrompt).toContain("Your name is Research Bot.");
-        expect(appendSystemPrompt).toContain(
-          "Your role: Finds release details",
-        );
-        expect(appendSystemPrompt).toContain(
-          "Be brief and to the point. Skip pleasantries and filler",
-        );
+        expect(appendSystemPrompt).toContain("# Identity");
+        expect(appendSystemPrompt).toContain("Your name is Okou.");
+        expect(appendSystemPrompt).not.toContain("Research Bot");
         expect(appendSystemPrompt).toContain("# Execution Time Limit");
         expect(appendSystemPrompt).toContain(
           "A single agent run has a maximum execution time of 2 hours.",
@@ -8392,17 +8360,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "okou generate <type> -h",
           "okou doctor credit",
           "okou credit <credits>",
-          "Agent instructions are team-shared behavior rules for everyone using the same agent",
-          "Memory captures the current user's preferences, background, experience, and historical context",
-          "without changing other team members' defaults",
-          "A long-lived personal preference does not necessarily belong in shared instructions",
-          "choose between instructions and memory based on their intent, the nature and scope of the content, and its impact on other team members",
-          "Memory is usually the better choice for personal communication habits",
-          "Instructions are more appropriate for defining or revising common rules the whole team should follow",
-          "Avoid turning personal preferences into team-wide defaults or leaving genuinely shared rules only in personal memory",
-          "not whether the user used the words 'instructions' or 'memory'",
-          "exercise judgment rather than requiring a named storage target or confirmation for every update; existing permissions and memory-update rules still apply",
-          "Preserve unrelated settings",
+          "Instructions are the current user's persistent directions",
+          "Other members have their own Instructions",
+          "okou instructions edit --file <path>",
+          "Memory captures the user's preferences, background, and past context",
+          "Share reusable team procedures through workspace Workflows",
           "Plan permission requests",
           "all concrete connector operations required for the current task",
           "Do not include hypothetical future operations",
@@ -8503,7 +8465,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           platformEnvironment: execution.platformEnvironment,
           secretValues: execution.secretValues,
           appUrl,
-          agentId: agent.agentId,
           userId: actor.userId,
           orgId: actor.orgId,
           runId: run.runId,
@@ -9124,13 +9085,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         }
         const s3 = installWorkflowVolumeS3Fixture(context);
 
-        const agent = await bdd.createAgent(actor, {
-          displayName: "BDD workflow priority agent",
-          visibility: "public",
-        });
+        const { defaultAgentId } =
+          await createBddApi(context).readOnboardingStatus(actor);
+        if (!defaultAgentId) {
+          throw new Error("Expected a member workflow namespace");
+        }
         const workflowName = `bdd-priority-${randomUUID().slice(0, 8)}`;
         await workflows.createWorkflow(actor, {
-          agentId: agent.agentId,
+          agentId: defaultAgentId,
           name: workflowName,
           visibility: "public",
           instruction: "Visible public Workflow body.",
@@ -9138,7 +9100,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const privateInstruction =
           "Selected caller-owned private Workflow body.";
         await workflows.createWorkflow(actor, {
-          agentId: agent.agentId,
+          agentId: defaultAgentId,
           name: workflowName,
           visibility: "private",
           instruction: privateInstruction,
@@ -9148,14 +9110,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           orgRole: "org:member",
         });
         await workflows.createWorkflow(otherActor, {
-          agentId: agent.agentId,
+          agentId: (await bdd.readOnboardingStatus(otherActor)).defaultAgentId!,
           name: workflowName,
           visibility: "private",
           instruction: "Another caller's private Workflow body.",
         });
 
         const run = await api.createThreadRun(actor, {
-          agentId: agent.agentId,
+          agentId: defaultAgentId,
           prompt: "use the private workflow override",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -9221,21 +9183,20 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const workflowName = "bdd-claude-kit";
-        const agent = await bdd.createAgent(actor, {
-          displayName: "BDD claude workflows agent",
-          visibility: "private",
-        });
-        // Workflows are created directly under the owning agent (agent-scoped 1:N).
+        const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+        if (!defaultAgentId) {
+          throw new Error("Expected a member workflow namespace");
+        }
         await misc.createWorkflow(
           actor,
-          agent.agentId,
+          defaultAgentId,
           workflowName,
           { content: "# BDD claude kit\nUse this workflow in claude runs." },
           [201],
         );
 
         const run = await api.createThreadRun(actor, {
-          agentId: agent.agentId,
+          agentId: defaultAgentId,
           prompt: "use the workflow",
         });
         await api.heartbeatRunner(runnerGroup);

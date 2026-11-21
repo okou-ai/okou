@@ -667,7 +667,6 @@ describe("ChatEvent HTTP contracts", () => {
 
   it("uses event ids in canonical write bodies", () => {
     const parsed = chatEventsContract.send.body.parse({
-      agentId: "agent-1",
       threadId: THREAD_ID,
       revokesEventId: "input-prompt",
       clientEventId: "00000000-0000-4000-8000-000000000002",
@@ -681,7 +680,6 @@ describe("ChatEvent HTTP contracts", () => {
 
   it("accepts only the declared send body fields", () => {
     const request = {
-      agentId: "agent-1",
       prompt: "Run the task",
       threadId: THREAD_ID,
       userMessage: {

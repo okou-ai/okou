@@ -262,7 +262,7 @@ describe("builtin MCP account surfaces", () => {
     const createdThread = await accept(
       threads.create({
         headers,
-        body: { agentId: agent.agentId, model: "claude-sonnet-5-5" },
+        body: { model: "claude-sonnet-5-5" },
       }),
       [201],
     );

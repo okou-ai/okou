@@ -5,7 +5,6 @@ export const NATIVE_CONTEXT_RECOVERY_PROMPT =
   "This Run did not resume the earlier native conversation context. Before processing the current request, you must run `okou chat messages --output-dir /tmp/okou-chat-history`, read and understand this Thread's earlier messages, and then continue the current request using that context. Chat history files are temporary caches. Store them under `/tmp`, outside personal memory. If removed, synchronize again.";
 
 export interface ChatThreadNativeBinding {
-  readonly threadAgentId: string | null;
   readonly framework: string | null;
   readonly frameworkSessionId: string | null;
   /** Latest executed predecessor; native readiness also requires the pair above. */
@@ -60,7 +59,6 @@ export function resolveChatThreadContinuation(
   return {
     admission: args.admission,
     expected: {
-      threadAgentId: thread.agentId,
       framework: thread.framework,
       frameworkSessionId: thread.frameworkSessionId,
       frameworkSessionRunId: thread.frameworkSessionRunId,

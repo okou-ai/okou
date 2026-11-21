@@ -5276,9 +5276,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     const automations = [];
     for (const actor of [doomed, otherWorkspace, auditor]) {
       await runs.grantProEntitlement(actor, { tier: "team" });
-      const agent = await workflows.createAgent(actor);
       const workflowId = await workflows.createWorkflow(actor, {
-        agentId: agent.agentId,
         name: `retained-automation-${randomUUID().slice(0, 8)}`,
       });
       mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);

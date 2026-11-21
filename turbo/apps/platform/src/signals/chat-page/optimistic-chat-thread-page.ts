@@ -196,7 +196,6 @@ function createNewThreadOptimisticEventEntry({
 }
 
 function newThreadSendBody({
-  agentId,
   threadId,
   clientEventId,
   prepared,
@@ -207,7 +206,6 @@ function newThreadSendBody({
   cloudBrowserEnabled,
   sourceRunId,
 }: {
-  agentId: string;
   threadId: string;
   clientEventId: string;
   prepared: PreparedNewThreadPayload;
@@ -220,7 +218,6 @@ function newThreadSendBody({
 }) {
   const runOptions = runOptionsFromModelProviderSelection(modelSelection);
   return {
-    agentId,
     prompt: prepared.prompt,
     threadId,
     hasTextContent: prepared.hasTextContent,
@@ -424,7 +421,6 @@ async function createChatThread(
   await accept(
     client.create({
       body: {
-        agentId: args.agentId,
         projectId: args.projectId,
         clientThreadId: args.clientThreadId,
         eventId: args.eventId,
@@ -801,7 +797,7 @@ const sendNewThreadMessage$ = command(
     readonly threadId: string;
     readonly sendResult: Promise<void>;
   } | null> => {
-    const { agentId, prompt } = request;
+    const { prompt } = request;
     const { computerUseHostId, cloudBrowserEnabled } = request;
     const draft = request.draft ?? get(talkDraft$);
     const submittedInput = get(draft.input$);
@@ -865,7 +861,6 @@ const sendNewThreadMessage$ = command(
       signal.throwIfAborted();
     }
     const sendBody = newThreadSendBody({
-      agentId,
       threadId,
       clientEventId,
       prepared,
