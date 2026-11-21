@@ -10,6 +10,44 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.100.0](https://github.com/okou-ai/okou/compare/api-v2.99.0...api-v2.100.0) (2026-11-21)
+
+
+### Features
+
+* **api:** persist workspace ownership on chat threads ([#49631](https://github.com/okou-ai/okou/issues/49631)) ([e732eef](https://github.com/okou-ai/okou/commit/e732eef90dedcc3eecc8993c713d0ba695136579))
+
+
+### Bug Fixes
+
+* **api:** retry preferred Home checkout during Runner drain ([#49610](https://github.com/okou-ai/okou/issues/49610)) ([1236b95](https://github.com/okou-ai/okou/commit/1236b95d968982192768ef3543d5d3d0f7ded239))
+
+
+### Documentation
+
+* link workflow copy adapters to their retirement issue ([#49675](https://github.com/okou-ai/okou/issues/49675)) ([4806b77](https://github.com/okou-ai/okou/commit/4806b774b21d728224cf8995d5d333e7da9dd7c4))
+
+
+### Refactoring
+
+* **api:** remove retired my okou feature-switch response keys ([#49654](https://github.com/okou-ai/okou/issues/49654)) ([1c55faf](https://github.com/okou-ai/okou/commit/1c55faf576d6e5219080bace4668360692bcd8a1))
+* **api:** retire legacy storage bindings from connector execution ([#49653](https://github.com/okou-ai/okou/issues/49653)) ([4238087](https://github.com/okou-ai/okou/commit/4238087d01c671077d6b6a021455ff73db1444c4))
+* drop compose jobs and two retired agent columns ([#49632](https://github.com/okou-ai/okou/issues/49632)) ([8765355](https://github.com/okou-ai/okou/commit/87653555f2076921e05544c605522040256be6d0))
+* retire agent fields from member features ([#49650](https://github.com/okou-ai/okou/issues/49650)) ([5803fa4](https://github.com/okou-ai/okou/commit/5803fa40457b2f0e2a2164c40cd1b8e3c6bb2d55))
+* retire agent storage and cli selection ([#49638](https://github.com/okou-ai/okou/issues/49638)) ([4956bda](https://github.com/okou-ai/okou/commit/4956bda0bc2859cb1f91e5b7ca0b3fc8790c8732))
+* scope chat run admission to workspace members ([#49637](https://github.com/okou-ai/okou/issues/49637)) ([30c1941](https://github.com/okou-ai/okou/commit/30c1941239202722c767b1190718538a5c0b00d3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.96.1
+    * @okouai/connectors bumped to 3.23.2
+    * @okouai/core bumped to 8.858.1
+    * @okouai/db bumped to 2.57.0
+    * @okouai/pi-agent-runtime bumped to 1.52.20
+
 ## [2.99.0](https://github.com/okou-ai/okou/compare/api-v2.98.2...api-v2.99.0) (2026-11-20)
 
 
