@@ -159,7 +159,10 @@ fun ConversationRoute(
                                 previews.isEmpty() &&
                                 state.phase != HistoryPhase.Missing
                         ) {
-                            ChatContentLoadNotice(R.string.chat_list_load_when_online, Modifier)
+                            ChatContentLoadNotice(
+                                R.string.chat_list_load_when_online,
+                                horizontalPadding = 0.dp,
+                            )
                             return@item
                         }
                         if (waitingForHistory) {

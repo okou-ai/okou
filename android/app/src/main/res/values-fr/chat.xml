@@ -12,7 +12,6 @@
     <string name="chat_refresh">Actualiser les discussions</string>
     <string name="chat_loading">Chargement des discussions…</string>
     <string name="chat_refresh_failed">Actualisation impossible. Les dernières discussions chargées sont affichées.</string>
-    <string name="chat_cached">Les discussions enregistrées sont affichées.</string>
     <string name="chat_cache_unavailable">Le stockage hors ligne est indisponible. Ces discussions pourraient être indisponibles après un redémarrage.</string>
     <string name="chat_metadata_unavailable">Certaines informations Okou ou de projet sont indisponibles.</string>
     <string name="chat_inbox">Boîte de réception</string>

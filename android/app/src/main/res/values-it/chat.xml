@@ -12,7 +12,6 @@
     <string name="chat_refresh">Aggiorna chat</string>
     <string name="chat_loading">Caricamento delle chat…</string>
     <string name="chat_refresh_failed">Impossibile aggiornare. Sono mostrate le ultime chat caricate.</string>
-    <string name="chat_cached">Sono mostrate le chat salvate.</string>
     <string name="chat_cache_unavailable">Lo spazio offline non è disponibile. Queste chat potrebbero non essere disponibili dopo un riavvio.</string>
     <string name="chat_metadata_unavailable">Alcune informazioni su Okou o sui progetti non sono disponibili.</string>
     <string name="chat_inbox">Posta in arrivo</string>

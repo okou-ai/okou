@@ -85,6 +85,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -988,11 +989,11 @@ private fun ChatListTextAction(
 }
 
 @Composable
-internal fun ChatContentLoadNotice(
-    @StringRes message: Int,
-    modifier: Modifier = Modifier.padding(horizontal = 12.dp),
-) {
-    Box(modifier.heightIn(min = 48.dp), contentAlignment = Alignment.CenterStart) {
+internal fun ChatContentLoadNotice(@StringRes message: Int, horizontalPadding: Dp = 12.dp) {
+    Box(
+        Modifier.heightIn(min = 48.dp).padding(horizontal = horizontalPadding),
+        contentAlignment = Alignment.CenterStart,
+    ) {
         Text(
             stringResource(message),
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },

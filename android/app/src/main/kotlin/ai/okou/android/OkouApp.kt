@@ -81,8 +81,6 @@ import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -512,10 +510,8 @@ internal fun OkouApp(
                 widthDp = window.width,
                 listWidth = listWidth,
                 avatar = workspaceAvatar,
-                searchFocus =
-                    Modifier.focusRequester(searchEntryFocus).onFocusChanged {
-                        searchEntryFocused = it.isFocused
-                    },
+                searchFocus = searchEntryFocus,
+                onSearchFocusChanged = { searchEntryFocused = it },
                 openSearch = if (chats != null) ::openSearch else null,
                 actions = toolbarActions,
             )

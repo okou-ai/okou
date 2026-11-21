@@ -176,7 +176,8 @@ internal fun WorkspaceListToolbar(
     widthDp: Int,
     listWidth: Int?,
     avatar: (@Composable () -> Unit)?,
-    searchFocus: Modifier,
+    searchFocus: FocusRequester,
+    onSearchFocusChanged: (Boolean) -> Unit,
     openSearch: (() -> Unit)?,
     actions: @Composable () -> Unit,
 ) {
@@ -196,9 +197,11 @@ internal fun WorkspaceListToolbar(
         },
         field = { modifier ->
             WorkspaceSearchField(
-                modifier.then(searchFocus).testTag("workspace_search_entry").semantics {
-                    if (openSearch != null) contentDescription = label
-                },
+                modifier
+                    .focusRequester(searchFocus)
+                    .onFocusChanged { onSearchFocusChanged(it.isFocused) }
+                    .testTag("workspace_search_entry")
+                    .semantics { if (openSearch != null) contentDescription = label },
                 onClick = openSearch,
             ) {
                 Text(
