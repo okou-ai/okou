@@ -20,9 +20,12 @@ import androidx.test.uiautomator.UiScrollable
 import androidx.test.uiautomator.UiSelector
 import androidx.test.uiautomator.Until
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import okhttp3.mockwebserver.MockResponse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -31,6 +34,129 @@ import org.junit.runners.model.MultipleFailureException
 
 @RunWith(AndroidJUnit4::class)
 class NativeChatListTest {
+    @Test
+    fun cachedUnreadFilterOpensBeforeIndicatorsAndRemainsUsableAfterFailure() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val app = instrumentation.targetContext.applicationContext as TestOkouApplication
+        val device = UiDevice.getInstance(instrumentation)
+        val previous = app.chatService
+        val savedPreferences = app.snapshotApiPreferences()
+        val directory = app.noBackupFilesDir.resolve("chat-list")
+        val savedCache = ChatCacheSnapshot(directory, app.chatCache)
+        fun unreadFiles() =
+            directory
+                .listFiles { file -> file.name.endsWith("-unread.json") }
+                .orEmpty()
+                .associate { it.name to it.readText() }
+        val originalUnread = unreadFiles()
+        val fixture = ChatListApiFixture()
+        val requested = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val fail = AtomicBoolean(true)
+        val jobs = mutableListOf<Job>()
+        val failures = mutableListOf<Throwable>()
+        var scenario: ActivityScenario<MainActivity>? = null
+        app.chatService = fixture.service
+        fun text(value: String) =
+            checkNotNull(
+                device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000)
+            ) {
+                "Missing $value"
+            }
+        fun launch() {
+            scenario = ActivityScenario.launch(MainActivity::class.java)
+            device.awaitChatList(app)
+            checkNotNull(scenario).onActivity { activity ->
+                val chats =
+                    checkNotNull(
+                            ViewModelProvider(activity)[SessionModel::class.java]
+                                .uiState
+                                .value
+                                .ready
+                        )
+                        .chats
+                jobs += checkNotNull(chats.viewModelScope.coroutineContext[Job])
+            }
+        }
+        try {
+            launch()
+            text("Project chat")
+            assertTrue(
+                device.wait(
+                    object : Condition<UiDevice, Boolean> {
+                        override fun apply(device: UiDevice) = unreadFiles() != originalUnread
+                    },
+                    10_000,
+                )
+            )
+            checkNotNull(scenario).close()
+            runBlocking { withTimeout(10_000) { jobs.last().join() } }
+
+            fixture.indicators = {
+                requested.countDown()
+                release.await()
+                if (fail.get()) MockResponse().setResponseCode(503)
+                else jsonResponse("""{"agents":{},"threads":{},"unreadAt":{}}""")
+            }
+            val launchedAt = SystemClock.elapsedRealtime()
+            launch()
+            checkNotNull(
+                    device.wait(
+                        Until.findObject(
+                            By.pkg(app.packageName).desc(app.getString(R.string.chat_filter))
+                        ),
+                        10_000,
+                    )
+                )
+                .click()
+            val unread = app.getString(R.string.chat_unread)
+            text(unread).click()
+            val subtitle = app.getString(R.string.chat_filter_subtitle, unread)
+            assertTrue(
+                device.wait(Until.hasObject(By.pkg(app.packageName).textContains(subtitle)), 10_000)
+            )
+            text("Project chat")
+            Log.i(
+                "OkouNativeUnread",
+                "launch-to-usable-unread=${SystemClock.elapsedRealtime() - launchedAt}ms chats=2 projects=1",
+            )
+            assertTrue(requested.await(10, TimeUnit.SECONDS))
+            assertTrue(!device.hasObject(By.pkg(app.packageName).text("Personal chat")))
+
+            release.countDown()
+            text(app.getString(R.string.chat_refresh_failed))
+            text("Project chat")
+            fail.set(false)
+            text(app.getString(R.string.retry)).click()
+            text(app.getString(R.string.chat_empty))
+        } catch (error: Throwable) {
+            failures.add(error)
+            try {
+                takeScreenshot().writeToTestStorage("native-cached-unread-failure.png")
+            } catch (diagnostic: Throwable) {
+                error.addSuppressed(diagnostic)
+            }
+        } finally {
+            release.countDown()
+            for (cleanup in
+                listOf<() -> Unit>(
+                    { scenario?.close() },
+                    { runBlocking { withTimeout(10_000) { jobs.forEach { it.join() } } } },
+                    { fixture.close() },
+                    { savedCache.restore() },
+                    { app.restoreApiPreferences(savedPreferences) },
+                    { app.chatService = previous },
+                )) {
+                try {
+                    cleanup()
+                } catch (error: Throwable) {
+                    failures.add(error)
+                }
+            }
+        }
+        MultipleFailureException.assertEmpty(failures)
+    }
+
     @Test
     fun pendingTransportAllowsSettingsAndLoadedProjectsSurviveActivityRecreation() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()

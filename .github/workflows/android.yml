@@ -149,7 +149,7 @@ jobs:
             --stacktrace --console=plain \
             2>&1 | tee build/reports/instrumentation/gradle.log
           python3 scripts/check-native-results.py \
-            app/build/outputs/androidTest-results/managedDevice/release/pixel2Api35 10
+            app/build/outputs/androidTest-results/managedDevice/release/pixel2Api35 11
       - name: Verify the Release artifact pair exists
         id: release-artifacts
         if: ${{ !cancelled() && (steps.native-tests.outcome == 'success' || steps.native-tests.outputs.release-directory != '') }}

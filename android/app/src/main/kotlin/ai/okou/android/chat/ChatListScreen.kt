@@ -126,19 +126,20 @@ internal fun ChatListScreen(
     } else if (renamingId != null && state.listPhase == ChatReadPhase.Ready) {
         LaunchedEffect(renamingId) { renamingId = null }
     }
+    val unreadAt = state.displayUnreadAt
     val groups =
         remember(
             state.threads,
             state.projects,
             state.agents,
             state.filter,
-            state.indicators,
+            unreadAt,
             state.readIntents,
         ) {
             chatListGroups(state)
         }
     val indicators = state.indicators?.threads.orEmpty()
-    val unreadChatIds = remember(state.indicators, state.readIntents) { state.unreadChatIds() }
+    val unreadChatIds = remember(unreadAt, state.readIntents) { state.unreadChatIds() }
     val sections =
         remember(groups, collapsed, indicators, unreadChatIds) {
             chatListSections(groups, collapsed, indicators, unreadChatIds)
@@ -192,7 +193,7 @@ internal fun ChatListScreen(
     val missingUnread =
         state.confirmedAt != null &&
             state.filter == ChatListFilter.Unread &&
-            state.indicators == null &&
+            unreadAt == null &&
             groups.all { it.threads.isEmpty() }
     val firstLoadFailure =
         if (missingUnread)
@@ -261,6 +262,19 @@ internal fun ChatListScreen(
             }
             if (state.cacheUnavailable || state.projectCacheUnavailable)
                 item { ChatNotice(R.string.chat_cache_unavailable) }
+            if (
+                state.confirmedAt != null &&
+                    state.filter == ChatListFilter.Unread &&
+                    !missingUnread &&
+                    !state.offline &&
+                    state.indicators == null &&
+                    state.indicatorsPhase == ChatReadPhase.Failed
+            ) {
+                item {
+                    ChatNotice(R.string.chat_refresh_failed)
+                    ChatAction(R.string.retry, retryIndicators)
+                }
+            }
             if (!state.offline && (metadataMissing || missingDefault))
                 item {
                     ChatNotice(R.string.chat_metadata_unavailable)
@@ -342,7 +356,7 @@ internal fun ChatListScreen(
                     groups.all { it.threads.isEmpty() } &&
                         metadataUsable &&
                         !missingDefault &&
-                        (state.filter != ChatListFilter.Unread || state.indicators != null)
+                        (state.filter != ChatListFilter.Unread || unreadAt != null)
                 ) {
                     item {
                         Column(

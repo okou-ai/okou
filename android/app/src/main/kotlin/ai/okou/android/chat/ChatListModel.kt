@@ -32,6 +32,15 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 private val listRefreshRetryDelays = listOf(5_000L, 10_000L, 20_000L, 40_000L, 60_000L)
+private const val unreadSnapshotLifetimeMillis = 120_000L
+private const val unreadSnapshotRenewalMillis = 30_000L
+
+private fun CachedUnread.remainingMillis(now: Long): Long {
+    val age = now - confirmedAt
+    return if (confirmedAt > 0 && age in 0 until unreadSnapshotLifetimeMillis) {
+        unreadSnapshotLifetimeMillis - age
+    } else 0
+}
 
 private fun listRetryAfterMillis(error: Exception): Long? {
     val seconds =
@@ -128,17 +137,21 @@ data class ChatListUiState(
     val failedRowAction: ChatRowAction? = null,
     val markingAllRead: Boolean = false,
     val markAllReadResult: ChatMarkAllReadResult? = null,
+    internal val cachedUnread: CachedUnread? = null,
     internal val readIntents: Map<String, ChatReadIntent> = emptyMap(),
     internal val threadsByRecency: List<ConfirmedChat> = emptyList(),
 )
 
+internal val ChatListUiState.displayUnreadAt: Map<String, String>?
+    get() = indicators?.unreadAt ?: cachedUnread?.unreadAt
+
 internal fun ChatListUiState.isUnread(threadId: String): Boolean {
-    val serverUnreadAt = indicators?.unreadAt?.get(threadId)
+    val serverUnreadAt = displayUnreadAt?.get(threadId)
     return readIntents[threadId]?.isUnread(serverUnreadAt) ?: (serverUnreadAt != null)
 }
 
 internal fun ChatListUiState.unreadChatIds(): Set<String> {
-    val serverUnread = indicators?.unreadAt.orEmpty().keys
+    val serverUnread = displayUnreadAt.orEmpty().keys
     if (readIntents.isEmpty()) return serverUnread
     return serverUnread.toMutableSet().apply {
         for (id in readIntents.keys) {
@@ -152,8 +165,8 @@ internal fun ChatListUiState.rowActions(
     group: ChatListGroup? = null,
     index: Int = -1,
 ): List<ChatRowAction> = buildList {
-    val unreadAt = indicators?.unreadAt
-    if (unreadAt != null && indicatorsPhase != ChatReadPhase.Failed && thread.muted != true) {
+    val canUpdateUnread = indicators != null || (cachedUnread != null && !offline)
+    if (canUpdateUnread && indicatorsPhase != ChatReadPhase.Failed && thread.muted != true) {
         add(if (isUnread(thread.id)) ChatRowAction.MarkRead else ChatRowAction.MarkUnread)
     }
     if (listPhase != ChatReadPhase.Failed) {
@@ -205,6 +218,7 @@ class ChatListModel(
     realtime: RealtimeService? = null,
     private val monotonicMillis: () -> Long = { System.nanoTime() / 1_000_000 },
     connectivity: Flow<Boolean> = emptyFlow(),
+    private val wallMillis: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
     private val mutable = MutableStateFlow(ChatListUiState())
     val uiState = mutable.asStateFlow()
@@ -281,6 +295,7 @@ class ChatListModel(
     private val listReadRequests = Channel<Unit>(Channel.CONFLATED)
     private val projectInvalidations = Channel<Unit>(Channel.CONFLATED)
     private val indicatorInvalidations = Channel<Unit>(Channel.CONFLATED)
+    private val unreadCacheWrites = Channel<CachedUnread>(Channel.CONFLATED)
     private var immediateIndicators = false
     private var indicatorsStartedAt: Long? = null
     val warming =
@@ -357,6 +372,19 @@ class ChatListModel(
             }
         }
         viewModelScope.launch { for (ignored in listReadRequests) readPendingListBatch() }
+        viewModelScope.launch {
+            var saved: CachedUnread? = null
+            for (snapshot in unreadCacheWrites) {
+                if (
+                    saved != null &&
+                        saved.unreadAt == snapshot.unreadAt &&
+                        snapshot.confirmedAt - saved.confirmedAt in
+                            0 until unreadSnapshotRenewalMillis
+                )
+                    continue
+                if (cache.saveUnread(snapshot)) saved = snapshot
+            }
+        }
         viewModelScope.launch {
             for (ignored in projectInvalidations) {
                 projectsJob?.join()
@@ -579,7 +607,7 @@ class ChatListModel(
             if (action == ChatRowAction.MarkUnread) history.stopAutomaticRead(threadId) else null
         val intent =
             if (!action.updatesChat) {
-                ChatReadIntent(action, state.indicators?.unreadAt?.get(threadId))
+                ChatReadIntent(action, state.displayUnreadAt?.get(threadId))
             } else null
         val write =
             if (!action.updatesChat || action == ChatRowAction.Unmute) {
@@ -761,8 +789,14 @@ class ChatListModel(
         // The current indicator request can still return unread evidence from before this receipt.
         if (indicatorsJob?.isActive == true) indicatorReadReceipts[threadId] = watermark
         val state = mutable.value
-        state.indicators?.let {
-            mutable.value = state.copy(indicators = it.acknowledgeUnread(threadId, watermark))
+        val indicators = state.indicators
+        val saved = state.cachedUnread
+        if (indicators != null) {
+            mutable.value =
+                state.copy(indicators = indicators.acknowledgeUnread(threadId, watermark))
+        } else if (saved != null) {
+            val unreadAt = saved.unreadAt.acknowledgeUnread(threadId, watermark)
+            mutable.value = state.copy(cachedUnread = saved.copy(unreadAt = unreadAt))
         }
         return watermark
     }
@@ -771,11 +805,19 @@ class ChatListModel(
         threadId: String,
         watermark: ChatTimestamp,
     ): Indicators {
-        val unread = unreadAt[threadId] ?: return this
-        if (chatTimestamp(unread) > watermark) return this
+        val remainingUnread = unreadAt.acknowledgeUnread(threadId, watermark)
+        if (remainingUnread === unreadAt) return this
         val remainingThreads =
             if (threads[threadId] == IndicatorsThreadsValue.UNREAD) threads - threadId else threads
-        return copy(threads = remainingThreads, unreadAt = unreadAt - threadId)
+        return copy(threads = remainingThreads, unreadAt = remainingUnread)
+    }
+
+    private fun Map<String, String>.acknowledgeUnread(
+        threadId: String,
+        watermark: ChatTimestamp,
+    ): Map<String, String> {
+        val unread = this[threadId] ?: return this
+        return if (chatTimestamp(unread) <= watermark) this - threadId else this
     }
 
     fun refreshAfterSend(threadId: String) {
@@ -785,6 +827,8 @@ class ChatListModel(
 
     fun refresh() {
         if (!current()) return
+        // Activity resume refreshes this owner even while workspace preferences are loading.
+        expireCachedUnread()
         restoreCache()
         if (mutable.value.offline) return
         refreshList()
@@ -829,6 +873,7 @@ class ChatListModel(
     private fun restoreCache() {
         if (cacheRead) return
         cacheRead = true
+        viewModelScope.launch { restoreUnread() }
         restoreJob =
             viewModelScope.launch {
                 try {
@@ -874,6 +919,26 @@ class ChatListModel(
                         mutable.value = mutable.value.copy(projectCacheUnavailable = true)
                 }
             }
+    }
+
+    private suspend fun restoreUnread() {
+        val saved = cache.loadUnread() ?: return
+        requireCurrent()
+        val remaining = saved.remainingMillis(wallMillis())
+        val state = mutable.value
+        if (remaining == 0L || state.indicators != null) return
+        mutable.value = state.copy(cachedUnread = saved)
+        if (withTimeoutOrNull(remaining) { mutable.first { it.cachedUnread == null } } == null) {
+            requireCurrent()
+            mutable.value = mutable.value.copy(cachedUnread = null)
+        }
+    }
+
+    private fun expireCachedUnread() {
+        val state = mutable.value
+        if (state.cachedUnread?.remainingMillis(wallMillis()) == 0L) {
+            mutable.value = state.copy(cachedUnread = null)
+        }
     }
 
     private suspend fun showCachedProjects() {
@@ -1264,6 +1329,7 @@ class ChatListModel(
                     val eligible = readConfirmations.toMap()
                     val result = service.indicators()
                     requireCurrent()
+                    val unreadConfirmedAt = wallMillis()
                     val reconciled =
                         indicatorReadReceipts.entries.fold(result) { status, (id, watermark) ->
                             status.acknowledgeUnread(id, watermark)
@@ -1293,9 +1359,11 @@ class ChatListModel(
                         state.copy(
                             indicators = reconciled,
                             indicatorsPhase = ChatReadPhase.Ready,
+                            cachedUnread = null,
                             readIntents = state.readIntents - settledVisible,
                             failedRowAction = failed,
                         )
+                    unreadCacheWrites.trySend(CachedUnread(unreadConfirmedAt, reconciled.unreadAt))
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
@@ -1321,6 +1389,7 @@ class ChatListModel(
         readyListRebase = null
         projectInvalidations.close()
         indicatorInvalidations.close()
+        unreadCacheWrites.close()
         history.close()
         cache.close()
     }

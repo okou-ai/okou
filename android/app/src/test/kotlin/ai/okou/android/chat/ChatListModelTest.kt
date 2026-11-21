@@ -169,6 +169,194 @@ class ChatListModelTest {
         }
     }
 
+    private fun unreadModel(
+        store: ViewModelStore,
+        cache: ChatCacheStore,
+        service: Service,
+        dispatcher: CoroutineDispatcher,
+        wallMillis: () -> Long,
+    ) =
+        ViewModelProvider(
+            store,
+            viewModelFactory {
+                initializer {
+                    ChatListModel(
+                        service,
+                        cache,
+                        identity,
+                        { true },
+                        {},
+                        dispatcher,
+                        wallMillis = wallMillis,
+                    )
+                }
+            },
+        )[ChatListModel::class.java]
+
+    @Test
+    fun relaunchRestoresUnreadAndAnInFlightRefreshCannotUndoALocalRead() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val root = temporary.newFolder()
+        val originalStore = ViewModelStore()
+        val relaunchedStore = ViewModelStore()
+        val initial =
+            Indicators(
+                emptyMap(),
+                mapOf(
+                    CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD,
+                    CHAT_IN_PROJECT to IndicatorsThreadsValue.ACTIVE,
+                ),
+                mapOf(CHAT_PERSONAL to CHAT_DATE),
+            )
+        val stale = CompletableDeferred<Indicators>()
+        val readback = CompletableDeferred<Indicators>()
+        var indicatorReads = 0
+        var readWrites = 0
+        val service =
+            object : Service() {
+                    override suspend fun markRead(threadId: String): ReadState {
+                        assertEquals(CHAT_PERSONAL, threadId)
+                        readWrites++
+                        return ReadState(CHAT_DATE)
+                    }
+                }
+                .apply {
+                    statusRead = {
+                        when (++indicatorReads) {
+                            1 -> initial
+                            2 -> stale.await()
+                            else -> readback.await()
+                        }
+                    }
+                }
+        try {
+            val cache = cache(root, dispatcher)
+            val original = unreadModel(originalStore, cache, service, dispatcher) { 1_000_000L }
+            original.refresh()
+            runCurrent()
+            assertEquals(initial, original.uiState.value.indicators)
+            originalStore.clear()
+            runCurrent()
+            cache.close()
+
+            val relaunched =
+                unreadModel(relaunchedStore, cache(root, dispatcher), service, dispatcher) {
+                    1_010_000L
+                }
+            relaunched.refresh()
+            relaunched.selectFilter(ChatListFilter.Unread)
+            runCurrent()
+            val restored = relaunched.uiState.value
+            assertEquals(ChatReadPhase.Loading, restored.indicatorsPhase)
+            assertNull(restored.indicators)
+            assertEquals(setOf(CHAT_PERSONAL), restored.unreadChatIds())
+            assertEquals(
+                listOf(CHAT_PERSONAL),
+                chatListGroups(restored).flatMap { it.threads }.map { it.id },
+            )
+            assertTrue(restored.markAllReadTargets().isEmpty())
+
+            relaunched.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead)
+            runCurrent()
+            assertEquals(1, readWrites)
+            assertFalse(relaunched.uiState.value.isUnread(CHAT_PERSONAL))
+            stale.complete(initial)
+            runCurrent()
+            assertFalse(relaunched.uiState.value.isUnread(CHAT_PERSONAL))
+            assertEquals(3, indicatorReads)
+
+            val newer = "2099-01-01T00:00:00.000Z"
+            readback.complete(initial.copy(unreadAt = mapOf(CHAT_PERSONAL to newer)))
+            runCurrent()
+            assertEquals(newer, relaunched.uiState.value.displayUnreadAt?.get(CHAT_PERSONAL))
+            assertTrue(relaunched.uiState.value.isUnread(CHAT_PERSONAL))
+            assertTrue(relaunched.uiState.value.readIntents.isEmpty())
+            assertNull(relaunched.uiState.value.cachedUnread)
+        } finally {
+            originalStore.clear()
+            relaunchedStore.clear()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun unreadSnapshotExpiresDuringFailedRefreshAndIsUnknownOnTheNextLaunch() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val cache = cache(temporary.newFolder(), dispatcher)
+        val first = ViewModelStore()
+        val next = ViewModelStore()
+        val confirmedAt = 1_000_000L
+        val unread = mapOf(CHAT_PERSONAL to CHAT_DATE)
+        val service = Service().apply { statusRead = { throw IOException("offline") } }
+        val wallMillis = { confirmedAt + 119_990L + testScheduler.currentTime }
+        try {
+            cache
+                .open(identity) { true }
+                .use { assertTrue(it.saveUnread(CachedUnread(confirmedAt, unread))) }
+            val model = unreadModel(first, cache, service, dispatcher, wallMillis)
+            model.refresh()
+            runCurrent()
+            assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
+            assertEquals(unread, model.uiState.value.displayUnreadAt)
+
+            advanceTimeBy(10)
+            runCurrent()
+            assertNull(model.uiState.value.displayUnreadAt)
+            first.clear()
+            val relaunched = unreadModel(next, cache, service, dispatcher, wallMillis)
+            relaunched.refresh()
+            runCurrent()
+            assertEquals(ChatReadPhase.Failed, relaunched.uiState.value.indicatorsPhase)
+            assertNull(relaunched.uiState.value.displayUnreadAt)
+
+            service.statusRead = { Indicators(emptyMap(), emptyMap(), emptyMap()) }
+            relaunched.refreshIndicators()
+            runCurrent()
+            assertEquals(ChatReadPhase.Ready, relaunched.uiState.value.indicatorsPhase)
+            assertEquals(emptyMap<String, String>(), relaunched.uiState.value.displayUnreadAt)
+        } finally {
+            first.clear()
+            next.clear()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun refreshDropsExpiredUnreadWhenOnlyWallTimeHasAdvanced() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val cache = cache(temporary.newFolder(), dispatcher)
+        val store = ViewModelStore()
+        var now = 1_000_000L
+        val unread = mapOf(CHAT_PERSONAL to CHAT_DATE)
+        val indicators = CompletableDeferred<Indicators>()
+        val service = Service().apply { statusRead = { indicators.await() } }
+        try {
+            cache
+                .open(identity) { true }
+                .use { assertTrue(it.saveUnread(CachedUnread(now, unread))) }
+            val model = unreadModel(store, cache, service, dispatcher) { now }
+            model.refresh()
+            runCurrent()
+            assertEquals(unread, model.uiState.value.displayUnreadAt)
+
+            // Device sleep advances wall time without running the scheduled timeout.
+            now += 120_000L
+            model.refresh()
+            runCurrent()
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
+            assertNull(model.uiState.value.displayUnreadAt)
+        } finally {
+            store.clear()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
     @Test
     fun anEarlierReadbackCannotSettleTheNextIntent() = runTest {
         val commitRead = CompletableDeferred<ReadState>()
