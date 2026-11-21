@@ -1,21 +1,13 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { fileURLToPath, URL } from "node:url";
-import {
-  convertV4MiniflareOptions,
-  Miniflare,
-  Response,
-  type Request,
-} from "miniflare";
-import { expect, it, onTestFinished } from "vitest";
+import { convertV4MiniflareOptions, Miniflare, Response } from "miniflare";
+import { beforeAll, describe, expect, it, onTestFinished } from "vitest";
 import type { Env } from "../workflow";
 
 const secret = randomUUID();
 const control = "approval-control-test-secret-11111111";
 
-function fixture(
-  handler: (request: Request) => Promise<Response>,
-  enabled = "true",
-) {
+function fixture(handler: (spendId: string) => Response, enabled = "true") {
   const runtime = new Miniflare(
     convertV4MiniflareOptions({
       name: "link-approval-test",
@@ -43,7 +35,7 @@ function fixture(
         expect(request.url).toBe(
           "https://api.example.test/api/internal/link-approval/poll",
         );
-        const body = await request.clone().text();
+        const body = await request.text();
         expect(request.headers.get("x-link-approval-signature")).toBe(
           createHmac("sha256", secret)
             .update(
@@ -51,17 +43,18 @@ function fixture(
             )
             .digest("hex"),
         );
-        expect(JSON.parse(body) as unknown).toEqual({
+        const payload = JSON.parse(body) as { spendId: string };
+        expect(payload).toEqual({
           spendId: expect.any(String),
         });
-        return handler(request);
+        return handler(payload.spendId);
       },
     }),
   );
-  onTestFinished(() => {
-    return runtime.dispose();
-  });
   return {
+    dispose: () => {
+      return runtime.dispose();
+    },
     start: (
       spendId: string,
       deadline: string,
@@ -85,10 +78,11 @@ function fixture(
 
 it("polls every five seconds inside one block, stops on approval and deduplicates starts", async () => {
   const calls: number[] = [];
-  const runtime = fixture(async () => {
+  const runtime = fixture(() => {
     calls.push(Date.now());
     return Response.json({ state: calls.length === 1 ? "waiting" : "done" });
   });
+  onTestFinished(runtime.dispose);
   const id = randomUUID();
   const deadline = new Date(Date.now() + 30 * 60_000).toISOString();
   const starts = await Promise.all([
@@ -116,64 +110,70 @@ it("polls every five seconds inside one block, stops on approval and deduplicate
   expect(calls).toHaveLength(2);
 }, 20_000);
 
-it("performs one final observation at the original deadline without starting a fresh polling window", async () => {
-  let calls = 0;
-  const runtime = fixture(async () => {
-    calls++;
-    return Response.json({ state: "done" });
+describe("approval window", () => {
+  const polls: string[] = [];
+  let runtime: ReturnType<typeof fixture>;
+  beforeAll(() => {
+    runtime = fixture((spendId) => {
+      polls.push(spendId);
+      return Response.json({ state: "done" });
+    });
+    return runtime.dispose;
   });
-  const id = randomUUID();
-  expect(
-    (await runtime.start(id, new Date(Date.now() - 1000).toISOString())).status,
-  ).toBe(200);
-  await expect
-    .poll(
-      async () => {
-        return (await runtime.status(id)).status;
-      },
-      { timeout: 5000 },
-    )
-    .toBe("complete");
-  expect(calls).toBe(1);
-  expect(
-    (
-      await runtime.start(
-        randomUUID(),
-        new Date(Date.now() - 121_000).toISOString(),
-      )
-    ).status,
-  ).toBe(410);
-  expect(calls).toBe(1);
-}, 10_000);
 
-it("rejects unauthorized starts and deadlines beyond the approval window without calling the API", async () => {
-  let calls = 0;
-  const runtime = fixture(async () => {
-    calls++;
-    return Response.json({ state: "done" });
-  });
-  const deadline = new Date(Date.now() + 60_000).toISOString();
-  expect(
-    (await runtime.start(randomUUID(), deadline, "Bearer wrong")).status,
-  ).toBe(401);
-  expect(
-    (
-      await runtime.start(
-        randomUUID(),
-        new Date(Date.now() + 31 * 60_000).toISOString(),
+  it("performs one final observation at the original deadline without starting a fresh polling window", async () => {
+    const startCount = polls.length;
+    const id = randomUUID();
+    expect(
+      (await runtime.start(id, new Date(Date.now() - 1000).toISOString()))
+        .status,
+    ).toBe(200);
+    await expect
+      .poll(
+        async () => {
+          return (await runtime.status(id)).status;
+        },
+        { timeout: 5000 },
       )
-    ).status,
-  ).toBe(410);
-  expect((await runtime.start("invalid", deadline)).status).toBe(400);
-  expect(calls).toBe(0);
+      .toBe("complete");
+    expect(polls.slice(startCount)).toEqual([id]);
+    expect(
+      (
+        await runtime.start(
+          randomUUID(),
+          new Date(Date.now() - 121_000).toISOString(),
+        )
+      ).status,
+    ).toBe(410);
+    expect(polls.slice(startCount)).toEqual([id]);
+  }, 10_000);
+
+  it("rejects unauthorized starts and deadlines beyond the approval window without calling the API", async () => {
+    const startCount = polls.length;
+    const deadline = new Date(Date.now() + 60_000).toISOString();
+    expect(
+      (await runtime.start(randomUUID(), deadline, "Bearer wrong")).status,
+    ).toBe(401);
+    expect(
+      (
+        await runtime.start(
+          randomUUID(),
+          new Date(Date.now() + 31 * 60_000).toISOString(),
+        )
+      ).status,
+    ).toBe(410);
+    expect((await runtime.start("invalid", deadline)).status).toBe(400);
+    expect(polls).toHaveLength(startCount);
+  });
 });
 
 it("does not start when the Worker kill switch is off", async () => {
   let calls = 0;
-  const runtime = fixture(async () => {
+  const runtime = fixture(() => {
     calls++;
     return Response.json({ state: "done" });
   }, "false");
+  onTestFinished(runtime.dispose);
   expect(
     (
       await runtime.start(
