@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sign an aligned release APK using the three production signing inputs.
 # Arguments: x.y.z, unsigned APK, output APK (must not exist). Requires JDK,
-# Python 3, complete Git history and ANDROID_HOME/build-tools/36.0.0. No Gradle or remote writes.
+# Python 3, complete Git history and ANDROID_HOME/build-tools/37.0.0. No Gradle or remote writes.
 set +x
 set -euo pipefail
 umask 077
@@ -18,7 +18,7 @@ output=$(realpath -m "$3")
 : "${ANDROID_RELEASE_KEYSTORE_BASE64:?Release keystore is required}"
 : "${ANDROID_RELEASE_KEYSTORE_PASSWORD:?Release keystore password is required}"
 : "${ANDROID_RELEASE_KEY_ALIAS:?Release key alias is required}"
-tools="$ANDROID_HOME/build-tools/36.0.0"
+tools="$ANDROID_HOME/build-tools/37.0.0"
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 version_code=$(bash "$root/android/scripts/version-code.sh")
 badging=$("$tools/aapt" dump badging "$unsigned")
@@ -71,9 +71,11 @@ from pathlib import Path
 import re
 import sys
 expected = hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest()
-actual = re.findall(r'^Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F]+)$',
-                    Path(sys.argv[2]).read_text(), re.M)
-if [digest.lower() for digest in actual] != [expected]:
+verification = Path(sys.argv[2]).read_text()
+signers = re.findall(r'^Number of signers: (\d+)$', verification, re.M)
+actual = re.findall(r'^V3\.0 Signer: certificate SHA-256 digest: ([0-9a-fA-F]{64})$',
+                    verification, re.M)
+if signers != ['1'] or [digest.lower() for digest in actual] != [expected]:
     raise SystemExit('APK signer does not match the selected keystore alias')
 print(f'Verified Android release certificate SHA-256: {expected}')
 PY

@@ -18,6 +18,7 @@ import {
   zodEnumDriverValueDecoder,
   zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
+import { connectorCatalogSkillSourceVersionId } from "./connector-catalog-columns";
 import { connectorCatalogCurrentWhere } from "./connector-catalog-slug-source.service";
 import { customConnectorDefinitionSelection } from "./custom-connector-definition-selection";
 import { customConnectorRuntimeStorageReadPlan } from "./custom-connector-credential-access.service";
@@ -96,9 +97,6 @@ const emptySections = Object.freeze({
   definition_skillMarkdown: sql`NULL::text`
     .mapWith(nullableDriverValueDecoder(pgTextDecoder))
     .as("definition_skillMarkdown"),
-  definition_skillStorageVersionId: sql`NULL::text`
-    .mapWith(nullableDriverValueDecoder(pgTextDecoder))
-    .as("definition_skillStorageVersionId"),
   definition_storageVersion: sql`NULL::bigint`
     .mapWith(nullableDriverValueDecoder(orgCustomConnectors.storageVersion))
     .as("definition_storageVersion"),
@@ -191,9 +189,9 @@ const emptySections = Object.freeze({
   catalog_generation: sql`NULL::text[]`
     .mapWith(nullableDriverValueDecoder(connectorCatalogEntries.generation))
     .as("catalog_generation"),
-  catalog_skill: sql`NULL::jsonb`
-    .mapWith(nullableDriverValueDecoder(connectorCatalogEntries.skill))
-    .as("catalog_skill"),
+  catalog_skillSourceVersionId: sql`NULL::text`
+    .mapWith(nullableDriverValueDecoder(pgTextDecoder))
+    .as("catalog_skillSourceVersionId"),
   catalog_firewall: sql`NULL::jsonb`
     .mapWith(nullableDriverValueDecoder(connectorCatalogEntries.firewall))
     .as("catalog_firewall"),
@@ -432,7 +430,6 @@ function customRuntimeDefinitionRows(
       definition_mcpEndpoint: definitions.mcpEndpoint,
       definition_mcpTransport: definitions.mcpTransport,
       definition_skillMarkdown: definitions.skillMarkdown,
-      definition_skillStorageVersionId: definitions.skillStorageVersionId,
       definition_storageVersion: definitions.storageVersion,
       definition_createdBy: definitions.createdBy,
       definition_createdAt: definitions.createdAt,
@@ -482,7 +479,9 @@ function customRuntimeCatalogRows(
       catalog_icon: connectorCatalogEntries.icon,
       catalog_tags: connectorCatalogEntries.tags,
       catalog_generation: connectorCatalogEntries.generation,
-      catalog_skill: connectorCatalogEntries.skill,
+      catalog_skillSourceVersionId: connectorCatalogSkillSourceVersionId.as(
+        "catalog_skillSourceVersionId",
+      ),
       catalog_firewall: connectorCatalogEntries.firewall,
     })
     .from(connectorCatalog)
@@ -647,7 +646,6 @@ function customRuntimeDefinitionFromRow(row: SnapshotRow) {
       mcpEndpoint: row.definition_mcpEndpoint,
       mcpTransport: row.definition_mcpTransport,
       skillMarkdown: row.definition_skillMarkdown,
-      skillStorageVersionId: row.definition_skillStorageVersionId,
       storageVersion: requiredSlot(row.definition_storageVersion),
       createdBy: requiredSlot(row.definition_createdBy),
       createdAt: requiredSlot(row.definition_createdAt),
@@ -697,7 +695,7 @@ function customRuntimeCatalogFromRow(row: SnapshotRow) {
             icon: requiredSlot(row.catalog_icon),
             tags: requiredSlot(row.catalog_tags),
             generation: requiredSlot(row.catalog_generation),
-            skill: requiredSlot(row.catalog_skill),
+            skillSourceVersionId: row.catalog_skillSourceVersionId,
             firewall: requiredSlot(row.catalog_firewall),
           },
   };

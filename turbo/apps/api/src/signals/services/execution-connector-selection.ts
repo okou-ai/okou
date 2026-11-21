@@ -8,14 +8,14 @@ import type {
   CustomConnectorExecutionDefinition,
   CustomConnectorExecutionOAuthConfig,
 } from "./custom-connector-definition-selection";
+import type { CustomConnectorSkillBundleRow } from "./custom-connector-skill-bundle-columns";
 import { normaliseCustomConnectorConnectionDefinition } from "./custom-connector.service";
 
 interface SelectedCustomConnector {
   readonly customConnectorId: string;
   readonly connectorSlug: string;
-  readonly skillStorageVersionId: string | null;
+  readonly hasSkill: boolean;
   readonly skillContentBundle: ContentBundle | null;
-  readonly skillContentBundleSourceVersionId: string | null;
   readonly permissionBundleRef: string | null;
   readonly isMcp: boolean;
 }
@@ -42,16 +42,20 @@ export function executionConnectorSelectionFromRows(
     })
     .sort();
   const customConnectors = customRows
-    .map((row): SelectedCustomConnector => {
+    .map(({ connector }): SelectedCustomConnector => {
+      const hasSkill = connector.skillStorageVersionId !== null;
       return {
-        customConnectorId: row.connector.id,
-        connectorSlug: row.connector.slug,
-        skillStorageVersionId: row.connector.skillStorageVersionId,
-        skillContentBundle: row.connector.skillContentBundle,
-        skillContentBundleSourceVersionId:
-          row.connector.skillContentBundleSourceVersionId,
-        permissionBundleRef: row.connector.permissionBundleRef,
-        isMcp: row.connector.mcpEndpoint !== null,
+        customConnectorId: connector.id,
+        connectorSlug: connector.slug,
+        hasSkill,
+        skillContentBundle:
+          hasSkill &&
+          connector.skillContentBundleSourceVersionId ===
+            connector.skillStorageVersionId
+            ? connector.skillContentBundle
+            : null,
+        permissionBundleRef: connector.permissionBundleRef,
+        isMcp: connector.mcpEndpoint !== null,
       };
     })
     .sort((a, b) => {
@@ -71,10 +75,7 @@ export function executionConnectorSelectionFromRows(
 
 type SelectedDefinitionRow = {
   readonly connector: CustomConnectorExecutionDefinitionRow &
-    Pick<
-      SelectedCustomConnector,
-      "skillContentBundle" | "skillContentBundleSourceVersionId"
-    >;
+    CustomConnectorSkillBundleRow;
   readonly oauthConfig: CustomConnectorExecutionOAuthConfig | null;
 };
 
@@ -97,7 +98,6 @@ function executionDefinitionFromRow(
     headerInjections: definition.headerInjections,
     queryInjections: definition.queryInjections,
     authMode: definition.authMode,
-    skillStorageVersionId: row.connector.skillStorageVersionId,
     storageVersion: definition.storageVersion,
     oauthConfig: definition.oauthConfig,
   };

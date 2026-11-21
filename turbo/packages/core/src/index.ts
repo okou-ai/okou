@@ -500,8 +500,6 @@ export {
   MIN_VERSION_PREFIX_LENGTH,
 } from "./version-id";
 export {
-  getSkillStorageName,
-  getCustomConnectorSkillStorageName,
   getCustomConnectorSkillName,
   VOLUME_ORG_USER_ID,
   SYSTEM_ORG_ID,

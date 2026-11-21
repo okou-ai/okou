@@ -26,8 +26,7 @@ export type { WorkflowAutomationEventConfig } from "@okouai/db/jsonb-contracts/w
  * Workflow visibility.
  *
  * Public workflows are visible within the org. Private workflows are visible
- * only to their owner. The backing package is still a skill directory and is
- * stored through the existing custom-skill volume storage name.
+ * only to their owner.
  */
 export type WorkflowVisibility = "public" | "private";
 export type OfficialWorkflowInstallationState = "installing" | "installed";
@@ -38,32 +37,24 @@ export type OfficialWorkflowReconciliationStatus =
 export type OfficialWorkflowAutomationIdentityState =
   "active" | "reconciling" | "needs_reconfiguration" | "failed" | "removed";
 
-/**
- * Workflows table
- * Org-scoped registry of workflows. Each row represents workflow metadata.
- * Workflow content is stored in the storages system.
- */
+/** Org-scoped Workflow definitions and their published content references. */
 export const workflows = pgTable(
   "workflows",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     orgId: text("org_id").notNull(),
-    // Hard 1:N ownership: every workflow belongs to exactly one agent. Deleting
-    // the agent cascades to its workflows and their volumes.
+    // Deleting the owning agent cascades to its Workflow rows.
     agentId: uuid("agent_id").notNull(),
     name: varchar("name", { length: 64 }).notNull(),
     visibility: varchar("visibility", { length: 16 })
       .$type<WorkflowVisibility>()
       .notNull()
       .default("private"),
-    // Instruction body (the SKILL.md content below the frontmatter). DB is the
-    // single source of truth; the SKILL.md written to the volume is synthesized
-    // from (name, description, instruction).
+    // Publication builds SKILL.md from the name, description and instruction.
     instruction: text("instruction"),
-    // Additive preparation: NULL means unconverted, never an empty file set.
-    // Published with the legacy HEAD until claim-time distribution is activated.
+    // An empty attachment set has an explicit descriptor distinct from SQL NULL.
     attachments: jsonb("attachments").$type<WorkflowAttachments>(),
-    // Complete SKILL.md + attachments; inactive until reference-only claims activate.
+    // Published SKILL.md and attachments delivered together for execution.
     contentBundle: jsonb("content_bundle").$type<ContentBundle>(),
     ownerUserId: text("owner_user_id").notNull(),
     displayName: varchar("display_name", { length: 256 }),
