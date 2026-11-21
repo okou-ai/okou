@@ -438,9 +438,11 @@ const artifactCatalogRuntimeSpec = {
   },
 } as const satisfies Record<"list" | "get" | "delete", AppRouteSpec>;
 
-export const artifactCatalogRuntimeContract = c.router(
-  artifactCatalogRuntimeSpec,
-);
+export function artifactCatalogRoutes(): typeof artifactCatalogRuntimeSpec {
+  return artifactCatalogRuntimeSpec;
+}
+
+const artifactCatalogRuntimeContract = c.router(artifactCatalogRuntimeSpec);
 
 export type ArtifactCatalogListRoute =
   AppRoute<ArtifactCatalogListRouteTypes> & {
