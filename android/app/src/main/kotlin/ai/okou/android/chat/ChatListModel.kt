@@ -105,7 +105,8 @@ enum class ChatRowAction(
     MovePinDown(updatesIndicators = false, changesPinOrder = true),
 }
 
-class ChatRowUndo internal constructor(val threadId: String, val action: ChatRowAction) {
+class ChatRowUndo
+internal constructor(val threadId: String, val action: ChatRowAction, internal val sequence: Long) {
     internal val inverse: ChatRowAction
         get() =
             when (action) {
@@ -566,21 +567,15 @@ class ChatListModel(
         return ReadConfirmation(intent, received, single).also { readConfirmations[threadId] = it }
     }
 
-    private var pendingUndo: ChatRowUndo? = null
+    private var undoSequence = 0L
+    private var latestOfferedUndo = 0L
 
     internal fun undoRowAction(undo: ChatRowUndo) {
-        if (!current() || mutable.value.rowUndo !== undo) return
         val state = mutable.value
-        val thread = state.threads.firstOrNull { it.id == undo.threadId && it.hidden != true }
+        if (!current() || state.rowUndo !== undo || undo.threadId in state.pendingRowActions) return
+        val thread = state.undoTarget(undo)
         dismissRowUndo(undo)
-        if (thread == null || undo.threadId in state.pendingRowActions) return
-        val stillApplied =
-            when (undo.action) {
-                ChatRowAction.Archive -> thread.archived
-                ChatRowAction.Unarchive -> !thread.archived
-                else -> !state.isUnread(undo.threadId) && thread.muted != true
-            }
-        if (!stillApplied) return
+        if (thread == null) return
         if (undo.inverse !in state.rowActions(thread)) {
             mutable.value = mutable.value.copy(failedRowAction = undo.inverse)
             return
@@ -594,8 +589,37 @@ class ChatListModel(
     }
 
     internal fun clearRowUndo() {
-        pendingUndo = null
+        // Commands from the previous list visit may still finish.
+        latestOfferedUndo = undoSequence
         mutable.value.rowUndo?.let(::dismissRowUndo)
+    }
+
+    private fun ChatListUiState.undoTarget(undo: ChatRowUndo): ConfirmedChat? =
+        threads
+            .firstOrNull { it.id == undo.threadId && it.hidden != true }
+            ?.takeIf { thread ->
+                when (undo.action) {
+                    ChatRowAction.Archive -> thread.archived
+                    ChatRowAction.Unarchive -> !thread.archived
+                    ChatRowAction.MarkRead -> !isUnread(thread.id) && thread.muted != true
+                    else -> error("Chat action cannot be undone")
+                }
+            }
+
+    private fun recordConfirmedUndo(threadId: String, candidate: ChatRowUndo?) {
+        if (!current()) return
+        val state = mutable.value
+        if (
+            candidate != null &&
+                candidate.sequence > latestOfferedUndo &&
+                state.undoTarget(candidate) != null
+        ) {
+            latestOfferedUndo = candidate.sequence
+            mutable.value = state.copy(rowUndo = candidate)
+        } else {
+            val undo = state.rowUndo
+            if (undo?.threadId == threadId && state.undoTarget(undo) == null) dismissRowUndo(undo)
+        }
     }
 
     internal fun performRowAction(threadId: String, action: ChatRowAction) =
@@ -624,7 +648,6 @@ class ChatListModel(
             else null
         val index = pinGroup?.threads?.indexOf(thread) ?: -1
         if (action !in state.rowActions(thread, pinGroup, index)) return
-        if (pendingUndo?.threadId == threadId) pendingUndo = null
         val archiveAction = action == ChatRowAction.Archive || action == ChatRowAction.Unarchive
         val undo =
             if (
@@ -632,7 +655,7 @@ class ChatListModel(
                     (archiveAction ||
                         action == ChatRowAction.MarkRead && state.filter == ChatListFilter.Unread)
             )
-                ChatRowUndo(threadId, action).also { pendingUndo = it }
+                ChatRowUndo(threadId, action, ++undoSequence)
             else null
         val acknowledgement =
             if (action == ChatRowAction.MarkUnread) history.stopAutomaticRead(threadId) else null
@@ -647,7 +670,6 @@ class ChatListModel(
         mutable.value =
             state.copy(
                 pendingRowActions = state.pendingRowActions + (threadId to action),
-                rowUndo = state.rowUndo?.takeUnless { it.threadId == threadId },
                 readIntents =
                     if (intent == null) state.readIntents
                     else state.readIntents + (threadId to intent),
@@ -778,14 +800,12 @@ class ChatListModel(
                             state.copy(pendingRowActions = state.pendingRowActions - threadId)
                     }
                 }
-                val confirmedAction = coroutineScope {
-                    if (action.updatesIndicators) launch { readIndicatorsAfterWrite() }
-                    if (action.updatesChat) confirmRowEdits(action, edits, archiveRejected)
-                    else confirmation?.receiptCoversIntent == true
-                }
-                if (confirmedAction && undo != null && pendingUndo === undo && current()) {
-                    pendingUndo = null
-                    mutable.value = mutable.value.copy(rowUndo = undo)
+                if (confirmation?.receiptCoversIntent == true) recordConfirmedUndo(threadId, undo)
+                coroutineScope {
+                    if (archiveAction) invalidateIndicators()
+                    else if (action.updatesIndicators) launch { readIndicatorsAfterWrite() }
+                    if (action.updatesChat && confirmRowEdits(action, edits, archiveRejected))
+                        recordConfirmedUndo(threadId, undo)
                 }
                 if (
                     confirmation?.receiptCoversIntent == false &&
@@ -1186,7 +1206,6 @@ class ChatListModel(
         val editsAtPublish = rowEdits
         if (editsAtPublish.isNotEmpty()) {
             val observed = buildSet {
-                addAll(discardOnSuccess)
                 checkpoint.snapshotCursor.eventId?.let(::add)
                 checkpoint.events.forEach { it.cursor().eventId?.let(::add) }
                 if (saved.checkpoint !== checkpoint) {
@@ -1195,7 +1214,7 @@ class ChatListModel(
                 }
                 addAll(result.eventIdsBeforeRebase)
             }
-            settleRowEdits(observed)
+            settleRowEdits(observed, discardOnSuccess)
         }
         val state =
             mutable.value.copy(
@@ -1211,15 +1230,17 @@ class ChatListModel(
         else publishRows(state)
     }
 
-    private fun settleRowEdits(observed: Set<String>) {
+    private fun settleRowEdits(observed: Set<String>, discarded: Set<String>) {
         val settledThrough = mutableMapOf<Pair<String, ChatRowField>, Int>()
         rowEdits.forEachIndexed { index, edit ->
             if (edit.eventId in observed) settledThrough[edit.threadId to edit.field] = index
         }
-        if (settledThrough.isEmpty()) return
+        if (settledThrough.isEmpty() && discarded.isEmpty()) return
         rowEdits =
             rowEdits.filterIndexed { index, edit ->
-                val settled = index <= (settledThrough[edit.threadId to edit.field] ?: -1)
+                val settled =
+                    edit.eventId in discarded ||
+                        index <= (settledThrough[edit.threadId to edit.field] ?: -1)
                 if (settled) unconfirmedRowEvents.remove(edit.eventId)
                 !settled
             }
