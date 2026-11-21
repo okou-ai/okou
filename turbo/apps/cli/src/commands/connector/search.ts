@@ -8,7 +8,6 @@ import {
 } from "../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { getPlatformOrigin } from "../../lib/platform-url";
-import { getOkouAgentId } from "../../lib/okou-env";
 import { padEndAnsi, stripAnsi } from "./connected-as";
 import {
   connectorDiscoveryDefinitions,
@@ -91,7 +90,6 @@ function printSearchResults<T extends ConnectorDiscoveryDefinition>(args: {
   readonly origin: string;
   readonly runBound: boolean;
   readonly callbackPrompt: string | undefined;
-  readonly agentId: string | undefined;
 }): void {
   const effectiveLimit = args.limit ?? args.connectors.length;
   const { results, total } = searchConnectorCatalog(
@@ -128,7 +126,6 @@ function printSearchResults<T extends ConnectorDiscoveryDefinition>(args: {
           actions: connectorSearchActionLinks({
             actions,
             origin: args.origin,
-            agentId: args.agentId,
             callbackPrompt: args.callbackPrompt,
           }),
         },
@@ -203,7 +200,6 @@ function printSearchResults<T extends ConnectorDiscoveryDefinition>(args: {
       return action ? [action] : [];
     }),
     origin: args.origin,
-    agentId: args.agentId,
     runBound: args.runBound,
     callbackPrompt: args.callbackPrompt,
   });
@@ -332,7 +328,6 @@ Examples
             origin,
             runBound: true,
             callbackPrompt: options.callbackPrompt,
-            agentId: getOkouAgentId(),
           });
           return;
         }
@@ -375,7 +370,6 @@ Examples
           origin,
           runBound: false,
           callbackPrompt: options.callbackPrompt,
-          agentId: undefined,
         });
       },
     ),

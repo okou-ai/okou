@@ -10,8 +10,8 @@ import {
 } from "../connector/run-account-context";
 import {
   MAIL_CONNECTOR_SLUG_BY_PROVIDER,
-  currentAgentId,
   parseMailProvider,
+  requireMailRunContext,
 } from "./shared";
 
 interface ConnectOptions {
@@ -77,7 +77,6 @@ async function printRunConnect(
     ? connectorActionUrl({
         origin,
         path: `/connectors/${connectorSlug}/reconnect/${account.connectionId}`,
-        agentId: currentAgentId(),
       })
     : null;
   if (options.json) {
@@ -114,9 +113,9 @@ export const connectCommand = new Command()
   .option("--json", "Print machine-readable JSON")
   .action(
     withErrorHandler(async (providerValue: string, options: ConnectOptions) => {
+      requireMailRunContext();
       const provider = parseMailProvider(providerValue);
       const connectorSlug = MAIL_CONNECTOR_SLUG_BY_PROVIDER[provider];
-      currentAgentId();
       await printRunConnect(provider, connectorSlug, options);
     }),
   );

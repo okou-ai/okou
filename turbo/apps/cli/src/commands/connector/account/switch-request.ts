@@ -11,7 +11,7 @@ import {
   listCustomConnectors,
 } from "../../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
-import { getOkouAgentId } from "../../../lib/okou-env";
+import { getOkouChatThreadId } from "../../../lib/okou-env";
 import { listRunConnectorAccounts } from "../../../lib/api/domains/run-connector-accounts";
 import { isUuid } from "../../../lib/utils/uuid";
 import { getPlatformOrigin } from "../../../lib/platform-url";
@@ -106,8 +106,8 @@ Notes:
         if (!isUuid(connectionId)) {
           throw new Error("--connection-id must be a valid UUID");
         }
-        const agentId = getOkouAgentId()?.trim();
-        if (!agentId) {
+        const threadId = getOkouChatThreadId()?.trim();
+        if (!threadId) {
           throw new Error(
             "Connector account switches require the current web chat execution context",
           );
@@ -169,14 +169,10 @@ Notes:
           connectionId,
         );
         const origin = await getPlatformOrigin();
-        const path = `/agents/${encodeURIComponent(agentId)}/connector-accounts/${encodeURIComponent(connectionId)}/select`;
+        const path = `/connectors/accounts/${encodeURIComponent(connectionId)}/select`;
         const actionUrl = new URL(path, origin);
         addTargetSearchParams(actionUrl.searchParams, target);
-        const url = finalizeActionUrl(
-          actionUrl,
-          options.callbackPrompt,
-          agentId,
-        );
+        const url = finalizeActionUrl(actionUrl, options.callbackPrompt);
         const label = connectorAccountCliLabel({
           ...inspection,
           connectionId: inspection.connectionId,

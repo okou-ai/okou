@@ -2,7 +2,7 @@ import type { ConnectedConnectors } from "@okouai/api-contracts/contracts/connec
 import {
   CALLBACK_PROMPT_GUIDANCE,
   connectorActionUrl,
-  currentChatSupportsActionCallback,
+  connectorActionCallbackAvailable,
   finalizeActionUrl,
 } from "./action-url";
 import {
@@ -76,7 +76,6 @@ export function currentConnectorSearchAction(
 export function connectorSearchActionLinks(args: {
   readonly actions: readonly ConnectorSearchAction[];
   readonly origin: string;
-  readonly agentId: string | undefined;
   readonly callbackPrompt: string | undefined;
 }) {
   return args.actions.map((action) => {
@@ -88,11 +87,10 @@ export function connectorSearchActionLinks(args: {
     const url = connectorActionUrl({
       origin: args.origin,
       path: action.path,
-      agentId: args.agentId,
     });
     return {
       label: action.label,
-      url: finalizeActionUrl(new URL(url), args.callbackPrompt, args.agentId),
+      url: finalizeActionUrl(new URL(url), args.callbackPrompt),
       supportsCallback: action.supportsCallback,
     };
   });
@@ -101,7 +99,6 @@ export function connectorSearchActionLinks(args: {
 export function printConnectorSearchGuidance(args: {
   readonly actions: readonly ConnectorSearchAction[];
   readonly origin: string;
-  readonly agentId: string | undefined;
   readonly runBound: boolean;
   readonly callbackPrompt: string | undefined;
 }): void {
@@ -129,7 +126,7 @@ export function printConnectorSearchGuidance(args: {
       "This link starts the next round in the current chat with the supplied prompt after the user completes the action. The current turn can end after sharing the exact link, including all query parameters; the connection is pending until the user completes it.",
     );
   } else if (
-    currentChatSupportsActionCallback(args.agentId) &&
+    connectorActionCallbackAvailable() &&
     args.actions.some((action) => {
       return action.supportsCallback;
     })

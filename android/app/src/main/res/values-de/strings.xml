@@ -159,4 +159,5 @@
     <string name="updates_waiting_to_check">Warten auf Prüfung</string>
     <string name="updates_waiting_to_download">Warten auf Download</string>
     <string name="instructions_placeholder">Was soll Okou berücksichtigen?</string>
+    <string name="instructions_save_when_online">Stelle eine Verbindung her, um Änderungen zu speichern.</string>
 </resources>

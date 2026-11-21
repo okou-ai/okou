@@ -1,5 +1,4 @@
 import { connectorAccountTargetKey } from "@okouai/api-contracts/contracts/connector-accounts";
-import { getOkouAgentId } from "../../lib/okou-env";
 import { Command, Option } from "commander";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectorRuntimeTarget } from "@okouai/api-contracts/contracts/runners";
@@ -46,7 +45,7 @@ import {
 import {
   CALLBACK_PROMPT_PLACEHOLDER,
   connectorActionUrl,
-  currentChatSupportsActionCallback,
+  connectorActionCallbackAvailable,
   printCallbackActionUrlExample,
 } from "./action-url";
 import {
@@ -68,7 +67,6 @@ interface DiagContext {
   readonly credentialResolution: "network-boundary" | "none";
   readonly run: ResolvedDiagnostic["run"];
   readonly platformOrigin: string;
-  readonly agentId: string | undefined;
   readonly runBound: boolean;
 }
 
@@ -89,13 +87,12 @@ function printMemberConnectionStatus(
     const url = connectorActionUrl({
       origin: ctx.platformOrigin,
       path: `/connectors/${ctx.connectorSlug}/reconnect/${account.id}`,
-      agentId: ctx.agentId,
     });
     console.log(
       `The ${ctx.label} connector has a saved account that needs to be reconnected.`,
     );
     console.log(`Reconnect it at: [Reconnect ${ctx.label}](${url})`);
-    printCallbackActionUrlExample(url, ctx.agentId);
+    printCallbackActionUrlExample(url);
   } else if (facts.memberStatus === "connected") {
     console.log(`The ${ctx.label} connector is connected and active.`);
   } else if (facts.memberStatus === "not-connected") {
@@ -103,15 +100,13 @@ function printMemberConnectionStatus(
     const url = connectorActionUrl({
       origin: ctx.platformOrigin,
       path: `/connectors/${ctx.connectorSlug}/connect`,
-      agentId: ctx.agentId,
     });
     console.log(`Connect it at: [Connect ${ctx.label}](${url})`);
-    printCallbackActionUrlExample(url, ctx.agentId);
+    printCallbackActionUrlExample(url);
   } else {
     const url = connectorActionUrl({
       origin: ctx.platformOrigin,
       path: "/connectors",
-      agentId: ctx.agentId,
     });
     console.log(
       `Review the ${ctx.label} accounts: [Manage ${ctx.label} accounts](${url})`,
@@ -154,11 +149,10 @@ function printRunConnectionStatus(
     const url = connectorActionUrl({
       origin: ctx.platformOrigin,
       path: `/connectors/${ctx.connectorSlug}/reconnect/${runAccount.connectionId}`,
-      agentId: ctx.agentId,
     });
     console.log(`The ${ctx.label} connector needs to be reconnected.`);
     console.log(`Reconnect it at: [Reconnect ${ctx.label}](${url})`);
-    printCallbackActionUrlExample(url, ctx.agentId);
+    printCallbackActionUrlExample(url);
     console.log("After reconnecting, start a new run.");
   } else {
     console.log(`The ${ctx.label} connector is connected and active.`);
@@ -311,7 +305,6 @@ function printNamedPolicyResult(
   target: ConnectorRuntimeTarget,
   permission: string,
   policy: ConnectorCheckPolicy,
-  agentId: string | undefined,
   request: UrlDiagnosticRequest | undefined,
   platformOrigin: string,
 ): void {
@@ -350,7 +343,6 @@ function printNamedPolicyResult(
       printPermissionRequestCommands(
         target,
         permission,
-        agentId,
         "To request this permission, run",
         request,
         platformOrigin,
@@ -365,7 +357,6 @@ function printNamedPolicyResult(
       printPermissionRequestCommands(
         target,
         permission,
-        agentId,
         "To request this permission, run",
         request,
         platformOrigin,
@@ -380,7 +371,6 @@ function printNamedPolicyResult(
 function printPermissionRequestCommands(
   target: ConnectorRuntimeTarget,
   permission: string,
-  agentId: string | undefined,
   introduction: string,
   request: UrlDiagnosticRequest | undefined,
   platformOrigin: string,
@@ -407,7 +397,7 @@ function printPermissionRequestCommands(
     request,
   );
   console.log(`${introduction}: ${command}`);
-  if (!currentChatSupportsActionCallback(agentId)) {
+  if (!connectorActionCallbackAvailable()) {
     return;
   }
 
@@ -421,7 +411,6 @@ function printPermissionRequestCommands(
 function printUnknownEndpointPolicy(
   target: ConnectorRuntimeTarget,
   policy: ConnectorCheckPolicy,
-  agentId: string | undefined,
   request: UrlDiagnosticRequest,
   platformOrigin: string,
   suppressBuiltinUnknownAction: boolean,
@@ -457,7 +446,6 @@ function printUnknownEndpointPolicy(
       printPermissionRequestCommands(
         target,
         "__unknown__",
-        agentId,
         "To request access to unknown endpoints, run",
         request,
         platformOrigin,
@@ -471,7 +459,6 @@ function printUnknownEndpointPolicy(
       printPermissionRequestCommands(
         target,
         "__unknown__",
-        agentId,
         "To request access to unknown endpoints, run",
         request,
         platformOrigin,
@@ -486,7 +473,6 @@ function printUnknownEndpointPolicy(
 function printUrlPermissionDiagnostic(
   request: UrlDiagnosticRequest,
   result: ResolvedUrlDiagnostic,
-  agentId: string | undefined,
   platformOrigin: string,
   awsContextIncomplete: boolean,
 ): void {
@@ -511,7 +497,6 @@ function printUrlPermissionDiagnostic(
         result.connector.target,
         permission.name,
         permission.policy,
-        agentId,
         request,
         platformOrigin,
       );
@@ -528,7 +513,6 @@ function printUrlPermissionDiagnostic(
     printUnknownEndpointPolicy(
       result.connector.target,
       result.permission.policy,
-      agentId,
       request,
       platformOrigin,
       awsContextIncomplete,
@@ -540,7 +524,6 @@ function printUrlPermissionDiagnostic(
 function printEnvironmentPermissionDiagnostic(
   result: ResolvedEnvironmentDiagnostic,
   permissionName: string | undefined,
-  agentId: string | undefined,
   platformOrigin: string,
 ): void {
   if (result.permission === null) {
@@ -561,7 +544,6 @@ function printEnvironmentPermissionDiagnostic(
     result.connector.target,
     permissionName,
     result.permission,
-    agentId,
     undefined,
     platformOrigin,
   );
@@ -730,7 +712,6 @@ Permission recovery:
         credentialResolution: result.connector.credentialResolution,
         run: result.run,
         platformOrigin: platformUrl.origin,
-        agentId: getOkouAgentId(),
         runBound: isRunBoundConnectorContext(),
       };
 
@@ -756,7 +737,6 @@ Permission recovery:
         printUrlPermissionDiagnostic(
           requireUrlRequest(request),
           result,
-          ctx.agentId,
           ctx.platformOrigin,
           awsContextIncomplete,
         );
@@ -764,7 +744,6 @@ Permission recovery:
         printEnvironmentPermissionDiagnostic(
           result,
           request.mode === "environment" ? request.permission : undefined,
-          ctx.agentId,
           ctx.platformOrigin,
         );
       }

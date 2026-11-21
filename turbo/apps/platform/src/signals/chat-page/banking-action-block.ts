@@ -82,17 +82,16 @@ export function parseBankingActionUrl(
     return { status: "unrelated" };
   }
   const match = url.pathname.match(/^\/agents\/([^/]+)\/banking$/u);
-  if (!match) {
+  if (!match && url.pathname !== "/banking/access") {
     return { status: "unrelated" };
   }
-  const agentId = match[1] ?? "";
+  const agentId = match?.[1];
   const reason = url.searchParams.get("reason")?.trim() ?? "";
   const callback = context ? chatActionCallbackFromUrl(url, context) : null;
   if (
     !context ||
-    !agentId ||
     !context.agentId ||
-    !chatActionIdMatches(agentId, context.agentId) ||
+    (agentId !== undefined && !chatActionIdMatches(agentId, context.agentId)) ||
     !reason ||
     reason.length > 500 ||
     !callback?.callbackPrompt ||
@@ -280,7 +279,7 @@ function createBankingUiSignals(): Pick<
   return { uiState$, updateUiState$ };
 }
 
-function createBankingSignals(
+export function createBankingSignals(
   descriptor: BankingActionDescriptor,
 ): BankingSignals {
   const statusSignals = createBankingStatusSignals(descriptor);
