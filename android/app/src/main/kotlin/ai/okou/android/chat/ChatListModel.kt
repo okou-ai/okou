@@ -128,6 +128,8 @@ internal constructor(val threadId: String, val action: ChatRowAction, internal v
             }
 }
 
+data class ProjectRenameRejection internal constructor(val projectId: String, val eventId: String)
+
 data class ChatListUiState(
     val threads: List<ConfirmedChat> = emptyList(),
     val listPhase: ChatReadPhase = ChatReadPhase.Idle,
@@ -146,7 +148,7 @@ data class ChatListUiState(
     val projectsSource: ChatListSource? = null,
     val renamingProjectId: String? = null,
     val unconfirmedProjectRenames: Set<String> = emptySet(),
-    internal val rejectedProjectRenameEventId: String? = null,
+    internal val projectRenameRejection: ProjectRenameRejection? = null,
     val indicators: Indicators? = null,
     val indicatorsPhase: ChatReadPhase = ChatReadPhase.Idle,
     val filter: ChatListFilter = ChatListFilter.Inbox,
@@ -1457,11 +1459,17 @@ class ChatListModel(
         retryableProjectRenames[id]?.let(::submitProjectRename)
     }
 
-    internal fun dismissProjectRenameRejection(eventId: String) {
-        if (current() && mutable.value.rejectedProjectRenameEventId == eventId) {
-            mutable.value = mutable.value.copy(rejectedProjectRenameEventId = null)
+    internal fun dismissProjectRenameRejection(rejection: ProjectRenameRejection) {
+        if (current() && mutable.value.projectRenameRejection == rejection) {
+            mutable.value = mutable.value.copy(projectRenameRejection = null)
         }
     }
+
+    private fun hasProjectReceipt(eventId: String): Boolean =
+        confirmedProjects?.checkpoint?.let { checkpoint ->
+            checkpoint.archive.latestEventId == eventId ||
+                checkpoint.events.any { it.id == eventId }
+        } == true
 
     private fun publishProjects(
         rows: List<ConfirmedProject>,
@@ -1495,8 +1503,14 @@ class ChatListModel(
             return
         projectRename = rename
         retryableProjectRenames.remove(rename.id)
-        publishProjects(confirmedProjectRows)
+        val previousRejection = state.projectRenameRejection
+        publishProjects(
+            confirmedProjectRows,
+            if (previousRejection?.projectId == rename.id) state.copy(projectRenameRejection = null)
+            else state,
+        )
         viewModelScope.launch {
+            var rejected = false
             try {
                 try {
                     service.renameProject(rename.id, rename.name, rename.eventId)
@@ -1505,17 +1519,14 @@ class ChatListModel(
                 } catch (error: Exception) {
                     requireCurrent()
                     if (error !is ApiFailure.Http || error.status != 404) onFailure(error)
-                    if (
-                        error is ApiFailure.Unauthenticated ||
-                            error is ApiFailure.UpdateRequired ||
-                            error is ApiFailure.Http &&
-                                error.status in setOf(400, 401, 403, 404, 409, 422)
-                    ) {
-                        requireCurrent()
-                        mutable.value =
-                            mutable.value.copy(rejectedProjectRenameEventId = rename.eventId)
-                        return@launch
-                    }
+                    rejected =
+                        when (error) {
+                            is ApiFailure.Unauthenticated,
+                            is ApiFailure.UpdateRequired -> true
+                            is ApiFailure.Http -> error.status in setOf(400, 401, 403, 404, 409)
+                            else -> false
+                        }
+                    if (rejected) return@launch
                 }
                 requireCurrent()
                 // Wait out a read that could have started before the write.
@@ -1532,18 +1543,24 @@ class ChatListModel(
                         mutable.value.projectsPhase == ChatReadPhase.Ready &&
                         confirmedName == rename.name
                 // The stream can deliver the receipt before the write response is lost.
-                val observedReceipt =
-                    confirmedProjects?.checkpoint?.let { checkpoint ->
-                        checkpoint.archive.latestEventId == rename.eventId ||
-                            checkpoint.events.any { it.id == rename.eventId }
-                    } == true
-                if (!observedName && !observedReceipt && confirmedName != null) {
+                if (!observedName && !hasProjectReceipt(rename.eventId) && confirmedName != null) {
                     // The server deduplicates retries by this Project event ID.
                     retryableProjectRenames[rename.id] = rename
                 }
             } finally {
                 projectRename = null
-                if (current()) publishProjects(confirmedProjectRows)
+                if (current()) {
+                    val state = mutable.value
+                    // A retry can be rejected after the original write was confirmed.
+                    val settled =
+                        if (rejected && !hasProjectReceipt(rename.eventId))
+                            state.copy(
+                                projectRenameRejection =
+                                    ProjectRenameRejection(rename.id, rename.eventId)
+                            )
+                        else state
+                    publishProjects(confirmedProjectRows, settled)
+                }
             }
         }
     }

@@ -3,7 +3,7 @@
     <string name="chat_undo_unarchived">聊天已取消归档</string>
     <string name="chat_undo_marked_read">聊天已标为已读</string>
     <string name="chat_undo">撤销</string>
-    <string name="chat_undo_close">关闭</string>
+    <string name="chat_feedback_dismiss">关闭</string>
     <string name="chat_list_offline">离线</string>
     <string name="chat_list_refresh_failed">列表刷新失败</string>
     <string name="chat_list_first_load_failed">暂时无法加载</string>

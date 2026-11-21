@@ -16,6 +16,7 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -889,31 +890,56 @@ class ChatListRootTest {
     }
 
     @Test
-    fun rejectedProjectRenameRestoresTheNameAndShowsFailure() {
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun rejectedProjectRenameShowsFailureAtTheProjectWithoutDisplacingUndo() {
         val app = compose.activity.application as ChatListApplication
+        val events = app.fixture.rowEventTail()
         app.fixture.commandResponse = { request ->
-            if (
-                request.method == "PATCH" &&
-                    request.requestUrl?.encodedPath == "/api/projects/$CHAT_PROJECT"
-            ) {
-                MockResponse().setResponseCode(409)
-            } else null
+            when (request.requestUrl?.encodedPath) {
+                "/api/chat-threads/$CHAT_PERSONAL/archive" -> {
+                    events.add(24L to request.rowEvent(24, CHAT_PERSONAL, "archived"))
+                    MockResponse().setResponseCode(204)
+                }
+                "/api/chat-threads/$CHAT_PERSONAL/unarchive" -> {
+                    events.add(25L to request.rowEvent(25, CHAT_PERSONAL, "unarchived"))
+                    MockResponse().setResponseCode(204)
+                }
+                "/api/projects/$CHAT_PROJECT" -> MockResponse().setResponseCode(409)
+                else -> null
+            }
         }
         app.responseGate.countDown()
         awaitListAndNames()
+        val chat = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
+        chat.performTouchInput { longClick() }
+        compose.onNodeWithText("Archive chat").performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("Chat archived").fetchSemanticsNodes().isNotEmpty()
+        }
+
         compose.onNodeWithText("Research").performTouchInput { longClick() }
         compose.onNodeWithText("Rename").performClick()
         compose.onNode(hasSetTextAction()).performTextReplacement("Field notes")
         compose.onNodeWithText("Save").performClick()
 
+        val failure = "Could not rename the Project."
         compose.waitUntil(10_000) {
-            compose
-                .onAllNodesWithText("Could not rename the Project.")
-                .fetchSemanticsNodes()
-                .isNotEmpty()
+            compose.onAllNodesWithText(failure).fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithText("Research").assertIsDisplayed()
+        val project = compose.onNodeWithText("Research").assertIsDisplayed()
+        val inList = hasAnyAncestor(hasTestTag("chat_list"))
+        val notice = compose.onNode(hasText(failure).and(inList)).assertIsDisplayed()
+        assertTrue(
+            notice.getUnclippedBoundsInRoot().top >= project.getUnclippedBoundsInRoot().bottom
+        )
         compose.onNodeWithText("Try again").assertDoesNotExist()
+        val undo = compose.onNodeWithText("Undo").assertIsDisplayed().assertIsEnabled()
+        compose.onNode(hasContentDescription("Dismiss").and(inList)).performClick()
+        compose.onNodeWithText(failure).assertDoesNotExist()
+
+        undo.performClick()
+        awaitRowActionSettled(CHAT_PERSONAL)
+        chat.assertIsDisplayed()
     }
 
     @Test

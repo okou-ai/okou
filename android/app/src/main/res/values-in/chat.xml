@@ -3,7 +3,7 @@
     <string name="chat_undo_unarchived">Chat dikeluarkan dari arsip</string>
     <string name="chat_undo_marked_read">Chat ditandai sudah dibaca</string>
     <string name="chat_undo">Urungkan</string>
-    <string name="chat_undo_close">Tutup</string>
+    <string name="chat_feedback_dismiss">Tutup</string>
     <string name="chat_list_offline">Offline</string>
     <string name="chat_list_refresh_failed">Daftar chat gagal diperbarui</string>
     <string name="chat_list_first_load_failed">Untuk sementara tidak dapat dimuat</string>

@@ -33,6 +33,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -114,6 +115,7 @@ internal fun ChatListScreen(
     wide: Boolean,
     newChatEnabled: Boolean,
     startupRecovery: @Composable (() -> Unit)?,
+    dismissProjectRenameRejection: (ProjectRenameRejection) -> Unit,
     feedback: @Composable () -> Unit,
 ) {
     var renamingId by remember { mutableStateOf<String?>(null) }
@@ -225,6 +227,7 @@ internal fun ChatListScreen(
     val indicators = state.indicators?.threads.orEmpty()
     val unreadChatIds = remember(unreadAt, state.readIntents) { state.unreadChatIds() }
     val knownProjects = remember(state.projects) { state.projects.mapTo(hashSetOf()) { it.id } }
+    val renameRejection = state.projectRenameRejection
     val pendingByProject =
         remember(state.threads, state.filter, provisionalChats, knownProjects) {
             if (state.filter != ChatListFilter.Inbox || provisionalChats.isEmpty()) emptyMap()
@@ -368,6 +371,14 @@ internal fun ChatListScreen(
                     )
                 }
             }
+            // A concurrent removal can leave no Project row to attach the failure to.
+            if (renameRejection != null && renameRejection.projectId !in knownProjects) {
+                item(key = "project_rename_${renameRejection.projectId}") {
+                    ProjectRenameRejectionNotice(Modifier.padding(start = 12.dp)) {
+                        dismissProjectRenameRejection(renameRejection)
+                    }
+                }
+            }
             if (state.confirmedAt == null || missingUnread) {
                 when {
                     state.offline ->
@@ -441,7 +452,13 @@ internal fun ChatListScreen(
                                 renaming = state.renamingProjectId == project.id,
                             )
                         }
-                        if (project.id in state.unconfirmedProjectRenames) {
+                        if (renameRejection != null && renameRejection.projectId == project.id) {
+                            item(key = "project_rename_${project.id}") {
+                                ProjectRenameRejectionNotice(Modifier.projectChildIndent(outline)) {
+                                    dismissProjectRenameRejection(renameRejection)
+                                }
+                            }
+                        } else if (project.id in state.unconfirmedProjectRenames) {
                             item(key = "project_rename_${project.id}") {
                                 Column(Modifier.projectChildIndent(outline)) {
                                     ChatNotice(R.string.chat_project_rename_unconfirmed)
@@ -1016,11 +1033,24 @@ private fun ChatListLoadNotice(message: Int) {
 }
 
 @Composable
-private fun ChatNotice(message: Int) {
+private fun ProjectRenameRejectionNotice(modifier: Modifier = Modifier, dismiss: () -> Unit) {
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        ChatNotice(R.string.chat_project_rename_rejected, Modifier.weight(1f))
+        IconButton(onClick = dismiss) {
+            Icon(
+                painterResource(R.drawable.ic_close),
+                stringResource(R.string.chat_feedback_dismiss),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ChatNotice(message: Int, modifier: Modifier = Modifier) {
     Text(
         stringResource(message),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        modifier = modifier.semantics { liveRegion = LiveRegionMode.Polite },
     )
 }
 

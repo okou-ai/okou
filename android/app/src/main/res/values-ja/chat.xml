@@ -3,7 +3,7 @@
     <string name="chat_undo_unarchived">チャットのアーカイブを解除しました</string>
     <string name="chat_undo_marked_read">チャットを既読にしました</string>
     <string name="chat_undo">元に戻す</string>
-    <string name="chat_undo_close">閉じる</string>
+    <string name="chat_feedback_dismiss">閉じる</string>
     <string name="chat_list_offline">オフライン</string>
     <string name="chat_list_refresh_failed">チャット一覧を更新できませんでした</string>
     <string name="chat_list_first_load_failed">一時的に読み込めません</string>

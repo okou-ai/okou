@@ -250,15 +250,6 @@ internal fun OkouApp(
                 chats?.dismissRowActionFailure(action)
             }
         }
-    list.rejectedProjectRenameEventId
-        ?.takeIf { showChatList && list.rowUndo == null }
-        ?.let { eventId ->
-            val message = stringResource(R.string.chat_project_rename_rejected)
-            LaunchedEffect(chats, eventId, message) {
-                snackbar.showSnackbar(message)
-                chats?.dismissProjectRenameRejection(eventId)
-            }
-        }
     list.markAllReadResult
         ?.takeIf { list.rowUndo == null }
         ?.let { result ->
@@ -636,6 +627,9 @@ internal fun OkouApp(
                                     wide = listWidth != null,
                                     newChatEnabled = workspaceReady,
                                     startupRecovery = startupRecovery,
+                                    dismissProjectRenameRejection = {
+                                        chats?.dismissProjectRenameRejection(it)
+                                    },
                                     feedback = {
                                         WorkspaceFeedbackHost(
                                             snackbar,
@@ -850,7 +844,7 @@ private fun WorkspaceFeedbackHost(
                     IconButton(onClick = data::dismiss) {
                         Icon(
                             painterResource(R.drawable.ic_close),
-                            stringResource(R.string.chat_undo_close),
+                            stringResource(R.string.chat_feedback_dismiss),
                         )
                     }
                 }

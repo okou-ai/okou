@@ -3,7 +3,7 @@
     <string name="chat_undo_unarchived">Chat rimossa dall’archivio</string>
     <string name="chat_undo_marked_read">Chat contrassegnata come letta</string>
     <string name="chat_undo">Annulla</string>
-    <string name="chat_undo_close">Chiudi</string>
+    <string name="chat_feedback_dismiss">Chiudi</string>
     <string name="chat_list_offline">Offline</string>
     <string name="chat_list_refresh_failed">Aggiornamento della lista chat non riuscito</string>
     <string name="chat_list_first_load_failed">Caricamento temporaneamente non disponibile</string>
