@@ -114,6 +114,13 @@ changes, including events observed before a snapshot rebase. If an outcome
 cannot be confirmed, Refresh chats reads back the list and clears the unresolved
 projection once that read succeeds.
 
+Sending a first message adds a provisional inbox row that opens its pending
+conversation. The list adopts the confirmed row by thread ID. Sending in an
+existing chat updates its visible recency in memory while preserving pin and
+Project ordering. The list sort event confirms the move independently of the
+message receipt. Foreground reconciliation uses canonical order for completed
+attempts whose sort event is unavailable.
+
 Mark read, Mark unread, and Mark all as read immediately update chat list
 unread markers, filters, and collapsed Project counts. A pending read hides
 unread activity through its observed server watermark. A pending read on a

@@ -17,6 +17,7 @@ import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.ConfirmedChat
 import ai.okou.android.chat.ConversationRoute
 import ai.okou.android.chat.ProjectExpansionModel
+import ai.okou.android.chat.ProvisionalChat
 import ai.okou.android.chat.RealtimeNotice
 import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.RunControlsPanel
@@ -257,9 +258,7 @@ internal fun OkouApp(
             }
         }
 
-    fun openChat(chat: ConfirmedChat, fromSearch: Boolean = false) {
-        val activeChats = chats ?: return
-        val pending = composer?.uiState?.value?.pendingNewChat(chat.id)
+    fun openConversation(threadId: String, destination: WorkspaceTarget, fromSearch: Boolean) {
         val search =
             when {
                 fromSearch && listWidth == null -> SearchRoute.ReturnOnBack
@@ -272,17 +271,30 @@ internal fun OkouApp(
             SearchRoute.ReturnOnBack -> searchState.edit(searchState.query.copy(composition = null))
             SearchRoute.Open -> Unit
         }
-        conversations.open(chat.id)
-        navigation =
-            navigation.copy(
-                target =
-                    if (pending == null) WorkspaceTarget.Chat(chat.id)
-                    else WorkspaceTarget.NewChat(pending.projectId),
-                settings = null,
-                search = search,
-            )
+        conversations.open(threadId)
+        navigation = navigation.copy(target = destination, settings = null, search = search)
+    }
+
+    fun openChat(chat: ConfirmedChat, fromSearch: Boolean = false) {
+        val activeChats = chats ?: return
+        val pending = composer?.uiState?.value?.pendingNewChat(chat.id)
+        val destination =
+            if (pending == null) WorkspaceTarget.Chat(chat.id)
+            else WorkspaceTarget.NewChat(pending.projectId)
+        openConversation(chat.id, destination, fromSearch)
         if (pending == null) composer?.acknowledge(chat.id)
         activeChats.history.open(chat)
+    }
+
+    fun openProvisionalChat(chat: ProvisionalChat) {
+        val draft = composer?.uiState?.value?.entry(ComposerTarget(projectId = chat.projectId))
+        val destination =
+            if (
+                draft?.pending?.threadId == chat.threadId || draft?.createdThreadId == chat.threadId
+            )
+                WorkspaceTarget.NewChat(chat.projectId)
+            else WorkspaceTarget.Chat(chat.threadId)
+        openConversation(chat.threadId, destination, fromSearch = false)
     }
 
     fun startNewChat(projectId: String?) {
@@ -296,6 +308,20 @@ internal fun OkouApp(
     }
 
     val composerInput = composer?.uiState?.collectAsStateWithLifecycle()
+    val pendingChats by
+        remember(composerInput) {
+            derivedStateOf(structuralEqualityPolicy()) {
+                composerInput?.value?.pendingNewChats().orEmpty()
+            }
+        }
+    val provisionalChats =
+        remember(pendingChats, list.acceptedNewChats) {
+            (pendingChats + list.acceptedNewChats).distinctBy { it.threadId }
+        }
+    val awaitingCreatedChat =
+        target is WorkspaceTarget.Chat &&
+            thread == null &&
+            provisionalChats.any { it.threadId == target.id }
     val pendingNewChat by
         remember(composerInput, target) {
             derivedStateOf(structuralEqualityPolicy()) {
@@ -304,13 +330,17 @@ internal fun OkouApp(
                 }
             }
         }
-    LaunchedEffect(target, thread, list.listPhase, listWidth, pendingNewChat) {
+    LaunchedEffect(target, thread, list.listPhase, listWidth, pendingNewChat, awaitingCreatedChat) {
         if (target is WorkspaceTarget.Chat) {
             val pending = pendingNewChat
             if (pending != null && navigation.target == target) {
                 navigation = navigation.copy(target = WorkspaceTarget.NewChat(pending.projectId))
             } else if (thread != null) chats?.history?.open(thread)
-            else if (list.listPhase == ChatReadPhase.Ready && navigation.target == target) {
+            else if (
+                !awaitingCreatedChat &&
+                    list.listPhase == ChatReadPhase.Ready &&
+                    navigation.target == target
+            ) {
                 returnToList()
                 scope.launch {
                     snackbar.showSnackbar(missingChat, duration = SnackbarDuration.Indefinite)
@@ -578,6 +608,8 @@ internal fun OkouApp(
                                     { chats?.refreshMetadata() },
                                     { chats?.refreshIndicators() },
                                     ::openChat,
+                                    provisionalChats,
+                                    ::openProvisionalChat,
                                     { id, action ->
                                         val started = chats?.performRowAction(id, action) == true
                                         if (
@@ -592,7 +624,10 @@ internal fun OkouApp(
                                     listPositions[list.filter.ordinal],
                                     ::startNewChat,
                                     showInbox = { chats?.selectFilter(ChatListFilter.Inbox) },
-                                    selectedChatId = if (listWidth != null) thread?.id else null,
+                                    selectedChatId =
+                                        if (listWidth != null)
+                                            (target as? WorkspaceTarget.Chat)?.id ?: provisionalId
+                                        else null,
                                     wide = listWidth != null,
                                     newChatEnabled = composer != null,
                                     startupRecovery = startupRecovery,
@@ -668,6 +703,7 @@ internal fun OkouApp(
                                                 list,
                                                 Modifier.weight(1f),
                                                 composer = composer,
+                                                historyAvailable = !awaitingCreatedChat,
                                             )
                                             if (
                                                 thread != null &&
@@ -709,21 +745,23 @@ internal fun OkouApp(
                                                 )
                                             }
                                         } else Box(Modifier.weight(1f))
-                                        conversations.Content(checkNotNull(newTarget).key) {
-                                            if (createdId != null) {
-                                                TextButton(
-                                                    onClick = chats::retryList,
-                                                    enabled =
-                                                        !list.offline &&
-                                                            list.listReadFailure !=
-                                                                ChatListReadFailure.Retrying &&
-                                                            list.listPhase != ChatReadPhase.Loading,
-                                                ) {
-                                                    Text(stringResource(R.string.chat_refresh))
-                                                }
-                                            } else
+                                        if (createdId == null) {
+                                            conversations.Content(checkNotNull(newTarget).key) {
                                                 ChatComposerField(checkNotNull(composer), newTarget)
+                                            }
                                         }
+                                    }
+                                }
+                                if (awaitingCreatedChat || createdId != null) {
+                                    TextButton(
+                                        onClick = chats::retryList,
+                                        enabled =
+                                            !list.offline &&
+                                                list.listReadFailure !=
+                                                    ChatListReadFailure.Retrying &&
+                                                list.listPhase != ChatReadPhase.Loading,
+                                    ) {
+                                        Text(stringResource(R.string.chat_refresh))
                                     }
                                 }
                             }

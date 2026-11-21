@@ -22,6 +22,7 @@ import ai.okou.android.api.generated.IndicatorsThreadsValue
 import ai.okou.android.api.generated.ProjectEvents
 import ai.okou.android.api.generated.ProjectSnapshot
 import ai.okou.android.api.generated.ReadState
+import ai.okou.android.api.generated.SendRequestVariant1
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.chatEventWire
 import androidx.lifecycle.ViewModelProvider
@@ -1138,6 +1139,128 @@ class ChatListModelTest {
             model.refreshList()
             advanceUntilIdle()
             assertEquals("Remote edit", model.uiState.value.threads.single().title)
+        }
+    }
+
+    @Test
+    fun sendReceiptKeepsActivityUntilTheSortEventOrAnExplicitReconciliation() = runTest {
+        val other =
+            chatEventWire(
+                    id = "77777777-7777-4777-8777-777777777777",
+                    seq = 18,
+                    thread = CHAT_IN_PROJECT,
+                )
+                .replace(CHAT_DATE, "2026-11-14T00:00:00.000Z")
+        val service = Service().apply { listRead = { page(listOf(chatEventWire(), other)) } }
+        val online = MutableStateFlow(true)
+        val pending =
+            PendingText(
+                "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                CHAT_PERSONAL,
+                null,
+                json.decodeFromString<SendRequestVariant1>(
+                    """{"prompt":"Hello","threadId":"$CHAT_PERSONAL",
+                            "userMessage":{"version":1,"parts":[{"type":"text","text":"Hello"}]},
+                            "hasTextContent":true,
+                            "chatThreadSortEventId":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}"""
+                ),
+                TextStage.Sending,
+            )
+        withCatchUpModel(service, connectivity = online) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            val baseline = model.uiState.value.threads.map { it.id }
+            assertEquals(listOf(CHAT_IN_PROJECT, CHAT_PERSONAL), baseline)
+            val older = CompletableDeferred<Unit>()
+            val afterSend = CompletableDeferred<Unit>()
+            var reads = 0
+            service.listRead = {
+                if (++reads == 1) older.await() else afterSend.await()
+                page(emptyList())
+            }
+            model.showOutgoingActivity(pending)
+            assertEquals(CHAT_PERSONAL, model.uiState.value.threads.first().id)
+            model.refreshList()
+            runCurrent()
+            model.acknowledgeOutgoingActivity(pending)
+            model.refreshAfterSend(pending.threadId)
+            older.complete(Unit)
+            runCurrent()
+            assertEquals(2, reads)
+            assertEquals(CHAT_PERSONAL, model.uiState.value.threads.first().id)
+            afterSend.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(CHAT_PERSONAL, model.uiState.value.threads.first().id)
+            model.refresh()
+            advanceUntilIdle()
+            assertEquals(baseline, model.uiState.value.threads.map { it.id })
+
+            model.showOutgoingActivity(pending)
+            assertEquals(CHAT_PERSONAL, model.uiState.value.threads.first().id)
+            model.refreshAfterSendFailure(pending, rejected = true)
+            assertEquals(baseline, model.uiState.value.threads.map { it.id })
+            advanceUntilIdle()
+
+            model.showOutgoingActivity(pending)
+            online.value = false
+            runCurrent()
+            model.refreshAfterSendFailure(pending, rejected = false)
+            advanceUntilIdle()
+            assertEquals(CHAT_PERSONAL, model.uiState.value.threads.first().id)
+            service.listRead = {
+                page(
+                    listOf(
+                        chatEventWire(
+                            id = checkNotNull(pending.send.chatThreadSortEventId),
+                            seq = 19,
+                            kind = "sort_touched",
+                        )
+                    )
+                )
+            }
+            online.value = true
+            advanceUntilIdle()
+            // The matching event is authoritative even when its server position differs.
+            assertEquals(baseline, model.uiState.value.threads.map { it.id })
+            model.showOutgoingActivity(pending)
+            assertEquals(baseline, model.uiState.value.threads.map { it.id })
+        }
+    }
+
+    @Test
+    fun createAndDeleteInOneCatchUpRetireTheAcceptedPreview() = runTest {
+        val service = Service().apply { listRead = { page(listOf(chatEventWire())) } }
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            val preview = ProvisionalChat(CHAT_IN_PROJECT, CHAT_PROJECT)
+            model.retainAcceptedNewChats(listOf(preview))
+            assertEquals(listOf(preview), model.uiState.value.acceptedNewChats)
+            service.listRead = {
+                page(
+                    listOf(
+                        chatEventWire(
+                            id = "77777777-7777-4777-8777-777777777777",
+                            seq = 18,
+                            thread = preview.threadId,
+                        ),
+                        chatEventWire(
+                            id = "88888888-8888-4888-8888-888888888888",
+                            seq = 19,
+                            thread = preview.threadId,
+                            kind = "deleted",
+                        ),
+                    )
+                )
+            }
+            model.refreshList()
+            advanceUntilIdle()
+            assertEquals(listOf(CHAT_PERSONAL), model.uiState.value.threads.map { it.id })
+            assertTrue(model.uiState.value.acceptedNewChats.isEmpty())
+
+            // A receipt arriving after the canonical deletion cannot restore the preview.
+            model.retainAcceptedNewChats(listOf(preview))
+            assertTrue(model.uiState.value.acceptedNewChats.isEmpty())
         }
     }
 
