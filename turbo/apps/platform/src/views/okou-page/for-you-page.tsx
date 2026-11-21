@@ -78,7 +78,10 @@ const HEADER_SCRIM_MASK = `linear-gradient(${[
   })
   .join(", ")})`;
 
-type ForYouHeaderColors = (typeof forYouCovers)[number]["header"]["wide"];
+interface ForYouHeaderColors {
+  readonly tone: "light" | "dark";
+  readonly tint: readonly [string, string, string];
+}
 
 function headerScrim({ tint: [left, middle, right] }: ForYouHeaderColors) {
   return {
