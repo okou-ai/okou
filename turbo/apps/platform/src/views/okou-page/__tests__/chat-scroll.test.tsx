@@ -848,6 +848,7 @@ test("Hand the retained primary transcript restore to the new Router page when t
     { container },
   );
   await frames.paint();
+  await frames.paint();
   await waitFor(() => {
     expect(
       anchorById(chatScrollContainer(), nextReadingId).getBoundingClientRect()
@@ -1580,6 +1581,27 @@ test("Drag into unmounted history, retain the message through new output, and re
     );
   });
   expect(decoded).not.toContain(diagramImage);
+});
+
+test("A reader who scrolls between paints keeps their new position", async () => {
+  const id = THREAD_IDS.incomingLatest;
+  const conversation = mockMutableConversation(id, completedHistoryEvents(7));
+  const container = await openConversation(id, "History answer 7");
+  const geometry = installChatScrollGeometry(container);
+  scrollFromUser(container, geometry.bottomScrollTop());
+  const frames = controlRevealFrames();
+  await conversation.publish(completedTurn(8));
+  await screen.findByText("History answer 8");
+  // The browser has not painted yet, but incoming batches must keep flowing.
+  await conversation.publish(completedTurn(9));
+  await screen.findByText("History answer 9");
+  await frames.paint();
+  scrollFromUser(container, 275);
+  const anchor = geometry.firstVisibleAnchor();
+  const offset = anchor.getBoundingClientRect().top;
+  await frames.paint();
+  await expectHistoryPositionHeld();
+  expect(anchor.getBoundingClientRect().top).toBe(offset);
 });
 
 test("Preserve the reading position when new messages are added", async () => {
