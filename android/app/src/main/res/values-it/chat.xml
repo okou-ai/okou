@@ -44,6 +44,7 @@
     <string name="chat_unarchive">Rimuovi dall\'archivio</string>
     <string name="chat_row_action_pending">Aggiornamento della chat…</string>
     <string name="chat_row_action_failed">Impossibile confermare la modifica alla chat.</string>
+    <string name="chat_row_action_rejected">Impossibile completare la modifica alla chat.</string>
     <string name="chat_rename">Rinomina la chat</string>
     <string name="chat_pin">Fissa la chat</string>
     <string name="chat_unpin">Rimuovi dalle chat fissate</string>
