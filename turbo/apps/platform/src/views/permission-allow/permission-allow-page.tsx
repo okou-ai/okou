@@ -16,8 +16,9 @@ import {
   findPermissionInMetadata,
   permissionAllowAction$,
   permissionAllowActionParam$,
-  permissionAllowAgent$,
-  permissionAllowAgentId$,
+  permissionAllowTarget$,
+  permissionAllowOwner$,
+  permissionAllowCallback$,
   permissionAllowExpiresIn$,
   permissionAllowPermission$,
   permissionAllowConnectorSlug$,
@@ -39,10 +40,8 @@ import { ProductBrandMark } from "../components/product-brand-mark.tsx";
 import { PermissionGrantDurationSelect } from "../components/permission-grant-duration-select.tsx";
 import { ConnectorIcon } from "../okou-page/components/settings/connector-icons.tsx";
 import { AvatarFromUrl } from "../okou-page/sidebar-shared.tsx";
-import {
-  routeChatActionCallback$,
-  type ChatActionCallback,
-} from "../../signals/chat-page/action-callback.ts";
+import type { ChatActionCallback } from "../../signals/chat-page/action-callback.ts";
+import type { PermissionActionOwner } from "../../signals/chat-page/permission-action-owner.ts";
 import { i18n } from "../../i18n/index.ts";
 
 function TargetPill({
@@ -69,34 +68,6 @@ type PermissionGrantTarget = {
   displayName: string;
   avatarUrl: string | null;
 };
-
-type PermissionAllowAgent = {
-  displayName?: string | null;
-  avatarUrl?: string | null;
-} | null;
-
-function resolvePermissionGrantTarget({
-  agentId,
-  agent,
-}: {
-  agentId: string;
-  agent: PermissionAllowAgent;
-}): { target: PermissionGrantTarget } | { message: string } {
-  if (!agent) {
-    return {
-      message: i18n.t(($) => {
-        return $.authorization.permission.errors.agentNotFound;
-      }),
-    };
-  }
-  return {
-    target: {
-      id: agentId,
-      displayName: agent.displayName ?? agentId,
-      avatarUrl: agent.avatarUrl ?? null,
-    },
-  };
-}
 
 function ConnectorPermissionCard({
   icon,
@@ -269,14 +240,21 @@ function anyLoadableIsLoading(
 
 function permissionAllowLoadErrorMessage({
   targetState,
+  owner,
   grantsState,
   metadataState,
 }: {
   targetState: string;
+  owner: PermissionActionOwner;
   grantsState: string;
   metadataState: string;
 }): string | null {
   if (targetState === "hasError") {
+    if (owner.kind === "member") {
+      return i18n.t(($) => {
+        return $.authorization.permissionBatch.invalid;
+      });
+    }
     return i18n.t(($) => {
       return $.authorization.permission.errors.loadAgent;
     });
@@ -388,7 +366,7 @@ function ConfirmGrantCard({
   onConfirm,
 }: ConfirmGrantCardProps) {
   const { t } = useTranslation();
-  const durationScope = `agent\u0000${target.id}\u0000${connectorSlug}\u0000${permission.name}\u0000${action}\u0000${initialExpiresIn ?? ""}`;
+  const durationScope = `permission\u0000${target.id}\u0000${connectorSlug}\u0000${permission.name}\u0000${action}\u0000${initialExpiresIn ?? ""}`;
   const expiresInByScope = useGet(permissionGrantExpiresInByScope$);
   const setExpiresInForScope = useSet(setPermissionGrantExpiresIn$);
   const expiresIn =
@@ -418,7 +396,7 @@ function ConfirmGrantCard({
           />
           <p className="text-sm text-muted-foreground">
             {t(($) => {
-              return $.authorization.permissionBatch.sharedScopeNote;
+              return $.authorization.permissionBatch.myOkouSharedScopeNote;
             })}
           </p>
 
@@ -514,21 +492,21 @@ function resolvePermissionGrantMetadata(
 }
 
 function PermissionAllowDoctorPage({
-  agentId,
+  owner,
   connectorSlug,
   permission,
   action,
   initialExpiresIn,
   actionCallback,
 }: {
-  agentId: string;
+  owner: PermissionActionOwner;
   connectorSlug: string;
   permission: string;
   action: "allow" | "deny";
   initialExpiresIn: UserPermissionGrantExpiresIn | null;
   actionCallback: ChatActionCallback;
 }) {
-  const agentLoadable = useLastLoadable(permissionAllowAgent$);
+  const targetLoadable = useLoadable(permissionAllowTarget$);
   const userLoadable = useLastLoadable(user$);
   const grantsLoadable = useLastLoadable(permissionAllowUserPermissionGrants$);
   const metadataLoadable = useLoadable(
@@ -543,7 +521,7 @@ function PermissionAllowDoctorPage({
   const grants = grantsLoadable.state === "hasData" ? grantsLoadable.data : [];
   if (
     anyLoadableIsLoading([
-      agentLoadable,
+      targetLoadable,
       userLoadable,
       grantsLoadable,
       metadataLoadable,
@@ -553,7 +531,8 @@ function PermissionAllowDoctorPage({
   }
 
   const loadErrorMessage = permissionAllowLoadErrorMessage({
-    targetState: agentLoadable.state,
+    targetState: targetLoadable.state,
+    owner,
     grantsState: grantsLoadable.state,
     metadataState: metadataLoadable.state,
   });
@@ -561,13 +540,16 @@ function PermissionAllowDoctorPage({
     return <ErrorMessage message={loadErrorMessage} />;
   }
 
-  const agent = agentLoadable.state === "hasData" ? agentLoadable.data : null;
-  const targetResult = resolvePermissionGrantTarget({
-    agentId,
-    agent,
-  });
-  if ("message" in targetResult) {
-    return <ErrorMessage message={targetResult.message} />;
+  const target =
+    targetLoadable.state === "hasData" ? targetLoadable.data : null;
+  if (!target) {
+    return (
+      <ErrorMessage
+        message={i18n.t(($) => {
+          return $.authorization.permissionBatch.invalid;
+        })}
+      />
+    );
   }
 
   const permissionResult = resolvePermissionGrantMetadata(
@@ -612,7 +594,7 @@ function PermissionAllowDoctorPage({
     userLoadable.state === "hasData" ? userLoadable.data : undefined;
   return (
     <ConfirmGrantCard
-      target={targetResult.target}
+      target={target}
       icon={metadata.icon}
       connectorSlug={connectorSlug}
       connectorLabel={metadata.label}
@@ -626,7 +608,7 @@ function PermissionAllowDoctorPage({
         detach(
           applyGrant(
             {
-              agentId,
+              owner,
               connectorSlug,
               permission: focusedPermission.name,
               action,
@@ -644,19 +626,19 @@ function PermissionAllowDoctorPage({
 
 export function PermissionAllowPage() {
   const { t } = useTranslation();
-  const agentId = useGet(permissionAllowAgentId$);
+  const owner = useGet(permissionAllowOwner$);
   const connectorSlug = useGet(permissionAllowConnectorSlug$);
   const permission = useGet(permissionAllowPermission$);
   const actionParam = useGet(permissionAllowActionParam$);
   const action = useGet(permissionAllowAction$);
   const expiresIn = useGet(permissionAllowExpiresIn$);
-  const actionCallback = useGet(routeChatActionCallback$);
+  const actionCallback = useGet(permissionAllowCallback$);
 
-  if (!agentId) {
+  if (!owner || !actionCallback) {
     return (
       <ErrorMessage
         message={t(($) => {
-          return $.authorization.permission.errors.missingAgentId;
+          return $.authorization.permissionBatch.invalid;
         })}
       />
     );
@@ -687,7 +669,7 @@ export function PermissionAllowPage() {
 
   return (
     <PermissionAllowDoctorPage
-      agentId={agentId}
+      owner={owner}
       connectorSlug={connectorSlug}
       permission={permission}
       action={action ?? "allow"}

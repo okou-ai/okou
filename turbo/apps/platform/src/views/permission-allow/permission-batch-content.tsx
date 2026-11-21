@@ -41,20 +41,20 @@ import { AvatarFromUrl } from "../okou-page/sidebar-shared.tsx";
 
 export function PermissionBatchContent({
   signals,
-  standalone = false,
+  detailsHref,
 }: {
   signals: PermissionBatchSignals;
-  standalone?: boolean;
+  detailsHref?: string;
 }) {
   const features = useLastResolved(featureSwitches$);
   if (!features?.[FeatureSwitchKey.BatchConnectorPermissions]) {
     return null;
   }
-  return <BatchContent signals={signals} standalone={standalone} />;
+  return <BatchContent signals={signals} detailsHref={detailsHref} />;
 }
 
 function useBatchResources(signals: PermissionBatchSignals) {
-  const agent = useLoadable(signals.agent$);
+  const target = useLoadable(signals.target$);
   const user = useLastLoadable(user$);
   const grants = useLastLoadable(signals.grants$);
   const metadata = useLastLoadable(signals.metadata$);
@@ -73,16 +73,16 @@ function useBatchResources(signals: PermissionBatchSignals) {
     confirmState.state === "hasData" &&
     confirmState.data === true;
   return {
-    agent: agent.state === "hasData" ? agent.data : null,
+    target: target.state === "hasData" ? target.data : null,
     user: user.state === "hasData" ? user.data : null,
     grants: grants.state === "hasData" ? grants.data : [],
     metadata: metadata.state === "hasData" ? metadata.data : [],
     ready:
-      agent.state === "hasData" &&
+      target.state === "hasData" &&
       grants.state === "hasData" &&
       metadata.state === "hasData",
     loadFailed:
-      agent.state === "hasError" ||
+      target.state === "hasError" ||
       currentGrants.state === "hasError" ||
       currentMetadata.state === "hasError",
     continued,
@@ -175,7 +175,7 @@ function BatchHeader({
   standalone,
 }: BatchViewProps & { standalone: boolean }) {
   const { t } = useTranslation();
-  const { allowed, continued, agent, user, descriptor } = batch;
+  const { allowed, continued, target, user } = batch;
   return (
     <>
       {allowed ? (
@@ -199,7 +199,7 @@ function BatchHeader({
         </div>
       ) : (
         <>
-          {standalone && agent !== null && (
+          {standalone && target !== null && (
             <>
               <p className="text-center text-lg font-medium leading-7 text-foreground">
                 {t(
@@ -217,18 +217,18 @@ function BatchHeader({
                         : t(($) => {
                             return $.authorization.permission.userFallback;
                           }),
-                    targetName: agent.displayName ?? descriptor.agentId,
+                    targetName: target.displayName,
                   },
                 )}
               </p>
               <div className="flex w-full items-center gap-2 rounded-lg border border-border bg-muted/30 py-3 pl-2 pr-8">
                 <AvatarFromUrl
-                  avatarUrl={agent.avatarUrl ?? null}
+                  avatarUrl={target.avatarUrl ?? null}
                   alt=""
                   className="h-10 w-10 shrink-0 rounded-full object-cover object-top"
                 />
                 <span className="text-sm font-medium text-foreground">
-                  {agent.displayName ?? descriptor.agentId}
+                  {target.displayName}
                 </span>
               </div>
             </>
@@ -746,10 +746,10 @@ function BatchDialog({ batch, href }: BatchViewProps & { href: string }) {
 
 function BatchContent({
   signals,
-  standalone,
+  detailsHref,
 }: {
   signals: PermissionBatchSignals;
-  standalone: boolean;
+  detailsHref?: string;
 }) {
   const { t } = useTranslation();
   const batch = useBatchState(signals);
@@ -762,16 +762,16 @@ function BatchContent({
       </p>
     );
   }
-  if (!standalone) {
+  if (detailsHref !== undefined) {
     // Keep operation state mounted across dialog closes and asynchronous updates.
-    return <BatchDialog batch={batch} href={signals.href} />;
+    return <BatchDialog batch={batch} href={detailsHref} />;
   }
   return (
     <div className="flex w-full min-w-0 flex-col gap-4">
-      <BatchHeader batch={batch} standalone={standalone} />
+      <BatchHeader batch={batch} standalone />
       <BatchPermissionDetails batch={batch} />
       <BatchFeedback batch={batch} />
-      <BatchActions batch={batch} standalone={standalone} />
+      <BatchActions batch={batch} standalone />
     </div>
   );
 }

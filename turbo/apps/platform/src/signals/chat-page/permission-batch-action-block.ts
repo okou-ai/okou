@@ -1,3 +1,8 @@
+import { CONNECTOR_PERMISSION_PATHS } from "@okouai/core/integration-routes";
+import {
+  permissionActionOwner,
+  type PermissionActionOwner,
+} from "./permission-action-owner.ts";
 import {
   userPermissionGrantBatchItemSchema,
   userPermissionGrantBatchItemsSchema,
@@ -9,25 +14,22 @@ import {
   chatActionCallbackFromUrl,
   type ChatActionCallback,
 } from "./action-callback.ts";
-import {
-  chatActionIdMatches,
-  type ChatActionContext,
-  type ChatActionParseResult,
+import type {
+  ChatActionContext,
+  ChatActionParseResult,
 } from "./chat-action-context.ts";
 import { parseTrustedPlatformUrl } from "./trusted-platform-url.ts";
 import { jsonParseOr } from "../utils.ts";
 
 export interface PermissionBatchActionDescriptor extends ChatActionCallback {
-  readonly scope: "agent";
-  readonly agentId: string;
+  readonly owner: PermissionActionOwner;
   readonly items: UserPermissionGrantBatchItem[];
   readonly expiresIn: UserPermissionGrantExpiresIn | null;
   readonly originalUrl: string;
-  readonly href: string;
 }
 
 export function permissionBatchActionResourceKey(
-  descriptor: Omit<PermissionBatchActionDescriptor, "href">,
+  descriptor: PermissionBatchActionDescriptor,
 ): string {
   const params = new URLSearchParams({
     items: JSON.stringify(descriptor.items),
@@ -40,7 +42,12 @@ export function permissionBatchActionResourceKey(
     params.set("threadId", descriptor.threadId);
     params.set("callbackPrompt", descriptor.callbackPrompt);
   }
-  return `/agents/${encodeURIComponent(descriptor.agentId)}/permissions/batch?${params.toString()}`;
+  if (descriptor.owner.kind === "member") {
+    params.set("orgId", descriptor.owner.orgId);
+    params.set("userId", descriptor.owner.userId);
+    return `${CONNECTOR_PERMISSION_PATHS.batch}?${params.toString()}`;
+  }
+  return `/agents/${encodeURIComponent(descriptor.owner.agentId)}/permissions/batch?${params.toString()}`;
 }
 
 function parseItems(
@@ -127,7 +134,7 @@ export function parsePermissionBatchActionUrl(
 ): ChatActionParseResult<PermissionBatchActionDescriptor> {
   const url = parseTrustedPlatformUrl(value);
   const match = url?.pathname.match(/^\/agents\/([^/]+)\/permissions\/batch$/u);
-  if (!url || !match) {
+  if (!url || (!match && url.pathname !== CONNECTOR_PERMISSION_PATHS.batch)) {
     return { status: "unrelated" };
   }
   const invalid = { status: "invalid", originalUrl: value } as const;
@@ -141,6 +148,10 @@ export function parsePermissionBatchActionUrl(
     "threadId",
     "callbackPrompt",
   ]);
+  if (!match) {
+    allowed.add("orgId");
+    allowed.add("userId");
+  }
   const seen = new Set<string>();
   for (const key of url.searchParams.keys()) {
     if (!allowed.has(key) || seen.has(key)) {
@@ -148,12 +159,8 @@ export function parsePermissionBatchActionUrl(
     }
     seen.add(key);
   }
-  if (
-    !context ||
-    !match[1] ||
-    !context.agentId ||
-    !chatActionIdMatches(match[1], context.agentId)
-  ) {
+  const owner = context && permissionActionOwner(url, match?.[1], context);
+  if (!context || !owner) {
     return invalid;
   }
   const action = url.searchParams.get("action");
@@ -171,8 +178,7 @@ export function parsePermissionBatchActionUrl(
     return invalid;
   }
   const descriptor = {
-    scope: "agent",
-    agentId: context.agentId,
+    owner,
     items,
     expiresIn,
     originalUrl: value,
@@ -180,9 +186,6 @@ export function parsePermissionBatchActionUrl(
   } as const;
   return {
     status: "valid",
-    descriptor: {
-      ...descriptor,
-      href: permissionBatchActionResourceKey(descriptor),
-    },
+    descriptor,
   };
 }

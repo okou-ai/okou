@@ -50,6 +50,18 @@ async function openMarkdown(source: string, enabled: boolean) {
       ];
     },
   });
+  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
+    return respond(200, {
+      isDefaultAgent: false,
+      agentId: params.id,
+      ownerId: "test-user-123",
+      displayName: "Markdown Agent",
+      description: null,
+      sound: null,
+      avatarUrl: null,
+      visibility: "private",
+    });
+  });
   await setupPage({
     context,
     path: chat.path,
@@ -293,95 +305,97 @@ test("A batch stays reviewable while service details load and enables duration o
   expect(getButton("Allow all 3 permissions", dialog)).toBeEnabled();
 });
 
-test("A batch card reports saving and then allowed after the user confirms", async () => {
-  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-    return respond(200, {
-      isDefaultAgent: false,
-      agentId: params.id,
-      ownerId: "test-user-123",
-      displayName: "Markdown Agent",
-      description: null,
-      sound: null,
-      avatarUrl: null,
-      visibility: "private",
+test.each(["legacy", "member"])(
+  "A %s batch card reports saving and then allowed after confirmation",
+  async (owner) => {
+    const save = context.mocks.deferred<void>();
+    const items = defaultItems.slice(0, 2);
+    installMetadata(items);
+    const grants: ConnectorPermissionFixture[] = [];
+    context.mocks.api(
+      connectorPermissionsContract.get,
+      ({ query, respond }) => {
+        return respond(200, connectorPermissionsResponse(query, grants));
+      },
+    );
+    context.mocks.api(
+      connectorPermissionsContract.apply,
+      async ({ body, respond }) => {
+        await save.promise;
+        if (body.target.kind !== "builtin") {
+          throw new Error("Expected a builtin connector");
+        }
+        const { connectorSlug } = body.target;
+        grants.push(
+          ...body.grants.map((grant) => {
+            return {
+              connectorSlug,
+              permission: grant.permission,
+              action: "allow" as const,
+              expiresAt: "2099-01-01T00:00:00.000Z",
+              createdAt: "2030-01-01T00:00:00.000Z",
+              updatedAt: "2030-01-01T00:00:00.000Z",
+            };
+          }),
+        );
+        context.mocks.ably.trigger("connectorPermissionUpdated");
+        return respond(200, connectorPermissionsResponse(body.target, grants));
+      },
+    );
+
+    const url = batchUrl(items);
+    if (owner === "member") {
+      url.pathname = "/connectors/permissions/batch";
+      url.searchParams.set("orgId", "org_default");
+      url.searchParams.set("userId", "test-user-123");
+    }
+    await openMarkdown(`[Authorize tools](${url})`, true);
+    const card = await screen.findByTestId("permission-batch-action-card");
+    await within(card).findByText("2 permissions to allow");
+    click(getButton("Review permissions", card));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Allow the following permissions",
     });
-  });
-  const save = context.mocks.deferred<void>();
-  const items = defaultItems.slice(0, 2);
-  installMetadata(items);
-  const grants: ConnectorPermissionFixture[] = [];
-  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
-    return respond(200, connectorPermissionsResponse(query, grants));
-  });
-  context.mocks.api(
-    connectorPermissionsContract.apply,
-    async ({ body, respond }) => {
-      await save.promise;
-      if (body.target.kind !== "builtin") {
-        throw new Error("Expected a builtin connector");
-      }
-      const { connectorSlug } = body.target;
-      grants.push(
-        ...body.grants.map((grant) => {
-          return {
-            connectorSlug,
-            permission: grant.permission,
-            action: "allow" as const,
-            expiresAt: "2099-01-01T00:00:00.000Z",
-            createdAt: "2030-01-01T00:00:00.000Z",
-            updatedAt: "2030-01-01T00:00:00.000Z",
-          };
-        }),
-      );
-      context.mocks.ably.trigger("connectorPermissionUpdated");
-      return respond(200, connectorPermissionsResponse(body.target, grants));
-    },
-  );
+    await waitFor(() => {
+      expect(getButton("Allow all 2 permissions", dialog)).toBeEnabled();
+    });
+    click(getButton("Allow all 2 permissions", dialog));
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId("permission-batch-action-card")).getByText(
+          "Saving...",
+        ),
+      ).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(
+        within(
+          screen.getByRole("dialog", {
+            name: "Allow the following permissions",
+          }),
+        ).getByRole("combobox", { name: "Permission duration" }),
+      ).toBeDisabled();
+    });
 
-  await openMarkdown(`[Authorize tools](${batchUrl(items).toString()})`, true);
-  const card = await screen.findByTestId("permission-batch-action-card");
-  await within(card).findByText("2 permissions to allow");
-  click(getButton("Review permissions", card));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Allow the following permissions",
-  });
-  await waitFor(() => {
-    expect(getButton("Allow all 2 permissions", dialog)).toBeEnabled();
-  });
-  click(getButton("Allow all 2 permissions", dialog));
-  await waitFor(() => {
-    expect(
-      within(screen.getByTestId("permission-batch-action-card")).getByText(
-        "Saving...",
-      ),
-    ).toBeInTheDocument();
-  });
-  await waitFor(() => {
-    expect(
-      within(
-        screen.getByRole("dialog", { name: "Allow the following permissions" }),
-      ).getByRole("combobox", { name: "Permission duration" }),
-    ).toBeDisabled();
-  });
-
-  save.resolve();
-  await waitFor(() => {
-    expect(
-      within(screen.getByTestId("permission-batch-action-card")).getByText(
-        "Permissions allowed",
-      ),
-    ).toBeInTheDocument();
-  });
-  click(getButton("Close", dialog));
-  await waitFor(() => {
-    expect(
-      getButton(
-        "View permission details",
-        screen.getByTestId("permission-batch-action-card"),
-      ),
-    ).toBeEnabled();
-  });
-});
+    save.resolve();
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId("permission-batch-action-card")).getByText(
+          "Permissions allowed",
+        ),
+      ).toBeInTheDocument();
+    });
+    click(getButton("Close", dialog));
+    await waitFor(() => {
+      expect(
+        getButton(
+          "View permission details",
+          screen.getByTestId("permission-batch-action-card"),
+        ),
+      ).toBeEnabled();
+    });
+  },
+);
 
 test("An invalid batch query renders the unavailable action instead of partial permissions", async () => {
   const url = batchUrl();

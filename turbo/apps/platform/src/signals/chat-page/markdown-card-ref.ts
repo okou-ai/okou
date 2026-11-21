@@ -45,6 +45,7 @@ export type MarkdownCardRef =
   | { readonly kind: "permission-action"; readonly signals: PermissionSignals }
   | {
       readonly kind: "permission-batch-action";
+      readonly originalUrl: string;
       readonly signals: PermissionBatchSignals;
     }
   | { readonly kind: "banking-action"; readonly signals: BankingSignals }
