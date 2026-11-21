@@ -3195,10 +3195,16 @@ fn read_cached_archive(
     let observed_size = u64::try_from(read)
         .map_err(|_| RunnerError::Internal("body length overflow".to_string()))?;
     // Check for growth beyond the limit without growing the retained buffer.
-    if observed_size == max_size && file.read(&mut [0]).map_err(read_error)? != 0 {
-        return Ok(DownloadBody::OverSize {
-            observed_size: observed_size.saturating_add(1),
-        });
+    if observed_size == max_size {
+        match file.read_exact(&mut [0]) {
+            Ok(()) => {
+                return Ok(DownloadBody::OverSize {
+                    observed_size: observed_size.saturating_add(1),
+                });
+            }
+            Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => {}
+            Err(error) => return Err(read_error(error)),
+        }
     }
     let bytes = Bytes::from(bytes);
     if bytes.is_empty() {
