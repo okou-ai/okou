@@ -11,7 +11,7 @@ import {
   type RouteKey,
 } from "../../signals/route-paths.ts";
 import { Link } from "../router/link.tsx";
-import { AgentUnreadIndicator } from "./sidebar-agent-row-actions.tsx";
+import { UnreadIndicator } from "./unread-indicator.tsx";
 
 type PwaParentPathname = typeof ROUTES.me | typeof ROUTES.workflows;
 
@@ -85,7 +85,7 @@ function PwaTabUnreadIndicator() {
   // The background ring cuts the dot out of the icon stroke it overlaps.
   return (
     <span className="absolute -right-1 -top-1 flex rounded-full bg-background p-0.5">
-      <AgentUnreadIndicator />
+      <UnreadIndicator />
     </span>
   );
 }

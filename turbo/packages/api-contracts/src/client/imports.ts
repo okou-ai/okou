@@ -291,7 +291,7 @@ export const clientContractImportManifest = [
       "chatThreadConnectorSelectionContract",
       "chatThreadDraftContract",
       "chatThreadEventsContract",
-      "chatThreadMarkAgentReadContract",
+      "chatThreadMarkAllReadContract",
       "chatThreadMarkReadContract",
       "chatThreadMarkUnreadContract",
       "chatThreadMetadataContract",

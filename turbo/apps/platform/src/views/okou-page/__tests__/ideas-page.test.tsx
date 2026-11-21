@@ -71,8 +71,6 @@ function catalogResponse(
   return { connectors: [...connectors] };
 }
 
-function configureAgent(): void {}
-
 function mockCatalog(
   connectors: readonly PublicConnectorCatalogStatusItem[],
 ): void {
@@ -86,7 +84,6 @@ async function findComposer(name = "Message"): Promise<HTMLElement> {
 }
 
 test("Category filters expose one persistent selection and preserve search", async () => {
-  configureAgent();
   mockCatalog([catalogItem("github", "GitHub")]);
 
   await setupPage({ context, path: IDEAS_PATH });
@@ -139,7 +136,6 @@ test("Category filters expose one persistent selection and preserve search", asy
 });
 
 test("The ideas catalog still offers connector-free use cases", async () => {
-  configureAgent();
   mockCatalog([]);
 
   await setupPage({ context, path: IDEAS_PATH });
@@ -155,7 +151,6 @@ test("The ideas catalog still offers connector-free use cases", async () => {
 });
 
 test("The breadcrumb links back to My Okou", async () => {
-  configureAgent();
   mockCatalog([]);
 
   await setupPage({ context, path: IDEAS_PATH });
@@ -179,7 +174,6 @@ test("The breadcrumb links back to My Okou", async () => {
 });
 
 test("Connector-dependent ideas fail closed when availability cannot be verified", async () => {
-  configureAgent();
   const failCatalog = context.mocks.deferred<void>();
   const failureReturned = context.mocks.deferred<void>();
   context.mocks.api(connectorCatalogContract.status, async ({ respond }) => {
@@ -206,7 +200,6 @@ test("Connector-dependent ideas fail closed when availability cannot be verified
 });
 
 test("A use case is hidden when any required connector is unavailable", async () => {
-  configureAgent();
   mockCatalog([catalogItem("github", "GitHub"), catalogItem("slack", "Slack")]);
 
   await setupPage({ context, path: IDEAS_PATH });
@@ -217,7 +210,6 @@ test("A use case is hidden when any required connector is unavailable", async ()
 
 test("A card exposes its prompt link and opens by keyboard", async () => {
   const user = userEvent.setup({ delay: null });
-  configureAgent();
   mockCatalog([
     catalogItem("github", "GitHub"),
     catalogItem("sentry", "Sentry"),
@@ -256,7 +248,6 @@ test("A card exposes its prompt link and opens by keyboard", async () => {
 });
 
 test("Search for a use case and start it with the agent", async () => {
-  configureAgent();
   mockCatalog([
     catalogItem("github", "GitHub"),
     catalogItem("sentry", "Sentry"),
@@ -284,7 +275,6 @@ test("Search for a use case and start it with the agent", async () => {
 });
 
 test("Start the Zapier migration idea from the available connector catalog", async () => {
-  configureAgent();
   mockCatalog([
     catalogItem("zapier", "Zapier"),
     catalogItem("slack", "Slack"),

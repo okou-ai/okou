@@ -35,7 +35,7 @@ import { expect, test } from "vitest";
 import {
   chatThreadByIdContract,
   chatThreadEventsContract,
-  chatThreadMarkAgentReadContract,
+  chatThreadMarkAllReadContract,
   chatThreadMarkReadContract,
   chatThreadMarkUnreadContract,
   chatThreadsContract,
@@ -1247,7 +1247,7 @@ test("Mark all workspace chats read from the chat-list menu", async () => {
     });
   });
   context.mocks.api(
-    chatThreadMarkAgentReadContract.markAgentRead,
+    chatThreadMarkAllReadContract.markAllRead,
     ({ respond }) => {
       markReadRequests += 1;
       hasUnread = false;

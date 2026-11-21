@@ -7,7 +7,7 @@ import {
   chatThreadByIdContract,
   chatThreadMetadataContract,
   chatThreadDraftContract,
-  chatThreadMarkAgentReadContract,
+  chatThreadMarkAllReadContract,
   chatThreadMarkReadContract,
   chatThreadComputerUseHostContract,
   chatThreadModelSelectionContract,
@@ -169,7 +169,7 @@ export const apiAgentsHandlers = [
   }),
 
   // POST /api/chat-thread-unreads/mark-read
-  mockApi(chatThreadMarkAgentReadContract.markAgentRead, ({ respond }) => {
+  mockApi(chatThreadMarkAllReadContract.markAllRead, ({ respond }) => {
     return respond(204);
   }),
 

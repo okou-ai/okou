@@ -88,7 +88,7 @@ export {
   chatThreadDraftContract,
   chatThreadMarkReadContract,
   chatThreadMarkUnreadContract,
-  chatThreadMarkAgentReadContract,
+  chatThreadMarkAllReadContract,
   chatThreadComputerUseHostContract,
   chatEventsContract,
   chatThreadEventsContract,

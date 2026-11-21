@@ -8,9 +8,9 @@ import {
 } from "../chat-page/optimistic-chat-thread-page.ts";
 import type { ChatForwardContext } from "../chat-page/chat-forward.ts";
 import {
-  createAgentDraftSignals,
-  type EnsuredAgentDraft,
-} from "./agent-draft.ts";
+  createWorkspaceDraftSignals,
+  type WorkspaceDraftEntry,
+} from "./workspace-draft.ts";
 import type { DraftSignals } from "./chat-draft.ts";
 import {
   createComposerSignals,
@@ -147,7 +147,7 @@ function createAgentSubmitMessage(
           // An in-place send stays on this page, so only a send that opens the
           // new thread hands the selection over to it.
           ...(options.inPlace
-            ? { preserveAgentDraft: true }
+            ? { preserveWorkspaceDraft: true }
             : { composerTask: submission.taskSelection }),
           // Omit untouched draft preferences so the server applies the current
           // member default. Explicit "none" must also override a true default.
@@ -187,13 +187,13 @@ function createAgentSubmitMessage(
 }
 
 function createAgentComposerSignalsWithDraft(
-  agentDraft: EnsuredAgentDraft,
+  workspaceDraft: WorkspaceDraftEntry,
   options: AgentComposerOptions = {},
 ) {
   const connector = createComposerConnectorSignals();
   const pendingRemoteAccess = createPendingRemoteAccessSignals();
   const submitMessage$ = createAgentSubmitMessage(
-    agentDraft.draft,
+    workspaceDraft.draft,
     connector,
     pendingRemoteAccess,
     options,
@@ -209,9 +209,9 @@ function createAgentComposerSignalsWithDraft(
     connector,
     pendingRemoteAccess,
     draft: {
-      signals: agentDraft.draft,
-      load$: options.inPlace ? noOpAction$ : agentDraft.load$,
-      save$: options.inPlace ? noOpAction$ : agentDraft.queueDraftSync$,
+      signals: workspaceDraft.draft,
+      load$: options.inPlace ? noOpAction$ : workspaceDraft.load$,
+      save$: options.inPlace ? noOpAction$ : workspaceDraft.queueDraftSync$,
     },
     eventSignals: createChatEventProjectionSignals(chatEvents$),
     voiceDraftTarget: "new-chat",
@@ -239,7 +239,7 @@ export function createForwardAgentComposerSignals(
   onOptimisticSend: () => void,
   projectId?: string,
 ) {
-  return createAgentComposerSignalsWithDraft(createAgentDraftSignals(), {
+  return createAgentComposerSignalsWithDraft(createWorkspaceDraftSignals(), {
     forward,
     inPlace: true,
     onOptimisticSend,
@@ -255,7 +255,7 @@ export function createInPlaceAgentComposerSignals(
   onOptimisticSend: (threadId: string, submission: ComposerSubmission) => void,
   title: string,
 ) {
-  return createAgentComposerSignalsWithDraft(createAgentDraftSignals(), {
+  return createAgentComposerSignalsWithDraft(createWorkspaceDraftSignals(), {
     inPlace: true,
     onOptimisticSend,
     title,
@@ -263,7 +263,7 @@ export function createInPlaceAgentComposerSignals(
 }
 
 interface AgentComposerContext {
-  readonly agentDraft: EnsuredAgentDraft;
+  readonly workspaceDraft: WorkspaceDraftEntry;
   readonly projectId?: string;
 }
 
@@ -281,7 +281,7 @@ export const agentChatComposerSignals$ = computed((get) => {
     throw new Error("Chat composer requires an initialized draft context");
   }
   return createAgentComposerSignalsWithDraft(
-    context.agentDraft,
+    context.workspaceDraft,
     context.projectId ? { projectId: context.projectId } : {},
   );
 });

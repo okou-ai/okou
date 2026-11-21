@@ -28,7 +28,7 @@ import { modelCatalog$, type ModelCatalog } from "../external/model-catalog.ts";
 import { availableRunModels$ } from "../external/run-models.ts";
 import { userModelPreference$ } from "../external/user-model-preference.ts";
 import { logger } from "../log.ts";
-import { clearComposerDraft$ } from "../okou-page/agent-draft.ts";
+import { clearComposerDraft$ } from "../okou-page/workspace-draft.ts";
 import {
   talkDraft$,
   type DraftSignals,
@@ -89,7 +89,7 @@ interface SendNewThreadMessageRequest {
   projectId?: string;
   draft?: DraftSignals;
   /** Send from an isolated draft without clearing the Agent's saved composer. */
-  preserveAgentDraft?: boolean;
+  preserveWorkspaceDraft?: boolean;
   prompt: string;
   /** Undefined uses the composer selection; null resolves the member default. */
   modelSelection?: ModelProviderSelection | null;
@@ -720,7 +720,7 @@ const clearSubmittedNewThreadDraft$ = command(
       return;
     }
     set(draft.clear$);
-    if (!request.forward && !request.preserveAgentDraft) {
+    if (!request.forward && !request.preserveWorkspaceDraft) {
       await set(clearComposerDraft$, signal);
     }
   },

@@ -1,4 +1,7 @@
 {
+  "actions": {
+    "close": "Tutup"
+  },
   "activity": {
     "codex": {
       "codexError": "Galat Codex",
@@ -3917,6 +3920,364 @@
       "requestFailed": "Permintaan gagal"
     }
   },
+  "ideation": {
+    "all": "Semua",
+    "catalog": {
+      "creative": {
+        "cases": {
+          "cloudinary-media-optimizer": {
+            "description": "Optimalkan dan ubah gambar secara massal",
+            "title": "Optimasi media Cloudinary"
+          },
+          "fal-ai-image-generation": {
+            "description": "Hasilkan gambar produk dari deskripsi di Notion",
+            "title": "Pembuatan gambar Fal AI"
+          }
+        },
+        "title": "Kreatif"
+      },
+      "engineering": {
+        "cases": {
+          "batch-create-issues": {
+            "description": "Tempel daftar dan {{assistantName}} akan membuka issue untuk Anda",
+            "title": "Buat issue secara massal"
+          },
+          "browserbase-web-testing": {
+            "description": "Pengujian browser otomatis untuk aplikasi web Anda",
+            "title": "Pengujian web Browserbase"
+          },
+          "cloudflare-traffic-security-report": {
+            "description": "Ringkasan mingguan Slack tentang lalu lintas dan peristiwa keamanan",
+            "title": "Laporan lalu lintas & keamanan Cloudflare"
+          },
+          "codebase-investigation": {
+            "description": "Berikan URL dan {{assistantName}} menelusuri bug melalui repo",
+            "title": "Investigasi basis kode"
+          },
+          "daily-standup-report": {
+            "description": "Metrik pagi menjadi slide deck yang diposting ke Slack",
+            "title": "Laporan standup harian"
+          },
+          "deep-research-code-analysis": {
+            "description": "Menjelaskan cara kerja sebuah subsistem di basis kode Anda",
+            "title": "Analisis kode riset mendalam"
+          },
+          "github-pr-summarizer": {
+            "description": "Ringkasan pull request yang digabung di Notion dengan posting Slack opsional",
+            "title": "Perangkum PR GitHub"
+          },
+          "github-progress-weekly": {
+            "description": "Aktivitas repo mingguan diringkas berdasarkan fitur",
+            "title": "Progres mingguan GitHub"
+          },
+          "gitlab-to-github-migration-helper": {
+            "description": "Mencerminkan issue GitLab dan merge request ke GitHub",
+            "title": "Asisten migrasi GitLab ke GitHub"
+          },
+          "jira-github-issue-sync": {
+            "description": "Menyinkronkan tiket Jira dan issue GitHub",
+            "title": "Sinkronisasi issue Jira ↔ GitHub"
+          },
+          "make-scenario-builder": {
+            "description": "Rancang skenario Make multi-langkah dari sebuah deskripsi",
+            "title": "Penyusun skenario Make"
+          },
+          "security-dependency-alert-digest": {
+            "description": "Peringatan keamanan dan dependensi mingguan dari GitHub",
+            "title": "Ringkasan peringatan keamanan & dependensi"
+          },
+          "sentry-issue-digest": {
+            "description": "Ringkasan pagi issue yang dikelompokkan berdasarkan tingkat keparahan",
+            "title": "Ringkasan issue Sentry"
+          },
+          "vercel-deploy-digest": {
+            "description": "Menghubungkan setiap deployment ke commit-nya dan memberi peringatan ke Slack saat deployment gagal",
+            "title": "Ringkasan deployment Vercel"
+          },
+          "zapier-okou-migration": {
+            "description": "Buat ulang alur kerja Zapier Anda di {{brandName}}",
+            "title": "Migrasi Zapier → {{brandName}}"
+          }
+        },
+        "title": "Teknik"
+      },
+      "everyone": {
+        "cases": {
+          "browser-screenshots": {
+            "description": "Membuka halaman di browser dan mengembalikan tangkapan layar",
+            "title": "Tangkapan layar browser"
+          },
+          "calendar-optimizer": {
+            "description": "Membantu dengan konflik, beban berlebih, dan waktu fokus",
+            "title": "Pengoptimal kalender"
+          },
+          "calendly-booking-sync": {
+            "description": "Pemesanan baru di kalender Anda dengan ping ke Slack",
+            "title": "Sinkronisasi pemesanan Calendly"
+          },
+          "email-assistant": {
+            "description": "Ringkasan inbox pagi dengan langkah selanjutnya yang disarankan",
+            "title": "Asisten email"
+          },
+          "granola-notes-to-notion": {
+            "description": "Catatan meeting Granola disinkronkan ke database Notion",
+            "title": "Catatan Granola ke Notion"
+          },
+          "lark-slack-message-relay": {
+            "description": "Meneruskan pesan dua arah antara Lark dan Slack",
+            "title": "Relay pesan Lark ↔ Slack"
+          },
+          "line-message-relay": {
+            "description": "Teruskan pesan LINE ke Slack dan sebaliknya",
+            "title": "Relay pesan LINE"
+          },
+          "meeting-notes-pipeline": {
+            "description": "Catatan Fireflies ke Notion dengan tindak lanjut di Slack",
+            "title": "Alur catatan meeting"
+          },
+          "morning-brief": {
+            "description": "Email, kalender, dan catatan diubah menjadi rencana harian singkat",
+            "title": "Ringkasan pagi"
+          },
+          "perplexity-deep-research": {
+            "description": "Ringkasan riset bertenaga AI disimpan ke Notion",
+            "title": "Riset mendalam Perplexity"
+          },
+          "personal-weekly-digest": {
+            "description": "Pull request, email, dan kalender dalam satu pembaruan Slack",
+            "title": "Ringkasan mingguan pribadi"
+          },
+          "send-messages-on-your-behalf": {
+            "description": "Mengeposkan pengumuman tim ke Slack untuk Anda",
+            "title": "Kirim pesan atas nama Anda"
+          },
+          "strava-team-fitness-digest": {
+            "description": "Ringkasan aktivitas tim mingguan diposting ke Slack",
+            "title": "Digest kebugaran tim Strava"
+          },
+          "tavily-web-research-pipeline": {
+            "description": "Cari web dan susun temuan di Notion",
+            "title": "Alur riset web Tavily"
+          },
+          "tl-dv-meeting-recap": {
+            "description": "Rekaman meeting diringkas di Notion dengan item tindakan",
+            "title": "Rekap meeting tl;dv"
+          }
+        },
+        "title": "Semua orang"
+      },
+      "marketing": {
+        "cases": {
+          "apify-web-scraper-to-sheets": {
+            "description": "Apify men-scrape situs ke baris Google Sheets terstruktur",
+            "title": "Web scraper Apify ke Sheets"
+          },
+          "brevo-email-nurture-sequence": {
+            "description": "Rangkaian email otomatis dari event CRM",
+            "title": "Rangkaian nurture email Brevo"
+          },
+          "competitive-intel-scraper": {
+            "description": "Firecrawl memantau situs pesaing dan mencatat perubahan di Notion",
+            "title": "Scraper intel kompetitif"
+          },
+          "competitor-research-to-notion": {
+            "description": "Riset di X disimpan sebagai catatan terstruktur di Notion",
+            "title": "Riset pesaing ke Notion"
+          },
+          "content-planner": {
+            "description": "Brainstorm topik dan susun kerangka kalender editorial",
+            "title": "Perencana konten"
+          },
+          "dev-to-auto-publisher": {
+            "description": "Menerbitkan posting Notion ke Dev.to dan menautkannya di X",
+            "title": "Auto-publisher Dev.to"
+          },
+          "discord-community-insights": {
+            "description": "Umpan balik Discord di Notion dengan digest mingguan Slack",
+            "title": "Wawasan komunitas Discord"
+          },
+          "instagram-engagement-tracker": {
+            "description": "Engagement di Sheets dengan ringkasan mingguan Slack",
+            "title": "Pelacak engagement Instagram"
+          },
+          "loops-email-campaign": {
+            "description": "Rancang dan kirim email transaksional via Loops",
+            "title": "Kampanye email Loops"
+          },
+          "marketing-content-planning": {
+            "description": "Merencanakan cerita peluncuran dari Slack, wawancara, dan pesaing",
+            "title": "Perencanaan konten pemasaran"
+          },
+          "onboarding-email-use-cases": {
+            "description": "Menemukan sudut pandang onboarding dari Slack dan wawancara",
+            "title": "Use case email onboarding"
+          },
+          "serpapi-keyword-tracker": {
+            "description": "Lacak peringkat kata kunci setiap minggu dan catat ke Sheets",
+            "title": "Pelacak kata kunci SerpAPI"
+          },
+          "similarweb-traffic-comparison": {
+            "description": "Benchmark traffic versus pesaing disimpan di Notion",
+            "title": "Perbandingan traffic SimilarWeb"
+          },
+          "social-media-content-calendar": {
+            "description": "Mengubah kalender Sheets menjadi posting untuk tiap jaringan",
+            "title": "Kalender konten media sosial"
+          },
+          "x-brand-monitor": {
+            "description": "Penyebutan merek di X disimpan di Notion dengan peringatan tim",
+            "title": "Pemantau merek X"
+          },
+          "youtube-to-x-thread-repurposer": {
+            "description": "Saat video YouTube baru dipublikasikan, buat ringkasan Notion dan thread X untuk mempromosikannya",
+            "title": "Pengubah fungsi video YouTube ke thread X"
+          }
+        },
+        "title": "Pemasaran"
+      },
+      "ops": {
+        "cases": {
+          "agentmail-inbox": {
+            "description": "Buat dan kelola inbox dengan API AgentMail",
+            "title": "Inbox AgentMail"
+          },
+          "clickup-slack-standups": {
+            "description": "Tugas ClickUp harian diposting sebagai standup di Slack",
+            "title": "Standup ClickUp → Slack"
+          },
+          "google-docs-notion-migrator": {
+            "description": "Batch Google Docs ke Notion dengan tata letak tetap terjaga",
+            "title": "Migrator Google Docs → Notion"
+          },
+          "google-drive-file-organizer": {
+            "description": "File baru diurutkan ke folder secara otomatis",
+            "title": "Pengatur file Google Drive"
+          },
+          "jotform-intake-to-notion": {
+            "description": "Jawaban formulir masuk ke Notion dengan notifikasi Slack",
+            "title": "Intake Jotform ke Notion"
+          },
+          "monday-com-weekly-digest": {
+            "description": "Kemajuan board mingguan dari Monday.com di Slack",
+            "title": "Digest mingguan Monday.com"
+          },
+          "pdf-contract-processor": {
+            "description": "Field kontrak di Notion dengan pengingat sebelum kedaluwarsa",
+            "title": "Pemroses kontrak PDF"
+          },
+          "revenuecat-subscription-digest": {
+            "description": "Metrik langganan di Sheets dengan peringatan churn di Slack",
+            "title": "Digest langganan RevenueCat"
+          },
+          "todoist-notion-task-sync": {
+            "description": "Tugas Todoist dicerminkan ke Notion untuk tim",
+            "title": "Sinkronisasi tugas Todoist → Notion"
+          },
+          "wrike-project-reporter": {
+            "description": "Ringkasan progres Wrike mingguan di Slack",
+            "title": "Pelapor proyek Wrike"
+          },
+          "xero-financial-summary": {
+            "description": "Laba dan arus kas mingguan dari Xero di Slack",
+            "title": "Ringkasan keuangan Xero"
+          }
+        },
+        "title": "Operasional"
+      },
+      "product": {
+        "cases": {
+          "asana-notion-project-sync": {
+            "description": "Milestone dan tugas Asana dicerminkan ke Notion",
+            "title": "Sinkronisasi proyek Asana → Notion"
+          },
+          "feedback-router": {
+            "description": "Umpan balik Slack diarahkan sesuai aturan Anda ke tempat yang tepat",
+            "title": "Pengarah umpan balik"
+          },
+          "linear-prd-implementer": {
+            "description": "Spesifikasi Notion menjadi proyek dan issue Linear",
+            "title": "Implementer PRD Linear"
+          },
+          "metabase-dashboard-digest": {
+            "description": "Cuplikan dashboard otomatis diposting ke Slack",
+            "title": "Digest dashboard Metabase"
+          },
+          "pricing-analysis": {
+            "description": "Menganalisis strategi harga pesaing dan membandingkannya dengan produk serupa",
+            "title": "Analisis harga"
+          },
+          "product-copy-naming": {
+            "description": "Nama yang lebih ramah untuk istilah teknis di produk",
+            "title": "Copy produk & penamaan"
+          }
+        },
+        "title": "Produk"
+      },
+      "sales": {
+        "cases": {
+          "airtable-deal-tracker": {
+            "description": "Deal disinkronkan ke Sheets dan Slack saat ditutup",
+            "title": "Pelacak deal Airtable"
+          },
+          "bitrix24-lead-nurture": {
+            "description": "Lead baru Bitrix mendapat tugas tindak lanjut dan ping Slack",
+            "title": "Nurture lead Bitrix24"
+          },
+          "hubspot-sales-reporter": {
+            "description": "Ringkasan mingguan HubSpot disimpan sebagai laporan terstruktur",
+            "title": "Pelapor penjualan HubSpot"
+          },
+          "lead-follow-up-pipeline": {
+            "description": "Lead baru menjadi tugas HubSpot dengan peringatan Slack",
+            "title": "Pipeline tindak lanjut lead"
+          },
+          "salesforce-pipeline-digest": {
+            "description": "Pembaruan peluang Salesforce mingguan di Slack",
+            "title": "Digest pipeline Salesforce"
+          },
+          "streak-pipeline-report": {
+            "description": "Statistik pipeline CRM mingguan dari Gmail di Slack",
+            "title": "Laporan pipeline Streak"
+          },
+          "win-loss-reporter": {
+            "description": "Tren menang dan kalah dari pipeline di Slack",
+            "title": "Pelapor menang/kalah"
+          }
+        },
+        "title": "Penjualan"
+      },
+      "support": {
+        "cases": {
+          "chatwoot-notion-support-log": {
+            "description": "Percakapan pelanggan dicatat dan dikategorikan di Notion",
+            "title": "Log dukungan Chatwoot → Notion"
+          },
+          "customer-support-bot": {
+            "description": "Jawaban dari basis pengetahuan dan tugas untuk celah yang ada",
+            "title": "Bot dukungan pelanggan"
+          },
+          "intercom-conversation-triager": {
+            "description": "Chat Intercom menjadi tugas Notion yang diprioritaskan",
+            "title": "Penyaring percakapan Intercom"
+          },
+          "support-ticket-router": {
+            "description": "Tiket masuk ke Notion dan yang mendesak memberi ping ke Slack",
+            "title": "Pengarah tiket dukungan"
+          }
+        },
+        "title": "Dukungan"
+      }
+    },
+    "categoryFilter": "Filter menurut kategori",
+    "chat": "Chat",
+    "description": "Klik kartu apa pun untuk memulai percakapan. Ini bisa menjadi tugas sesuai permintaan, alur kerja berulang, atau subagen.",
+    "search": {
+      "accessibilityLabel": "Cari use case",
+      "empty": "Tidak ada use case yang cocok dengan pencarian Anda.",
+      "placeholder": "Cari"
+    },
+    "title": "Ide & Use Case"
+  },
   "invitationRedirect": {
     "accountMismatch": {
       "title": "Undangan diterima untuk akun lain"
@@ -5957,6 +6318,21 @@
     "signUp": "Daftar",
     "tryItYourself": "Coba sendiri"
   },
+  "sidebar": {
+    "escapeShortcut": "Esc",
+    "filterAll": "Semua",
+    "markAllRead": "Tandai semua sudah dibaca",
+    "noResults": "Tidak ada hasil ditemukan",
+    "resultCount_other": "{{count}} hasil",
+    "searching": "Mencari...",
+    "searchWorkspace": "Cari di ruang kerja...",
+    "sections": {
+      "artifacts": "Artefak",
+      "chats": "Chat",
+      "messages": "Pesan",
+      "workflows": "Alur kerja"
+    }
+  },
   "ssh": {
     "add": "Tambahkan host",
     "cancel": "Batal",
@@ -6082,6 +6458,9 @@
     },
     "title": "Akses SSH",
     "unavailable": "Permintaan ini tidak tersedia. Minta permintaan baru."
+  },
+  "status": {
+    "unread": "Belum dibaca"
   },
   "tailscale": {
     "changed": "Jaringan Tailscale ini berubah. Perubahan Anda tidak disimpan; draf Anda tetap tersimpan.",

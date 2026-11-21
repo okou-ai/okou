@@ -10,7 +10,7 @@ import {
   chatThreadComputerUseHostContract,
   chatThreadDraftContract,
   chatThreadEventsContract,
-  chatThreadMarkAgentReadContract,
+  chatThreadMarkAllReadContract,
   chatThreadMarkReadContract,
   chatThreadMarkUnreadContract,
   chatThreadMetadataContract,
@@ -421,8 +421,8 @@ export function createChatFilesBddApi(context: TestContext) {
     return chatFilesApp(context)(chatThreadMarkUnreadContract);
   }
 
-  function threadMarkAgentReadClient() {
-    return chatFilesApp(context)(chatThreadMarkAgentReadContract);
+  function threadMarkAllReadClient() {
+    return chatFilesApp(context)(chatThreadMarkAllReadContract);
   }
 
   function threadPinClient() {
@@ -707,28 +707,24 @@ export function createChatFilesBddApi(context: TestContext) {
       );
     },
 
-    async markAgentThreadsRead(
-      actor: ApiTestUser,
-      agentId: string,
-    ): Promise<void> {
+    async markAllThreadsRead(actor: ApiTestUser): Promise<void> {
       await accept(
-        threadMarkAgentReadClient().markAgentRead({
+        threadMarkAllReadClient().markAllRead({
           headers: authenticate(context, actor),
-          body: { agentId },
+          body: {},
         }),
         [204],
       );
     },
 
-    async requestMarkAgentThreadsRead(
+    async requestMarkAllThreadsRead(
       actor: ApiTestUser | null,
-      agentId: string,
       statuses: readonly (204 | 400 | 401 | 403)[],
     ) {
       return await accept(
-        threadMarkAgentReadClient().markAgentRead({
+        threadMarkAllReadClient().markAllRead({
           headers: authenticate(context, actor),
-          body: { agentId },
+          body: {},
         }),
         statuses,
       );
@@ -1054,14 +1050,6 @@ export function createChatFilesBddApi(context: TestContext) {
           return await operationApp(chatThreadMarkUnreadContract).markUnread({
             headers: authenticate(context, actor),
             params: { id: threadId },
-          });
-        },
-        async markAgentRead(actor: ApiTestUser, agentId: string) {
-          return await operationApp(
-            chatThreadMarkAgentReadContract,
-          ).markAgentRead({
-            headers: authenticate(context, actor),
-            body: { agentId },
           });
         },
       };

@@ -15,7 +15,7 @@ export const setupIdeationPage$ = command(
         ($) => {
           return $.ideation.title;
         },
-        { ns: "agents" },
+        { ns: "common" },
       ),
     );
 

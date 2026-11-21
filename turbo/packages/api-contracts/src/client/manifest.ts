@@ -141,7 +141,7 @@ export const clientDescriptorManifest = [
       "chatThreadConnectorSelectionContract",
       "chatThreadDraftContract",
       "chatThreadEventsContract",
-      "chatThreadMarkAgentReadContract",
+      "chatThreadMarkAllReadContract",
       "chatThreadMarkReadContract",
       "chatThreadMarkUnreadContract",
       "chatThreadMetadataContract",

@@ -18,7 +18,7 @@ import {
   resetChatPageModelSelection$,
   startChatGreetingVisit$,
 } from "./chat-page.ts";
-import { ensureAgentDraft$, type EnsuredAgentDraft } from "./agent-draft.ts";
+import { ensureDraft$, type WorkspaceDraftEntry } from "./workspace-draft.ts";
 import {
   agentChatComposerSignals$,
   setAgentComposerContext$,
@@ -38,12 +38,16 @@ import {
   watchAgentPhoneConnection$,
 } from "./agentphone.ts";
 
-const restoreMarketingAgentDraft$ = command(
-  async ({ get, set }, agentDraft: EnsuredAgentDraft, signal: AbortSignal) => {
+const restoreMarketingWorkspaceDraft$ = command(
+  async (
+    { get, set },
+    workspaceDraft: WorkspaceDraftEntry,
+    signal: AbortSignal,
+  ) => {
     const params = get(searchParams$);
     const handoff = await set(loadMarketingHandoff$, signal);
     if (!handoff) {
-      await set(agentDraft.load$, signal);
+      await set(workspaceDraft.load$, signal);
       return;
     }
     const imported = await set(
@@ -52,10 +56,10 @@ const restoreMarketingAgentDraft$ = command(
       signal,
     );
     if (!imported) {
-      await set(agentDraft.load$, signal);
+      await set(workspaceDraft.load$, signal);
       return;
     }
-    const targetDraft = agentDraft.draft;
+    const targetDraft = workspaceDraft.draft;
     await set(
       targetDraft.seed$,
       {
@@ -67,7 +71,7 @@ const restoreMarketingAgentDraft$ = command(
       signal,
     );
     signal.throwIfAborted();
-    await set(agentDraft.queueDraftSync$, signal);
+    await set(workspaceDraft.queueDraftSync$, signal);
     signal.throwIfAborted();
     set(finishMarketingHandoff$, handoff);
     const next = new URLSearchParams(params);
@@ -78,15 +82,15 @@ const restoreMarketingAgentDraft$ = command(
 
 export const setupHomeChatPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const agentDraft: EnsuredAgentDraft = await set(ensureAgentDraft$, signal);
+    const workspaceDraft: WorkspaceDraftEntry = await set(ensureDraft$, signal);
     set(resetProjectUi$);
     set(
       setPwaAgentComposeRequested$,
       isPwaAgentComposeRequested(get(searchParams$)),
     );
-    set(setAgentComposerContext$, { agentDraft });
+    set(setAgentComposerContext$, { workspaceDraft });
     set(get(agentChatComposerSignals$).setup$, signal);
-    set(setTalkDraft$, agentDraft.draft);
+    set(setTalkDraft$, workspaceDraft.draft);
     set(startChatGreetingVisit$);
     set(resetChatPageModelSelection$);
     set(setAgentPhoneConnectDialogOpen$, false);
@@ -116,17 +120,17 @@ export const setupHomeChatPage$ = command(
     const params = get(searchParams$);
     const prompt = params.get("handoff") ? null : params.get("prompt");
     if (params.get("handoff")) {
-      await set(restoreMarketingAgentDraft$, agentDraft, signal);
+      await set(restoreMarketingWorkspaceDraft$, workspaceDraft, signal);
     }
     const queue = params.get("queue");
     const templatePicker = parseTemplatePickerEntryCategory(
       params.get("templatePicker"),
     );
-    if (agentDraft && !prompt && !params.get("handoff")) {
-      await set(agentDraft.load$, signal);
+    if (workspaceDraft && !prompt && !params.get("handoff")) {
+      await set(workspaceDraft.load$, signal);
     }
     if (prompt) {
-      const targetDraft = agentDraft?.draft ?? get(talkDraft$);
+      const targetDraft = workspaceDraft?.draft ?? get(talkDraft$);
       set(targetDraft.clear$);
       set(targetDraft.setInput$, prompt);
       set(get(agentChatComposerSignals$).editor.focus$);

@@ -73,7 +73,6 @@ function addLocaleResources(
   locale: SupportedLocale,
   resources: LocaleResources,
 ): void {
-  i18n.addResourceBundle(locale, "agents", resources.agents, true, true);
   i18n.addResourceBundle(locale, "common", resources.common, true, true);
 }
 
@@ -81,8 +80,7 @@ export function loadI18nLanguageResources(
   locale: SupportedLocale,
   signal?: AbortSignal,
 ): Promise<LocaleResources | undefined> {
-  return !i18n.hasResourceBundle(locale, "agents") ||
-    !i18n.hasResourceBundle(locale, "common")
+  return !i18n.hasResourceBundle(locale, "common")
     ? loadLocaleResources(locale, signal)
     : Promise.resolve(undefined);
 }

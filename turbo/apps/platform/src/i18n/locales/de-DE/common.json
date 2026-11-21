@@ -1,4 +1,7 @@
 {
+  "actions": {
+    "close": "Schließen"
+  },
   "activity": {
     "codex": {
       "codexError": "Codex-Fehler",
@@ -3935,6 +3938,364 @@
       "requestFailed": "Die Anfrage ist fehlgeschlagen"
     }
   },
+  "ideation": {
+    "all": "Alle",
+    "catalog": {
+      "creative": {
+        "cases": {
+          "cloudinary-media-optimizer": {
+            "description": "Optimieren und transformieren Sie Bilder in großen Mengen",
+            "title": "Cloudinary-Medienoptimierer"
+          },
+          "fal-ai-image-generation": {
+            "description": "Generieren Sie Produktbilder aus Beschreibungen in Notion",
+            "title": "Fal AI-Bilderstellung"
+          }
+        },
+        "title": "Kreativ"
+      },
+      "engineering": {
+        "cases": {
+          "batch-create-issues": {
+            "description": "Fügen Sie eine Liste ein und {{assistantName}} erstellt die Issues für Sie",
+            "title": "Issues stapelweise erstellen"
+          },
+          "browserbase-web-testing": {
+            "description": "Automatisierte Browsertests für Ihre Web-App",
+            "title": "Browserbase-Webtests"
+          },
+          "cloudflare-traffic-security-report": {
+            "description": "Wöchentliche Slack-Zusammenfassung der Verkehrs- und Sicherheitsereignisse",
+            "title": "Cloudflare-Verkehrs- und Sicherheitsbericht"
+          },
+          "codebase-investigation": {
+            "description": "Geben Sie eine URL ein und {{assistantName}} verfolgt den Fehler über das Repo",
+            "title": "Codebasis-Untersuchung"
+          },
+          "daily-standup-report": {
+            "description": "Morgenmetriken werden zu einem Foliendeck, das auf Slack gepostet wird",
+            "title": "Täglicher Standup-Bericht"
+          },
+          "deep-research-code-analysis": {
+            "description": "Erklärt, wie ein Subsystem in Ihrer Codebasis funktioniert",
+            "title": "Tiefgründige Codeanalyse"
+          },
+          "github-pr-summarizer": {
+            "description": "Pull-Request-Zusammenfassungen in Notion mit optionalen Slack-Beiträgen zusammengeführt",
+            "title": "GitHub PR-Zusammenfassung"
+          },
+          "github-progress-weekly": {
+            "description": "Wöchentliche Repo-Aktivität nach Funktion zusammengefasst",
+            "title": "GitHub-Fortschritt wöchentlich"
+          },
+          "gitlab-to-github-migration-helper": {
+            "description": "Spiegelt GitLab-Issues und Merge-Anfragen in GitHub",
+            "title": "Migrationshilfe von GitLab zu GitHub"
+          },
+          "jira-github-issue-sync": {
+            "description": "Hält Jira-Tickets und GitHub-Issues synchron",
+            "title": "Jira ↔ GitHub Issuesynchronisierung"
+          },
+          "make-scenario-builder": {
+            "description": "Entwerfen Sie mehrstufige Make-Szenarien aus einer Beschreibung",
+            "title": "Make-Szenario-Builder"
+          },
+          "security-dependency-alert-digest": {
+            "description": "Wöchentliche Sicherheits- und Abhängigkeitswarnungen von GitHub",
+            "title": "Übersicht über Sicherheits- und Abhängigkeitswarnungen"
+          },
+          "sentry-issue-digest": {
+            "description": "Morgendliche Zusammenfassung der Sentry-Issues nach Schweregrad",
+            "title": "Sentry-Issue-Zusammenfassung"
+          },
+          "vercel-deploy-digest": {
+            "description": "Es verknüpft jede Bereitstellung mit ihrem Commit und benachrichtigt Slack, wenn eine Bereitstellung fehlschlägt",
+            "title": "Vercel Deploy Digest"
+          },
+          "zapier-okou-migration": {
+            "description": "Erstelle deine Zapier-Workflows in {{brandName}} neu",
+            "title": "Zapier → {{brandName}}-Migration"
+          }
+        },
+        "title": "Engineering"
+      },
+      "everyone": {
+        "cases": {
+          "browser-screenshots": {
+            "description": "Öffnet eine Seite im Browser und gibt einen Screenshot zurück",
+            "title": "Browser-Screenshots"
+          },
+          "calendar-optimizer": {
+            "description": "Hilft bei Konflikten, Überlastung und Konzentrationszeit",
+            "title": "Kalenderoptimierer"
+          },
+          "calendly-booking-sync": {
+            "description": "Neue Buchungen in Ihrem Kalender mit einem Slack-Ping",
+            "title": "Calendly-Buchungssynchronisierung"
+          },
+          "email-assistant": {
+            "description": "Zusammenfassung des morgendlichen Posteingangs mit vorgeschlagenen nächsten Schritten",
+            "title": "E-Mail-Assistent"
+          },
+          "granola-notes-to-notion": {
+            "description": "Granola-Besprechungsnotizen werden mit einer Notion-Datenbank synchronisiert",
+            "title": "Granola-Notizen zu Notion"
+          },
+          "lark-slack-message-relay": {
+            "description": "Leitet Nachrichten zwischen Lark und Slack in beide Richtungen weiter",
+            "title": "Lark ↔ Slack-Nachrichtenweiterleitung"
+          },
+          "line-message-relay": {
+            "description": "Leiten Sie LINE-Nachrichten an Slack weiter und umgekehrt",
+            "title": "LINE-Nachrichtenrelais"
+          },
+          "meeting-notes-pipeline": {
+            "description": "Fireflies-Notizen zu Notion mit Follow-ups in Slack",
+            "title": "Pipeline für Besprechungsnotizen"
+          },
+          "morning-brief": {
+            "description": "E-Mail, Kalender und Notizen wurden zu einem kurzen Tagesplan",
+            "title": "Vormittagsbrief"
+          },
+          "perplexity-deep-research": {
+            "description": "KI-gestützte Forschungszusammenfassungen werden in Notion gespeichert",
+            "title": "Perplexity-Tiefenrecherche"
+          },
+          "personal-weekly-digest": {
+            "description": "Pull-Requests, E-Mail und Kalender in einem Slack-Update",
+            "title": "Persönlicher wöchentlicher Überblick"
+          },
+          "send-messages-on-your-behalf": {
+            "description": "Veröffentlicht Teamankündigungen für Sie auf Slack",
+            "title": "Senden Sie Nachrichten in Ihrem Namen"
+          },
+          "strava-team-fitness-digest": {
+            "description": "Wöchentliche Zusammenfassung der Teamaktivitäten, die auf Slack gepostet wird",
+            "title": "Fitnessübersicht des Strava-Teams"
+          },
+          "tavily-web-research-pipeline": {
+            "description": "Durchsuchen Sie das Internet und sammeln Sie Ergebnisse in Notion",
+            "title": "Tavily Web-Recherche-Pipeline"
+          },
+          "tl-dv-meeting-recap": {
+            "description": "In Notion zusammengefasste Besprechungsaufzeichnungen mit Aktionspunkten",
+            "title": "tl;dv-Meeting-Zusammenfassung"
+          }
+        },
+        "title": "Alle"
+      },
+      "marketing": {
+        "cases": {
+          "apify-web-scraper-to-sheets": {
+            "description": "Apify zerlegt Websites in strukturierte Google Sheets-Zeilen",
+            "title": "Apify-Web-Scraper für Sheets"
+          },
+          "brevo-email-nurture-sequence": {
+            "description": "Automatisierte E-Mail-Sequenzen aus CRM-Ereignissen",
+            "title": "Brevo-E-Mail-Pflegesequenz"
+          },
+          "competitive-intel-scraper": {
+            "description": "Firecrawl überwacht Websites von Mitbewerbern und protokolliert Änderungen in Notion",
+            "title": "Wettbewerbsfähiger Intel Scraper"
+          },
+          "competitor-research-to-notion": {
+            "description": "Forschung zu X, gespeichert als strukturierte Notizen in Notion",
+            "title": "Konkurrenzforschung zu Notion"
+          },
+          "content-planner": {
+            "description": "Brainstormen Sie Themen und entwerfen Sie einen Redaktionskalender",
+            "title": "Inhaltsplaner"
+          },
+          "dev-to-auto-publisher": {
+            "description": "Veröffentlicht Notion-Beiträge auf Dev.to und verlinkt sie auf X",
+            "title": "Dev.to Auto-Publisher"
+          },
+          "discord-community-insights": {
+            "description": "Discord-Feedback in Notion mit einer wöchentlichen Slack-Übersicht",
+            "title": "Einblicke in die Discord-Community"
+          },
+          "instagram-engagement-tracker": {
+            "description": "Engagement in Sheets mit wöchentlichen Slack-Zusammenfassungen",
+            "title": "Instagram-Engagement-Tracker"
+          },
+          "loops-email-campaign": {
+            "description": "Verfassen und versenden Sie Transaktions-E-Mails über Loops",
+            "title": "Loops-E-Mail-Kampagne"
+          },
+          "marketing-content-planning": {
+            "description": "Geplant sind Geschichten von Slack, Interviews und Mitbewerbern",
+            "title": "Planung von Marketinginhalten"
+          },
+          "onboarding-email-use-cases": {
+            "description": "Findet Onboarding-Aspekte von Slack und Interviews",
+            "title": "Onboarding-E-Mail-Anwendungsfälle"
+          },
+          "serpapi-keyword-tracker": {
+            "description": "Verfolgen Sie wöchentlich die Keyword-Rankings und protokollieren Sie sie in Sheets",
+            "title": "SerpAPI-Keyword-Tracker"
+          },
+          "similarweb-traffic-comparison": {
+            "description": "In Notion gespeicherte Traffic-Benchmarks im Vergleich zu Mitbewerbern",
+            "title": "SimilarWeb-Trafficvergleich"
+          },
+          "social-media-content-calendar": {
+            "description": "Wandelt einen Sheets-Kalender in Beiträge für jedes Netzwerk um",
+            "title": "Kalender für Social-Media-Inhalte"
+          },
+          "x-brand-monitor": {
+            "description": "Markenerwähnungen auf X werden in Notion mit Teambenachrichtigungen gespeichert",
+            "title": "Monitor der Marke X"
+          },
+          "youtube-to-x-thread-repurposer": {
+            "description": "Wenn ein neues YouTube-Video veröffentlicht wird, erstellen Sie eine Notion-Zusammenfassung und einen X-Thread, um es zu bewerben",
+            "title": "Umfunktionierung von YouTube-zu-X-Threads"
+          }
+        },
+        "title": "Marketing"
+      },
+      "ops": {
+        "cases": {
+          "agentmail-inbox": {
+            "description": "Erstellen und verwalten Sie Posteingänge mit der AgentMail-API",
+            "title": "AgentMail-Posteingang"
+          },
+          "clickup-slack-standups": {
+            "description": "Tägliche ClickUp-Aufgaben, die als Standup in Slack gepostet werden",
+            "title": "ClickUp → Slack-Standups"
+          },
+          "google-docs-notion-migrator": {
+            "description": "Google Docs wird stapelweise in Notion geladen, wobei das Layout erhalten bleibt",
+            "title": "Google Docs → Notion Migrator"
+          },
+          "google-drive-file-organizer": {
+            "description": "Neue Dateien werden automatisch in Ordner sortiert",
+            "title": "Google Drive-Dateiorganisator"
+          },
+          "jotform-intake-to-notion": {
+            "description": "Formularantworten landen mit Slack-Benachrichtigungen in Notion",
+            "title": "Jotform-Aufnahme in Notion"
+          },
+          "monday-com-weekly-digest": {
+            "description": "Wöchentlicher Board-Fortschritt von Monday.com in Slack",
+            "title": "Wöchentliche Zusammenfassung von Monday.com"
+          },
+          "pdf-contract-processor": {
+            "description": "Vertragsfelder in Notion mit Erinnerungen vor Ablauf",
+            "title": "PDF-Vertragsprozessor"
+          },
+          "revenuecat-subscription-digest": {
+            "description": "Abonnementmetriken in Sheets mit Abwanderungswarnungen in Slack",
+            "title": "Zusammenfassung des RevenueCat-Abonnements"
+          },
+          "todoist-notion-task-sync": {
+            "description": "Todoist-Aufgaben werden in Notion für das Team gespiegelt",
+            "title": "Todoist → Notion-Aufgabensynchronisierung"
+          },
+          "wrike-project-reporter": {
+            "description": "Wöchentliche Wrike-Fortschrittszusammenfassungen in Slack",
+            "title": "Wrike-Projektreporter"
+          },
+          "xero-financial-summary": {
+            "description": "Wöchentlicher Gewinn und Cashflow von Xero in Slack",
+            "title": "Xero-Finanzübersicht"
+          }
+        },
+        "title": "Ops"
+      },
+      "product": {
+        "cases": {
+          "asana-notion-project-sync": {
+            "description": "Asana-Meilensteine ​​und -Aufgaben werden in Notion widergespiegelt",
+            "title": "Asana → Notion-Projektsynchronisierung"
+          },
+          "feedback-router": {
+            "description": "Slack-Feedback wird durch Ihre Regeln an die richtige Stelle weitergeleitet",
+            "title": "Feedback-Router"
+          },
+          "linear-prd-implementer": {
+            "description": "Notion-Spezifikationen werden zu Linear-Projekten und -Issues",
+            "title": "Linear-PRD-Implementierung"
+          },
+          "metabase-dashboard-digest": {
+            "description": "Dashboard-Snapshots werden automatisch in Slack gepostet",
+            "title": "Metabase-Dashboard-Digest"
+          },
+          "pricing-analysis": {
+            "description": "Analysieren Sie die Preisstrategien der Wettbewerber und vergleichen Sie sie mit ähnlichen Produkten",
+            "title": "Preisanalyse"
+          },
+          "product-copy-naming": {
+            "description": "Freundlichere Namen für Fachbegriffe im Produkt",
+            "title": "Produktkopie und Benennung"
+          }
+        },
+        "title": "Produkt"
+      },
+      "sales": {
+        "cases": {
+          "airtable-deal-tracker": {
+            "description": "Deals werden beim Abschluss mit Sheets und Slack synchronisiert",
+            "title": "Airtable-Deal-Tracker"
+          },
+          "bitrix24-lead-nurture": {
+            "description": "Neue Bitrix-Leads erhalten Folgeaufgaben und Slack-Pings",
+            "title": "Bitrix24-Lead-Nurturing"
+          },
+          "hubspot-sales-reporter": {
+            "description": "Wöchentliche HubSpot-Zusammenfassungen, gespeichert als strukturierte Berichte",
+            "title": "HubSpot-Verkaufsreporter"
+          },
+          "lead-follow-up-pipeline": {
+            "description": "Neue Leads werden mit Slack-Benachrichtigungen zu HubSpot-Aufgaben",
+            "title": "Führen Sie die Follow-up-Pipeline"
+          },
+          "salesforce-pipeline-digest": {
+            "description": "Wöchentliche Salesforce-Opportunity-Updates in Slack",
+            "title": "Zusammenfassung der Salesforce-Pipeline"
+          },
+          "streak-pipeline-report": {
+            "description": "Wöchentliche CRM-Pipeline-Statistiken von Gmail in Slack",
+            "title": "Streak-Pipeline-Bericht"
+          },
+          "win-loss-reporter": {
+            "description": "Gewinn- und Verlusttrends aus der Pipeline in Slack",
+            "title": "Sieg/Verlust-Reporter"
+          }
+        },
+        "title": "Verkäufe"
+      },
+      "support": {
+        "cases": {
+          "chatwoot-notion-support-log": {
+            "description": "Kundengespräche werden in Notion protokolliert und kategorisiert",
+            "title": "Chatwoot → Notion-Supportprotokoll"
+          },
+          "customer-support-bot": {
+            "description": "Antworten aus der Wissensdatenbank und Aufgaben für Lücken",
+            "title": "Kundensupport-Bot"
+          },
+          "intercom-conversation-triager": {
+            "description": "Intercom-Chats werden zu priorisierten Notion-Aufgaben",
+            "title": "Triager für Intercom-Gespräche"
+          },
+          "support-ticket-router": {
+            "description": "Tickets gehen an Notion, dringende Tickets an Slack",
+            "title": "Support-Ticket-Router"
+          }
+        },
+        "title": "Unterstützung"
+      }
+    },
+    "categoryFilter": "Nach Kategorie filtern",
+    "chat": "Chatten",
+    "description": "Klicken Sie auf eine beliebige Karte, um eine Unterhaltung zu beginnen. Es könnte sich um eine On-Demand-Aufgabe, einen wiederkehrenden Workflow oder einen Sub-Agenten handeln.",
+    "search": {
+      "accessibilityLabel": "Anwendungsfälle suchen",
+      "empty": "Zu Ihrer Suche passen keine Anwendungsfälle.",
+      "placeholder": "Suchen"
+    },
+    "title": "Ideen und Anwendungsfälle"
+  },
   "invitationRedirect": {
     "accountMismatch": {
       "title": "Einladung für ein anderes Konto angenommen"
@@ -5981,6 +6342,22 @@
     "signUp": "Registrieren",
     "tryItYourself": "Selbst ausprobieren"
   },
+  "sidebar": {
+    "escapeShortcut": "Esc",
+    "filterAll": "Alle",
+    "markAllRead": "Alles als gelesen markieren",
+    "noResults": "Keine Ergebnisse gefunden",
+    "resultCount_one": "{{count}} Ergebnis",
+    "resultCount_other": "{{count}} Ergebnisse",
+    "searching": "Suche...",
+    "searchWorkspace": "Arbeitsbereich durchsuchen...",
+    "sections": {
+      "artifacts": "Artefakte",
+      "chats": "Chats",
+      "messages": "Nachrichten",
+      "workflows": "Workflows"
+    }
+  },
   "ssh": {
     "add": "Host hinzufügen",
     "cancel": "Abbrechen",
@@ -6108,6 +6485,9 @@
     },
     "title": "SSH-Zugriff",
     "unavailable": "Diese Anfrage ist nicht verfügbar. Fordere eine neue Anfrage an."
+  },
+  "status": {
+    "unread": "Ungelesen"
   },
   "tailscale": {
     "changed": "Dieses Tailscale-Netzwerk wurde geändert. Deine Änderungen wurden nicht gespeichert; dein Entwurf bleibt erhalten.",

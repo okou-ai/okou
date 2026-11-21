@@ -17,7 +17,6 @@ import {
   chatEvents,
 } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 
 import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
 import { nowDate } from "../../lib/time";
@@ -87,28 +86,12 @@ export function createChatThreadReadPreparation(args: {
   });
 }
 
-/** Bounded caller-owned candidates and one terminal watermark query per Agent. */
-export function createAgentThreadReadPreparation(args: {
-  readonly agentId?: string;
+/** Bounded caller-owned candidates and one terminal watermark query per member. */
+export function createWorkspaceThreadReadPreparation(args: {
   readonly userId: string;
   readonly orgId: string;
 }) {
-  const agent$ = computed(async (get) => {
-    if (args.agentId === undefined) {
-      return true;
-    }
-    const [agent] = await get(db$)
-      .select({ id: agents.id })
-      .from(agents)
-      .where(and(eq(agents.id, args.agentId), eq(agents.orgId, args.orgId)))
-      .limit(1);
-    return agent;
-  });
   const candidates$ = computed(async (get) => {
-    const agent = await get(agent$);
-    if (!agent) {
-      return [];
-    }
     return await get(db$)
       .select({ id: chatThreads.id, lastReadAt: chatThreads.lastReadAt })
       .from(chatThreads)
@@ -163,10 +146,6 @@ export function createAgentThreadReadPreparation(args: {
   );
 
   return computed(async (get) => {
-    const agent = await get(agent$);
-    if (!agent) {
-      return null;
-    }
     const candidates = await get(candidates$);
     const watermarks = await get(watermarks$);
     return candidates.flatMap((candidate) => {

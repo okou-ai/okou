@@ -1,4 +1,7 @@
 {
+  "actions": {
+    "close": "닫기"
+  },
   "activity": {
     "codex": {
       "codexError": "Codex 오류",
@@ -3917,6 +3920,364 @@
       "requestFailed": "요청 실패"
     }
   },
+  "ideation": {
+    "all": "전체",
+    "catalog": {
+      "creative": {
+        "cases": {
+          "cloudinary-media-optimizer": {
+            "description": "대량으로 이미지 최적화 및 변환",
+            "title": "Cloudinary 미디어 최적화기"
+          },
+          "fal-ai-image-generation": {
+            "description": "Notion 설명에서 제품 이미지 생성",
+            "title": "Fal AI 이미지 생성"
+          }
+        },
+        "title": "크리에이티브"
+      },
+      "engineering": {
+        "cases": {
+          "batch-create-issues": {
+            "description": "목록을 붙여넣으면 {{assistantName}}가 이슈를 생성합니다",
+            "title": "이슈 일괄 생성"
+          },
+          "browserbase-web-testing": {
+            "description": "웹 앱을 위한 자동화된 브라우저 테스트",
+            "title": "Browserbase 웹 테스트"
+          },
+          "cloudflare-traffic-security-report": {
+            "description": "주간 Slack 트래픽 및 보안 이벤트 요약",
+            "title": "Cloudflare 트래픽 및 보안 보고서"
+          },
+          "codebase-investigation": {
+            "description": "URL을 제공하면 {{assistantName}}가 저장소 내 버그를 추적",
+            "title": "코드베이스 조사"
+          },
+          "daily-standup-report": {
+            "description": "아침 지표를 슬라이드 데크로 만들어 Slack에 게시",
+            "title": "일일 스탠드업 보고서"
+          },
+          "deep-research-code-analysis": {
+            "description": "코드베이스 내 하위 시스템 작동 방식 설명",
+            "title": "심층 연구 코드 분석"
+          },
+          "github-pr-summarizer": {
+            "description": "병합된 풀 리퀘스트 요약을 Notion에, 선택적으로 Slack에 게시",
+            "title": "GitHub PR 요약기"
+          },
+          "github-progress-weekly": {
+            "description": "기능별 주간 저장소 활동 요약",
+            "title": "GitHub 주간 진행 상황"
+          },
+          "gitlab-to-github-migration-helper": {
+            "description": "GitLab 이슈 및 머지 리퀘스트를 GitHub에 미러링",
+            "title": "GitLab → GitHub 마이그레이션 도우미"
+          },
+          "jira-github-issue-sync": {
+            "description": "Jira 티켓과 GitHub 이슈 동기화 유지",
+            "title": "Jira ↔ GitHub 이슈 동기화"
+          },
+          "make-scenario-builder": {
+            "description": "설명으로 다단계 Make 시나리오 설계",
+            "title": "Make 시나리오 빌더"
+          },
+          "security-dependency-alert-digest": {
+            "description": "GitHub의 주간 보안 및 의존성 알림",
+            "title": "보안 및 의존성 알림 요약"
+          },
+          "sentry-issue-digest": {
+            "description": "심각도별 이슈 아침 요약",
+            "title": "Sentry 이슈 요약"
+          },
+          "vercel-deploy-digest": {
+            "description": "각 배포를 커밋과 연결하고 배포 실패 시 Slack 알림",
+            "title": "Vercel 배포 요약"
+          },
+          "zapier-okou-migration": {
+            "description": "Zapier 워크플로를 {{brandName}}에서 다시 만들기",
+            "title": "Zapier → {{brandName}} 마이그레이션"
+          }
+        },
+        "title": "엔지니어링"
+      },
+      "everyone": {
+        "cases": {
+          "browser-screenshots": {
+            "description": "브라우저에서 페이지를 열고 스크린샷 반환",
+            "title": "브라우저 스크린샷"
+          },
+          "calendar-optimizer": {
+            "description": "일정 충돌, 과부하, 집중 시간 관리 지원",
+            "title": "캘린더 최적화기"
+          },
+          "calendly-booking-sync": {
+            "description": "새 예약을 캘린더에 추가하고 Slack 알림 전송",
+            "title": "Calendly 예약 동기화"
+          },
+          "email-assistant": {
+            "description": "아침 받은편지함 요약과 다음 단계 제안",
+            "title": "이메일 어시스턴트"
+          },
+          "granola-notes-to-notion": {
+            "description": "Granola 회의 노트를 Notion 데이터베이스와 동기화",
+            "title": "Granola 노트 → Notion"
+          },
+          "lark-slack-message-relay": {
+            "description": "Lark와 Slack 간 메시지 양방향 전달",
+            "title": "Lark ↔ Slack 메시지 중계"
+          },
+          "line-message-relay": {
+            "description": "LINE 메시지를 Slack으로, Slack 메시지를 LINE으로 전달",
+            "title": "LINE 메시지 중계"
+          },
+          "meeting-notes-pipeline": {
+            "description": "Fireflies 노트를 Notion에 저장하고 Slack에서 후속 조치 알림",
+            "title": "회의 노트 파이프라인"
+          },
+          "morning-brief": {
+            "description": "이메일, 캘린더, 노트를 짧은 일일 계획으로 변환",
+            "title": "모닝 브리핑"
+          },
+          "perplexity-deep-research": {
+            "description": "AI 기반 연구 요약을 Notion에 저장",
+            "title": "Perplexity 심층 연구"
+          },
+          "personal-weekly-digest": {
+            "description": "풀 리퀘스트, 이메일, 캘린더를 하나의 Slack 업데이트로",
+            "title": "개인 주간 요약"
+          },
+          "send-messages-on-your-behalf": {
+            "description": "팀 공지를 Slack에 대신 게시",
+            "title": "대신 메시지 보내기"
+          },
+          "strava-team-fitness-digest": {
+            "description": "주간 팀 활동 요약을 Slack에 게시",
+            "title": "Strava 팀 피트니스 요약"
+          },
+          "tavily-web-research-pipeline": {
+            "description": "웹 검색 후 결과를 Notion에 정리",
+            "title": "Tavily 웹 리서치 파이프라인"
+          },
+          "tl-dv-meeting-recap": {
+            "description": "회의 녹음을 Notion에 요약하고 실행 항목 포함",
+            "title": "tl;dv 회의 요약"
+          }
+        },
+        "title": "전체"
+      },
+      "marketing": {
+        "cases": {
+          "apify-web-scraper-to-sheets": {
+            "description": "Apify가 사이트를 스크랩하여 구조화된 Google Sheets 행으로 변환",
+            "title": "Apify 웹 스크래퍼 → Sheets"
+          },
+          "brevo-email-nurture-sequence": {
+            "description": "CRM 이벤트 기반 자동 이메일 시퀀스",
+            "title": "Brevo 이메일 육성 시퀀스"
+          },
+          "competitive-intel-scraper": {
+            "description": "Firecrawl이 경쟁사 사이트를 감시하고 변경 사항을 Notion에 기록",
+            "title": "경쟁사 정보 스크래퍼"
+          },
+          "competitor-research-to-notion": {
+            "description": "X에서 조사한 경쟁사 정보를 구조화된 노트로 Notion에 저장",
+            "title": "경쟁사 조사 → Notion"
+          },
+          "content-planner": {
+            "description": "주제 브레인스토밍 및 편집 캘린더 개요 작성",
+            "title": "콘텐츠 플래너"
+          },
+          "dev-to-auto-publisher": {
+            "description": "Notion 게시물을 Dev.to에 게시하고 X에 링크 연결",
+            "title": "Dev.to 자동 게시기"
+          },
+          "discord-community-insights": {
+            "description": "Discord 피드백을 Notion에 기록하고 주간 Slack 요약 제공",
+            "title": "Discord 커뮤니티 인사이트"
+          },
+          "instagram-engagement-tracker": {
+            "description": "Sheets에서 참여도 추적 및 주간 Slack 요약 제공",
+            "title": "Instagram 참여도 추적기"
+          },
+          "loops-email-campaign": {
+            "description": "Loops를 통해 거래 이메일 작성 및 발송",
+            "title": "Loops 이메일 캠페인"
+          },
+          "marketing-content-planning": {
+            "description": "Slack, 인터뷰, 경쟁사에서 출시 스토리 기획",
+            "title": "마케팅 콘텐츠 기획"
+          },
+          "onboarding-email-use-cases": {
+            "description": "Slack과 인터뷰에서 온보딩 각도 찾기",
+            "title": "온보딩 이메일 활용 사례"
+          },
+          "serpapi-keyword-tracker": {
+            "description": "주간 키워드 순위 추적 및 Sheets에 기록",
+            "title": "SerpAPI 키워드 추적기"
+          },
+          "similarweb-traffic-comparison": {
+            "description": "경쟁사 대비 트래픽 벤치마크를 Notion에 저장",
+            "title": "SimilarWeb 트래픽 비교"
+          },
+          "social-media-content-calendar": {
+            "description": "Sheets 달력을 각 네트워크용 게시물로 변환",
+            "title": "소셜 미디어 콘텐츠 캘린더"
+          },
+          "x-brand-monitor": {
+            "description": "X 브랜드 언급을 Notion에 저장하고 팀 알림 제공",
+            "title": "X 브랜드 모니터"
+          },
+          "youtube-to-x-thread-repurposer": {
+            "description": "새 YouTube 영상 게시 시 Notion 요약과 X 스레드 생성",
+            "title": "YouTube → X 스레드 재활용기"
+          }
+        },
+        "title": "마케팅"
+      },
+      "ops": {
+        "cases": {
+          "agentmail-inbox": {
+            "description": "AgentMail API로 인박스 생성 및 관리",
+            "title": "AgentMail 인박스"
+          },
+          "clickup-slack-standups": {
+            "description": "일일 ClickUp 작업을 Slack 스탠드업으로 게시",
+            "title": "ClickUp → Slack 스탠드업"
+          },
+          "google-docs-notion-migrator": {
+            "description": "레이아웃 유지하며 Google Docs를 Notion으로 일괄 이전",
+            "title": "Google Docs → Notion 이전기"
+          },
+          "google-drive-file-organizer": {
+            "description": "새 파일을 자동으로 폴더에 분류",
+            "title": "Google Drive 파일 정리기"
+          },
+          "jotform-intake-to-notion": {
+            "description": "폼 응답을 Notion에 기록하고 Slack 알림 제공",
+            "title": "Jotform 입력 → Notion"
+          },
+          "monday-com-weekly-digest": {
+            "description": "Monday.com 주간 보드 진행 상황을 Slack에 게시",
+            "title": "Monday.com 주간 요약"
+          },
+          "pdf-contract-processor": {
+            "description": "계약서 필드를 Notion에 기록하고 만료 전 알림 제공",
+            "title": "PDF 계약서 처리기"
+          },
+          "revenuecat-subscription-digest": {
+            "description": "Sheets에 구독 지표 기록 및 Slack에서 이탈 알림",
+            "title": "RevenueCat 구독 요약"
+          },
+          "todoist-notion-task-sync": {
+            "description": "Todoist 작업을 팀용으로 Notion에 동기화",
+            "title": "Todoist → Notion 작업 동기화"
+          },
+          "wrike-project-reporter": {
+            "description": "주간 Wrike 진행 상황 요약을 Slack에 게시",
+            "title": "Wrike 프로젝트 리포터"
+          },
+          "xero-financial-summary": {
+            "description": "Xero의 주간 이익 및 현금 흐름을 Slack에 게시",
+            "title": "Xero 재무 요약"
+          }
+        },
+        "title": "운영"
+      },
+      "product": {
+        "cases": {
+          "asana-notion-project-sync": {
+            "description": "Asana 마일스톤과 작업을 Notion에 동기화",
+            "title": "Asana → Notion 프로젝트 동기화"
+          },
+          "feedback-router": {
+            "description": "Slack 피드백을 규칙에 따라 적절한 곳으로 라우팅",
+            "title": "피드백 라우터"
+          },
+          "linear-prd-implementer": {
+            "description": "Notion 사양을 Linear 프로젝트와 이슈로 변환",
+            "title": "Linear PRD 구현기"
+          },
+          "metabase-dashboard-digest": {
+            "description": "대시보드 스냅샷을 자동으로 Slack에 게시",
+            "title": "Metabase 대시보드 요약"
+          },
+          "pricing-analysis": {
+            "description": "경쟁사 가격 전략 분석 및 유사 제품과 비교",
+            "title": "가격 분석"
+          },
+          "product-copy-naming": {
+            "description": "제품 내 기술 용어를 친근한 이름으로 변경",
+            "title": "제품 카피 및 명명"
+          }
+        },
+        "title": "제품"
+      },
+      "sales": {
+        "cases": {
+          "airtable-deal-tracker": {
+            "description": "거래 종료 시 Sheets와 Slack에 동기화",
+            "title": "Airtable 거래 추적기"
+          },
+          "bitrix24-lead-nurture": {
+            "description": "새 Bitrix 리드에 후속 작업과 Slack 알림 생성",
+            "title": "Bitrix24 리드 육성"
+          },
+          "hubspot-sales-reporter": {
+            "description": "주간 HubSpot 요약을 구조화된 보고서로 저장",
+            "title": "HubSpot 영업 리포터"
+          },
+          "lead-follow-up-pipeline": {
+            "description": "새 리드를 HubSpot 작업으로 만들고 Slack 알림 제공",
+            "title": "리드 후속 파이프라인"
+          },
+          "salesforce-pipeline-digest": {
+            "description": "주간 Salesforce 기회 업데이트를 Slack에 게시",
+            "title": "Salesforce 파이프라인 요약"
+          },
+          "streak-pipeline-report": {
+            "description": "주간 Gmail CRM 파이프라인 통계를 Slack에 게시",
+            "title": "Streak 파이프라인 리포트"
+          },
+          "win-loss-reporter": {
+            "description": "파이프라인의 승패 추세를 Slack에 게시",
+            "title": "승패 리포터"
+          }
+        },
+        "title": "영업"
+      },
+      "support": {
+        "cases": {
+          "chatwoot-notion-support-log": {
+            "description": "고객 대화를 Notion에 기록 및 분류",
+            "title": "Chatwoot → Notion 지원 로그"
+          },
+          "customer-support-bot": {
+            "description": "지식 기반 답변 및 부족한 부분 작업 생성",
+            "title": "고객 지원 봇"
+          },
+          "intercom-conversation-triager": {
+            "description": "Intercom 채팅을 우선순위 Notion 작업으로 변환",
+            "title": "Intercom 대화 분류기"
+          },
+          "support-ticket-router": {
+            "description": "티켓을 Notion으로 보내고 긴급한 것은 Slack 알림",
+            "title": "지원 티켓 라우터"
+          }
+        },
+        "title": "지원"
+      }
+    },
+    "categoryFilter": "카테고리별 필터",
+    "chat": "채팅",
+    "description": "카드를 클릭해 대화를 시작하세요. 주문형 작업, 반복 워크플로, 하위 에이전트가 될 수 있습니다.",
+    "search": {
+      "accessibilityLabel": "활용 사례 검색",
+      "empty": "검색과 일치하는 활용 사례가 없습니다.",
+      "placeholder": "검색"
+    },
+    "title": "아이디어 및 활용 사례"
+  },
   "invitationRedirect": {
     "accountMismatch": {
       "title": "다른 계정으로 초대를 수락했습니다"
@@ -5957,6 +6318,21 @@
     "signUp": "회원가입",
     "tryItYourself": "직접 사용해 보기"
   },
+  "sidebar": {
+    "escapeShortcut": "Esc",
+    "filterAll": "전체",
+    "markAllRead": "모두 읽음으로 표시",
+    "noResults": "결과가 없습니다",
+    "resultCount_other": "결과 {{count}}개",
+    "searching": "검색 중...",
+    "searchWorkspace": "워크스페이스 검색...",
+    "sections": {
+      "artifacts": "아티팩트",
+      "chats": "채팅",
+      "messages": "메시지",
+      "workflows": "워크플로"
+    }
+  },
   "ssh": {
     "add": "호스트 추가",
     "cancel": "취소",
@@ -6082,6 +6458,9 @@
     },
     "title": "SSH 액세스",
     "unavailable": "이 요청을 사용할 수 없습니다. 새로 요청하세요."
+  },
+  "status": {
+    "unread": "읽지 않음"
   },
   "tailscale": {
     "changed": "이 Tailscale 네트워크가 변경되었습니다. 변경 사항은 저장되지 않았으며 초안은 유지됩니다.",

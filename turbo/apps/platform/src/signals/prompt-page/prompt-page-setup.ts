@@ -220,7 +220,7 @@ export const setupPromptPage$ = command(
       sendNewThread$,
       {
         prompt: prompt ?? "",
-        ...(draft ? { draft, preserveAgentDraft: true } : {}),
+        ...(draft ? { draft, preserveWorkspaceDraft: true } : {}),
         ...(handoff
           ? {
               onOptimisticSend: () => {

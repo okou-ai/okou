@@ -356,7 +356,7 @@ const sendAgentSuggestionOption$ = command(
       {
         title: entry.item.content.title,
         draft,
-        preserveAgentDraft: true,
+        preserveWorkspaceDraft: true,
         prompt,
         generationTemplate: undefined,
         editorDocument: createMessageDocumentSnapshot(userMessage),

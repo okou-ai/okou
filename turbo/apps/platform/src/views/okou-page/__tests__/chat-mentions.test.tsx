@@ -51,7 +51,7 @@ function referencedThread(
   };
 }
 
-function configureAgentDraft(
+function configureWorkspaceDraft(
   draft: UserMessageInputDocument,
   referencedThreads: readonly ChatThreadSnapshotProjection[],
 ): void {
@@ -110,7 +110,7 @@ function getLink(name: string): HTMLElement {
 }
 
 test("A conversation reference renders as a recognizable chip", async () => {
-  configureAgentDraft(
+  configureWorkspaceDraft(
     {
       version: 1,
       parts: [
@@ -159,7 +159,7 @@ test("Ordinary links are not mistaken for conversation mentions", async () => {
     conversationWithoutTitle,
   ].join(" | ");
 
-  configureAgentDraft(
+  configureWorkspaceDraft(
     {
       version: 1,
       parts: [
@@ -204,7 +204,7 @@ test("Special characters in a conversation title survive saving and restoring", 
   const specialTitle = String.raw`Release [QA] \ notes`;
   let savedDraft: AgentDraftRequest | undefined;
 
-  configureAgentDraft(
+  configureWorkspaceDraft(
     {
       version: 1,
       parts: [

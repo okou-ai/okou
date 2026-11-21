@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 
-export function AgentUnreadIndicator() {
-  const { t } = useTranslation("agents");
+export function UnreadIndicator() {
+  const { t } = useTranslation("common");
 
   return (
     <span
