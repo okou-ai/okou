@@ -30,6 +30,10 @@ import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import java.util.UUID
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -49,6 +53,7 @@ class ScreenshotScenario {
         val originalSearch = app.searchService
         val originalComposer = app.composerService
         val originalWorkflows = app.workflows
+        val originalConnectivity = app.connectivity.value
         val originalPreferences = app.snapshotApiPreferences()
         val originalCache =
             ChatCacheSnapshot(app.noBackupFilesDir.resolve("chat-list"), app.chatCache)
@@ -131,8 +136,7 @@ class ScreenshotScenario {
                 jsonResponse("""{"events":[${rows.joinToString(",")}],"hasMore":false}""")
             }
         }
-        fixture.historyRows = { request ->
-            val thread = checkNotNull(request.requestUrl).pathSegments[2]
+        fun history(thread: String): List<Pair<Long, String>> {
             fun prompt(id: String, seq: Long, run: String, body: String) =
                 historyEventWire(
                     id,
@@ -144,8 +148,7 @@ class ScreenshotScenario {
                 )
             fun reply(id: String, seq: Long, run: String, body: String) =
                 historyEventWire(id, seq, thread, payload = """{"content":"$body"}""", run = run)
-            val rows =
-                listOf(
+            return listOf(
                     10L to prompt("older-prompt", 10, olderRun, "Check last week's notes"),
                     11L to reply("older-process", 11, olderRun, hiddenReply),
                     12L to reply("older-end", 12, olderRun, "Previous launch summary"),
@@ -154,11 +157,26 @@ class ScreenshotScenario {
                     23L to reply("launch-end", 23, HISTORY_RUN, finalReply),
                     37L to historyEventWire(HISTORY_LAST_EVENT, 37, thread, "run.completed", "null"),
                 )
-            val since = request.requestUrl?.queryParameter("sinceSeqId")?.toLong() ?: 0
-            val events = rows.filter { it.first > since }.joinToString(",") { it.second }
+        }
+        fixture.historyRows = { request ->
+            val address = checkNotNull(request.requestUrl)
+            val thread = address.pathSegments[2]
+            val since = address.queryParameter("sinceSeqId")?.toLong() ?: 0
+            val events = history(thread).filter { it.first > since }.joinToString(",") { it.second }
             jsonResponse(
                 """{"rows":[$events],"cursor":{"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":37},"hasMore":false}"""
             )
+        }
+        fixture.historyCatchUp = { request ->
+            val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonArray
+            val events = body.joinToString(",") { cursor ->
+                val (thread, sequence) = cursor.jsonArray
+                val rows = history(thread.jsonPrimitive.content)
+                    .filter { it.first > sequence.jsonPrimitive.long }
+                    .joinToString(",") { it.second }
+                """$thread:[$rows]"""
+            }
+            jsonResponse("""{"events":{$events},"notFoundThreads":[]}""")
         }
         fixture.searchMessages = { request ->
             if (request.requestUrl?.queryParameter("keyword") == "launch")
@@ -265,6 +283,16 @@ class ScreenshotScenario {
                     press(R.string.chat_search_all_types)
                     assertEquals("no match", field().text)
 
+                    enter("launch")
+                    app.connectivity.value = false
+                    text(label(R.string.chat_search_offline_titles))
+                    text("Launch notes")
+                    assertFalse(device.hasObject(By.pkg(app.packageName).text(earlierReply)))
+                    capture("search-offline.png")
+                    tab(R.string.chat_search_messages)
+                    text(label(R.string.chat_search_online_only))
+                    app.connectivity.value = true
+
                     button(R.string.back).click()
                     device.awaitChatList(app)
                     device.executeShellCommand("wm size 1000x800")
@@ -295,6 +323,7 @@ class ScreenshotScenario {
             app.chatService = originalChats
             app.composerService = originalComposer
             app.workflows = originalWorkflows
+            app.connectivity.value = originalConnectivity
             auth.state.value = originalAuth
             app.restoreApiPreferences(originalPreferences)
             workflows.close()
