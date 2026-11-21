@@ -22,6 +22,2399 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.encodeToJsonElement
 
+@Serializable
+data class FeatureSwitches(
+    val `switches`: Map<String, Boolean>,
+    val `effectiveSwitches`: Map<String, Boolean>,
+)
+
+@Serializable
+data class ConnectorDiscoveryConnectorsItemIcon(
+    val `url`: String,
+    val `invertInDarkMode`: Boolean,
+    val `scale`: Double? = null,
+)
+
+@Serializable
+enum class ConnectorDiscoveryConnectorsItemMcpTransport {
+    @SerialName("streamable-http") STREAMABLE_HTTP
+}
+
+@Serializable
+data class ConnectorDiscoveryConnectorsItemMcp(
+    val `transport`: ConnectorDiscoveryConnectorsItemMcpTransport,
+    val `endpoint`: String,
+)
+
+@Serializable
+enum class ConnectorDiscoveryConnectorsItemAuthMethodsItemGrantKind {
+    @SerialName("none") NONE,
+    @SerialName("automatic") AUTOMATIC,
+    @SerialName("manual") MANUAL,
+    @SerialName("auth-code") AUTH_CODE,
+    @SerialName("openid-auth") OPENID_AUTH,
+    @SerialName("external-code") EXTERNAL_CODE,
+    @SerialName("device-auth") DEVICE_AUTH,
+    @SerialName("managed") MANAGED,
+}
+
+@Serializable
+enum class ConnectorDiscoveryConnectorsItemAuthMethodsItemManualFieldsItemInputType {
+    @SerialName("password") PASSWORD,
+    @SerialName("text") TEXT,
+}
+
+@Serializable
+data class ConnectorDiscoveryConnectorsItemAuthMethodsItemManualFieldsItem(
+    val `id`: String,
+    val `label`: String,
+    val `required`: Boolean,
+    val `placeholder`: String?,
+    val `inputType`: ConnectorDiscoveryConnectorsItemAuthMethodsItemManualFieldsItemInputType,
+)
+
+@Serializable
+enum class ConnectorDiscoveryConnectorsItemAuthMethodsItemStartOptionsItemKind {
+    @SerialName("select") SELECT
+}
+
+@Serializable
+data class ConnectorDiscoveryConnectorsItemAuthMethodsItemStartOptionsItemOptionsItem(
+    val `value`: String,
+    val `label`: String,
+)
+
+@Serializable
+data class ConnectorDiscoveryConnectorsItemAuthMethodsItemStartOptionsItem(
+    val `id`: String,
+    val `kind`: ConnectorDiscoveryConnectorsItemAuthMethodsItemStartOptionsItemKind,
+    val `label`: String,
+    val `required`: Boolean,
+    val `defaultValue`: String?,
+    val `options`: List<ConnectorDiscoveryConnectorsItemAuthMethodsItemStartOptionsItemOptionsItem>,
+)
+
+@Serializable
+data class ConnectorDiscoveryConnectorsItemAuthMethodsItem(
+    val `id`: String,
+    val `label`: String,
+    val `description`: String?,
+    val `supportsRefresh`: Boolean,
+    val `grantKind`: ConnectorDiscoveryConnectorsItemAuthMethodsItemGrantKind,
+    val `manualFields`: List<ConnectorDiscoveryConnectorsItemAuthMethodsItemManualFieldsItem>,
+    val `startOptions`: List<ConnectorDiscoveryConnectorsItemAuthMethodsItemStartOptionsItem>,
+)
+
+@Serializable
+data class ConnectorDiscoveryConnectorsItemPermissionSummary(
+    val `hasPermissions`: Boolean,
+    val `permissionCount`: Long,
+    val `hasCategories`: Boolean,
+    val `hasDefaultPolicyOverrides`: Boolean,
+)
+
+@Serializable
+enum class ConnectorDiscoveryConnectorsItemConnectNotice {
+    @SerialName("google-security-warning") GOOGLE_SECURITY_WARNING
+}
+
+@Serializable
+data class ConnectorDiscoveryConnectorsItem(
+    val `slug`: String,
+    val `label`: String,
+    val `description`: String,
+    val `icon`: ConnectorDiscoveryConnectorsItemIcon,
+    val `category`: String,
+    val `popularityRank`: Long? = null,
+    val `generation`: List<String>,
+    val `tags`: List<String>,
+    val `mcp`: ConnectorDiscoveryConnectorsItemMcp? = null,
+    val `authMethods`: List<ConnectorDiscoveryConnectorsItemAuthMethodsItem>,
+    val `permissionSummary`: ConnectorDiscoveryConnectorsItemPermissionSummary,
+    val `singleAuthCodeAuthMethodId`: String?,
+    val `connectNotice`: ConnectorDiscoveryConnectorsItemConnectNotice?,
+)
+
+@Serializable
+data class ConnectorDiscovery(
+    val `connectors`: List<ConnectorDiscoveryConnectorsItem>,
+    val `totalConnectorCount`: Long,
+    val `categoryConnectorCounts`: Map<String, Long>? = null,
+)
+
+@Serializable
+data class ConnectorDetailConnectorIcon(
+    val `url`: String,
+    val `invertInDarkMode`: Boolean,
+    val `scale`: Double? = null,
+)
+
+@Serializable
+enum class ConnectorDetailConnectorMcpTransport {
+    @SerialName("streamable-http") STREAMABLE_HTTP
+}
+
+@Serializable
+data class ConnectorDetailConnectorMcp(
+    val `transport`: ConnectorDetailConnectorMcpTransport,
+    val `endpoint`: String,
+)
+
+@Serializable
+enum class ConnectorDetailConnectorAuthMethodsItemGrantKind {
+    @SerialName("none") NONE,
+    @SerialName("automatic") AUTOMATIC,
+    @SerialName("manual") MANUAL,
+    @SerialName("auth-code") AUTH_CODE,
+    @SerialName("openid-auth") OPENID_AUTH,
+    @SerialName("external-code") EXTERNAL_CODE,
+    @SerialName("device-auth") DEVICE_AUTH,
+    @SerialName("managed") MANAGED,
+}
+
+@Serializable
+enum class ConnectorDetailConnectorAuthMethodsItemManualFieldsItemInputType {
+    @SerialName("password") PASSWORD,
+    @SerialName("text") TEXT,
+}
+
+@Serializable
+data class ConnectorDetailConnectorAuthMethodsItemManualFieldsItem(
+    val `id`: String,
+    val `label`: String,
+    val `required`: Boolean,
+    val `placeholder`: String?,
+    val `inputType`: ConnectorDetailConnectorAuthMethodsItemManualFieldsItemInputType,
+)
+
+@Serializable
+enum class ConnectorDetailConnectorAuthMethodsItemStartOptionsItemKind {
+    @SerialName("select") SELECT
+}
+
+@Serializable
+data class ConnectorDetailConnectorAuthMethodsItemStartOptionsItemOptionsItem(
+    val `value`: String,
+    val `label`: String,
+)
+
+@Serializable
+data class ConnectorDetailConnectorAuthMethodsItemStartOptionsItem(
+    val `id`: String,
+    val `kind`: ConnectorDetailConnectorAuthMethodsItemStartOptionsItemKind,
+    val `label`: String,
+    val `required`: Boolean,
+    val `defaultValue`: String?,
+    val `options`: List<ConnectorDetailConnectorAuthMethodsItemStartOptionsItemOptionsItem>,
+)
+
+@Serializable
+data class ConnectorDetailConnectorAuthMethodsItem(
+    val `id`: String,
+    val `label`: String,
+    val `description`: String?,
+    val `supportsRefresh`: Boolean,
+    val `grantKind`: ConnectorDetailConnectorAuthMethodsItemGrantKind,
+    val `manualFields`: List<ConnectorDetailConnectorAuthMethodsItemManualFieldsItem>,
+    val `startOptions`: List<ConnectorDetailConnectorAuthMethodsItemStartOptionsItem>,
+)
+
+@Serializable
+data class ConnectorDetailConnectorPermissionSummary(
+    val `hasPermissions`: Boolean,
+    val `permissionCount`: Long,
+    val `hasCategories`: Boolean,
+    val `hasDefaultPolicyOverrides`: Boolean,
+)
+
+@Serializable
+enum class ConnectorDetailConnectorConnectNotice {
+    @SerialName("google-security-warning") GOOGLE_SECURITY_WARNING
+}
+
+@Serializable
+data class ConnectorDetailConnector(
+    val `slug`: String,
+    val `label`: String,
+    val `description`: String,
+    val `icon`: ConnectorDetailConnectorIcon,
+    val `category`: String,
+    val `popularityRank`: Long? = null,
+    val `generation`: List<String>,
+    val `tags`: List<String>,
+    val `mcp`: ConnectorDetailConnectorMcp? = null,
+    val `authMethods`: List<ConnectorDetailConnectorAuthMethodsItem>,
+    val `permissionSummary`: ConnectorDetailConnectorPermissionSummary,
+    val `singleAuthCodeAuthMethodId`: String?,
+    val `connectNotice`: ConnectorDetailConnectorConnectNotice?,
+)
+
+@Serializable data class ConnectorDetail(val `connector`: ConnectorDetailConnector)
+
+@Serializable
+data class ConnectorPermissionsPermissionsIcon(
+    val `url`: String,
+    val `invertInDarkMode`: Boolean,
+    val `scale`: Double? = null,
+)
+
+@Serializable
+data class ConnectorPermissionsPermissionsPermissionsItem(
+    val `name`: String,
+    val `description`: String? = null,
+)
+
+@Serializable
+data class ConnectorPermissionsPermissionsCategories(
+    val `categories`: Map<String, String>,
+    val `displayOrder`: List<String>,
+)
+
+@Serializable
+enum class ConnectorPermissionsPermissionsDefaultPolicyPermissionDefault {
+    @SerialName("allow") ALLOW,
+    @SerialName("deny") DENY,
+    @SerialName("ask") ASK,
+}
+
+@Serializable
+enum class ConnectorPermissionsPermissionsDefaultPolicyUnknownPolicy {
+    @SerialName("allow") ALLOW,
+    @SerialName("deny") DENY,
+    @SerialName("ask") ASK,
+}
+
+@Serializable
+data class ConnectorPermissionsPermissionsDefaultPolicy(
+    val `permissionDefault`: ConnectorPermissionsPermissionsDefaultPolicyPermissionDefault,
+    val `permissionOverrides`: Map<String, List<String>>? = null,
+    val `unknownPolicy`: ConnectorPermissionsPermissionsDefaultPolicyUnknownPolicy,
+)
+
+@Serializable
+data class ConnectorPermissionsPermissions(
+    val `connectorSlug`: String,
+    val `label`: String,
+    val `icon`: ConnectorPermissionsPermissionsIcon,
+    val `permissionCount`: Long,
+    val `permissions`: List<ConnectorPermissionsPermissionsPermissionsItem>,
+    val `categories`: ConnectorPermissionsPermissionsCategories?,
+    val `defaultPolicy`: ConnectorPermissionsPermissionsDefaultPolicy,
+)
+
+@Serializable data class ConnectorPermissions(val `permissions`: ConnectorPermissionsPermissions)
+
+@Serializable(with = ConnectorOverviewItemTargetSerializer::class)
+sealed interface ConnectorOverviewItemTarget
+
+@Serializable
+enum class ConnectorOverviewItemTargetVariant1Kind {
+    @SerialName("builtin") BUILTIN
+}
+
+@Serializable
+data class ConnectorOverviewItemTargetVariant1(
+    val `kind`: ConnectorOverviewItemTargetVariant1Kind,
+    val `connectorSlug`: String,
+) : ConnectorOverviewItemTarget
+
+@Serializable
+enum class ConnectorOverviewItemTargetVariant2Kind {
+    @SerialName("custom") CUSTOM
+}
+
+@Serializable
+data class ConnectorOverviewItemTargetVariant2(
+    val `kind`: ConnectorOverviewItemTargetVariant2Kind,
+    val `customConnectorId`: String,
+) : ConnectorOverviewItemTarget
+
+object ConnectorOverviewItemTargetSerializer : KSerializer<ConnectorOverviewItemTarget> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.ConnectorOverviewItemTarget")
+
+    override fun deserialize(decoder: Decoder): ConnectorOverviewItemTarget {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ConnectorOverviewItemTarget"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for ConnectorOverviewItemTarget")
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("builtin")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("custom")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException("Unknown or ambiguous ConnectorOverviewItemTarget variant")
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorOverviewItemTargetVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorOverviewItemTargetVariant2.serializer(),
+                    value,
+                )
+            else -> throw SerializationException("Unknown ConnectorOverviewItemTarget variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorOverviewItemTarget) {
+        when (value) {
+            is ConnectorOverviewItemTargetVariant1 ->
+                encoder.encodeSerializableValue(
+                    ConnectorOverviewItemTargetVariant1.serializer(),
+                    value,
+                )
+            is ConnectorOverviewItemTargetVariant2 ->
+                encoder.encodeSerializableValue(
+                    ConnectorOverviewItemTargetVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class ConnectorOverviewItemIcon(
+    val `url`: String,
+    val `invertInDarkMode`: Boolean,
+    val `scale`: Double? = null,
+)
+
+@Serializable
+data class ConnectorOverviewItemAccountsItem(
+    val `connectionId`: String,
+    val `displayName`: String?,
+    val `defaultEnabled`: Boolean,
+    val `isDefault`: Boolean,
+    val `authMethod`: String,
+    val `externalId`: String?,
+    val `externalUsername`: String?,
+    val `externalEmail`: String?,
+    val `overrideEnabled`: Boolean?,
+    val `enabled`: Boolean,
+)
+
+@Serializable
+data class ConnectorOverviewItem(
+    val `target`: ConnectorOverviewItemTarget,
+    val `label`: String,
+    val `icon`: ConnectorOverviewItemIcon?,
+    val `hasPermissions`: Boolean,
+    val `accounts`: List<ConnectorOverviewItemAccountsItem>,
+    val `currentConnectionId`: String?,
+)
+
+typealias ConnectorOverview = List<ConnectorOverviewItem>
+
+@Serializable
+data class ConnectorAccountDefaultsItem(
+    val `connectionId`: String,
+    val `displayName`: String?,
+    val `defaultEnabled`: Boolean,
+    val `isDefault`: Boolean,
+)
+
+typealias ConnectorAccountDefaults = List<ConnectorAccountDefaultsItem>
+
+@Serializable
+data class ConnectorAccountDefault(
+    val `connectionId`: String,
+    val `displayName`: String?,
+    val `defaultEnabled`: Boolean,
+    val `isDefault`: Boolean,
+)
+
+@Serializable(with = ConnectorAccountDefaultRequestTargetSerializer::class)
+sealed interface ConnectorAccountDefaultRequestTarget
+
+@Serializable
+enum class ConnectorAccountDefaultRequestTargetVariant1Kind {
+    @SerialName("builtin") BUILTIN
+}
+
+@Serializable
+data class ConnectorAccountDefaultRequestTargetVariant1(
+    val `kind`: ConnectorAccountDefaultRequestTargetVariant1Kind,
+    val `connectorSlug`: String,
+) : ConnectorAccountDefaultRequestTarget
+
+@Serializable
+enum class ConnectorAccountDefaultRequestTargetVariant2Kind {
+    @SerialName("custom") CUSTOM
+}
+
+@Serializable
+data class ConnectorAccountDefaultRequestTargetVariant2(
+    val `kind`: ConnectorAccountDefaultRequestTargetVariant2Kind,
+    val `customConnectorId`: String,
+) : ConnectorAccountDefaultRequestTarget
+
+object ConnectorAccountDefaultRequestTargetSerializer :
+    KSerializer<ConnectorAccountDefaultRequestTarget> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.ConnectorAccountDefaultRequestTarget"
+        )
+
+    override fun deserialize(decoder: Decoder): ConnectorAccountDefaultRequestTarget {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ConnectorAccountDefaultRequestTarget"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for ConnectorAccountDefaultRequestTarget"
+                )
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("builtin")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("custom")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous ConnectorAccountDefaultRequestTarget variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountDefaultRequestTargetVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountDefaultRequestTargetVariant2.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException("Unknown ConnectorAccountDefaultRequestTarget variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorAccountDefaultRequestTarget) {
+        when (value) {
+            is ConnectorAccountDefaultRequestTargetVariant1 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountDefaultRequestTargetVariant1.serializer(),
+                    value,
+                )
+            is ConnectorAccountDefaultRequestTargetVariant2 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountDefaultRequestTargetVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class ConnectorAccountDefaultRequest(
+    val `target`: ConnectorAccountDefaultRequestTarget,
+    val `enabled`: Boolean,
+)
+
+@Serializable(with = ConnectorAccountsConnectionsItemTargetSerializer::class)
+sealed interface ConnectorAccountsConnectionsItemTarget
+
+@Serializable
+enum class ConnectorAccountsConnectionsItemTargetVariant1Kind {
+    @SerialName("builtin") BUILTIN
+}
+
+@Serializable
+data class ConnectorAccountsConnectionsItemTargetVariant1(
+    val `kind`: ConnectorAccountsConnectionsItemTargetVariant1Kind,
+    val `connectorSlug`: String,
+) : ConnectorAccountsConnectionsItemTarget
+
+@Serializable
+enum class ConnectorAccountsConnectionsItemTargetVariant2Kind {
+    @SerialName("custom") CUSTOM
+}
+
+@Serializable
+data class ConnectorAccountsConnectionsItemTargetVariant2(
+    val `kind`: ConnectorAccountsConnectionsItemTargetVariant2Kind,
+    val `customConnectorId`: String,
+) : ConnectorAccountsConnectionsItemTarget
+
+object ConnectorAccountsConnectionsItemTargetSerializer :
+    KSerializer<ConnectorAccountsConnectionsItemTarget> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.ConnectorAccountsConnectionsItemTarget"
+        )
+
+    override fun deserialize(decoder: Decoder): ConnectorAccountsConnectionsItemTarget {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ConnectorAccountsConnectionsItemTarget"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for ConnectorAccountsConnectionsItemTarget"
+                )
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("builtin")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("custom")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous ConnectorAccountsConnectionsItemTarget variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountsConnectionsItemTargetVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountsConnectionsItemTargetVariant2.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException(
+                    "Unknown ConnectorAccountsConnectionsItemTarget variant"
+                )
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorAccountsConnectionsItemTarget) {
+        when (value) {
+            is ConnectorAccountsConnectionsItemTargetVariant1 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountsConnectionsItemTargetVariant1.serializer(),
+                    value,
+                )
+            is ConnectorAccountsConnectionsItemTargetVariant2 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountsConnectionsItemTargetVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+enum class ConnectorAccountsConnectionsItemConnectionStatus {
+    @SerialName("connected") CONNECTED,
+    @SerialName("reconnect-required") RECONNECT_REQUIRED,
+}
+
+@Serializable
+enum class ConnectorAccountsConnectionsItemReconnectReason {
+    @SerialName("provider_session_expired") PROVIDER_SESSION_EXPIRED,
+    @SerialName("authorization_expired_or_revoked") AUTHORIZATION_EXPIRED_OR_REVOKED,
+    @SerialName("credential_expired") CREDENTIAL_EXPIRED,
+    @SerialName("configuration_incomplete") CONFIGURATION_INCOMPLETE,
+    @SerialName("configuration_invalid") CONFIGURATION_INVALID,
+    @SerialName("account_unavailable") ACCOUNT_UNAVAILABLE,
+}
+
+@Serializable
+data class ConnectorAccountsConnectionsItem(
+    val `missingRequiredFields`: List<String>,
+    val `configuredFieldKeys`: List<String>,
+    val `id`: String,
+    val `target`: ConnectorAccountsConnectionsItemTarget,
+    val `authMethod`: String,
+    val `displayName`: String?,
+    val `isDefault`: Boolean,
+    val `externalId`: String?,
+    val `externalUsername`: String?,
+    val `externalEmail`: String?,
+    val `oauthScopes`: List<String>?,
+    val `scopeMismatch`: Boolean? = null,
+    val `connectionStatus`: ConnectorAccountsConnectionsItemConnectionStatus,
+    val `reconnectReason`: ConnectorAccountsConnectionsItemReconnectReason?,
+    val `tokenExpiresAt`: String?,
+    val `createdAt`: String,
+    val `updatedAt`: String,
+)
+
+@Serializable(with = ConnectorAccountsDefaultConnectionTargetSerializer::class)
+sealed interface ConnectorAccountsDefaultConnectionTarget
+
+@Serializable
+enum class ConnectorAccountsDefaultConnectionTargetVariant1Kind {
+    @SerialName("builtin") BUILTIN
+}
+
+@Serializable
+data class ConnectorAccountsDefaultConnectionTargetVariant1(
+    val `kind`: ConnectorAccountsDefaultConnectionTargetVariant1Kind,
+    val `connectorSlug`: String,
+) : ConnectorAccountsDefaultConnectionTarget
+
+@Serializable
+enum class ConnectorAccountsDefaultConnectionTargetVariant2Kind {
+    @SerialName("custom") CUSTOM
+}
+
+@Serializable
+data class ConnectorAccountsDefaultConnectionTargetVariant2(
+    val `kind`: ConnectorAccountsDefaultConnectionTargetVariant2Kind,
+    val `customConnectorId`: String,
+) : ConnectorAccountsDefaultConnectionTarget
+
+object ConnectorAccountsDefaultConnectionTargetSerializer :
+    KSerializer<ConnectorAccountsDefaultConnectionTarget> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.ConnectorAccountsDefaultConnectionTarget"
+        )
+
+    override fun deserialize(decoder: Decoder): ConnectorAccountsDefaultConnectionTarget {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ConnectorAccountsDefaultConnectionTarget"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for ConnectorAccountsDefaultConnectionTarget"
+                )
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("builtin")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("custom")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous ConnectorAccountsDefaultConnectionTarget variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountsDefaultConnectionTargetVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountsDefaultConnectionTargetVariant2.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException(
+                    "Unknown ConnectorAccountsDefaultConnectionTarget variant"
+                )
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorAccountsDefaultConnectionTarget) {
+        when (value) {
+            is ConnectorAccountsDefaultConnectionTargetVariant1 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountsDefaultConnectionTargetVariant1.serializer(),
+                    value,
+                )
+            is ConnectorAccountsDefaultConnectionTargetVariant2 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountsDefaultConnectionTargetVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+enum class ConnectorAccountsDefaultConnectionConnectionStatus {
+    @SerialName("connected") CONNECTED,
+    @SerialName("reconnect-required") RECONNECT_REQUIRED,
+}
+
+@Serializable
+enum class ConnectorAccountsDefaultConnectionReconnectReason {
+    @SerialName("provider_session_expired") PROVIDER_SESSION_EXPIRED,
+    @SerialName("authorization_expired_or_revoked") AUTHORIZATION_EXPIRED_OR_REVOKED,
+    @SerialName("credential_expired") CREDENTIAL_EXPIRED,
+    @SerialName("configuration_incomplete") CONFIGURATION_INCOMPLETE,
+    @SerialName("configuration_invalid") CONFIGURATION_INVALID,
+    @SerialName("account_unavailable") ACCOUNT_UNAVAILABLE,
+}
+
+@Serializable
+data class ConnectorAccountsDefaultConnection(
+    val `missingRequiredFields`: List<String>,
+    val `configuredFieldKeys`: List<String>,
+    val `id`: String,
+    val `target`: ConnectorAccountsDefaultConnectionTarget,
+    val `authMethod`: String,
+    val `displayName`: String?,
+    val `isDefault`: Boolean,
+    val `externalId`: String?,
+    val `externalUsername`: String?,
+    val `externalEmail`: String?,
+    val `oauthScopes`: List<String>?,
+    val `scopeMismatch`: Boolean? = null,
+    val `connectionStatus`: ConnectorAccountsDefaultConnectionConnectionStatus,
+    val `reconnectReason`: ConnectorAccountsDefaultConnectionReconnectReason?,
+    val `tokenExpiresAt`: String?,
+    val `createdAt`: String,
+    val `updatedAt`: String,
+)
+
+@Serializable
+data class ConnectorAccounts(
+    val `connections`: List<ConnectorAccountsConnectionsItem>,
+    val `nextCursor`: String?,
+    val `defaultConnection`: ConnectorAccountsDefaultConnection?,
+)
+
+@Serializable(with = ConnectorAccountTargetSerializer::class)
+sealed interface ConnectorAccountTarget
+
+@Serializable
+enum class ConnectorAccountTargetVariant1Kind {
+    @SerialName("builtin") BUILTIN
+}
+
+@Serializable
+data class ConnectorAccountTargetVariant1(
+    val `kind`: ConnectorAccountTargetVariant1Kind,
+    val `connectorSlug`: String,
+) : ConnectorAccountTarget
+
+@Serializable
+enum class ConnectorAccountTargetVariant2Kind {
+    @SerialName("custom") CUSTOM
+}
+
+@Serializable
+data class ConnectorAccountTargetVariant2(
+    val `kind`: ConnectorAccountTargetVariant2Kind,
+    val `customConnectorId`: String,
+) : ConnectorAccountTarget
+
+object ConnectorAccountTargetSerializer : KSerializer<ConnectorAccountTarget> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.ConnectorAccountTarget")
+
+    override fun deserialize(decoder: Decoder): ConnectorAccountTarget {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException("Expected JSON object for ConnectorAccountTarget")
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for ConnectorAccountTarget")
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("builtin")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("custom")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException("Unknown or ambiguous ConnectorAccountTarget variant")
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(ConnectorAccountTargetVariant1.serializer(), value)
+            1 ->
+                input.json.decodeFromJsonElement(ConnectorAccountTargetVariant2.serializer(), value)
+            else -> throw SerializationException("Unknown ConnectorAccountTarget variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorAccountTarget) {
+        when (value) {
+            is ConnectorAccountTargetVariant1 ->
+                encoder.encodeSerializableValue(ConnectorAccountTargetVariant1.serializer(), value)
+            is ConnectorAccountTargetVariant2 ->
+                encoder.encodeSerializableValue(ConnectorAccountTargetVariant2.serializer(), value)
+        }
+    }
+}
+
+@Serializable
+enum class ConnectorAccountConnectionStatus {
+    @SerialName("connected") CONNECTED,
+    @SerialName("reconnect-required") RECONNECT_REQUIRED,
+}
+
+@Serializable
+enum class ConnectorAccountReconnectReason {
+    @SerialName("provider_session_expired") PROVIDER_SESSION_EXPIRED,
+    @SerialName("authorization_expired_or_revoked") AUTHORIZATION_EXPIRED_OR_REVOKED,
+    @SerialName("credential_expired") CREDENTIAL_EXPIRED,
+    @SerialName("configuration_incomplete") CONFIGURATION_INCOMPLETE,
+    @SerialName("configuration_invalid") CONFIGURATION_INVALID,
+    @SerialName("account_unavailable") ACCOUNT_UNAVAILABLE,
+}
+
+@Serializable
+data class ConnectorAccount(
+    val `missingRequiredFields`: List<String>,
+    val `configuredFieldKeys`: List<String>,
+    val `id`: String,
+    val `target`: ConnectorAccountTarget,
+    val `authMethod`: String,
+    val `displayName`: String?,
+    val `isDefault`: Boolean,
+    val `externalId`: String?,
+    val `externalUsername`: String?,
+    val `externalEmail`: String?,
+    val `oauthScopes`: List<String>?,
+    val `scopeMismatch`: Boolean? = null,
+    val `connectionStatus`: ConnectorAccountConnectionStatus,
+    val `reconnectReason`: ConnectorAccountReconnectReason?,
+    val `tokenExpiresAt`: String?,
+    val `createdAt`: String,
+    val `updatedAt`: String,
+)
+
+@Serializable(with = ConnectorAccountInspectionResultsItemSerializer::class)
+sealed interface ConnectorAccountInspectionResultsItem
+
+@Serializable
+enum class ConnectorAccountInspectionResultsItemVariant1Kind {
+    @SerialName("available") AVAILABLE
+}
+
+@Serializable(with = ConnectorAccountInspectionResultsItemVariant1TargetSerializer::class)
+sealed interface ConnectorAccountInspectionResultsItemVariant1Target
+
+@Serializable
+enum class ConnectorAccountInspectionResultsItemVariant1TargetVariant1Kind {
+    @SerialName("builtin") BUILTIN
+}
+
+@Serializable
+data class ConnectorAccountInspectionResultsItemVariant1TargetVariant1(
+    val `kind`: ConnectorAccountInspectionResultsItemVariant1TargetVariant1Kind,
+    val `connectorSlug`: String,
+) : ConnectorAccountInspectionResultsItemVariant1Target
+
+@Serializable
+enum class ConnectorAccountInspectionResultsItemVariant1TargetVariant2Kind {
+    @SerialName("custom") CUSTOM
+}
+
+@Serializable
+data class ConnectorAccountInspectionResultsItemVariant1TargetVariant2(
+    val `kind`: ConnectorAccountInspectionResultsItemVariant1TargetVariant2Kind,
+    val `customConnectorId`: String,
+) : ConnectorAccountInspectionResultsItemVariant1Target
+
+object ConnectorAccountInspectionResultsItemVariant1TargetSerializer :
+    KSerializer<ConnectorAccountInspectionResultsItemVariant1Target> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.ConnectorAccountInspectionResultsItemVariant1Target"
+        )
+
+    override fun deserialize(
+        decoder: Decoder
+    ): ConnectorAccountInspectionResultsItemVariant1Target {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ConnectorAccountInspectionResultsItemVariant1Target"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for ConnectorAccountInspectionResultsItemVariant1Target"
+                )
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("builtin")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("custom")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous ConnectorAccountInspectionResultsItemVariant1Target variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountInspectionResultsItemVariant1TargetVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountInspectionResultsItemVariant1TargetVariant2.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException(
+                    "Unknown ConnectorAccountInspectionResultsItemVariant1Target variant"
+                )
+        }
+    }
+
+    override fun serialize(
+        encoder: Encoder,
+        value: ConnectorAccountInspectionResultsItemVariant1Target,
+    ) {
+        when (value) {
+            is ConnectorAccountInspectionResultsItemVariant1TargetVariant1 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountInspectionResultsItemVariant1TargetVariant1.serializer(),
+                    value,
+                )
+            is ConnectorAccountInspectionResultsItemVariant1TargetVariant2 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountInspectionResultsItemVariant1TargetVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+enum class ConnectorAccountInspectionResultsItemVariant1ConnectionStatus {
+    @SerialName("connected") CONNECTED,
+    @SerialName("reconnect-required") RECONNECT_REQUIRED,
+}
+
+@Serializable
+enum class ConnectorAccountInspectionResultsItemVariant1ReconnectReason {
+    @SerialName("provider_session_expired") PROVIDER_SESSION_EXPIRED,
+    @SerialName("authorization_expired_or_revoked") AUTHORIZATION_EXPIRED_OR_REVOKED,
+    @SerialName("credential_expired") CREDENTIAL_EXPIRED,
+    @SerialName("configuration_incomplete") CONFIGURATION_INCOMPLETE,
+    @SerialName("configuration_invalid") CONFIGURATION_INVALID,
+    @SerialName("account_unavailable") ACCOUNT_UNAVAILABLE,
+}
+
+@Serializable
+data class ConnectorAccountInspectionResultsItemVariant1(
+    val `missingRequiredFields`: List<String>,
+    val `configuredFieldKeys`: List<String>,
+    val `kind`: ConnectorAccountInspectionResultsItemVariant1Kind,
+    val `connectionId`: String,
+    val `target`: ConnectorAccountInspectionResultsItemVariant1Target,
+    val `authMethod`: String,
+    val `displayName`: String?,
+    val `externalId`: String?,
+    val `externalUsername`: String?,
+    val `externalEmail`: String?,
+    val `connectionStatus`: ConnectorAccountInspectionResultsItemVariant1ConnectionStatus,
+    val `reconnectReason`: ConnectorAccountInspectionResultsItemVariant1ReconnectReason?,
+) : ConnectorAccountInspectionResultsItem
+
+@Serializable
+enum class ConnectorAccountInspectionResultsItemVariant2Kind {
+    @SerialName("unavailable") UNAVAILABLE
+}
+
+@Serializable(with = ConnectorAccountInspectionResultsItemVariant2TargetSerializer::class)
+sealed interface ConnectorAccountInspectionResultsItemVariant2Target
+
+@Serializable
+enum class ConnectorAccountInspectionResultsItemVariant2TargetVariant1Kind {
+    @SerialName("builtin") BUILTIN
+}
+
+@Serializable
+data class ConnectorAccountInspectionResultsItemVariant2TargetVariant1(
+    val `kind`: ConnectorAccountInspectionResultsItemVariant2TargetVariant1Kind,
+    val `connectorSlug`: String,
+) : ConnectorAccountInspectionResultsItemVariant2Target
+
+@Serializable
+enum class ConnectorAccountInspectionResultsItemVariant2TargetVariant2Kind {
+    @SerialName("custom") CUSTOM
+}
+
+@Serializable
+data class ConnectorAccountInspectionResultsItemVariant2TargetVariant2(
+    val `kind`: ConnectorAccountInspectionResultsItemVariant2TargetVariant2Kind,
+    val `customConnectorId`: String,
+) : ConnectorAccountInspectionResultsItemVariant2Target
+
+object ConnectorAccountInspectionResultsItemVariant2TargetSerializer :
+    KSerializer<ConnectorAccountInspectionResultsItemVariant2Target> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.ConnectorAccountInspectionResultsItemVariant2Target"
+        )
+
+    override fun deserialize(
+        decoder: Decoder
+    ): ConnectorAccountInspectionResultsItemVariant2Target {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ConnectorAccountInspectionResultsItemVariant2Target"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for ConnectorAccountInspectionResultsItemVariant2Target"
+                )
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("builtin")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("custom")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous ConnectorAccountInspectionResultsItemVariant2Target variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountInspectionResultsItemVariant2TargetVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountInspectionResultsItemVariant2TargetVariant2.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException(
+                    "Unknown ConnectorAccountInspectionResultsItemVariant2Target variant"
+                )
+        }
+    }
+
+    override fun serialize(
+        encoder: Encoder,
+        value: ConnectorAccountInspectionResultsItemVariant2Target,
+    ) {
+        when (value) {
+            is ConnectorAccountInspectionResultsItemVariant2TargetVariant1 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountInspectionResultsItemVariant2TargetVariant1.serializer(),
+                    value,
+                )
+            is ConnectorAccountInspectionResultsItemVariant2TargetVariant2 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountInspectionResultsItemVariant2TargetVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class ConnectorAccountInspectionResultsItemVariant2(
+    val `kind`: ConnectorAccountInspectionResultsItemVariant2Kind,
+    val `connectionId`: String,
+    val `target`: ConnectorAccountInspectionResultsItemVariant2Target,
+) : ConnectorAccountInspectionResultsItem
+
+object ConnectorAccountInspectionResultsItemSerializer :
+    KSerializer<ConnectorAccountInspectionResultsItem> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.ConnectorAccountInspectionResultsItem"
+        )
+
+    override fun deserialize(decoder: Decoder): ConnectorAccountInspectionResultsItem {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ConnectorAccountInspectionResultsItem"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for ConnectorAccountInspectionResultsItem"
+                )
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("available")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("unavailable")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous ConnectorAccountInspectionResultsItem variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountInspectionResultsItemVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountInspectionResultsItemVariant2.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException(
+                    "Unknown ConnectorAccountInspectionResultsItem variant"
+                )
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorAccountInspectionResultsItem) {
+        when (value) {
+            is ConnectorAccountInspectionResultsItemVariant1 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountInspectionResultsItemVariant1.serializer(),
+                    value,
+                )
+            is ConnectorAccountInspectionResultsItemVariant2 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountInspectionResultsItemVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class ConnectorAccountInspection(val `results`: List<ConnectorAccountInspectionResultsItem>)
+
+@Serializable(with = ConnectorAccountInspectionRequestSelectionsItemTargetSerializer::class)
+sealed interface ConnectorAccountInspectionRequestSelectionsItemTarget
+
+@Serializable
+enum class ConnectorAccountInspectionRequestSelectionsItemTargetVariant1Kind {
+    @SerialName("builtin") BUILTIN
+}
+
+@Serializable
+data class ConnectorAccountInspectionRequestSelectionsItemTargetVariant1(
+    val `kind`: ConnectorAccountInspectionRequestSelectionsItemTargetVariant1Kind,
+    val `connectorSlug`: String,
+) : ConnectorAccountInspectionRequestSelectionsItemTarget
+
+@Serializable
+enum class ConnectorAccountInspectionRequestSelectionsItemTargetVariant2Kind {
+    @SerialName("custom") CUSTOM
+}
+
+@Serializable
+data class ConnectorAccountInspectionRequestSelectionsItemTargetVariant2(
+    val `kind`: ConnectorAccountInspectionRequestSelectionsItemTargetVariant2Kind,
+    val `customConnectorId`: String,
+) : ConnectorAccountInspectionRequestSelectionsItemTarget
+
+object ConnectorAccountInspectionRequestSelectionsItemTargetSerializer :
+    KSerializer<ConnectorAccountInspectionRequestSelectionsItemTarget> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.ConnectorAccountInspectionRequestSelectionsItemTarget"
+        )
+
+    override fun deserialize(
+        decoder: Decoder
+    ): ConnectorAccountInspectionRequestSelectionsItemTarget {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ConnectorAccountInspectionRequestSelectionsItemTarget"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for ConnectorAccountInspectionRequestSelectionsItemTarget"
+                )
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("builtin")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("custom")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous ConnectorAccountInspectionRequestSelectionsItemTarget variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountInspectionRequestSelectionsItemTargetVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountInspectionRequestSelectionsItemTargetVariant2.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException(
+                    "Unknown ConnectorAccountInspectionRequestSelectionsItemTarget variant"
+                )
+        }
+    }
+
+    override fun serialize(
+        encoder: Encoder,
+        value: ConnectorAccountInspectionRequestSelectionsItemTarget,
+    ) {
+        when (value) {
+            is ConnectorAccountInspectionRequestSelectionsItemTargetVariant1 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountInspectionRequestSelectionsItemTargetVariant1.serializer(),
+                    value,
+                )
+            is ConnectorAccountInspectionRequestSelectionsItemTargetVariant2 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountInspectionRequestSelectionsItemTargetVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class ConnectorAccountInspectionRequestSelectionsItem(
+    val `connectionId`: String,
+    val `target`: ConnectorAccountInspectionRequestSelectionsItemTarget,
+)
+
+@Serializable
+data class ConnectorAccountInspectionRequest(
+    val `selections`: List<ConnectorAccountInspectionRequestSelectionsItem>
+)
+
+@Serializable(with = ConnectorAccountRenameRequestTargetSerializer::class)
+sealed interface ConnectorAccountRenameRequestTarget
+
+@Serializable
+enum class ConnectorAccountRenameRequestTargetVariant1Kind {
+    @SerialName("builtin") BUILTIN
+}
+
+@Serializable
+data class ConnectorAccountRenameRequestTargetVariant1(
+    val `kind`: ConnectorAccountRenameRequestTargetVariant1Kind,
+    val `connectorSlug`: String,
+) : ConnectorAccountRenameRequestTarget
+
+@Serializable
+enum class ConnectorAccountRenameRequestTargetVariant2Kind {
+    @SerialName("custom") CUSTOM
+}
+
+@Serializable
+data class ConnectorAccountRenameRequestTargetVariant2(
+    val `kind`: ConnectorAccountRenameRequestTargetVariant2Kind,
+    val `customConnectorId`: String,
+) : ConnectorAccountRenameRequestTarget
+
+object ConnectorAccountRenameRequestTargetSerializer :
+    KSerializer<ConnectorAccountRenameRequestTarget> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.ConnectorAccountRenameRequestTarget"
+        )
+
+    override fun deserialize(decoder: Decoder): ConnectorAccountRenameRequestTarget {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ConnectorAccountRenameRequestTarget"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for ConnectorAccountRenameRequestTarget"
+                )
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("builtin")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("custom")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous ConnectorAccountRenameRequestTarget variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountRenameRequestTargetVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountRenameRequestTargetVariant2.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException("Unknown ConnectorAccountRenameRequestTarget variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorAccountRenameRequestTarget) {
+        when (value) {
+            is ConnectorAccountRenameRequestTargetVariant1 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountRenameRequestTargetVariant1.serializer(),
+                    value,
+                )
+            is ConnectorAccountRenameRequestTargetVariant2 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountRenameRequestTargetVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class ConnectorAccountRenameRequest(
+    val `target`: ConnectorAccountRenameRequestTarget,
+    val `displayName`: String?,
+)
+
+@Serializable
+data class ConnectorAccountImpact(
+    val `connectionId`: String,
+    val `explicitSelectionCount`: Long,
+    val `hasSibling`: Boolean,
+)
+
+@Serializable
+data class ConnectorAccountDeletion(
+    val `deletedConnectionId`: String,
+    val `resolvedSelectionCount`: Long,
+    val `promotedDefaultConnectionId`: String?,
+)
+
+@Serializable(with = ConnectorAccountTargetRequestTargetSerializer::class)
+sealed interface ConnectorAccountTargetRequestTarget
+
+@Serializable
+enum class ConnectorAccountTargetRequestTargetVariant1Kind {
+    @SerialName("builtin") BUILTIN
+}
+
+@Serializable
+data class ConnectorAccountTargetRequestTargetVariant1(
+    val `kind`: ConnectorAccountTargetRequestTargetVariant1Kind,
+    val `connectorSlug`: String,
+) : ConnectorAccountTargetRequestTarget
+
+@Serializable
+enum class ConnectorAccountTargetRequestTargetVariant2Kind {
+    @SerialName("custom") CUSTOM
+}
+
+@Serializable
+data class ConnectorAccountTargetRequestTargetVariant2(
+    val `kind`: ConnectorAccountTargetRequestTargetVariant2Kind,
+    val `customConnectorId`: String,
+) : ConnectorAccountTargetRequestTarget
+
+object ConnectorAccountTargetRequestTargetSerializer :
+    KSerializer<ConnectorAccountTargetRequestTarget> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.ConnectorAccountTargetRequestTarget"
+        )
+
+    override fun deserialize(decoder: Decoder): ConnectorAccountTargetRequestTarget {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ConnectorAccountTargetRequestTarget"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for ConnectorAccountTargetRequestTarget"
+                )
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("builtin")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("custom")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous ConnectorAccountTargetRequestTarget variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountTargetRequestTargetVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountTargetRequestTargetVariant2.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException("Unknown ConnectorAccountTargetRequestTarget variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorAccountTargetRequestTarget) {
+        when (value) {
+            is ConnectorAccountTargetRequestTargetVariant1 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountTargetRequestTargetVariant1.serializer(),
+                    value,
+                )
+            is ConnectorAccountTargetRequestTargetVariant2 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountTargetRequestTargetVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class ConnectorAccountTargetRequest(val `target`: ConnectorAccountTargetRequestTarget)
+
+@Serializable data class ConnectorOauthCompletion(val `connectionId`: String)
+
+@Serializable
+data class ConnectorOauthStart(
+    val `authorizationUrl`: String,
+    val `connectionId`: String? = null,
+    val `oauthAttemptId`: String,
+)
+
+@Serializable
+enum class ConnectorOauthStartRequestCallbackTarget {
+    @SerialName("app") APP
+}
+
+@Serializable(with = ConnectorOauthStartRequestAccountSerializer::class)
+sealed interface ConnectorOauthStartRequestAccount
+
+@Serializable
+enum class ConnectorOauthStartRequestAccountVariant1Intent {
+    @SerialName("add") ADD
+}
+
+@Serializable
+data class ConnectorOauthStartRequestAccountVariant1(
+    val `intent`: ConnectorOauthStartRequestAccountVariant1Intent,
+    val `displayName`: String? = null,
+) : ConnectorOauthStartRequestAccount
+
+@Serializable
+enum class ConnectorOauthStartRequestAccountVariant2Intent {
+    @SerialName("reconnect") RECONNECT
+}
+
+@Serializable
+data class ConnectorOauthStartRequestAccountVariant2(
+    val `intent`: ConnectorOauthStartRequestAccountVariant2Intent,
+    val `connectionId`: String,
+) : ConnectorOauthStartRequestAccount
+
+object ConnectorOauthStartRequestAccountSerializer :
+    KSerializer<ConnectorOauthStartRequestAccount> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.ConnectorOauthStartRequestAccount"
+        )
+
+    override fun deserialize(decoder: Decoder): ConnectorOauthStartRequestAccount {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ConnectorOauthStartRequestAccount"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for ConnectorOauthStartRequestAccount"
+                )
+        val matches =
+            listOf(
+                (value["intent"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("add")
+                } == true,
+                (value["intent"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("reconnect")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous ConnectorOauthStartRequestAccount variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorOauthStartRequestAccountVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorOauthStartRequestAccountVariant2.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException("Unknown ConnectorOauthStartRequestAccount variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorOauthStartRequestAccount) {
+        when (value) {
+            is ConnectorOauthStartRequestAccountVariant1 ->
+                encoder.encodeSerializableValue(
+                    ConnectorOauthStartRequestAccountVariant1.serializer(),
+                    value,
+                )
+            is ConnectorOauthStartRequestAccountVariant2 ->
+                encoder.encodeSerializableValue(
+                    ConnectorOauthStartRequestAccountVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class ConnectorOauthStartRequest(
+    val `authMethod`: String,
+    val `callbackTarget`: ConnectorOauthStartRequestCallbackTarget? = null,
+    val `account`: ConnectorOauthStartRequestAccount,
+)
+
+@Serializable(with = ConnectorOpenIdStartRequestAccountSerializer::class)
+sealed interface ConnectorOpenIdStartRequestAccount
+
+@Serializable
+enum class ConnectorOpenIdStartRequestAccountVariant1Intent {
+    @SerialName("add") ADD
+}
+
+@Serializable
+data class ConnectorOpenIdStartRequestAccountVariant1(
+    val `intent`: ConnectorOpenIdStartRequestAccountVariant1Intent,
+    val `displayName`: String? = null,
+) : ConnectorOpenIdStartRequestAccount
+
+@Serializable
+enum class ConnectorOpenIdStartRequestAccountVariant2Intent {
+    @SerialName("reconnect") RECONNECT
+}
+
+@Serializable
+data class ConnectorOpenIdStartRequestAccountVariant2(
+    val `intent`: ConnectorOpenIdStartRequestAccountVariant2Intent,
+    val `connectionId`: String,
+) : ConnectorOpenIdStartRequestAccount
+
+object ConnectorOpenIdStartRequestAccountSerializer :
+    KSerializer<ConnectorOpenIdStartRequestAccount> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.ConnectorOpenIdStartRequestAccount"
+        )
+
+    override fun deserialize(decoder: Decoder): ConnectorOpenIdStartRequestAccount {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ConnectorOpenIdStartRequestAccount"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for ConnectorOpenIdStartRequestAccount"
+                )
+        val matches =
+            listOf(
+                (value["intent"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("add")
+                } == true,
+                (value["intent"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("reconnect")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous ConnectorOpenIdStartRequestAccount variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorOpenIdStartRequestAccountVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorOpenIdStartRequestAccountVariant2.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException("Unknown ConnectorOpenIdStartRequestAccount variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorOpenIdStartRequestAccount) {
+        when (value) {
+            is ConnectorOpenIdStartRequestAccountVariant1 ->
+                encoder.encodeSerializableValue(
+                    ConnectorOpenIdStartRequestAccountVariant1.serializer(),
+                    value,
+                )
+            is ConnectorOpenIdStartRequestAccountVariant2 ->
+                encoder.encodeSerializableValue(
+                    ConnectorOpenIdStartRequestAccountVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class ConnectorOpenIdStartRequest(
+    val `authMethod`: String,
+    val `account`: ConnectorOpenIdStartRequestAccount,
+)
+
+@Serializable(with = ConnectorAutomaticStartSerializer::class)
+sealed interface ConnectorAutomaticStart
+
+@Serializable
+enum class ConnectorAutomaticStartVariant1Result {
+    @SerialName("connected") CONNECTED
+}
+
+@Serializable
+data class ConnectorAutomaticStartVariant1(
+    val `result`: ConnectorAutomaticStartVariant1Result,
+    val `connectionId`: String,
+) : ConnectorAutomaticStart
+
+@Serializable
+enum class ConnectorAutomaticStartVariant2Result {
+    @SerialName("authorization") AUTHORIZATION
+}
+
+@Serializable
+data class ConnectorAutomaticStartVariant2(
+    val `result`: ConnectorAutomaticStartVariant2Result,
+    val `authorizationUrl`: String,
+    val `oauthAttemptId`: String,
+    val `connectionId`: String? = null,
+) : ConnectorAutomaticStart
+
+object ConnectorAutomaticStartSerializer : KSerializer<ConnectorAutomaticStart> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.ConnectorAutomaticStart")
+
+    override fun deserialize(decoder: Decoder): ConnectorAutomaticStart {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException("Expected JSON object for ConnectorAutomaticStart")
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for ConnectorAutomaticStart")
+        val matches =
+            listOf(
+                (value["result"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("connected")
+                } == true,
+                (value["result"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("authorization")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException("Unknown or ambiguous ConnectorAutomaticStart variant")
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAutomaticStartVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAutomaticStartVariant2.serializer(),
+                    value,
+                )
+            else -> throw SerializationException("Unknown ConnectorAutomaticStart variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorAutomaticStart) {
+        when (value) {
+            is ConnectorAutomaticStartVariant1 ->
+                encoder.encodeSerializableValue(ConnectorAutomaticStartVariant1.serializer(), value)
+            is ConnectorAutomaticStartVariant2 ->
+                encoder.encodeSerializableValue(ConnectorAutomaticStartVariant2.serializer(), value)
+        }
+    }
+}
+
+@Serializable(with = ConnectorAutomaticStartRequestAccountSerializer::class)
+sealed interface ConnectorAutomaticStartRequestAccount
+
+@Serializable
+enum class ConnectorAutomaticStartRequestAccountVariant1Intent {
+    @SerialName("add") ADD
+}
+
+@Serializable
+data class ConnectorAutomaticStartRequestAccountVariant1(
+    val `intent`: ConnectorAutomaticStartRequestAccountVariant1Intent,
+    val `displayName`: String? = null,
+) : ConnectorAutomaticStartRequestAccount
+
+@Serializable
+enum class ConnectorAutomaticStartRequestAccountVariant2Intent {
+    @SerialName("reconnect") RECONNECT
+}
+
+@Serializable
+data class ConnectorAutomaticStartRequestAccountVariant2(
+    val `intent`: ConnectorAutomaticStartRequestAccountVariant2Intent,
+    val `connectionId`: String,
+) : ConnectorAutomaticStartRequestAccount
+
+object ConnectorAutomaticStartRequestAccountSerializer :
+    KSerializer<ConnectorAutomaticStartRequestAccount> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.ConnectorAutomaticStartRequestAccount"
+        )
+
+    override fun deserialize(decoder: Decoder): ConnectorAutomaticStartRequestAccount {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ConnectorAutomaticStartRequestAccount"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for ConnectorAutomaticStartRequestAccount"
+                )
+        val matches =
+            listOf(
+                (value["intent"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("add")
+                } == true,
+                (value["intent"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("reconnect")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous ConnectorAutomaticStartRequestAccount variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAutomaticStartRequestAccountVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAutomaticStartRequestAccountVariant2.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException(
+                    "Unknown ConnectorAutomaticStartRequestAccount variant"
+                )
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorAutomaticStartRequestAccount) {
+        when (value) {
+            is ConnectorAutomaticStartRequestAccountVariant1 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAutomaticStartRequestAccountVariant1.serializer(),
+                    value,
+                )
+            is ConnectorAutomaticStartRequestAccountVariant2 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAutomaticStartRequestAccountVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class ConnectorAutomaticStartRequest(
+    val `authMethod`: String,
+    val `account`: ConnectorAutomaticStartRequestAccount,
+)
+
+@Serializable data class ConnectorGrant(val `connectionId`: String)
+
+@Serializable(with = ConnectorNoAuthRequestAccountSerializer::class)
+sealed interface ConnectorNoAuthRequestAccount
+
+@Serializable
+enum class ConnectorNoAuthRequestAccountVariant1Intent {
+    @SerialName("add") ADD
+}
+
+@Serializable
+data class ConnectorNoAuthRequestAccountVariant1(
+    val `intent`: ConnectorNoAuthRequestAccountVariant1Intent,
+    val `displayName`: String? = null,
+) : ConnectorNoAuthRequestAccount
+
+@Serializable
+enum class ConnectorNoAuthRequestAccountVariant2Intent {
+    @SerialName("reconnect") RECONNECT
+}
+
+@Serializable
+data class ConnectorNoAuthRequestAccountVariant2(
+    val `intent`: ConnectorNoAuthRequestAccountVariant2Intent,
+    val `connectionId`: String,
+) : ConnectorNoAuthRequestAccount
+
+object ConnectorNoAuthRequestAccountSerializer : KSerializer<ConnectorNoAuthRequestAccount> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.ConnectorNoAuthRequestAccount")
+
+    override fun deserialize(decoder: Decoder): ConnectorNoAuthRequestAccount {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ConnectorNoAuthRequestAccount"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for ConnectorNoAuthRequestAccount")
+        val matches =
+            listOf(
+                (value["intent"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("add")
+                } == true,
+                (value["intent"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("reconnect")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous ConnectorNoAuthRequestAccount variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorNoAuthRequestAccountVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorNoAuthRequestAccountVariant2.serializer(),
+                    value,
+                )
+            else -> throw SerializationException("Unknown ConnectorNoAuthRequestAccount variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorNoAuthRequestAccount) {
+        when (value) {
+            is ConnectorNoAuthRequestAccountVariant1 ->
+                encoder.encodeSerializableValue(
+                    ConnectorNoAuthRequestAccountVariant1.serializer(),
+                    value,
+                )
+            is ConnectorNoAuthRequestAccountVariant2 ->
+                encoder.encodeSerializableValue(
+                    ConnectorNoAuthRequestAccountVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class ConnectorNoAuthRequest(
+    val `authMethod`: String,
+    val `account`: ConnectorNoAuthRequestAccount,
+)
+
+@Serializable(with = ConnectorManualRequestAccountSerializer::class)
+sealed interface ConnectorManualRequestAccount
+
+@Serializable
+enum class ConnectorManualRequestAccountVariant1Intent {
+    @SerialName("add") ADD
+}
+
+@Serializable
+data class ConnectorManualRequestAccountVariant1(
+    val `intent`: ConnectorManualRequestAccountVariant1Intent,
+    val `displayName`: String? = null,
+) : ConnectorManualRequestAccount
+
+@Serializable
+enum class ConnectorManualRequestAccountVariant2Intent {
+    @SerialName("reconnect") RECONNECT
+}
+
+@Serializable
+data class ConnectorManualRequestAccountVariant2(
+    val `intent`: ConnectorManualRequestAccountVariant2Intent,
+    val `connectionId`: String,
+) : ConnectorManualRequestAccount
+
+object ConnectorManualRequestAccountSerializer : KSerializer<ConnectorManualRequestAccount> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.ConnectorManualRequestAccount")
+
+    override fun deserialize(decoder: Decoder): ConnectorManualRequestAccount {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ConnectorManualRequestAccount"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for ConnectorManualRequestAccount")
+        val matches =
+            listOf(
+                (value["intent"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("add")
+                } == true,
+                (value["intent"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("reconnect")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous ConnectorManualRequestAccount variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorManualRequestAccountVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorManualRequestAccountVariant2.serializer(),
+                    value,
+                )
+            else -> throw SerializationException("Unknown ConnectorManualRequestAccount variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorManualRequestAccount) {
+        when (value) {
+            is ConnectorManualRequestAccountVariant1 ->
+                encoder.encodeSerializableValue(
+                    ConnectorManualRequestAccountVariant1.serializer(),
+                    value,
+                )
+            is ConnectorManualRequestAccountVariant2 ->
+                encoder.encodeSerializableValue(
+                    ConnectorManualRequestAccountVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class ConnectorManualRequest(
+    val `authMethod`: String,
+    val `account`: ConnectorManualRequestAccount,
+    val `values`: Map<String, String>,
+)
+
+@Serializable
+enum class ConnectorDeviceStartStatus {
+    @SerialName("pending") PENDING
+}
+
+@Serializable
+data class ConnectorDeviceStart(
+    val `sessionId`: String,
+    val `sessionToken`: String,
+    val `connectorSlug`: String,
+    val `status`: ConnectorDeviceStartStatus,
+    val `userCode`: String,
+    val `verificationUri`: String,
+    val `verificationUriComplete`: String? = null,
+    val `expiresIn`: Double,
+    val `interval`: Double,
+)
+
+@Serializable(with = ConnectorDeviceStartRequestAccountSerializer::class)
+sealed interface ConnectorDeviceStartRequestAccount
+
+@Serializable
+enum class ConnectorDeviceStartRequestAccountVariant1Intent {
+    @SerialName("add") ADD
+}
+
+@Serializable
+data class ConnectorDeviceStartRequestAccountVariant1(
+    val `intent`: ConnectorDeviceStartRequestAccountVariant1Intent,
+    val `displayName`: String? = null,
+) : ConnectorDeviceStartRequestAccount
+
+@Serializable
+enum class ConnectorDeviceStartRequestAccountVariant2Intent {
+    @SerialName("reconnect") RECONNECT
+}
+
+@Serializable
+data class ConnectorDeviceStartRequestAccountVariant2(
+    val `intent`: ConnectorDeviceStartRequestAccountVariant2Intent,
+    val `connectionId`: String,
+) : ConnectorDeviceStartRequestAccount
+
+object ConnectorDeviceStartRequestAccountSerializer :
+    KSerializer<ConnectorDeviceStartRequestAccount> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.ConnectorDeviceStartRequestAccount"
+        )
+
+    override fun deserialize(decoder: Decoder): ConnectorDeviceStartRequestAccount {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ConnectorDeviceStartRequestAccount"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for ConnectorDeviceStartRequestAccount"
+                )
+        val matches =
+            listOf(
+                (value["intent"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("add")
+                } == true,
+                (value["intent"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("reconnect")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous ConnectorDeviceStartRequestAccount variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorDeviceStartRequestAccountVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorDeviceStartRequestAccountVariant2.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException("Unknown ConnectorDeviceStartRequestAccount variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorDeviceStartRequestAccount) {
+        when (value) {
+            is ConnectorDeviceStartRequestAccountVariant1 ->
+                encoder.encodeSerializableValue(
+                    ConnectorDeviceStartRequestAccountVariant1.serializer(),
+                    value,
+                )
+            is ConnectorDeviceStartRequestAccountVariant2 ->
+                encoder.encodeSerializableValue(
+                    ConnectorDeviceStartRequestAccountVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class ConnectorDeviceStartRequest(
+    val `authMethod`: String,
+    val `account`: ConnectorDeviceStartRequestAccount,
+    val `options`: Map<String, String>? = null,
+)
+
+@Serializable(with = ConnectorDevicePollSerializer::class) sealed interface ConnectorDevicePoll
+
+@Serializable
+enum class ConnectorDevicePollVariant1Status {
+    @SerialName("pending") PENDING
+}
+
+@Serializable
+data class ConnectorDevicePollVariant1(
+    val `status`: ConnectorDevicePollVariant1Status,
+    val `interval`: Double,
+) : ConnectorDevicePoll
+
+@Serializable
+enum class ConnectorDevicePollVariant2Status {
+    @SerialName("complete") COMPLETE
+}
+
+@Serializable
+data class ConnectorDevicePollVariant2(
+    val `status`: ConnectorDevicePollVariant2Status,
+    val `connectionId`: String,
+) : ConnectorDevicePoll
+
+@Serializable
+enum class ConnectorDevicePollVariant3Status {
+    @SerialName("denied") DENIED
+}
+
+@Serializable
+data class ConnectorDevicePollVariant3(
+    val `status`: ConnectorDevicePollVariant3Status,
+    val `errorCode`: String? = null,
+    val `errorMessage`: String? = null,
+) : ConnectorDevicePoll
+
+@Serializable
+enum class ConnectorDevicePollVariant4Status {
+    @SerialName("expired") EXPIRED
+}
+
+@Serializable
+data class ConnectorDevicePollVariant4(
+    val `status`: ConnectorDevicePollVariant4Status,
+    val `errorCode`: String? = null,
+    val `errorMessage`: String? = null,
+) : ConnectorDevicePoll
+
+@Serializable
+enum class ConnectorDevicePollVariant5Status {
+    @SerialName("error") ERROR
+}
+
+@Serializable
+data class ConnectorDevicePollVariant5(
+    val `status`: ConnectorDevicePollVariant5Status,
+    val `errorCode`: String? = null,
+    val `errorMessage`: String? = null,
+) : ConnectorDevicePoll
+
+object ConnectorDevicePollSerializer : KSerializer<ConnectorDevicePoll> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.ConnectorDevicePoll")
+
+    override fun deserialize(decoder: Decoder): ConnectorDevicePoll {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException("Expected JSON object for ConnectorDevicePoll")
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for ConnectorDevicePoll")
+        val matches =
+            listOf(
+                (value["status"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("pending")
+                } == true,
+                (value["status"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("complete")
+                } == true,
+                (value["status"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("denied")
+                } == true,
+                (value["status"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("expired")
+                } == true,
+                (value["status"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("error")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException("Unknown or ambiguous ConnectorDevicePoll variant")
+        return when (matches.indexOf(true)) {
+            0 -> input.json.decodeFromJsonElement(ConnectorDevicePollVariant1.serializer(), value)
+            1 -> input.json.decodeFromJsonElement(ConnectorDevicePollVariant2.serializer(), value)
+            2 -> input.json.decodeFromJsonElement(ConnectorDevicePollVariant3.serializer(), value)
+            3 -> input.json.decodeFromJsonElement(ConnectorDevicePollVariant4.serializer(), value)
+            4 -> input.json.decodeFromJsonElement(ConnectorDevicePollVariant5.serializer(), value)
+            else -> throw SerializationException("Unknown ConnectorDevicePoll variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorDevicePoll) {
+        when (value) {
+            is ConnectorDevicePollVariant1 ->
+                encoder.encodeSerializableValue(ConnectorDevicePollVariant1.serializer(), value)
+            is ConnectorDevicePollVariant2 ->
+                encoder.encodeSerializableValue(ConnectorDevicePollVariant2.serializer(), value)
+            is ConnectorDevicePollVariant3 ->
+                encoder.encodeSerializableValue(ConnectorDevicePollVariant3.serializer(), value)
+            is ConnectorDevicePollVariant4 ->
+                encoder.encodeSerializableValue(ConnectorDevicePollVariant4.serializer(), value)
+            is ConnectorDevicePollVariant5 ->
+                encoder.encodeSerializableValue(ConnectorDevicePollVariant5.serializer(), value)
+        }
+    }
+}
+
+@Serializable data class ConnectorDevicePollRequest(val `sessionToken`: String)
+
+@Serializable
+enum class ConnectorExternalStartStatus {
+    @SerialName("pending") PENDING
+}
+
+@Serializable
+data class ConnectorExternalStart(
+    val `sessionId`: String,
+    val `sessionToken`: String,
+    val `connectorSlug`: String,
+    val `status`: ConnectorExternalStartStatus,
+    val `authorizationUrl`: String,
+    val `expiresIn`: Double,
+)
+
+@Serializable(with = ConnectorExternalStartRequestAccountSerializer::class)
+sealed interface ConnectorExternalStartRequestAccount
+
+@Serializable
+enum class ConnectorExternalStartRequestAccountVariant1Intent {
+    @SerialName("add") ADD
+}
+
+@Serializable
+data class ConnectorExternalStartRequestAccountVariant1(
+    val `intent`: ConnectorExternalStartRequestAccountVariant1Intent,
+    val `displayName`: String? = null,
+) : ConnectorExternalStartRequestAccount
+
+@Serializable
+enum class ConnectorExternalStartRequestAccountVariant2Intent {
+    @SerialName("reconnect") RECONNECT
+}
+
+@Serializable
+data class ConnectorExternalStartRequestAccountVariant2(
+    val `intent`: ConnectorExternalStartRequestAccountVariant2Intent,
+    val `connectionId`: String,
+) : ConnectorExternalStartRequestAccount
+
+object ConnectorExternalStartRequestAccountSerializer :
+    KSerializer<ConnectorExternalStartRequestAccount> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.ConnectorExternalStartRequestAccount"
+        )
+
+    override fun deserialize(decoder: Decoder): ConnectorExternalStartRequestAccount {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ConnectorExternalStartRequestAccount"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for ConnectorExternalStartRequestAccount"
+                )
+        val matches =
+            listOf(
+                (value["intent"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("add")
+                } == true,
+                (value["intent"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("reconnect")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous ConnectorExternalStartRequestAccount variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorExternalStartRequestAccountVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorExternalStartRequestAccountVariant2.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException("Unknown ConnectorExternalStartRequestAccount variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorExternalStartRequestAccount) {
+        when (value) {
+            is ConnectorExternalStartRequestAccountVariant1 ->
+                encoder.encodeSerializableValue(
+                    ConnectorExternalStartRequestAccountVariant1.serializer(),
+                    value,
+                )
+            is ConnectorExternalStartRequestAccountVariant2 ->
+                encoder.encodeSerializableValue(
+                    ConnectorExternalStartRequestAccountVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class ConnectorExternalStartRequest(
+    val `authMethod`: String,
+    val `account`: ConnectorExternalStartRequestAccount,
+)
+
+@Serializable
+enum class ConnectorExternalCompleteStatus {
+    @SerialName("complete") COMPLETE
+}
+
+@Serializable
+data class ConnectorExternalComplete(
+    val `status`: ConnectorExternalCompleteStatus,
+    val `connectionId`: String,
+)
+
+@Serializable
+data class ConnectorExternalCompleteRequest(val `sessionToken`: String, val `code`: String)
+
 @Serializable(with = ArtifactCatalogArtifactsItemSerializer::class)
 sealed interface ArtifactCatalogArtifactsItem
 
@@ -8787,6 +11180,391 @@ data class ProjectArchive(
     val `latestEventId`: String?,
     val `latestSeqId`: Long,
 )
+
+@Serializable(with = ConnectorAccountDefaultsQuerySerializer::class)
+sealed interface ConnectorAccountDefaultsQuery
+
+@Serializable
+enum class ConnectorAccountDefaultsQueryVariant1Kind {
+    @SerialName("builtin") BUILTIN
+}
+
+@Serializable
+data class ConnectorAccountDefaultsQueryVariant1(
+    val `kind`: ConnectorAccountDefaultsQueryVariant1Kind,
+    val `connectorSlug`: String,
+) : ConnectorAccountDefaultsQuery
+
+@Serializable
+enum class ConnectorAccountDefaultsQueryVariant2Kind {
+    @SerialName("custom") CUSTOM
+}
+
+@Serializable
+data class ConnectorAccountDefaultsQueryVariant2(
+    val `kind`: ConnectorAccountDefaultsQueryVariant2Kind,
+    val `customConnectorId`: String,
+) : ConnectorAccountDefaultsQuery
+
+object ConnectorAccountDefaultsQuerySerializer : KSerializer<ConnectorAccountDefaultsQuery> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.ConnectorAccountDefaultsQuery")
+
+    override fun deserialize(decoder: Decoder): ConnectorAccountDefaultsQuery {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ConnectorAccountDefaultsQuery"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for ConnectorAccountDefaultsQuery")
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("builtin")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("custom")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous ConnectorAccountDefaultsQuery variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountDefaultsQueryVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountDefaultsQueryVariant2.serializer(),
+                    value,
+                )
+            else -> throw SerializationException("Unknown ConnectorAccountDefaultsQuery variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorAccountDefaultsQuery) {
+        when (value) {
+            is ConnectorAccountDefaultsQueryVariant1 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountDefaultsQueryVariant1.serializer(),
+                    value,
+                )
+            is ConnectorAccountDefaultsQueryVariant2 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountDefaultsQueryVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable(with = ConnectorAccountsQuerySerializer::class)
+sealed interface ConnectorAccountsQuery
+
+@Serializable
+enum class ConnectorAccountsQueryVariant1Kind {
+    @SerialName("builtin") BUILTIN
+}
+
+@Serializable
+enum class ConnectorAccountsQueryVariant1IncludeScopeMismatch {
+    @SerialName("true") TRUE
+}
+
+@Serializable
+data class ConnectorAccountsQueryVariant1(
+    val `kind`: ConnectorAccountsQueryVariant1Kind,
+    val `connectorSlug`: String,
+    val `includeScopeMismatch`: ConnectorAccountsQueryVariant1IncludeScopeMismatch? = null,
+    val `cursor`: String? = null,
+    val `limit`: Long,
+    val `search`: String? = null,
+) : ConnectorAccountsQuery
+
+@Serializable
+enum class ConnectorAccountsQueryVariant2Kind {
+    @SerialName("custom") CUSTOM
+}
+
+@Serializable
+data class ConnectorAccountsQueryVariant2(
+    val `kind`: ConnectorAccountsQueryVariant2Kind,
+    val `customConnectorId`: String,
+    val `cursor`: String? = null,
+    val `limit`: Long,
+    val `search`: String? = null,
+) : ConnectorAccountsQuery
+
+object ConnectorAccountsQuerySerializer : KSerializer<ConnectorAccountsQuery> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.ConnectorAccountsQuery")
+
+    override fun deserialize(decoder: Decoder): ConnectorAccountsQuery {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException("Expected JSON object for ConnectorAccountsQuery")
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for ConnectorAccountsQuery")
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("builtin")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("custom")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException("Unknown or ambiguous ConnectorAccountsQuery variant")
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(ConnectorAccountsQueryVariant1.serializer(), value)
+            1 ->
+                input.json.decodeFromJsonElement(ConnectorAccountsQueryVariant2.serializer(), value)
+            else -> throw SerializationException("Unknown ConnectorAccountsQuery variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorAccountsQuery) {
+        when (value) {
+            is ConnectorAccountsQueryVariant1 ->
+                encoder.encodeSerializableValue(ConnectorAccountsQueryVariant1.serializer(), value)
+            is ConnectorAccountsQueryVariant2 ->
+                encoder.encodeSerializableValue(ConnectorAccountsQueryVariant2.serializer(), value)
+        }
+    }
+}
+
+@Serializable(with = ConnectorAccountQuerySerializer::class) sealed interface ConnectorAccountQuery
+
+@Serializable
+enum class ConnectorAccountQueryVariant1Kind {
+    @SerialName("builtin") BUILTIN
+}
+
+@Serializable
+data class ConnectorAccountQueryVariant1(
+    val `kind`: ConnectorAccountQueryVariant1Kind,
+    val `connectorSlug`: String,
+) : ConnectorAccountQuery
+
+@Serializable
+enum class ConnectorAccountQueryVariant2Kind {
+    @SerialName("custom") CUSTOM
+}
+
+@Serializable
+data class ConnectorAccountQueryVariant2(
+    val `kind`: ConnectorAccountQueryVariant2Kind,
+    val `customConnectorId`: String,
+) : ConnectorAccountQuery
+
+object ConnectorAccountQuerySerializer : KSerializer<ConnectorAccountQuery> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.ConnectorAccountQuery")
+
+    override fun deserialize(decoder: Decoder): ConnectorAccountQuery {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException("Expected JSON object for ConnectorAccountQuery")
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for ConnectorAccountQuery")
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("builtin")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("custom")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException("Unknown or ambiguous ConnectorAccountQuery variant")
+        return when (matches.indexOf(true)) {
+            0 -> input.json.decodeFromJsonElement(ConnectorAccountQueryVariant1.serializer(), value)
+            1 -> input.json.decodeFromJsonElement(ConnectorAccountQueryVariant2.serializer(), value)
+            else -> throw SerializationException("Unknown ConnectorAccountQuery variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorAccountQuery) {
+        when (value) {
+            is ConnectorAccountQueryVariant1 ->
+                encoder.encodeSerializableValue(ConnectorAccountQueryVariant1.serializer(), value)
+            is ConnectorAccountQueryVariant2 ->
+                encoder.encodeSerializableValue(ConnectorAccountQueryVariant2.serializer(), value)
+        }
+    }
+}
+
+@Serializable(with = ConnectorAccountImpactQuerySerializer::class)
+sealed interface ConnectorAccountImpactQuery
+
+@Serializable
+enum class ConnectorAccountImpactQueryVariant1Kind {
+    @SerialName("builtin") BUILTIN
+}
+
+@Serializable
+data class ConnectorAccountImpactQueryVariant1(
+    val `kind`: ConnectorAccountImpactQueryVariant1Kind,
+    val `connectorSlug`: String,
+) : ConnectorAccountImpactQuery
+
+@Serializable
+enum class ConnectorAccountImpactQueryVariant2Kind {
+    @SerialName("custom") CUSTOM
+}
+
+@Serializable
+data class ConnectorAccountImpactQueryVariant2(
+    val `kind`: ConnectorAccountImpactQueryVariant2Kind,
+    val `customConnectorId`: String,
+) : ConnectorAccountImpactQuery
+
+object ConnectorAccountImpactQuerySerializer : KSerializer<ConnectorAccountImpactQuery> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.ConnectorAccountImpactQuery")
+
+    override fun deserialize(decoder: Decoder): ConnectorAccountImpactQuery {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ConnectorAccountImpactQuery"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for ConnectorAccountImpactQuery")
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("builtin")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("custom")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException("Unknown or ambiguous ConnectorAccountImpactQuery variant")
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountImpactQueryVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorAccountImpactQueryVariant2.serializer(),
+                    value,
+                )
+            else -> throw SerializationException("Unknown ConnectorAccountImpactQuery variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorAccountImpactQuery) {
+        when (value) {
+            is ConnectorAccountImpactQueryVariant1 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountImpactQueryVariant1.serializer(),
+                    value,
+                )
+            is ConnectorAccountImpactQueryVariant2 ->
+                encoder.encodeSerializableValue(
+                    ConnectorAccountImpactQueryVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable(with = ConnectorOauthCompletionQuerySerializer::class)
+sealed interface ConnectorOauthCompletionQuery
+
+@Serializable
+enum class ConnectorOauthCompletionQueryVariant1Kind {
+    @SerialName("builtin") BUILTIN
+}
+
+@Serializable
+data class ConnectorOauthCompletionQueryVariant1(
+    val `kind`: ConnectorOauthCompletionQueryVariant1Kind,
+    val `connectorSlug`: String,
+) : ConnectorOauthCompletionQuery
+
+@Serializable
+enum class ConnectorOauthCompletionQueryVariant2Kind {
+    @SerialName("custom") CUSTOM
+}
+
+@Serializable
+data class ConnectorOauthCompletionQueryVariant2(
+    val `kind`: ConnectorOauthCompletionQueryVariant2Kind,
+    val `customConnectorId`: String,
+) : ConnectorOauthCompletionQuery
+
+object ConnectorOauthCompletionQuerySerializer : KSerializer<ConnectorOauthCompletionQuery> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.ConnectorOauthCompletionQuery")
+
+    override fun deserialize(decoder: Decoder): ConnectorOauthCompletionQuery {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ConnectorOauthCompletionQuery"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for ConnectorOauthCompletionQuery")
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("builtin")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("custom")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous ConnectorOauthCompletionQuery variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorOauthCompletionQueryVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ConnectorOauthCompletionQueryVariant2.serializer(),
+                    value,
+                )
+            else -> throw SerializationException("Unknown ConnectorOauthCompletionQuery variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ConnectorOauthCompletionQuery) {
+        when (value) {
+            is ConnectorOauthCompletionQueryVariant1 ->
+                encoder.encodeSerializableValue(
+                    ConnectorOauthCompletionQueryVariant1.serializer(),
+                    value,
+                )
+            is ConnectorOauthCompletionQueryVariant2 ->
+                encoder.encodeSerializableValue(
+                    ConnectorOauthCompletionQueryVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
 
 @Serializable
 enum class ArtifactCatalogQueryKind {

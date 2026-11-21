@@ -142,6 +142,7 @@ internal fun SessionRoot(
                     recovery = ready?.recovery,
                     artifacts = ready?.artifacts,
                     chatArtifacts = ready?.chatArtifacts,
+                    connectors = ready?.connectors,
                     workspaceName = workspaceName,
                     workspaceAvatar = {
                         WorkspaceAvatar(
