@@ -264,6 +264,10 @@ class ApiClient(
         }
     }
 
+    suspend fun deleteThread(threadId: String, eventId: String) {
+        executeResponse(204) { api.deleteThread(it, threadId, eventId) }
+    }
+
     suspend fun renameThread(threadId: String, title: String, eventId: String) {
         executeResponse(204) { api.renameThread(it, threadId, RenameThreadRequest(title, eventId)) }
     }

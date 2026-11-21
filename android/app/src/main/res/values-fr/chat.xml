@@ -54,4 +54,8 @@
     <string name="chat_title_field">Titre de la discussion</string>
     <string name="chat_rename_confirm">Renommer</string>
     <string name="chat_rename_cancel">Annuler</string>
+    <string name="chat_delete">Supprimer la discussion</string>
+    <string name="chat_delete_title">Supprimer la discussion ?</string>
+    <string name="chat_delete_description">Cela supprimera définitivement cette discussion. Toute tâche en cours dans cette discussion sera arrêtée immédiatement. Toutes les automatisations liées seront mises en pause. Cette action est irréversible.</string>
+    <string name="chat_delete_confirm">Supprimer</string>
 </resources>

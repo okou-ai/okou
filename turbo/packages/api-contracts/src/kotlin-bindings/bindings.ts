@@ -257,6 +257,11 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: chatThreadRenameContract.rename,
   },
   {
+    name: "deleteThread",
+    response: "Unit",
+    route: chatThreadByIdContract.delete,
+  },
+  {
     name: "pinThread",
     response: "Unit",
     route: chatThreadPinContract.pin,

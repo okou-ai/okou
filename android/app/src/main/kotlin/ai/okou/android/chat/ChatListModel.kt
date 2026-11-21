@@ -107,6 +107,7 @@ enum class ChatRowAction(
     Unmute,
     Archive,
     Unarchive,
+    Delete,
     Rename(updatesIndicators = false),
     Pin(updatesIndicators = false, changesPinOrder = true),
     Unpin(updatesIndicators = false, changesPinOrder = true),
@@ -178,20 +179,12 @@ internal fun ChatListUiState.rowActions(
     group: ChatListGroup? = null,
     index: Int = -1,
 ): List<ChatRowAction> = buildList {
-    val canUpdateUnread = indicators != null || (cachedUnread != null && !offline)
-    if (canUpdateUnread && indicatorsPhase != ChatReadPhase.Failed && thread.muted != true) {
-        add(if (isUnread(thread.id)) ChatRowAction.MarkRead else ChatRowAction.MarkUnread)
-    }
-    if (listPhase != ChatReadPhase.Failed) {
-        add(ChatRowAction.Rename)
-        add(if (thread.muted == true) ChatRowAction.Unmute else ChatRowAction.Mute)
-        add(if (thread.archived) ChatRowAction.Unarchive else ChatRowAction.Archive)
-    }
+    val canUpdateChat = listPhase != ChatReadPhase.Failed
     // A refresh retains the last synchronized rank scope while it fetches the next one.
     if (
         group != null &&
             source == ChatListSource.Network &&
-            listPhase != ChatReadPhase.Failed &&
+            canUpdateChat &&
             projectsSource != null &&
             pendingRowActions.values.none { it.changesPinOrder }
     ) {
@@ -201,6 +194,16 @@ internal fun ChatListUiState.rowActions(
             if (group.pinNeighbor(index, -1) != null) add(ChatRowAction.MovePinUp)
             if (group.pinNeighbor(index, 1) != null) add(ChatRowAction.MovePinDown)
         }
+    }
+    val canUpdateUnread = indicators != null || (cachedUnread != null && !offline)
+    if (canUpdateUnread && indicatorsPhase != ChatReadPhase.Failed && thread.muted != true) {
+        add(if (isUnread(thread.id)) ChatRowAction.MarkRead else ChatRowAction.MarkUnread)
+    }
+    if (canUpdateChat) {
+        add(ChatRowAction.Rename)
+        add(if (thread.muted == true) ChatRowAction.Unmute else ChatRowAction.Mute)
+        add(if (thread.archived) ChatRowAction.Unarchive else ChatRowAction.Archive)
+        add(ChatRowAction.Delete)
     }
 }
 
@@ -254,6 +257,7 @@ class ChatListModel(
     private var confirmedRows = ReplayedChats(emptyList(), emptyList())
     private var rowEdits = emptyList<ChatRowEdit>()
     private val unconfirmedRowEvents = mutableSetOf<String>()
+    private val rejectedRowEvents = mutableSetOf<String>()
     private var confirmedProjects: CachedProjects? = null
     private var cacheRead = false
     private var restoreJob: Job? = null
@@ -650,32 +654,34 @@ class ChatListModel(
         }
     }
 
-    internal fun performRowAction(threadId: String, action: ChatRowAction) =
+    internal fun performRowAction(threadId: String, action: ChatRowAction): Boolean =
         performRowAction(threadId, action, title = null)
 
-    internal fun renameThread(threadId: String, title: String) =
+    internal fun renameThread(threadId: String, title: String) {
         performRowAction(threadId, ChatRowAction.Rename, title.trim())
+    }
 
     private fun performRowAction(
         threadId: String,
         action: ChatRowAction,
         title: String?,
         offerUndo: Boolean = true,
-    ) {
-        if (!current()) return
+    ): Boolean {
+        if (!current()) return false
         val state = mutable.value
-        val thread = state.threads.firstOrNull { it.id == threadId && it.hidden != true } ?: return
-        if (threadId in state.pendingRowActions) return
+        val thread =
+            state.threads.firstOrNull { it.id == threadId && it.hidden != true } ?: return false
+        if (threadId in state.pendingRowActions) return false
         if (
             action == ChatRowAction.Rename &&
                 (title.isNullOrBlank() || title == thread.title?.trim())
         )
-            return
+            return false
         val pinGroup =
             if (action.changesPinOrder) chatListGroups(state).firstOrNull { thread in it.threads }
             else null
         val index = pinGroup?.threads?.indexOf(thread) ?: -1
-        if (action !in state.rowActions(thread, pinGroup, index)) return
+        if (action !in state.rowActions(thread, pinGroup, index)) return false
         val archiveAction = action == ChatRowAction.Archive || action == ChatRowAction.Unarchive
         val undo =
             if (
@@ -752,7 +758,7 @@ class ChatListModel(
                     publishRows()
                 }
                 var confirmation: ReadConfirmation? = null
-                var archiveRejected = false
+                var writeRejected = false
                 try {
                     acknowledgement?.join()
                     requireCurrent()
@@ -784,6 +790,8 @@ class ChatListModel(
                                 checkNotNull(title),
                                 edits.single().eventId,
                             )
+                        ChatRowAction.Delete ->
+                            service.deleteThread(threadId, edits.single().eventId)
                         ChatRowAction.Pin,
                         ChatRowAction.Unpin ->
                             service.setPinned(
@@ -810,10 +818,11 @@ class ChatListModel(
                     requireCurrent()
                     // The target may have disappeared while the workspace is still authorized.
                     if (error !is ApiFailure.Http || error.status != 404) onFailure(error)
-                    archiveRejected =
-                        archiveAction &&
-                            error is ApiFailure.Http &&
-                            error.status in setOf(400, 401, 403, 404)
+                    writeRejected =
+                        error is ApiFailure.Http &&
+                            (archiveAction && error.status in setOf(400, 401, 403, 404) ||
+                                action == ChatRowAction.Delete &&
+                                    error.status in setOf(400, 401, 404))
                     if (!action.updatesChat && current()) {
                         mutable.value = mutable.value.copy(failedRowAction = action)
                     }
@@ -832,7 +841,7 @@ class ChatListModel(
                 coroutineScope {
                     if (archiveAction) invalidateIndicators()
                     else if (action.updatesIndicators) launch { readIndicatorsAfterWrite() }
-                    if (action.updatesChat && confirmRowEdits(action, edits, archiveRejected))
+                    if (action.updatesChat && confirmRowEdits(action, edits, writeRejected))
                         recordConfirmedUndo(threadId, undo)
                 }
                 if (
@@ -853,6 +862,7 @@ class ChatListModel(
                 }
             }
         }
+        return true
     }
 
     private fun publishRows(state: ChatListUiState = mutable.value) {
@@ -861,7 +871,7 @@ class ChatListModel(
     }
 
     internal fun reloadAfterRowActionFailure() {
-        requestListRead(unconfirmedRowEvents, userRequested = true)
+        requestListRead(unconfirmedRowEvents + rejectedRowEvents, userRequested = true)
     }
 
     internal fun dismissRowActionFailure(action: ChatRowAction) {
@@ -1065,7 +1075,7 @@ class ChatListModel(
     private suspend fun confirmRowEdits(
         action: ChatRowAction,
         edits: List<ChatRowEdit>,
-        archiveRejected: Boolean,
+        writeRejected: Boolean,
     ): Boolean {
         requireCurrent()
         if (edits.none { it in rowEdits }) return true
@@ -1073,17 +1083,23 @@ class ChatListModel(
         val completion = CompletableDeferred<Unit>(currentCoroutineContext()[Job])
         val batch = listReadBatch()
         batch.confirmations.add(ListConfirmation(edits, completion))
-        // Archive's documented rejections precede its write. Restore from a successful read.
-        if (archiveRejected) edits.forEach { batch.discardOnSuccess.add(it.eventId) }
+        if (writeRejected) {
+            for (edit in edits) {
+                if (edit in rowEdits) rejectedRowEvents.add(edit.eventId)
+            }
+        }
         listReadRequests.trySend(Unit)
         completion.await()
         requireCurrent()
         val unresolved = edits.filter { it in rowEdits }
-        if (unresolved.isNotEmpty()) unconfirmedRowEvents.addAll(unresolved.map { it.eventId })
-        if (archiveRejected || unresolved.isNotEmpty()) {
+        if (!writeRejected) unresolved.mapTo(unconfirmedRowEvents) { it.eventId }
+        val deleted =
+            action == ChatRowAction.Delete &&
+                confirmedRows.byRecency.none { it.id == edits.single().threadId }
+        if (!deleted && (writeRejected || unresolved.isNotEmpty())) {
             mutable.value = mutable.value.copy(failedRowAction = action)
         }
-        return !archiveRejected && unresolved.isEmpty()
+        return deleted || !writeRejected && unresolved.isEmpty()
     }
 
     private suspend fun readPendingListBatch() {
@@ -1141,11 +1157,14 @@ class ChatListModel(
             return
         val reportingFilterGeneration =
             filterGeneration.takeIf { !batch.userRequested && filterIsVisible && listInForeground }
+        // A rejected edit stays recoverable if its first read fails. Only a read started after
+        // the rejection can restore that row.
+        val discardOnSuccess = batch.discardOnSuccess + rejectedRowEvents
         mutable.value = mutable.value.copy(listPhase = ChatReadPhase.Loading)
         try {
             val result = sync.synchronize(confirmed?.checkpoint)
             val retrying = mutable.value.listReadFailure == ChatListReadFailure.Retrying
-            publishList(result, batch.discardOnSuccess)
+            publishList(result, discardOnSuccess)
             if (retrying) refreshFailedListDependencies()
             if (result.shouldRebase && confirmed?.checkpoint === result.checkpoint) {
                 startListRebase(result.checkpoint)
@@ -1278,6 +1297,13 @@ class ChatListModel(
                     saved.checkpoint.events.forEach { it.cursor().eventId?.let(::add) }
                 }
                 addAll(result.eventIdsBeforeRebase)
+                if (editsAtPublish.any { it.action == ChatRowAction.Delete }) {
+                    val present = projection.byRecency.mapTo(hashSetOf()) { it.id }
+                    for (edit in editsAtPublish) {
+                        if (edit.action == ChatRowAction.Delete && edit.threadId !in present)
+                            add(edit.eventId)
+                    }
+                }
             }
             settleRowEdits(observed, discardOnSuccess)
         }
@@ -1306,7 +1332,10 @@ class ChatListModel(
                 val settled =
                     edit.eventId in discarded ||
                         index <= (settledThrough[edit.threadId to edit.field] ?: -1)
-                if (settled) unconfirmedRowEvents.remove(edit.eventId)
+                if (settled) {
+                    unconfirmedRowEvents.remove(edit.eventId)
+                    rejectedRowEvents.remove(edit.eventId)
+                }
                 !settled
             }
     }
