@@ -11,6 +11,7 @@ import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -230,7 +231,7 @@ internal fun ChatListUiState.markAllReadTargets(): Map<String, String> {
 class ChatListModel(
     private val service: ChatListService,
     cacheStore: ChatCacheStore,
-    identity: WorkspaceIdentity,
+    private val identity: WorkspaceIdentity,
     private val authorized: () -> Boolean,
     private val onFailure: (Exception) -> Unit,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
@@ -1066,15 +1067,22 @@ class ChatListModel(
         }
     }
 
-    private fun restoreCache() {
+    internal fun restoreStartupCache(prepared: Deferred<PreparedChatList?>) {
+        restoreCache(prepared)
+    }
+
+    private fun restoreCache(prepared: Deferred<PreparedChatList?>? = null) {
         if (cacheRead) return
         cacheRead = true
         viewModelScope.launch { restoreUnread() }
         restoreJob =
             viewModelScope.launch {
                 try {
-                    val saved = cache.load() ?: return@launch
-                    val rows = withContext(dispatcher) { replayChatList(saved.checkpoint) }
+                    val startup = prepared?.await()?.takeIf { it.identity == identity }
+                    val saved = startup?.saved ?: cache.load() ?: return@launch
+                    val rows =
+                        startup?.rows
+                            ?: withContext(dispatcher) { replayChatList(saved.checkpoint) }
                     requireCurrent()
                     val state = mutable.value
                     confirmed = saved
