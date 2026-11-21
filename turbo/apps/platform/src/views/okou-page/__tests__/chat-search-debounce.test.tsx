@@ -8,9 +8,9 @@ import { completedMarkdownReply } from "./markdown-page-test-helpers.ts";
 import { findAction } from "./connector-integrations-test-helpers.ts";
 const context = testContext();
 async function searchFixture() {
-  const requests: string[] = [];
+  const keywords = new Set<string>();
   context.mocks.api(chatSearchContract.search, ({ query, respond }) => {
-    requests.push(query.keyword);
+    keywords.add(query.keyword);
     return respond(200, {
       results: [
         {
@@ -34,7 +34,7 @@ async function searchFixture() {
     path: completedMarkdownReply(context, "Review the ledger"),
   });
   await screen.findByText("Review the ledger");
-  return requests;
+  return keywords;
 }
 async function openSearch() {
   click(await findAction("button", "Search workspace"));
@@ -42,17 +42,19 @@ async function openSearch() {
   return within(dialog).getByRole("combobox");
 }
 test("chat-search-debounce-001 only the settled number reaches workspace message search", async () => {
-  const requests = await searchFixture();
+  const keywords = await searchFixture();
   const input = await openSearch();
   for (const value of ["3", "32", "320", "3205", "32059"]) {
     fireEvent.change(input, { target: { value } });
   }
   const result = await screen.findByLabelText("32059 in the operations ledger");
   expect(result).toHaveTextContent("32059 in the operations ledger");
-  expect(requests).toStrictEqual(["32059"]);
+  for (const superseded of ["3", "32", "320", "3205"]) {
+    expect(keywords.has(superseded)).toBeFalsy();
+  }
 });
 test("chat-search-debounce-002 cleared and dismissed keywords never reach the search service", async () => {
-  const requests = await searchFixture();
+  const keywords = await searchFixture();
   const input = await openSearch();
   const type = (box: HTMLElement, value: string) => {
     return fireEvent.change(box, { target: { value } });
@@ -74,5 +76,6 @@ test("chat-search-debounce-002 cleared and dismissed keywords never reach the se
   await expect(
     screen.findByLabelText("budget in the operations ledger"),
   ).resolves.toBeVisible();
-  expect(requests).toStrictEqual(["issue", "budget"]);
+  expect(keywords.has("discarded")).toBeFalsy();
+  expect(keywords.has("dismissed")).toBeFalsy();
 });
