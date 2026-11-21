@@ -78,8 +78,7 @@ test.each(TELEGRAM_PATHS)(
     context.mocks.data.onboardingStatus({
       needsOnboarding: true,
       onboardingComplete: false,
-      hasDefaultAgent: false,
-      defaultAgentId: null,
+      hasOrg: false,
     });
     const search = `${connectSearch()}&prompt=hello%20world&context=one&context=two`;
 

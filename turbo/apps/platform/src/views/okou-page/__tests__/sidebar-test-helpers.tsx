@@ -111,7 +111,6 @@ export function prepareDefaultAgent(
   targetContext: TestContext,
   avatarUrl: string | null = null,
 ): void {
-  targetContext.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   targetContext.mocks.data.agents([
     {
       agentId: AGENT_ID,
@@ -126,7 +125,6 @@ export function prepareDefaultAgent(
 }
 
 export function prepareAgents(targetContext: TestContext): AgentResponse[] {
-  targetContext.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   const agents: AgentResponse[] = [
     {
       isDefaultAgent: true,

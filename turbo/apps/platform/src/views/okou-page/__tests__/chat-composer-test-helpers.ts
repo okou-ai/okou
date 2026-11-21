@@ -234,7 +234,6 @@ export function createChatComposerHelpers(context: TestContext) {
   }
 
   function mockAgent(options?: { includeOtherAgent?: boolean }): void {
-    context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
     const agents = [
       {
         agentId: AGENT_ID,

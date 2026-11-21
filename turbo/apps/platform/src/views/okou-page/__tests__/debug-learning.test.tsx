@@ -95,7 +95,6 @@ function runButton() {
 }
 
 async function openDebug(learning = true) {
-  context.mocks.data.onboardingStatus({ defaultAgentId: DEFAULT_AGENT_ID });
   await setupPage({
     context,
     path: "/?settings=debug",

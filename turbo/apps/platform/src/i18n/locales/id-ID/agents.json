@@ -77,7 +77,7 @@
             "title": "Ringkasan deployment Vercel"
           },
           "zapier-okou-migration": {
-            "description": "Ubah workflow Zapier Anda menjadi agen {{brandName}}",
+            "description": "Buat ulang alur kerja Zapier Anda di {{brandName}}",
             "title": "Migrasi Zapier → {{brandName}}"
           }
         },
@@ -185,10 +185,6 @@
           "loops-email-campaign": {
             "description": "Rancang dan kirim email transaksional via Loops",
             "title": "Kampanye email Loops"
-          },
-          "marketing-automation-system": {
-            "description": "Tiga agen untuk riset, pemantauan mingguan, dan pekerjaan ad hoc",
-            "title": "Sistem otomatisasi pemasaran"
           },
           "marketing-content-planning": {
             "description": "Merencanakan cerita peluncuran dari Slack, wawancara, dan pesaing",

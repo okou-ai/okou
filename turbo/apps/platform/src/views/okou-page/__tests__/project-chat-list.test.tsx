@@ -137,7 +137,6 @@ async function openChatList(
 ) {
   const workspace = installContinuityWorkspace(context, { caseId, threads });
   installProjects();
-  context.mocks.data.onboardingStatus({ defaultAgentId: threads[0].agentId });
   await setupPage({
     context,
     path,
@@ -217,7 +216,6 @@ test.each([false, true])(
       threads: [archived],
     });
     installProjects([]);
-    context.mocks.data.onboardingStatus({ defaultAgentId: archived.agentId });
     await setupPage({
       context,
       path: "/",
@@ -388,7 +386,6 @@ test("Clicking an expanded, unselected Project title folds its chats and keeps t
     projectId: launchId,
   };
   // A Project page lists the default Agent's chats, so these belong to it.
-  context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
   await openChatList(306, [ordinary, member], `/chats/${ordinary.id}`);
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
 

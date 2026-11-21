@@ -1407,7 +1407,6 @@ async function reviewBankingRequest(entry: "chat" | "direct") {
     bankingWorkspaceContract.accessRequestStatus,
     ({ respond }) => {
       return respond(200, {
-        agent: { id: AGENT_ID, name: "Finance Assistant" },
         connection: null,
         session: null,
         grant: null,

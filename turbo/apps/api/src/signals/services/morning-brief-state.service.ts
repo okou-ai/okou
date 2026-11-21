@@ -101,12 +101,7 @@ export type MorningBriefState =
         readonly reason: MorningBriefInconsistency;
       });
 
-/**
- * The Agent an org-wide Morning Brief action would use today.
- *
- * It backs both the adoption tie-break and the Settings availability check, so
- * a private Agent nobody else may use resolves to no default at all.
- */
+/** Resolve the workflow storage scope accessible to this member for installation or adoption. */
 export const loadMorningBriefDefaultAgentId$ = command(
   async (
     { get },

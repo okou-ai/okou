@@ -76,7 +76,7 @@ export const connectTelegramAccount$ = command(
       // Signed confirmation must retain its proof while setup opens separately.
       const setup = await get(onboardingStatus$);
       signal.throwIfAborted();
-      if (!setup.hasOrg || !setup.hasDefaultAgent) {
+      if (!setup.hasOrg) {
         return null;
       }
       const current = await get(telegramConnectLinkStatus$);

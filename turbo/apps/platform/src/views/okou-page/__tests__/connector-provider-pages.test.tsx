@@ -55,7 +55,6 @@ function telegramStatus(): MockTelegramBotStatus {
     kind: "official",
     username: "agent_bot",
     avatarUrl: null,
-    agent: { id: "c0000000-0000-4000-a000-000000000001", name: "zero" },
     isOwner: false,
     isConnected: false,
     connectedUser: null,

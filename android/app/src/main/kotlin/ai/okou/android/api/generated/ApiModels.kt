@@ -5831,7 +5831,6 @@ data class UserPreferences(
     val `timezone`: String?,
     val `locale`: UserPreferencesLocale?,
     val `supportedLocales`: List<UserPreferencesSupportedLocalesItem>,
-    val `pinnedAgentIds`: List<String>,
     val `sendMode`: UserPreferencesSendMode,
     val `cloudBrowserEnabledByDefault`: Boolean,
     val `chatResourcesEnabledByDefault`: Boolean,
@@ -5839,6 +5838,7 @@ data class UserPreferences(
     val `colorTheme`: UserPreferencesColorTheme?,
     val `captureNetworkBodiesRemaining`: Long,
     val `memoryInitialized`: Boolean,
+    val `pinnedAgentIds`: List<String>,
 )
 
 @Serializable
@@ -5908,7 +5908,6 @@ enum class UpdatePreferencesRequestColorTheme {
 data class UpdatePreferencesRequest(
     val `timezone`: String? = null,
     val `locale`: UpdatePreferencesRequestLocale? = null,
-    val `pinnedAgentIds`: List<String>? = null,
     val `sendMode`: UpdatePreferencesRequestSendMode? = null,
     val `cloudBrowserEnabledByDefault`: Boolean? = null,
     val `theme`: UpdatePreferencesRequestTheme? = null,

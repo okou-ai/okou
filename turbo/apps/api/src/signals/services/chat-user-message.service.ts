@@ -1,3 +1,4 @@
+import { legacyAgentMentionsToText } from "@okouai/core/legacy-agent-mention";
 import {
   readSuggestionContext,
   suggestionFeedbacks,
@@ -281,11 +282,6 @@ function serializeChatThreadMention(threadId: string, title: string): string {
   return `[${escapedTitle}](/chats/${threadId})`;
 }
 
-function serializeAgentMention(agentId: string, name: string): string {
-  const escapedName = name.replace(/[\\[\]]/g, String.raw`\$&`);
-  return `[${escapedName}](/agents/${agentId}/chat)`;
-}
-
 export function serializeFeedbackNote(
   parts: readonly FeedbackNotePart[],
   serializeTemplate: (
@@ -295,13 +291,13 @@ export function serializeFeedbackNote(
   return parts
     .map((part) => {
       if (part.type === "text") {
-        return part.text;
+        return legacyAgentMentionsToText(part.text);
       }
       if (part.type === "chat_thread") {
         return serializeChatThreadMention(part.threadId, part.titleSnapshot);
       }
       if (part.type === "agent") {
-        return serializeAgentMention(part.agentId, part.nameSnapshot);
+        return part.nameSnapshot;
       }
       if (part.type === "project") {
         return `[${part.nameSnapshot}](/projects/${part.projectId})`;
@@ -595,7 +591,7 @@ export function projectUserMessage(
         followsDroppedTemplate && inlinePrompt.endsWith(" ")
           ? part.text.replace(/^ +/u, "")
           : part.text;
-      inlineDisplayText += part.text;
+      inlineDisplayText += legacyAgentMentionsToText(part.text);
       hasTextContent ||= part.text.trim().length > 0;
       continue;
     }
@@ -610,8 +606,8 @@ export function projectUserMessage(
       continue;
     }
     if (part.type === "agent") {
-      inlinePrompt += serializeAgentMention(part.agentId, part.nameSnapshot);
-      inlineDisplayText += `[Agent: ${part.nameSnapshot}]`;
+      inlinePrompt += part.nameSnapshot;
+      inlineDisplayText += part.nameSnapshot;
       hasTextContent = true;
       continue;
     }
@@ -677,7 +673,10 @@ export function projectUserMessageForPublicShare(
           quote: part.quote,
           note: part.note.map((notePart): FeedbackNotePart => {
             if (notePart.type === "text") {
-              return notePart;
+              return {
+                type: "text",
+                text: legacyAgentMentionsToText(notePart.text),
+              };
             }
             if (notePart.type === "chat_thread") {
               return {
@@ -688,7 +687,7 @@ export function projectUserMessageForPublicShare(
             if (notePart.type === "agent") {
               return {
                 type: "text",
-                text: `[Agent: ${notePart.nameSnapshot}]`,
+                text: notePart.nameSnapshot,
               };
             }
             if (notePart.type === "project") {

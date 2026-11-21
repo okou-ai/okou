@@ -14,7 +14,7 @@ import {
 } from "./connector-page-test-helpers.ts";
 import {
   bankingWorkspaceContract,
-  type BankingAccessRequestStatusResponse,
+  type BankingWorkspaceStatus,
 } from "@okouai/api-contracts/contracts/banking";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
@@ -41,7 +41,6 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
-  CAPABILITY_AGENT_ID,
   completedConversation,
   type CapturedChatSend,
   readyChat,
@@ -222,9 +221,8 @@ function mockOpenedWindow(): {
   return { calls: browserOpen.calls, navigations, openedWindow };
 }
 
-function emptyBankingStatus(): BankingAccessRequestStatusResponse {
+function emptyBankingStatus(): BankingWorkspaceStatus {
   return {
-    agent: { id: CAPABILITY_AGENT_ID, name: "Finance Assistant" },
     connection: null,
     session: null,
     grant: null,
@@ -232,10 +230,9 @@ function emptyBankingStatus(): BankingAccessRequestStatusResponse {
 }
 
 function connectedBankingStatus(
-  grant: BankingAccessRequestStatusResponse["grant"] = null,
-): BankingAccessRequestStatusResponse {
+  grant: BankingWorkspaceStatus["grant"] = null,
+): BankingWorkspaceStatus {
   return {
-    agent: { id: CAPABILITY_AGENT_ID, name: "Finance Assistant" },
     connection: {
       id: BANK_CONNECTION_ID,
       status: "active",

@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
-  userPreferencesContract,
+  memberPreferencesContract,
   type UserPreferencesResponse,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
@@ -23,7 +23,6 @@ function initialPreferences(): UserPreferencesResponse {
     timezone: "Etc/UTC",
     locale: "en-US",
     supportedLocales: ["en-US", "pt-BR"],
-    pinnedAgentIds: [],
     sendMode: "cmd-enter",
     cloudBrowserEnabledByDefault: false,
     chatResourcesEnabledByDefault: true,
@@ -53,11 +52,11 @@ function delayPreferenceSaves() {
   const releaseSendMode = context.mocks.deferred<void>();
   const releaseCloudBrowser = context.mocks.deferred<void>();
   const releaseTimezone = context.mocks.deferred<void>();
-  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
+  context.mocks.api(memberPreferencesContract.get, ({ respond }) => {
     return respond(200, original);
   });
   context.mocks.api(
-    userPreferencesContract.update,
+    memberPreferencesContract.update,
     async ({ body, respond, withSignal }) => {
       if (body.sendMode !== undefined) {
         sendModeWrite.resolve();
@@ -144,14 +143,14 @@ test("overlapping saves to one preference read back the committed value", async 
   const releaseFirstResponse = context.mocks.deferred<void>();
   const readBack = context.mocks.deferred<void>();
   let readyToReadBack = false;
-  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
+  context.mocks.api(memberPreferencesContract.get, ({ respond }) => {
     if (readyToReadBack) {
       readBack.resolve();
     }
     return respond(200, stored);
   });
   context.mocks.api(
-    userPreferencesContract.update,
+    memberPreferencesContract.update,
     async ({ body, respond, withSignal }) => {
       const saved = { ...stored, ...body };
       stored = saved;

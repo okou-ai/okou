@@ -1,6 +1,6 @@
 import {
   type UserPreferencesResponse,
-  userPreferencesContract,
+  memberPreferencesContract,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { mockApi } from "../msw-contract.ts";
 
@@ -21,7 +21,6 @@ let mockPreferences: UserPreferencesResponse = {
     "zh-Hans",
     "zh-Hant",
   ],
-  pinnedAgentIds: [],
   sendMode: "enter",
   cloudBrowserEnabledByDefault: true,
   chatResourcesEnabledByDefault: false,
@@ -30,10 +29,6 @@ let mockPreferences: UserPreferencesResponse = {
   captureNetworkBodiesRemaining: 0,
   memoryInitialized: true,
 };
-
-function normalizePinnedAgentIds(ids: readonly string[]): string[] {
-  return [...new Set(ids)];
-}
 
 export function resetMockUserPreferences(): void {
   mockPreferences = {
@@ -53,7 +48,6 @@ export function resetMockUserPreferences(): void {
       "zh-Hans",
       "zh-Hant",
     ],
-    pinnedAgentIds: [],
     sendMode: "enter",
     cloudBrowserEnabledByDefault: true,
     chatResourcesEnabledByDefault: false,
@@ -71,7 +65,7 @@ export function setMockUserPreferences(
 }
 
 export const apiUserPreferencesHandlers = [
-  mockApi(userPreferencesContract.initialize, ({ body, respond }) => {
+  mockApi(memberPreferencesContract.initialize, ({ body, respond }) => {
     mockPreferences = {
       ...mockPreferences,
       timezone: mockPreferences.timezone ?? body.timezone ?? null,
@@ -80,7 +74,7 @@ export const apiUserPreferencesHandlers = [
     };
     return respond(200, mockPreferences);
   }),
-  mockApi(userPreferencesContract.get, ({ respond }) => {
+  mockApi(memberPreferencesContract.get, ({ respond }) => {
     if (mockPreferences.timezone === null || mockPreferences.locale === null) {
       return respond(409, {
         error: {
@@ -91,13 +85,8 @@ export const apiUserPreferencesHandlers = [
     }
     return respond(200, mockPreferences);
   }),
-  mockApi(userPreferencesContract.update, ({ body, respond }) => {
-    Object.assign(mockPreferences, {
-      ...body,
-      ...(body.pinnedAgentIds !== undefined && {
-        pinnedAgentIds: normalizePinnedAgentIds(body.pinnedAgentIds),
-      }),
-    });
+  mockApi(memberPreferencesContract.update, ({ body, respond }) => {
+    Object.assign(mockPreferences, body);
     return respond(200, mockPreferences);
   }),
 ];

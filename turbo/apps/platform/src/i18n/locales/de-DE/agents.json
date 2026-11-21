@@ -77,7 +77,7 @@
             "title": "Vercel Deploy Digest"
           },
           "zapier-okou-migration": {
-            "description": "Erstellen Sie Ihre Zapier-Workflows als {{brandName}}-Agenten neu",
+            "description": "Erstelle deine Zapier-Workflows in {{brandName}} neu",
             "title": "Zapier → {{brandName}}-Migration"
           }
         },
@@ -185,10 +185,6 @@
           "loops-email-campaign": {
             "description": "Verfassen und versenden Sie Transaktions-E-Mails über Loops",
             "title": "Loops-E-Mail-Kampagne"
-          },
-          "marketing-automation-system": {
-            "description": "Drei Agenten für Recherche, wöchentliche Überwachung und Ad-hoc-Arbeit",
-            "title": "Marketing-Automatisierungssystem"
           },
           "marketing-content-planning": {
             "description": "Geplant sind Geschichten von Slack, Interviews und Mitbewerbern",

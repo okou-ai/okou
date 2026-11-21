@@ -2273,7 +2273,6 @@
       "unavailable": "這封郵件已不可用。"
     },
     "messageDocument": {
-      "agent": "[智能體：{{name}}]",
       "chatThread": "[聊天會話：{{title}}]",
       "file": "[檔案：{{filename}}]",
       "template": "[模板：{{title}}]"
@@ -3473,7 +3472,6 @@
         "addBot": "新增機器人",
         "addDialogDescription": "建立一個 Agent 型別的企業自建應用，然後在飛書開發者後臺完成以下步驟。",
         "addDialogTitle": "新增飛書機器人",
-        "agentDescription": "選擇由哪個智能體處理傳送給此機器人的訊息。",
         "backToIntegrations": "返回整合",
         "botFallback": "飛書機器人",
         "botIconAlt": "{{bot}}機器人圖示",
@@ -3500,12 +3498,9 @@
           "imageAlt": "飛書應用建立結果頁，顯示 App ID 和 App Secret 的位置",
           "title": "填寫應用憑證"
         },
-        "defaultAgent": "預設智能體",
-        "defaultAgentAria": "{{appId}}的預設智能體",
         "developerConsole": "飛書開發者後臺",
         "dialogAdminRequired": "該應用需要由組織管理員配置。配置完成後，你可以在飛書機器人列表中連線自己的帳號。",
         "documentTitle": "飛書",
-        "emptyAdmin": "新增自建應用，把飛書訊息路由給智能體。",
         "emptyMember": "請組織管理員新增飛書機器人。",
         "emptyTitle": "還沒有飛書機器人",
         "events": {
@@ -3563,8 +3558,6 @@
         "reviewGuide": "檢視指南",
         "reviewGuideDescription": "檢視此飛書機器人已完成的配置步驟。",
         "reviewGuideTitle": "飛書配置指南",
-        "routeDescription": "把飛書訊息路由給智能體",
-        "selectAgent": "選擇智能體",
         "setupIncomplete": "配置未完成",
         "steps": {
           "back": "上一步",
@@ -3605,7 +3598,6 @@
         "addBot": "新增機器人",
         "addDialogDescription": "建立一個 Agent 型別的企業自建應用，然後在 Lark 開發者後臺完成以下步驟。",
         "addDialogTitle": "新增 Lark 機器人",
-        "agentDescription": "選擇由哪個智能體處理傳送給此機器人的訊息。",
         "backToIntegrations": "返回整合",
         "botFallback": "Lark 機器人",
         "botIconAlt": "{{bot}}機器人圖示",
@@ -3632,12 +3624,9 @@
           "imageAlt": "飛書應用建立結果頁，顯示 App ID 和 App Secret 的位置",
           "title": "填寫應用憑證"
         },
-        "defaultAgent": "預設智能體",
-        "defaultAgentAria": "{{appId}}的預設智能體",
         "developerConsole": "Lark 開發者後臺",
         "dialogAdminRequired": "該應用需要由組織管理員配置。配置完成後，你可以在 Lark 機器人列表中連線自己的帳號。",
         "documentTitle": "Lark",
-        "emptyAdmin": "新增自建應用，把 Lark 訊息路由給智能體。",
         "emptyMember": "請組織管理員新增 Lark 機器人。",
         "emptyTitle": "還沒有 Lark 機器人",
         "events": {
@@ -3700,8 +3689,6 @@
         "reviewGuide": "檢視指南",
         "reviewGuideDescription": "檢視此 Lark 機器人已完成的配置步驟。",
         "reviewGuideTitle": "Lark 配置指南",
-        "routeDescription": "把 Lark 訊息路由給智能體",
-        "selectAgent": "選擇智能體",
         "setupIncomplete": "配置未完成",
         "steps": {
           "back": "上一步",
@@ -4874,8 +4861,7 @@
         "creditsPerMonth": "每月 {{credits}} 積分",
         "emailSupport": "郵件支援",
         "payAsYouGo": "超出後按量付費",
-        "prioritySupport": "優先支援",
-        "unlimitedAgents": "智能體總數不限"
+        "prioritySupport": "優先支援"
       },
       "proDescription": "並行執行多個任務，無需排隊。",
       "recommended": "推薦",
@@ -5678,7 +5664,6 @@
         "conflict": "晨報的安裝狀態不一致，暫時無法使用。",
         "description": "每天早上 7:00 前（按你的時區）接收當日重點。",
         "errorMessage": "晨報設定無法載入或更新。",
-        "missingDefaultAgent": "目前工作區的 Okou 暫時無法使用，請聯絡工作區管理員。",
         "missingTimezone": "啟用晨報前，請先設定有效的時區。",
         "preparationFailed": "暫時無法執行。",
         "preparing": "正在準備你的第一份晨報，你可以隨時關閉。",
@@ -5687,7 +5672,6 @@
       "proactiveSuggestions": {
         "description": "每小時檢查已連接的資訊來源，每天更新使用者畫像，並推薦有用的下一步行動。",
         "errorMessage": "無法載入或更新主動建議設定。",
-        "missingDefaultAgent": "目前工作區的 Okou 暫時無法使用，請聯絡工作區管理員。",
         "missingTimezone": "請在偏好設定中設定時區。",
         "preparationFailed": "暫時無法執行。",
         "preparing": "正在準備每小時建議，你可以隨時關閉。",
@@ -6879,8 +6863,6 @@
     },
     "createDialog": {
       "addAutomation": "新增自動化",
-      "chooseAgentAutomation": "選擇執行這個自動化的智能體",
-      "chooseAgentWorkflow": "選擇執行這個工作流的智能體。",
       "chooseWorkflow": "選擇要自動化的工作流，或在對話中建立一個。",
       "createAutomation": "建立自動化",
       "createInChat": "在對話中建立",
@@ -6911,8 +6893,6 @@
         "uploadAria": "上傳工作流檔案"
       },
       "metadata": {
-        "agent": "智能體",
-        "agentDescription": "這個工作流屬於該智能體。",
         "aria": "工作流資訊",
         "description": "描述",
         "descriptionHelp": "告訴智能體什麼時候該用這個工作流。",
@@ -7132,7 +7112,6 @@
     },
     "wechat": {
       "accountLabel": "帳號",
-      "agentLabel": "Agent",
       "code": "驗證碼",
       "connect": "連接",
       "connected": "已連接",

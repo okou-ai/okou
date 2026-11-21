@@ -51,8 +51,6 @@ describe("MISC-02: preferences, push subscription, user export, and empty logs",
       "USER_PREFERENCES_UNINITIALIZED",
     );
 
-    const firstPinnedAgentId = "00000000-0000-0000-0000-000000000001";
-    const secondPinnedAgentId = "00000000-0000-0000-0000-000000000002";
     const updatedPreferences = await api.updatePreferences(
       admin,
       {
@@ -62,11 +60,6 @@ describe("MISC-02: preferences, push subscription, user export, and empty logs",
         cloudBrowserEnabledByDefault: false,
         theme: "dark",
         colorTheme: "golden-hour",
-        pinnedAgentIds: [
-          secondPinnedAgentId,
-          firstPinnedAgentId,
-          secondPinnedAgentId,
-        ],
         captureNetworkBodiesRemaining: 3,
       },
       [200],

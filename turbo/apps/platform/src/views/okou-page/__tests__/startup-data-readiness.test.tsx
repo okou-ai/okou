@@ -38,7 +38,6 @@ function fixture() {
       }),
     ],
   });
-  context.mocks.data.onboardingStatus({ defaultAgentId: thread.agentId });
   let projectName: string | null = null;
   let projectSequence = 1;
   let recoveryPending = true;

@@ -77,7 +77,7 @@
             "title": "Vercel 배포 요약"
           },
           "zapier-okou-migration": {
-            "description": "Zapier 워크플로를 {{brandName}} 에이전트로 재구성",
+            "description": "Zapier 워크플로를 {{brandName}}에서 다시 만들기",
             "title": "Zapier → {{brandName}} 마이그레이션"
           }
         },
@@ -185,10 +185,6 @@
           "loops-email-campaign": {
             "description": "Loops를 통해 거래 이메일 작성 및 발송",
             "title": "Loops 이메일 캠페인"
-          },
-          "marketing-automation-system": {
-            "description": "조사, 주간 모니터링, 임시 작업용 3개의 에이전트",
-            "title": "마케팅 자동화 시스템"
           },
           "marketing-content-planning": {
             "description": "Slack, 인터뷰, 경쟁사에서 출시 스토리 기획",

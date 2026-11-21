@@ -77,7 +77,7 @@
             "title": "Vercel 部署摘要"
           },
           "zapier-okou-migration": {
-            "description": "把你的 Zapier 工作流重建为 {{brandName}} 智能体",
+            "description": "在 {{brandName}} 中重建你的 Zapier 工作流",
             "title": "Zapier → {{brandName}} 迁移"
           }
         },
@@ -185,10 +185,6 @@
           "loops-email-campaign": {
             "description": "用 Loops 起草并发送事务性邮件",
             "title": "Loops 邮件活动"
-          },
-          "marketing-automation-system": {
-            "description": "三个智能体分管调研、每周监测和临时任务",
-            "title": "市场自动化体系"
           },
           "marketing-content-planning": {
             "description": "结合 Slack、访谈和竞品规划发布内容",

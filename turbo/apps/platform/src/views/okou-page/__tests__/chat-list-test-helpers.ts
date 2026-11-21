@@ -170,7 +170,6 @@ export function installChatListAgent(
   context: TestContext,
   gate?: Promise<void>,
 ): void {
-  context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
   context.mocks.api(agentsMainContract.list, async ({ respond }) => {
     await gate;
     return respond(200, [

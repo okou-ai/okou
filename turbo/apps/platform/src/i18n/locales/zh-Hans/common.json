@@ -2273,7 +2273,6 @@
       "unavailable": "这封邮件已不可用。"
     },
     "messageDocument": {
-      "agent": "[智能体：{{name}}]",
       "chatThread": "[聊天会话：{{title}}]",
       "file": "[文件：{{filename}}]",
       "template": "[模板：{{title}}]"
@@ -3473,7 +3472,6 @@
         "addBot": "添加机器人",
         "addDialogDescription": "创建一个 Agent 类型的企业自建应用，然后在飞书开发者后台完成以下步骤。",
         "addDialogTitle": "添加飞书机器人",
-        "agentDescription": "选择由哪个智能体处理发送给此机器人的消息。",
         "backToIntegrations": "返回集成",
         "botFallback": "飞书机器人",
         "botIconAlt": "{{bot}}机器人图标",
@@ -3500,12 +3498,9 @@
           "imageAlt": "飞书应用创建结果页，显示 App ID 和 App Secret 的位置",
           "title": "填写应用凭证"
         },
-        "defaultAgent": "默认智能体",
-        "defaultAgentAria": "{{appId}}的默认智能体",
         "developerConsole": "飞书开发者后台",
         "dialogAdminRequired": "该应用需要由组织管理员配置。配置完成后，你可以在飞书机器人列表中连接自己的账号。",
         "documentTitle": "飞书",
-        "emptyAdmin": "添加自建应用，把飞书消息路由给智能体。",
         "emptyMember": "请组织管理员添加飞书机器人。",
         "emptyTitle": "还没有飞书机器人",
         "events": {
@@ -3563,8 +3558,6 @@
         "reviewGuide": "查看指南",
         "reviewGuideDescription": "查看此飞书机器人已完成的配置步骤。",
         "reviewGuideTitle": "飞书配置指南",
-        "routeDescription": "把飞书消息路由给智能体",
-        "selectAgent": "选择智能体",
         "setupIncomplete": "配置未完成",
         "steps": {
           "back": "上一步",
@@ -3605,7 +3598,6 @@
         "addBot": "添加机器人",
         "addDialogDescription": "创建一个 Agent 类型的企业自建应用，然后在 Lark 开发者后台完成以下步骤。",
         "addDialogTitle": "添加 Lark 机器人",
-        "agentDescription": "选择由哪个智能体处理发送给此机器人的消息。",
         "backToIntegrations": "返回集成",
         "botFallback": "Lark 机器人",
         "botIconAlt": "{{bot}}机器人图标",
@@ -3632,12 +3624,9 @@
           "imageAlt": "飞书应用创建结果页，显示 App ID 和 App Secret 的位置",
           "title": "填写应用凭证"
         },
-        "defaultAgent": "默认智能体",
-        "defaultAgentAria": "{{appId}}的默认智能体",
         "developerConsole": "Lark 开发者后台",
         "dialogAdminRequired": "该应用需要由组织管理员配置。配置完成后，你可以在 Lark 机器人列表中连接自己的账号。",
         "documentTitle": "Lark",
-        "emptyAdmin": "添加自建应用，把 Lark 消息路由给智能体。",
         "emptyMember": "请组织管理员添加 Lark 机器人。",
         "emptyTitle": "还没有 Lark 机器人",
         "events": {
@@ -3700,8 +3689,6 @@
         "reviewGuide": "查看指南",
         "reviewGuideDescription": "查看此 Lark 机器人已完成的配置步骤。",
         "reviewGuideTitle": "Lark 配置指南",
-        "routeDescription": "把 Lark 消息路由给智能体",
-        "selectAgent": "选择智能体",
         "setupIncomplete": "配置未完成",
         "steps": {
           "back": "上一步",
@@ -4874,8 +4861,7 @@
         "creditsPerMonth": "每月 {{credits}} 积分",
         "emailSupport": "邮件支持",
         "payAsYouGo": "超出后按量付费",
-        "prioritySupport": "优先支持",
-        "unlimitedAgents": "智能体总数不限"
+        "prioritySupport": "优先支持"
       },
       "proDescription": "并行运行多个任务，无需排队。",
       "recommended": "推荐",
@@ -5678,7 +5664,6 @@
         "conflict": "晨报的安装状态不一致，暂时无法使用。",
         "description": "每天早上 7:00 前（按你的时区）接收当日重点。",
         "errorMessage": "晨报设置无法加载或更新。",
-        "missingDefaultAgent": "当前工作区的 Okou 暂不可用，请联系工作区管理员。",
         "missingTimezone": "启用晨报前，请先设置有效的时区。",
         "preparationFailed": "暂时无法运行。",
         "preparing": "正在准备你的第一份晨报，你可以随时关闭。",
@@ -5687,7 +5672,6 @@
       "proactiveSuggestions": {
         "description": "每小时检查已连接的信息来源，每天更新用户画像，并推荐有用的下一步行动。",
         "errorMessage": "无法加载或更新主动建议设置。",
-        "missingDefaultAgent": "当前工作区的 Okou 暂不可用，请联系工作区管理员。",
         "missingTimezone": "请在偏好设置中设置时区。",
         "preparationFailed": "暂时无法运行。",
         "preparing": "正在准备每小时建议，你可以随时关闭。",
@@ -6879,8 +6863,6 @@
     },
     "createDialog": {
       "addAutomation": "添加自动化",
-      "chooseAgentAutomation": "选择运行这个自动化的智能体",
-      "chooseAgentWorkflow": "选择运行这个工作流的智能体。",
       "chooseWorkflow": "选择要自动化的工作流，或在对话中创建一个。",
       "createAutomation": "创建自动化",
       "createInChat": "在对话中创建",
@@ -6911,8 +6893,6 @@
         "uploadAria": "上传工作流文件"
       },
       "metadata": {
-        "agent": "智能体",
-        "agentDescription": "这个工作流属于该智能体。",
         "aria": "工作流信息",
         "description": "描述",
         "descriptionHelp": "告诉智能体什么时候该用这个工作流。",
@@ -7132,7 +7112,6 @@
     },
     "wechat": {
       "accountLabel": "账号",
-      "agentLabel": "Agent",
       "code": "验证码",
       "connect": "连接",
       "connected": "已连接",

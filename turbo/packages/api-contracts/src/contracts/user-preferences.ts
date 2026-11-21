@@ -40,9 +40,6 @@ export const userPreferencesResponseSchema = object({
   timezone: string().nullable(),
   locale: userLocaleSchema.nullable(),
   supportedLocales: array(userLocaleSchema),
-  // Pinned agents are exposed as membership only. The API returns a stable
-  // canonical order and ignores client-provided order on writes.
-  pinnedAgentIds: array(string()),
   sendMode: sendModeSchema,
   cloudBrowserEnabledByDefault: boolean(),
   // Retired: always false. The web client floor excludes the Apps that read
@@ -72,8 +69,6 @@ export type InitializedUserPreferencesResponse = Omit<
 export const updateUserPreferencesRequestSchema = object({
   timezone: string().min(1).optional(),
   locale: userLocaleSchema.optional(),
-  // Membership update only; request order is not used for display ordering.
-  pinnedAgentIds: array(string()).optional(),
   sendMode: sendModeSchema.optional(),
   cloudBrowserEnabledByDefault: boolean().optional(),
   theme: themePreferenceSchema.optional(),
@@ -84,7 +79,6 @@ export const updateUserPreferencesRequestSchema = object({
     return (
       data.timezone !== undefined ||
       data.locale !== undefined ||
-      data.pinnedAgentIds !== undefined ||
       data.sendMode !== undefined ||
       data.cloudBrowserEnabledByDefault !== undefined ||
       data.theme !== undefined ||
@@ -101,16 +95,10 @@ export type UpdateUserPreferencesRequest = zInfer<
   typeof updateUserPreferencesRequestSchema
 >;
 
-/**
- * User preferences contract for /api/user-preferences
- *
- * GET: Get current user's preferences
- * POST: Update user preferences
- */
-export const userPreferencesContract = c.router({
+export const memberPreferencesContract = c.router({
   initialize: {
     method: "POST",
-    path: "/api/user-preferences/initialize",
+    path: "/api/member/preferences/initialize",
     headers: authHeadersSchema,
     body: object({
       timezone: string().min(1).optional(),
@@ -126,7 +114,7 @@ export const userPreferencesContract = c.router({
   },
   get: {
     method: "GET",
-    path: "/api/user-preferences",
+    path: "/api/member/preferences",
     headers: authHeadersSchema,
     responses: {
       200: userPreferencesResponseSchema,
@@ -143,7 +131,7 @@ export const userPreferencesContract = c.router({
   },
   update: {
     method: "POST",
-    path: "/api/user-preferences",
+    path: "/api/member/preferences",
     headers: authHeadersSchema,
     body: updateUserPreferencesRequestSchema,
     responses: {
@@ -154,6 +142,37 @@ export const userPreferencesContract = c.router({
       500: apiErrorSchema,
     },
     summary: "Update user preferences",
+  },
+});
+
+// Installed mobile clients require the empty array in successful responses.
+const mobilePreferencesSchema = userPreferencesResponseSchema.extend({
+  pinnedAgentIds: array(string()),
+});
+export const userPreferencesContract = c.router({
+  initialize: {
+    ...memberPreferencesContract.initialize,
+    path: "/api/user-preferences/initialize",
+    responses: {
+      ...memberPreferencesContract.initialize.responses,
+      200: mobilePreferencesSchema,
+    },
+  },
+  get: {
+    ...memberPreferencesContract.get,
+    path: "/api/user-preferences",
+    responses: {
+      ...memberPreferencesContract.get.responses,
+      200: mobilePreferencesSchema,
+    },
+  },
+  update: {
+    ...memberPreferencesContract.update,
+    path: "/api/user-preferences",
+    responses: {
+      ...memberPreferencesContract.update.responses,
+      200: mobilePreferencesSchema,
+    },
   },
 });
 

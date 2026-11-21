@@ -556,7 +556,6 @@ export function createComposerConnectorHelpers(context: TestContext) {
         });
       },
     });
-    context.mocks.data.onboardingStatus({ defaultAgentId: SCOUT_AGENT_ID });
     context.mocks.data.agents([
       { agentId: SCOUT_AGENT_ID, displayName: "Scout" },
       { agentId: OTHER_AGENT_ID, displayName: "Other Agent" },

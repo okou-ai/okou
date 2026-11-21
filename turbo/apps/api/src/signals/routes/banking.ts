@@ -1,4 +1,4 @@
-import { workspaceWorkflowNamespace$ } from "../services/workflow-namespace.service";
+import { findLegacyBankingAgent$ } from "../services/banking-connect-read.service";
 import {
   bankingContract,
   bankingPublicContract,
@@ -27,8 +27,8 @@ import {
 import {
   bankingAccessRequestStatus$,
   handleFinicityWebhook$,
-  revokeBankingAgentGrant$,
-  saveBankingAgentGrant$,
+  revokeBankingGrant$,
+  saveBankingGrant$,
   startBankingConnectSession$,
   verifyFinicityWebhookSignature,
 } from "../services/banking-connect.service";
@@ -157,51 +157,80 @@ const bankingUserAuth = {
   accept: ["session"],
 } as const;
 
+function missingLegacyBankingAgent() {
+  return {
+    status: 404 as const,
+    body: { error: { code: "AGENT_NOT_FOUND", message: "Agent not found" } },
+  };
+}
+
+const bankingOwner$ = computed((get) => {
+  const auth = get(organizationAuthContext$);
+  return { orgId: auth.orgId, userId: auth.userId };
+});
+
+function managementBody<T, Legacy extends { agentId: string }>(
+  workspace: boolean,
+  currentBody$: Computed<Promise<BodyResult<T>>>,
+  legacyBody$: Computed<Promise<BodyResult<Legacy>>>,
+) {
+  return command(async ({ get, set }) => {
+    if (workspace) {
+      const body = await get(currentBody$);
+      return body.ok ? { ...body, agent: null } : body;
+    }
+    const body = await get(legacyBody$);
+    if (!body.ok) {
+      return body;
+    }
+    const agent = await set(
+      findLegacyBankingAgent$,
+      get(bankingOwner$),
+      body.data.agentId,
+    );
+    return agent
+      ? { ...body, agent }
+      : { ok: false as const, response: missingLegacyBankingAgent() };
+  });
+}
+
 function createAccessRequestStatus(workspace: boolean) {
   return command(async ({ get, set }) => {
     if (!(await set(bankingEnabled$))) {
       return bankingDisabled;
     }
-    const auth = get(organizationAuthContext$);
-    const agentId = workspace
-      ? await get(workspaceWorkflowNamespace$)
-      : get(accessRequestParams$).agentId;
-    return await set(bankingAccessRequestStatus$, {
-      owner: { orgId: auth.orgId, userId: auth.userId },
-      agentId,
-    });
-  });
-}
-
-function workspaceBankingBody<T extends object>(
-  body$: Computed<Promise<BodyResult<T>>>,
-) {
-  return computed(async (get): Promise<BodyResult<T & { agentId: string }>> => {
-    const body = await get(body$);
-    if (!body.ok) {
-      return body;
+    const owner = get(bankingOwner$);
+    const agent = workspace
+      ? null
+      : await set(
+          findLegacyBankingAgent$,
+          owner,
+          get(accessRequestParams$).agentId,
+        );
+    if (!workspace && !agent) {
+      return missingLegacyBankingAgent();
     }
-    const agentId = await get(workspaceWorkflowNamespace$);
-    return { ok: true, data: { ...body.data, agentId } };
+    const result = await set(bankingAccessRequestStatus$, { owner });
+    return agent ? { ...result, body: { ...result.body, agent } } : result;
   });
 }
 
 function createConnectSession(workspace: boolean) {
-  const readBody$ = workspace
-    ? workspaceBankingBody(
-        bodyResultOf(bankingWorkspaceContract.createConnectSession),
-      )
-    : connectSessionBody$;
+  const readBody$ = managementBody(
+    workspace,
+    bodyResultOf(bankingWorkspaceContract.createConnectSession),
+    connectSessionBody$,
+  );
   return command(async ({ get, set }, signal: AbortSignal) => {
     if (!(await set(bankingEnabled$))) {
       return bankingDisabled;
     }
-    const body = await get(readBody$);
+    const body = await set(readBody$);
     signal.throwIfAborted();
     if (!body.ok) {
       return body.response;
     }
-    const auth = get(organizationAuthContext$);
+    const owner = get(bankingOwner$);
     const configuredAppUrl = env("APP_URL");
     const redirectOrigin = new URL(configuredAppUrl).origin;
     const webhookOrigin = new URL(
@@ -210,7 +239,7 @@ function createConnectSession(workspace: boolean) {
     return await set(
       startBankingConnectSession$,
       {
-        owner: { orgId: auth.orgId, userId: auth.userId },
+        owner,
         body: body.data,
         redirectOrigin,
         webhookOrigin,
@@ -221,42 +250,51 @@ function createConnectSession(workspace: boolean) {
 }
 
 function createSaveGrant(workspace: boolean) {
-  const readBody$ = workspace
-    ? workspaceBankingBody(bodyResultOf(bankingWorkspaceContract.saveGrant))
-    : saveGrantBody$;
+  const readBody$ = managementBody(
+    workspace,
+    bodyResultOf(bankingWorkspaceContract.saveGrant),
+    saveGrantBody$,
+  );
   return command(async ({ get, set }) => {
     if (!(await set(bankingEnabled$))) {
       return bankingDisabled;
     }
-    const body = await get(readBody$);
+    const body = await set(readBody$);
     if (!body.ok) {
       return body.response;
     }
-    const auth = get(organizationAuthContext$);
-    return await set(saveBankingAgentGrant$, {
-      owner: { orgId: auth.orgId, userId: auth.userId },
+    const owner = get(bankingOwner$);
+    const result = await set(saveBankingGrant$, {
+      owner,
       body: body.data,
     });
+    return body.agent && result.status === 200
+      ? { ...result, body: { ...result.body, agent: body.agent } }
+      : result;
   });
 }
 
 function createRevokeGrant(workspace: boolean) {
-  const readBody$ = workspace
-    ? workspaceBankingBody(bodyResultOf(bankingWorkspaceContract.revokeGrant))
-    : revokeGrantBody$;
+  const readBody$ = managementBody(
+    workspace,
+    bodyResultOf(bankingWorkspaceContract.revokeGrant),
+    revokeGrantBody$,
+  );
   return command(async ({ get, set }) => {
     if (!(await set(bankingEnabled$))) {
       return bankingDisabled;
     }
-    const body = await get(readBody$);
+    const body = await set(readBody$);
     if (!body.ok) {
       return body.response;
     }
-    const auth = get(organizationAuthContext$);
-    return await set(revokeBankingAgentGrant$, {
-      owner: { orgId: auth.orgId, userId: auth.userId },
-      agentId: body.data.agentId,
+    const owner = get(bankingOwner$);
+    const result = await set(revokeBankingGrant$, {
+      owner,
     });
+    return body.agent && result.status === 200
+      ? { ...result, body: { ...result.body, agent: body.agent } }
+      : result;
   });
 }
 

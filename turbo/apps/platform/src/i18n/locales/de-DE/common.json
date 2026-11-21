@@ -2282,7 +2282,6 @@
       "unavailable": "Diese E-Mail ist nicht mehr verfügbar."
     },
     "messageDocument": {
-      "agent": "[Agent: {{name}}]",
       "chatThread": "[Chat-Thread: {{title}}]",
       "file": "[Datei: {{filename}}]",
       "template": "[Vorlage: {{title}}]"
@@ -3491,7 +3490,6 @@
         "addBot": "Bot hinzufügen",
         "addDialogDescription": "Erstellen Sie eine Unternehmensanwendung vom Typ Agent und führen Sie dann diese Schritte in der Feishu-Entwicklerkonsole aus.",
         "addDialogTitle": "Fügen Sie einen Feishu-Bot hinzu",
-        "agentDescription": "Wählen Sie den Agenten aus, der an diesen Bot gesendete Nachrichten verarbeiten soll.",
         "backToIntegrations": "Zurück zu Integrationen",
         "botFallback": "Feishu-Bot",
         "botIconAlt": "{{bot}} Bot-Symbol",
@@ -3518,12 +3516,9 @@
           "imageAlt": "Ergebnis der Feishu-App-Erstellung mit der Position von App-ID und App-Secret",
           "title": "Fügen Sie die App-Anmeldeinformationen hinzu"
         },
-        "defaultAgent": "Standardagent",
-        "defaultAgentAria": "Standardagent für {{appId}}",
         "developerConsole": "Feishu-Entwicklerkonsole",
         "dialogAdminRequired": "Ein Organisationsadministrator muss die App konfigurieren. Sie können Ihr eigenes Konto über die Feishu-Bot-Liste verbinden, nachdem die Einrichtung abgeschlossen ist.",
         "documentTitle": "Feishu",
-        "emptyAdmin": "Fügen Sie eine benutzerdefinierte App hinzu, um Feishu-Nachrichten an einen Agenten weiterzuleiten.",
         "emptyMember": "Bitten Sie einen Organisationsadministrator, einen Feishu-Bot hinzuzufügen.",
         "emptyTitle": "Noch keine Feishu-Bots",
         "events": {
@@ -3581,8 +3576,6 @@
         "reviewGuide": "Review-Leitfaden",
         "reviewGuideDescription": "Sehen Sie sich die abgeschlossenen Einrichtungsschritte für diesen Feishu-Bot an.",
         "reviewGuideTitle": "Feishu-Review-Leitfaden",
-        "routeDescription": "Leiten Sie Feishu-Nachrichten an Agenten weiter",
-        "selectAgent": "Wählen Sie einen Agenten aus",
         "setupIncomplete": "Einrichtung unvollständig",
         "steps": {
           "back": "Zurück",
@@ -3623,7 +3616,6 @@
         "addBot": "Bot hinzufügen",
         "addDialogDescription": "Erstellen Sie eine Unternehmensanwendung vom Typ Agent und führen Sie dann diese Schritte in der Lark-Entwicklerkonsole aus.",
         "addDialogTitle": "Fügen Sie einen Lark-Bot hinzu",
-        "agentDescription": "Wählen Sie den Agenten aus, der an diesen Bot gesendete Nachrichten verarbeiten soll.",
         "backToIntegrations": "Zurück zu Integrationen",
         "botFallback": "Lark-Bot",
         "botIconAlt": "{{bot}} Bot-Symbol",
@@ -3650,12 +3642,9 @@
           "imageAlt": "Ergebnis der Feishu-App-Erstellung mit der Position von App-ID und App-Secret",
           "title": "Fügen Sie die App-Anmeldeinformationen hinzu"
         },
-        "defaultAgent": "Standardagent",
-        "defaultAgentAria": "Standardagent für {{appId}}",
         "developerConsole": "Lark-Entwicklerkonsole",
         "dialogAdminRequired": "Ein Organisationsadministrator muss die App konfigurieren. Sie können Ihr eigenes Konto über die Lark-Bot-Liste verbinden, nachdem die Einrichtung abgeschlossen ist.",
         "documentTitle": "Lark",
-        "emptyAdmin": "Fügen Sie eine benutzerdefinierte App hinzu, um Lark-Nachrichten an einen Agenten weiterzuleiten.",
         "emptyMember": "Bitten Sie einen Organisationsadministrator, einen Lark-Bot hinzuzufügen.",
         "emptyTitle": "Noch keine Lark-Bots",
         "events": {
@@ -3718,8 +3707,6 @@
         "reviewGuide": "Review-Leitfaden",
         "reviewGuideDescription": "Sehen Sie sich die abgeschlossenen Einrichtungsschritte für diesen Lark-Bot an.",
         "reviewGuideTitle": "Lark-Review-Leitfaden",
-        "routeDescription": "Leiten Sie Lark-Nachrichten an Agenten weiter",
-        "selectAgent": "Wählen Sie einen Agenten aus",
         "setupIncomplete": "Einrichtung unvollständig",
         "steps": {
           "back": "Zurück",
@@ -4897,8 +4884,7 @@
         "creditsPerMonth": "{{credits}} Credits / Monat",
         "emailSupport": "E-Mail-Support",
         "payAsYouGo": "Danach zahlen Sie nach Bedarf",
-        "prioritySupport": "Vorrangiger Support",
-        "unlimitedAgents": "Unbegrenzte Gesamtanzahl an Agenten"
+        "prioritySupport": "Vorrangiger Support"
       },
       "proDescription": "Führen Sie mehrere Aufgaben parallel aus und überspringen Sie die Warteschlange.",
       "recommended": "Empfohlen",
@@ -5702,7 +5688,6 @@
         "conflict": "Morning Brief ist vorübergehend nicht verfügbar, da der Installationsstatus inkonsistent ist.",
         "description": "Tägliche Prioritäten bis 7 Uhr in deiner Zeitzone.",
         "errorMessage": "Die Morning-Brief-Einstellungen konnten nicht geladen oder aktualisiert werden.",
-        "missingDefaultAgent": "Okou ist in diesem Arbeitsbereich nicht verfügbar. Wende dich an einen Administrator.",
         "missingTimezone": "Legen Sie eine gültige Zeitzone fest, bevor Sie Morning Brief aktivieren.",
         "preparationFailed": "Vorübergehend nicht verfügbar.",
         "preparing": "Ihr erster Morgenbericht wird vorbereitet. Sie können ihn jederzeit deaktivieren.",
@@ -5711,7 +5696,6 @@
       "proactiveSuggestions": {
         "description": "Verbundene Quellen stündlich prüfen, dein Nutzerprofil täglich aktualisieren und hilfreiche nächste Schritte vorschlagen.",
         "errorMessage": "Die Einstellungen konnten nicht geladen oder aktualisiert werden.",
-        "missingDefaultAgent": "Okou ist in diesem Arbeitsbereich nicht verfügbar. Wende dich an einen Administrator.",
         "missingTimezone": "Legen Sie Ihre Zeitzone in den Einstellungen fest.",
         "preparationFailed": "Vorübergehend nicht verfügbar.",
         "preparing": "Stündliche Vorschläge werden vorbereitet. Du kannst sie jederzeit deaktivieren.",
@@ -6907,8 +6891,6 @@
     },
     "createDialog": {
       "addAutomation": "Fügen Sie Automatisierung hinzu",
-      "chooseAgentAutomation": "Wählen Sie den Agenten für diese Automatisierung",
-      "chooseAgentWorkflow": "Wählen Sie den Agenten für diesen Workflow.",
       "chooseWorkflow": "Wählen Sie einen Workflow zur Automatisierung aus oder erstellen Sie einen im Chat.",
       "createAutomation": "Erstellen Sie Automatisierung",
       "createInChat": "Im Chat erstellen",
@@ -6939,8 +6921,6 @@
         "uploadAria": "Laden Sie Workflow-Dateien hoch"
       },
       "metadata": {
-        "agent": "Agent",
-        "agentDescription": "Dieser Workflow gehört zu diesem Agenten.",
         "aria": "Workflow-Metadaten",
         "description": "Beschreibung",
         "descriptionHelp": "Teilen Sie dem Agenten mit, wann dieser Workflow verwendet werden soll.",
@@ -7160,7 +7140,6 @@
     },
     "wechat": {
       "accountLabel": "Konto",
-      "agentLabel": "Agent",
       "code": "Bestätigungscode",
       "connect": "Verbinden",
       "connected": "Verbunden",

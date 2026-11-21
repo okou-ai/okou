@@ -33,8 +33,6 @@ test.each(["feishu", "lark"] as const)(
       messageReceived: false,
       tenantKey: "first-tenant",
       tenantName: "First bot",
-      defaultAgentId: null,
-      defaultAgentName: "Okou",
       setupCompleted: false,
     };
     context.mocks.api(contract.setup, async ({ respond }) => {

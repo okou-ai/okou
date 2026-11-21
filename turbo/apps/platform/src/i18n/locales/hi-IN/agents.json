@@ -77,7 +77,7 @@
             "title": "वर्सेल परिनियोजन डाइजेस्ट"
           },
           "zapier-okou-migration": {
-            "description": "अपने जैपियर वर्कफ़्लोज़ को {{brandName}} एजेंटों के रूप में पुनः बनाएँ",
+            "description": "अपने Zapier वर्कफ़्लो को {{brandName}} में फिर से बनाएँ",
             "title": "जैपियर → {{brandName}} माइग्रेशन"
           }
         },
@@ -185,10 +185,6 @@
           "loops-email-campaign": {
             "description": "लूप्स के माध्यम से लेन-देन संबंधी ईमेल ड्राफ्ट करें और भेजें",
             "title": "लूप्स ईमेल अभियान"
-          },
-          "marketing-automation-system": {
-            "description": "अनुसंधान, साप्ताहिक निगरानी और तदर्थ कार्य के लिए तीन एजेंट",
-            "title": "विपणन ऑटोमेशन प्रणाली"
           },
           "marketing-content-planning": {
             "description": "योजनाएं Slack, साक्षात्कार और प्रतिस्पर्धियों से कहानियां लॉन्च करती हैं",

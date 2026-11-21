@@ -59,7 +59,6 @@ export function installQueuePageFixture(
   let currentBillingStatus = options.billing;
   let currentQueueResponse = options.queue;
 
-  context.mocks.data.onboardingStatus({ defaultAgentId: QUEUE_AGENT_ID });
   context.mocks.data.agents([
     {
       agentId: QUEUE_AGENT_ID,

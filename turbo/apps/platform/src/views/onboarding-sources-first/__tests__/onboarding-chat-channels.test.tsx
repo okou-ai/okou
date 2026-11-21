@@ -382,7 +382,6 @@ test("Telegram authorizes the official bot in a new tab and keeps onboarding ope
         kind: "official",
         username: "okou_bot",
         avatarUrl: null,
-        agent: null,
         isOwner: false,
         isConnected: false,
         tokenStatus: "valid",
@@ -422,7 +421,6 @@ test("Telegram authorizes the official bot in a new tab and keeps onboarding ope
           kind: "official",
           username: "okou_bot",
           avatarUrl: null,
-          agent: null,
           isOwner: false,
           isConnected: true,
           connectedUser: {

@@ -1,5 +1,5 @@
 import {
-  userPreferencesContract,
+  memberPreferencesContract,
   type UpdateUserPreferencesRequest,
   type UserPreferencesResponse,
 } from "@okouai/api-contracts/contracts/user-preferences";
@@ -28,7 +28,6 @@ function defaultPreferences(): UserPreferencesResponse {
     timezone: "Etc/UTC",
     locale: "en-US",
     supportedLocales: ["en-US", "pt-BR"],
-    pinnedAgentIds: [],
     sendMode: "enter",
     cloudBrowserEnabledByDefault: true,
     chatResourcesEnabledByDefault: true,
@@ -47,7 +46,7 @@ function mockPreferences(
     ...overrides,
   };
   const updates: UpdateUserPreferencesRequest[] = [];
-  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
+  context.mocks.api(memberPreferencesContract.get, ({ respond }) => {
     return respond(200, preferences);
   });
   context.mocks.api(remotesContract.overview, ({ respond }) => {
@@ -59,7 +58,7 @@ function mockPreferences(
       cloudBrowserEnabledByDefault: preferences.cloudBrowserEnabledByDefault,
     });
   });
-  context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
+  context.mocks.api(memberPreferencesContract.update, ({ body, respond }) => {
     const update = { ...body };
     updates.push(update);
     preferences = { ...preferences, ...update };
@@ -224,7 +223,7 @@ test("Appearance choices made during startup survive the initial workspace read"
   const releaseInitialRead = context.mocks.deferred<void>();
   const releaseSave = context.mocks.deferred<void>();
   context.mocks.api(
-    userPreferencesContract.get,
+    memberPreferencesContract.get,
     async ({ respond, withSignal }) => {
       await withSignal(releaseInitialRead.promise);
       return respond(200, {
@@ -235,7 +234,7 @@ test("Appearance choices made during startup survive the initial workspace read"
     },
   );
   context.mocks.api(
-    userPreferencesContract.update,
+    memberPreferencesContract.update,
     async ({ body, respond, withSignal }) => {
       await withSignal(releaseSave.promise);
       return respond(200, { ...defaultPreferences(), ...body });
@@ -286,7 +285,7 @@ test("A failed theme save keeps the local choice and can be retried", async () =
   let unavailable = true;
   let savedUpdate: UpdateUserPreferencesRequest | undefined;
   context.mocks.api(
-    userPreferencesContract.update,
+    memberPreferencesContract.update,
     async ({ body, respond, withSignal }) => {
       if (unavailable) {
         await withSignal(releaseFailure.promise);
@@ -348,7 +347,7 @@ test("A cached palette is visible during startup and cleared when the workspace 
   const releaseInitialRead = context.mocks.deferred<void>();
   let preferencesReads = 0;
   context.mocks.api(
-    userPreferencesContract.get,
+    memberPreferencesContract.get,
     async ({ respond, withSignal }) => {
       preferencesReads += 1;
       await withSignal(releaseInitialRead.promise);
@@ -605,11 +604,11 @@ test("A failed preference save shows its error and can be retried", async () => 
   let preferences = defaultPreferences();
   let unavailable = true;
   const releaseFailure = context.mocks.deferred<void>();
-  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
+  context.mocks.api(memberPreferencesContract.get, ({ respond }) => {
     return respond(200, preferences);
   });
   context.mocks.api(
-    userPreferencesContract.update,
+    memberPreferencesContract.update,
     async ({ body, respond, withSignal }) => {
       if (unavailable) {
         await withSignal(releaseFailure.promise);

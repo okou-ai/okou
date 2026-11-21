@@ -2273,7 +2273,6 @@
       "unavailable": "Email ini tidak lagi tersedia."
     },
     "messageDocument": {
-      "agent": "[Agen: {{name}}]",
       "chatThread": "[Thread chat: {{title}}]",
       "file": "[File: {{filename}}]",
       "template": "[Template: {{title}}]"
@@ -3473,7 +3472,6 @@
         "addBot": "Tambahkan bot",
         "addDialogDescription": "Buat aplikasi enterprise dengan tipe Agent, lalu selesaikan langkah-langkah ini di konsol pengembang Feishu.",
         "addDialogTitle": "Tambahkan bot Feishu",
-        "agentDescription": "Pilih agen yang harus menangani pesan yang dikirim ke bot ini.",
         "backToIntegrations": "Kembali ke integrasi",
         "botFallback": "Bot Feishu",
         "botIconAlt": "Ikon bot {{bot}}",
@@ -3500,12 +3498,9 @@
           "imageAlt": "Hasil pembuatan aplikasi Feishu yang menunjukkan tempat menemukan App ID dan App Secret",
           "title": "Tambahkan kredensial aplikasi"
         },
-        "defaultAgent": "Agen default",
-        "defaultAgentAria": "Agen default untuk {{appId}}",
         "developerConsole": "Konsol developer Feishu",
         "dialogAdminRequired": "Admin organisasi harus mengonfigurasi aplikasi. Anda dapat menghubungkan akun Anda sendiri dari daftar bot Feishu setelah penyiapan selesai.",
         "documentTitle": "Feishu",
-        "emptyAdmin": "Tambahkan aplikasi kustom untuk mengarahkan pesan Feishu ke agen.",
         "emptyMember": "Minta admin organisasi menambahkan bot Feishu.",
         "emptyTitle": "Belum ada bot Feishu",
         "events": {
@@ -3563,8 +3558,6 @@
         "reviewGuide": "Tinjau panduan",
         "reviewGuideDescription": "Tinjau langkah-langkah penyiapan yang telah selesai untuk bot Feishu ini.",
         "reviewGuideTitle": "Panduan tinjau Feishu",
-        "routeDescription": "Arahkan pesan Feishu ke agen",
-        "selectAgent": "Pilih agen",
         "setupIncomplete": "Penyiapan belum selesai",
         "steps": {
           "back": "Kembali",
@@ -3605,7 +3598,6 @@
         "addBot": "Tambahkan bot",
         "addDialogDescription": "Buat aplikasi enterprise dengan tipe Agent, lalu selesaikan langkah-langkah ini di konsol pengembang Lark.",
         "addDialogTitle": "Tambahkan bot Lark",
-        "agentDescription": "Pilih agen yang harus menangani pesan yang dikirim ke bot ini.",
         "backToIntegrations": "Kembali ke integrasi",
         "botFallback": "Bot Lark",
         "botIconAlt": "Ikon bot {{bot}}",
@@ -3632,12 +3624,9 @@
           "imageAlt": "Hasil pembuatan aplikasi Feishu yang menunjukkan tempat menemukan App ID dan App Secret",
           "title": "Tambahkan kredensial aplikasi"
         },
-        "defaultAgent": "Agen default",
-        "defaultAgentAria": "Agen default untuk {{appId}}",
         "developerConsole": "Konsol developer Lark",
         "dialogAdminRequired": "Admin organisasi harus mengonfigurasi aplikasi. Anda dapat menghubungkan akun Anda sendiri dari daftar bot Lark setelah penyiapan selesai.",
         "documentTitle": "Lark",
-        "emptyAdmin": "Tambahkan aplikasi kustom untuk mengarahkan pesan Lark ke agen.",
         "emptyMember": "Minta admin organisasi menambahkan bot Lark.",
         "emptyTitle": "Belum ada bot Lark",
         "events": {
@@ -3700,8 +3689,6 @@
         "reviewGuide": "Tinjau panduan",
         "reviewGuideDescription": "Tinjau langkah-langkah penyiapan yang telah selesai untuk bot Lark ini.",
         "reviewGuideTitle": "Panduan tinjau Lark",
-        "routeDescription": "Arahkan pesan Lark ke agen",
-        "selectAgent": "Pilih agen",
         "setupIncomplete": "Penyiapan belum selesai",
         "steps": {
           "back": "Kembali",
@@ -4874,8 +4861,7 @@
         "creditsPerMonth": "{{credits}} kredit / bulan",
         "emailSupport": "Dukungan email",
         "payAsYouGo": "Bayar sesuai pemakaian setelah itu",
-        "prioritySupport": "Dukungan prioritas",
-        "unlimitedAgents": "Total agen tak terbatas"
+        "prioritySupport": "Dukungan prioritas"
       },
       "proDescription": "Jalankan beberapa tugas secara paralel dan lewati antrean.",
       "recommended": "Direkomendasikan",
@@ -5678,7 +5664,6 @@
         "conflict": "Morning Brief untuk sementara tidak tersedia karena status instalasinya tidak konsisten.",
         "description": "Prioritas harian sebelum pukul 07.00 sesuai zona waktu Anda.",
         "errorMessage": "Pengaturan Morning Brief tidak dapat dimuat atau diperbarui.",
-        "missingDefaultAgent": "Okou tidak tersedia di ruang kerja ini. Hubungi administrator ruang kerja.",
         "missingTimezone": "Tetapkan zona waktu yang valid sebelum mengaktifkan Morning Brief.",
         "preparationFailed": "Untuk sementara tidak tersedia.",
         "preparing": "Menyiapkan ringkasan pagi pertama Anda. Anda dapat menonaktifkannya kapan saja.",
@@ -5687,7 +5672,6 @@
       "proactiveSuggestions": {
         "description": "Periksa sumber terhubung setiap jam, perbarui profil Anda setiap hari, dan dapatkan saran langkah berikutnya.",
         "errorMessage": "Pengaturan tidak dapat dimuat atau diperbarui.",
-        "missingDefaultAgent": "Okou tidak tersedia di ruang kerja ini. Hubungi administrator ruang kerja.",
         "missingTimezone": "Atur zona waktu Anda di Preferensi.",
         "preparationFailed": "Untuk sementara tidak tersedia.",
         "preparing": "Menyiapkan saran per jam. Anda dapat menonaktifkannya kapan saja.",
@@ -6879,8 +6863,6 @@
     },
     "createDialog": {
       "addAutomation": "Tambahkan otomatisasi",
-      "chooseAgentAutomation": "Pilih agen untuk otomatisasi ini",
-      "chooseAgentWorkflow": "Pilih agen untuk alur kerja ini.",
       "chooseWorkflow": "Pilih alur kerja untuk diotomatisasi, atau buat satu di chat.",
       "createAutomation": "Buat Otomatisasi",
       "createInChat": "Buat di chat",
@@ -6911,8 +6893,6 @@
         "uploadAria": "Unggah berkas alur kerja"
       },
       "metadata": {
-        "agent": "Agen",
-        "agentDescription": "Alur kerja ini milik agen ini.",
         "aria": "Metadata alur kerja",
         "description": "Deskripsi",
         "descriptionHelp": "Beri tahu agen kapan harus menggunakan alur kerja ini.",
@@ -7132,7 +7112,6 @@
     },
     "wechat": {
       "accountLabel": "Akun",
-      "agentLabel": "Agen",
       "code": "Kode verifikasi",
       "connect": "Hubungkan",
       "connected": "Terhubung",

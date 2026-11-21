@@ -401,7 +401,6 @@ function configureQuestPage(
     name: "Quest Workspace",
     role,
   });
-  context.mocks.data.onboardingStatus({ defaultAgentId: QUEST_AGENT_ID });
   context.mocks.data.agents([
     {
       agentId: QUEST_AGENT_ID,

@@ -2318,7 +2318,6 @@
       "unavailable": "Este e-mail não está mais disponível."
     },
     "messageDocument": {
-      "agent": "[Agente: {{name}}]",
       "chatThread": "[Conversa: {{title}}]",
       "file": "[Arquivo: {{filename}}]",
       "template": "[Modelo: {{title}}]"
@@ -3548,7 +3547,6 @@
         "addBot": "Adicionar bot",
         "addDialogDescription": "Crie um app empresarial do tipo Agent e conclua estas etapas no console de desenvolvedor do Feishu.",
         "addDialogTitle": "Adicionar um bot do Feishu",
-        "agentDescription": "Escolha o agente que deve processar as mensagens enviadas a este bot.",
         "backToIntegrations": "Voltar para integrações",
         "botFallback": "Bot do Feishu",
         "botIconAlt": "Ícone do bot {{bot}}",
@@ -3575,12 +3573,9 @@
           "imageAlt": "Resultado da criação do app do Feishu mostrando onde encontrar o App ID e o App Secret",
           "title": "Adicionar as credenciais do app"
         },
-        "defaultAgent": "Agente padrão",
-        "defaultAgentAria": "Agente padrão para {{appId}}",
         "developerConsole": "console de desenvolvedor do Feishu",
         "dialogAdminRequired": "Um administrador da organização deve configurar o app. Você poderá conectar sua própria conta pela lista de bots do Feishu após a conclusão da configuração.",
         "documentTitle": "Feishu",
-        "emptyAdmin": "Adicione um app personalizado para encaminhar mensagens do Feishu a um agente.",
         "emptyMember": "Peça a um administrador da organização para adicionar um bot do Feishu.",
         "emptyTitle": "Ainda não há bots do Feishu",
         "events": {
@@ -3638,8 +3633,6 @@
         "reviewGuide": "Revisar guia",
         "reviewGuideDescription": "Revise as etapas concluídas da configuração deste bot do Feishu.",
         "reviewGuideTitle": "Guia de revisão do Feishu",
-        "routeDescription": "Encaminhe mensagens do Feishu para agentes",
-        "selectAgent": "Selecionar um agente",
         "setupIncomplete": "Configuração incompleta",
         "steps": {
           "back": "Voltar",
@@ -3680,7 +3673,6 @@
         "addBot": "Adicionar bot",
         "addDialogDescription": "Crie um app empresarial do tipo Agent e conclua estas etapas no console de desenvolvedor do Lark.",
         "addDialogTitle": "Adicionar um bot do Lark",
-        "agentDescription": "Escolha o agente que deve processar as mensagens enviadas a este bot.",
         "backToIntegrations": "Voltar para integrações",
         "botFallback": "Bot do Lark",
         "botIconAlt": "Ícone do bot {{bot}}",
@@ -3707,12 +3699,9 @@
           "imageAlt": "Resultado da criação do app do Feishu mostrando onde encontrar o App ID e o App Secret",
           "title": "Adicionar as credenciais do app"
         },
-        "defaultAgent": "Agente padrão",
-        "defaultAgentAria": "Agente padrão para {{appId}}",
         "developerConsole": "console de desenvolvedor do Lark",
         "dialogAdminRequired": "Um administrador da organização deve configurar o app. Você poderá conectar sua própria conta pela lista de bots do Lark após a conclusão da configuração.",
         "documentTitle": "Lark",
-        "emptyAdmin": "Adicione um app personalizado para encaminhar mensagens do Lark a um agente.",
         "emptyMember": "Peça a um administrador da organização para adicionar um bot do Lark.",
         "emptyTitle": "Ainda não há bots do Lark",
         "events": {
@@ -3775,8 +3764,6 @@
         "reviewGuide": "Revisar guia",
         "reviewGuideDescription": "Revise as etapas concluídas da configuração deste bot do Lark.",
         "reviewGuideTitle": "Guia de revisão do Lark",
-        "routeDescription": "Encaminhe mensagens do Lark para agentes",
-        "selectAgent": "Selecionar um agente",
         "setupIncomplete": "Configuração incompleta",
         "steps": {
           "back": "Voltar",
@@ -4963,8 +4950,7 @@
         "creditsPerMonth": "{{credits}} créditos por mês",
         "emailSupport": "Suporte por e-mail",
         "payAsYouGo": "Créditos pagos conforme o uso",
-        "prioritySupport": "Suporte prioritário",
-        "unlimitedAgents": "Agentes ilimitados"
+        "prioritySupport": "Suporte prioritário"
       },
       "proDescription": "Para quem cria com o {{assistantName}}.",
       "recommended": "Recomendado",
@@ -5773,7 +5759,6 @@
         "conflict": "O Morning Brief está temporariamente indisponível porque o estado da instalação está inconsistente.",
         "description": "Prioridades diárias até as 7h no seu fuso horário.",
         "errorMessage": "Não foi possível carregar ou atualizar as configurações do Morning Brief.",
-        "missingDefaultAgent": "O Okou está indisponível neste espaço de trabalho. Entre em contato com um administrador.",
         "missingTimezone": "Defina um fuso horário válido antes de ativar o Morning Brief.",
         "preparationFailed": "Temporariamente indisponível.",
         "preparing": "Preparando seu primeiro resumo matinal. Você pode desativá-lo a qualquer momento.",
@@ -5782,7 +5767,6 @@
       "proactiveSuggestions": {
         "description": "Verifique suas fontes conectadas a cada hora, atualize seu perfil diariamente e receba sugestões úteis de próximos passos.",
         "errorMessage": "Não foi possível carregar ou atualizar as configurações.",
-        "missingDefaultAgent": "O Okou está indisponível neste espaço de trabalho. Entre em contato com um administrador.",
         "missingTimezone": "Defina seu fuso horário nas Preferências.",
         "preparationFailed": "Temporariamente indisponível.",
         "preparing": "Preparando sugestões por hora. Você pode desativá-las a qualquer momento.",
@@ -6988,8 +6972,6 @@
     },
     "createDialog": {
       "addAutomation": "Adicionar automação",
-      "chooseAgentAutomation": "Escolha o agente para esta automação",
-      "chooseAgentWorkflow": "Escolha o agente para este fluxo de trabalho.",
       "chooseWorkflow": "Escolha um fluxo de trabalho para automatizar ou crie um no chat.",
       "createAutomation": "Criar automação",
       "createInChat": "Criar no chat",
@@ -7020,8 +7002,6 @@
         "uploadAria": "Enviar arquivos do fluxo de trabalho"
       },
       "metadata": {
-        "agent": "Agente",
-        "agentDescription": "Este fluxo de trabalho pertence a este agente.",
         "aria": "Metadados do fluxo de trabalho",
         "description": "Descrição",
         "descriptionHelp": "Informe ao agente quando usar este fluxo de trabalho.",
@@ -7241,7 +7221,6 @@
     },
     "wechat": {
       "accountLabel": "Conta",
-      "agentLabel": "Agente",
       "code": "Código de verificação",
       "connect": "Conectar",
       "connected": "Conectado",

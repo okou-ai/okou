@@ -209,23 +209,3 @@ test("shows pending Morning Brief enrollment and accepts cancellation", async ()
     ).toBeChecked();
   });
 });
-
-test("keeps the Morning Brief toggle disabled while an unavailable reason is reported", async () => {
-  context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
-    return respond(200, {
-      enabled: false,
-      status: "paused",
-      unavailableReason: "missing-default-agent",
-    });
-  });
-  await setupPage({ context, path: "/agents?settings=preference" });
-  const card = await screen.findByTestId("morning-brief-preference");
-  await expect(
-    within(card).findByText(
-      "Okou is unavailable in this workspace. Contact a workspace administrator.",
-    ),
-  ).resolves.toBeInTheDocument();
-  expect(
-    within(card).getByRole("switch", { name: "Morning brief" }),
-  ).toHaveAttribute("aria-disabled", "true");
-});

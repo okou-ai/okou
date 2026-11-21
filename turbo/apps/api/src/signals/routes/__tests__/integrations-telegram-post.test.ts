@@ -596,10 +596,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       const telegram = telegramApiMocks();
       const actor = createPublicTelegramActor(context);
       await actor.onboard();
-      const { defaultAgentId } = await authOrgApi.readOnboardingStatus(
-        actor.actor,
-      );
-      expect(defaultAgentId).toBeTruthy();
       const telegramUserId = newTelegramBotId();
       const issuedAt = new Date("2026-10-15T12:00:00Z");
       mockNow(issuedAt);
@@ -691,7 +687,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
             id: OFFICIAL_TELEGRAM_BOT_ID,
             username: OFFICIAL_BOT_USERNAME,
             isConnected: true,
-            agent: expect.objectContaining({ id: defaultAgentId }),
             connectedUser: {
               telegramUserId,
               telegramUsername: scenario.username,
@@ -699,7 +694,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
             },
             official: {
               configured: true,
-              usesDefaultAgent: true,
               linkedTelegramUserId: telegramUserId,
             },
           }),

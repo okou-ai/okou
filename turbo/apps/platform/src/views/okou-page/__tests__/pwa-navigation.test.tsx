@@ -19,7 +19,7 @@ import {
   continuityThread,
   installContinuityWorkspace,
 } from "./chat-continuity-test-helpers.ts";
-import { CHAT_LIST_AGENT_ID, fastButton } from "./chat-list-test-helpers.ts";
+import { fastButton } from "./chat-list-test-helpers.ts";
 
 const context = testContext();
 const CHAT_LIST_PATH = "/";
@@ -383,7 +383,6 @@ test("My Okou's chats tab is its chat list at / and composes a new chat there", 
     caseId: 84,
     threads: [thread],
   });
-  context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
   context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
     return respond(200, {
       lastReadAt: null,
@@ -629,9 +628,6 @@ test("Keep a PWA home prompt handoff in the prepared chat composer", async () =>
   const workspace = installContinuityWorkspace(context, {
     caseId: 76,
     threads: [],
-  });
-  context.mocks.data.onboardingStatus({
-    defaultAgentId: CHAT_LIST_AGENT_ID,
   });
 
   await setupPage({

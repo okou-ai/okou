@@ -78,7 +78,6 @@ function installDeletion(threads: readonly ChatThreadSnapshotProjection[]) {
   const projectEvents: ProjectEvent[] = [];
   const projectDeleted = context.mocks.deferred<void>();
   const threadEvents: ChatThreadEvent[] = [];
-  context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
   context.mocks.api(projectsContract.get, ({ respond }) => {
     if (
       projectEvents.some((event) => {

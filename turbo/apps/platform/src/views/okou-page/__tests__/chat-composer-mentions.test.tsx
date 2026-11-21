@@ -139,7 +139,6 @@ async function setupMentionSearch(newChat: boolean) {
     threads: [current, projectBeta, untitledThread, projectBetaFollowUp],
   });
   installAgents([agent(AGENT_ID, "Scout", SCOUT_AVATAR)]);
-  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
 
   await setupPage({
     context,
@@ -261,7 +260,6 @@ async function openAgentMentionWorkspace(newChat = false) {
   });
   installAgents(agents);
   // My Okou always chats with the default agent, at `/` for a new chat.
-  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
 
   await setupPage({
     context,

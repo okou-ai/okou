@@ -57,7 +57,6 @@ function configureAgentDraft(
   draft: UserMessageInputDocument,
   referencedThreads: readonly ChatThreadSnapshotProjection[],
 ): void {
-  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   context.mocks.data.agents([{ agentId: AGENT_ID }]);
   context.mocks.data.userModelPreference({
     selectedModel: "claude-sonnet-5",

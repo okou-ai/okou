@@ -16,8 +16,6 @@ import {
 } from "@okouai/api-contracts/contracts/feishu-connect";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { agents } from "@okouai/db/schema/agent";
 
 import { logger } from "../../lib/log";
 import { db$, writeDb$ } from "../external/db";
@@ -79,8 +77,6 @@ function feishuStatusResponse(
       messageReceived: false,
       tenantKey: null,
       tenantName: null,
-      defaultAgentId: null,
-      defaultAgentName: null,
       installationId: null,
       installations: [],
     };
@@ -102,8 +98,6 @@ function feishuStatusResponse(
     messageReceived: installation.messageReceived,
     tenantKey: installation.tenantKey,
     tenantName: installation.tenantName,
-    defaultAgentId: installation.defaultAgentId,
-    defaultAgentName: installation.defaultAgentName,
     installationId: installation.id,
     installations: [...installations],
   };
@@ -127,9 +121,6 @@ function feishuStatusInstallationReadPlan(args: {
       callbackVerifiedAt: feishuOrgInstallations.callbackVerifiedAt,
       setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
       messageReceivedAt: feishuOrgInstallations.messageReceivedAt,
-      defaultAgentId: agents.id,
-      defaultAgentName: agents.name,
-      defaultAgentDisplayName: agents.displayName,
     },
     condition: and(
       eq(feishuOrgInstallations.orgId, args.orgId),
@@ -155,10 +146,6 @@ type FeishuStatusInstallationRow = Pick<
 > & {
   readonly tenantKey: typeof feishuOrgInstallations.$inferSelect.feishuTenantKey;
   readonly tenantName: typeof feishuOrgInstallations.$inferSelect.feishuTenantName;
-  readonly defaultAgentId: typeof agents.$inferSelect.id | null;
-  readonly defaultAgentName: typeof agents.$inferSelect.name | null;
-  readonly defaultAgentDisplayName:
-    typeof agents.$inferSelect.displayName | null;
 };
 
 function feishuInstallationStatusFromRow(
@@ -191,11 +178,6 @@ function feishuInstallationStatusFromRow(
     messageReceived: Boolean(installation.messageReceivedAt),
     tenantKey: installation.tenantKey,
     tenantName: installation.tenantName,
-    defaultAgentId: installation.defaultAgentId,
-    defaultAgentName:
-      installation.defaultAgentDisplayName ??
-      installation.defaultAgentName ??
-      null,
   };
 }
 
@@ -236,11 +218,6 @@ export const feishuConnectStatus = (args: {
     const installations = await db
       .select(installationPlan.columns)
       .from(feishuOrgInstallations)
-      .leftJoin(
-        orgMetadata,
-        eq(orgMetadata.orgId, feishuOrgInstallations.orgId),
-      )
-      .leftJoin(agents, eq(agents.id, orgMetadata.defaultAgentId))
       .where(installationPlan.condition)
       .orderBy(asc(feishuOrgInstallations.createdAt));
     const orgId = args.orgId;

@@ -29,7 +29,7 @@ import { serializeChatThreadMention } from "./chat-thread-suggestion-domain.ts";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import { findPresentationRunbookPackage } from "@okouai/core/resource-registry";
 import type { PresentationOutputFormat } from "@okouai/core/presentation-output-format";
-import { legacyAgentMentionsToText } from "./legacy-agent-mention.ts";
+import { legacyAgentMentionsToText } from "@okouai/core/legacy-agent-mention";
 
 export const PROJECT_MENTION_NODE_NAME = "projectMention";
 export const CHAT_THREAD_MENTION_NODE_NAME = "chatThreadMention";
@@ -669,7 +669,7 @@ function feedbackNoteToPrompt(note: readonly FeedbackNotePart[]): string {
   return note
     .map((part) => {
       if (part.type === "text") {
-        return part.text;
+        return legacyAgentMentionsToText(part.text);
       }
       if (part.type === "chat_thread") {
         return serializeChatThreadMention(part.threadId, part.titleSnapshot);
@@ -972,7 +972,7 @@ export function messageDocumentToPrompt(value: unknown): string | null {
     }
     flushFeedback();
     if (part.type === "text") {
-      inlineText += part.text;
+      inlineText += legacyAgentMentionsToText(part.text);
     } else if (part.type === "chat_thread") {
       inlineText += serializeChatThreadMention(
         part.threadId,
@@ -1036,7 +1036,7 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
     }
     flushFeedback();
     if (part.type === "text") {
-      inlineText += part.text;
+      inlineText += legacyAgentMentionsToText(part.text);
       continue;
     }
     if (part.type === "chat_thread") {
@@ -1049,12 +1049,7 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
       continue;
     }
     if (part.type === "agent") {
-      inlineText += i18n.t(
-        ($) => {
-          return $.chat.messageDocument.agent;
-        },
-        { name: part.nameSnapshot },
-      );
+      inlineText += part.nameSnapshot;
       continue;
     }
     if (

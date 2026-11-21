@@ -88,7 +88,6 @@ function catalogResponse(
 
 function configureAgent(): void {
   context.mocks.data.agents([agentFixture()]);
-  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
 }
 
 function mockCatalog(

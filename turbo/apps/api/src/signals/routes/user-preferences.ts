@@ -2,6 +2,7 @@ import {
   USER_PREFERENCES_UNINITIALIZED,
   userLocaleSchema,
   userPreferencesContract,
+  memberPreferencesContract,
   type UserLocale,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
@@ -17,6 +18,7 @@ import { reconcileExistingMorningBrief$ } from "../services/morning-brief-recove
 import { badRequestMessage, conflict } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
+import { route$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { initializeMemberMemory$ } from "../services/member-memory-initialization.service";
@@ -28,6 +30,14 @@ import {
 function isValidUserLocale(locale: string | null): locale is UserLocale {
   return locale !== null && userLocaleSchema.safeParse(locale).success;
 }
+
+const mobileResponseFields$ = computed((get) => {
+  const path = get(route$).path;
+  return path === userPreferencesContract.get.path ||
+    path === userPreferencesContract.initialize.path
+    ? { pinnedAgentIds: [] }
+    : {};
+});
 
 const updateUserPreferencesBody$ = bodyResultOf(userPreferencesContract.update);
 
@@ -53,7 +63,7 @@ const getUserPreferencesInner$ = computed(async (get): Promise<unknown> => {
   }
   return {
     status: 200 as const,
-    body: preferences,
+    body: { ...preferences, ...get(mobileResponseFields$) },
   };
 });
 
@@ -106,7 +116,7 @@ const updateUserPreferencesInner$ = command(
     }
     return {
       status: 200 as const,
-      body: result.data,
+      body: { ...result.data, ...get(mobileResponseFields$) },
     };
   },
 );
@@ -230,6 +240,7 @@ const initializeUserPreferencesInner$ = command(
         status: 200 as const,
         body: {
           ...current,
+          ...get(mobileResponseFields$),
           timezone: writeOutcome.timezone,
           locale: writeOutcome.locale,
         },
@@ -255,6 +266,7 @@ const initializeUserPreferencesInner$ = command(
       status: 200 as const,
       body: {
         ...preferences,
+        ...get(mobileResponseFields$),
         timezone: stored?.timezone ?? null,
         locale: stored?.locale ?? null,
       },
@@ -263,25 +275,28 @@ const initializeUserPreferencesInner$ = command(
 );
 
 export const userPreferencesRoutes: readonly RouteEntry[] = [
+  memberPreferencesContract,
+  userPreferencesContract,
+].flatMap((contract) => [
   {
-    route: userPreferencesContract.initialize,
+    route: contract.initialize,
     handler: authRoute(
       { requireOrganization: true, missingOrganizationStatus: 401 },
       initializeUserPreferencesInner$,
     ),
   },
   {
-    route: userPreferencesContract.get,
+    route: contract.get,
     handler: authRoute(
       { requireOrganization: true, missingOrganizationStatus: 401 },
       getUserPreferencesInner$,
     ),
   },
   {
-    route: userPreferencesContract.update,
+    route: contract.update,
     handler: authRoute(
       { requireOrganization: true, missingOrganizationStatus: 401 },
       updateUserPreferencesInner$,
     ),
   },
-];
+]);

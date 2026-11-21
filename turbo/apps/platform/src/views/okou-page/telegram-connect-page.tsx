@@ -338,7 +338,7 @@ export function TelegramConnectPage() {
     );
   }
   const setup = setupLoadable.data;
-  if (!setup.hasOrg || !setup.hasDefaultAgent) {
+  if (!setup.hasOrg) {
     return <TelegramSetupRequired isAdmin={setup.isAdmin} />;
   }
   if (

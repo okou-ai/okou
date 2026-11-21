@@ -1,4 +1,4 @@
-import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
+import { memberOnboardingContract } from "@okouai/api-contracts/contracts/onboarding";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -55,13 +55,10 @@ test("The legacy callback bridge can finish before a pending onboarding response
   mockDisconnectedDiscord();
   const requested = context.mocks.deferred<void>();
   const response = context.mocks.deferred<void>();
-  context.mocks.api(onboardingStatusContract.getStatus, async ({ respond }) => {
+  context.mocks.api(memberOnboardingContract.getStatus, async ({ respond }) => {
     requested.resolve();
     await response.promise;
     return respond(200, {
-      defaultAgentId: null,
-      defaultAgentMetadata: null,
-      hasDefaultAgent: true,
       hasOrg: true,
       isAdmin: true,
       needsOnboarding: true,

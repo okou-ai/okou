@@ -175,7 +175,6 @@ test.each([
   "A $gap gap catches up Project changes without another notification at $path",
   async ({ path, gap }) => {
     installChat();
-    context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
     const renamedId = "30000000-0000-4000-8000-000000000071";
     const deletedId = "30000000-0000-4000-8000-000000000072";
     const createdId = "30000000-0000-4000-8000-000000000073";

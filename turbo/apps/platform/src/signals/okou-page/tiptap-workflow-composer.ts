@@ -66,7 +66,7 @@ import {
   type ChatThreadSuggestionRange,
   type ComposerChatThreadSuggestion,
 } from "./chat-thread-suggestion-domain.ts";
-import { legacyAgentMentionsToText } from "./legacy-agent-mention.ts";
+import { legacyAgentMentionsToText } from "@okouai/core/legacy-agent-mention";
 import {
   createComposerChatThreadSuggestions,
   type ComposerChatThreadSuggestionResult,

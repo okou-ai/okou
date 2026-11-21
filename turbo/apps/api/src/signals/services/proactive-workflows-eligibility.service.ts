@@ -13,9 +13,9 @@ export interface ProactiveWorkflowOwner {
   readonly userId: string;
 }
 
-export const loadProactiveWorkflowsEligibility$ = command(
+export const loadProactivePreferences$ = command(
   async ({ get, set }, owner: ProactiveWorkflowOwner, signal: AbortSignal) => {
-    const [features, [preference], [agent]] = await Promise.all([
+    const [features, [preference]] = await Promise.all([
       set(loadUserFeatureSwitchContext$, owner.orgId, owner.userId, signal),
       get(db$)
         .select({
@@ -27,23 +27,6 @@ export const loadProactiveWorkflowsEligibility$ = command(
           and(
             eq(orgMembersMetadata.orgId, owner.orgId),
             eq(orgMembersMetadata.userId, owner.userId),
-          ),
-        )
-        .limit(1),
-      get(db$)
-        .select({ id: agents.id })
-        .from(orgMetadata)
-        .innerJoin(
-          agents,
-          and(
-            eq(agents.id, orgMetadata.defaultAgentId),
-            eq(agents.orgId, orgMetadata.orgId),
-          ),
-        )
-        .where(
-          and(
-            eq(orgMetadata.orgId, owner.orgId),
-            or(eq(agents.visibility, "public"), eq(agents.owner, owner.userId)),
           ),
         )
         .limit(1),
@@ -67,7 +50,33 @@ export const loadProactiveWorkflowsEligibility$ = command(
         active: suggestionsAvailable && suggestionsEnabled && timezone !== null,
       },
       timezone,
-      agentId: agent?.id ?? null,
     };
+  },
+);
+
+export const loadProactiveWorkflowsEligibility$ = command(
+  async ({ get, set }, owner: ProactiveWorkflowOwner, signal: AbortSignal) => {
+    const [preferences, [agent]] = await Promise.all([
+      set(loadProactivePreferences$, owner, signal),
+      get(db$)
+        .select({ id: agents.id })
+        .from(orgMetadata)
+        .innerJoin(
+          agents,
+          and(
+            eq(agents.id, orgMetadata.defaultAgentId),
+            eq(agents.orgId, orgMetadata.orgId),
+          ),
+        )
+        .where(
+          and(
+            eq(orgMetadata.orgId, owner.orgId),
+            or(eq(agents.visibility, "public"), eq(agents.owner, owner.userId)),
+          ),
+        )
+        .limit(1),
+    ]);
+    signal.throwIfAborted();
+    return { ...preferences, agentId: agent?.id ?? null };
   },
 );

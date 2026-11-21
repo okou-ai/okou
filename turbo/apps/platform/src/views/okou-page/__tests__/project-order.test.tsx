@@ -167,7 +167,6 @@ async function prepare(projectPage = false, configure?: () => void) {
   context.mocks.api(chatThreadByIdContract.patch, ({ respond }) => {
     return respond(204);
   });
-  context.mocks.data.onboardingStatus({ defaultAgentId: first.agentId });
   configure?.();
   await setupPage({
     context,

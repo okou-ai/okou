@@ -1,4 +1,4 @@
-import { legacyAgentMentionsToText } from "../okou-page/legacy-agent-mention.ts";
+import { legacyAgentMentionsToText } from "@okouai/core/legacy-agent-mention";
 import {
   userMessageDocumentSchema,
   resolveChatEventRecommendedFollowups,

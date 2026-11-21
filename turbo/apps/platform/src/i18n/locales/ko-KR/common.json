@@ -2273,7 +2273,6 @@
       "unavailable": "이 이메일은 더 이상 사용할 수 없습니다."
     },
     "messageDocument": {
-      "agent": "[에이전트: {{name}}]",
       "chatThread": "[채팅 스레드: {{title}}]",
       "file": "[파일: {{filename}}]",
       "template": "[템플릿: {{title}}]"
@@ -3473,7 +3472,6 @@
         "addBot": "봇 추가",
         "addDialogDescription": "Agent 유형의 기업 앱을 만든 다음 Feishu 개발자 콘솔에서 다음 단계를 완료하세요.",
         "addDialogTitle": "Feishu 봇 추가",
-        "agentDescription": "이 봇으로 전송된 메시지를 처리할 에이전트를 선택하세요.",
         "backToIntegrations": "통합으로 돌아가기",
         "botFallback": "Feishu 봇",
         "botIconAlt": "{{bot}} 봇 아이콘",
@@ -3500,12 +3498,9 @@
           "imageAlt": "앱 ID와 앱 비밀키 위치를 보여주는 Feishu 앱 생성 결과",
           "title": "앱 자격 증명 추가"
         },
-        "defaultAgent": "기본 에이전트",
-        "defaultAgentAria": "{{appId}}의 기본 에이전트",
         "developerConsole": "Feishu 개발자 콘솔",
         "dialogAdminRequired": "조직 관리자가 앱을 구성해야 합니다. 설정 완료 후 Feishu 봇 목록에서 자신의 계정을 연결할 수 있습니다.",
         "documentTitle": "Feishu",
-        "emptyAdmin": "Feishu 메시지를 에이전트로 라우팅하려면 맞춤 앱을 추가하세요.",
         "emptyMember": "조직 관리자에게 Feishu 봇 추가를 요청하세요.",
         "emptyTitle": "아직 Feishu 봇이 없습니다",
         "events": {
@@ -3563,8 +3558,6 @@
         "reviewGuide": "검토 가이드",
         "reviewGuideDescription": "이 Feishu 봇의 완료된 설정 단계를 검토하세요.",
         "reviewGuideTitle": "Feishu 검토 가이드",
-        "routeDescription": "Feishu 메시지를 에이전트로 라우팅",
-        "selectAgent": "에이전트 선택",
         "setupIncomplete": "설정 완료되지 않음",
         "steps": {
           "back": "뒤로",
@@ -3605,7 +3598,6 @@
         "addBot": "봇 추가",
         "addDialogDescription": "Agent 유형의 기업 앱을 만든 다음 Lark 개발자 콘솔에서 다음 단계를 완료하세요.",
         "addDialogTitle": "Lark 봇 추가",
-        "agentDescription": "이 봇으로 전송된 메시지를 처리할 에이전트를 선택하세요.",
         "backToIntegrations": "통합으로 돌아가기",
         "botFallback": "Lark 봇",
         "botIconAlt": "{{bot}} 봇 아이콘",
@@ -3632,12 +3624,9 @@
           "imageAlt": "앱 ID와 앱 비밀키 위치를 보여주는 Feishu 앱 생성 결과",
           "title": "앱 자격 증명 추가"
         },
-        "defaultAgent": "기본 에이전트",
-        "defaultAgentAria": "{{appId}}의 기본 에이전트",
         "developerConsole": "Lark 개발자 콘솔",
         "dialogAdminRequired": "조직 관리자가 앱을 구성해야 합니다. 설정 완료 후 Lark 봇 목록에서 자신의 계정을 연결할 수 있습니다.",
         "documentTitle": "Lark",
-        "emptyAdmin": "Lark 메시지를 에이전트로 라우팅하려면 맞춤 앱을 추가하세요.",
         "emptyMember": "조직 관리자에게 Lark 봇 추가를 요청하세요.",
         "emptyTitle": "아직 Lark 봇이 없습니다",
         "events": {
@@ -3700,8 +3689,6 @@
         "reviewGuide": "검토 가이드",
         "reviewGuideDescription": "이 Lark 봇의 완료된 설정 단계를 검토하세요.",
         "reviewGuideTitle": "Lark 검토 가이드",
-        "routeDescription": "Lark 메시지를 에이전트로 라우팅",
-        "selectAgent": "에이전트 선택",
         "setupIncomplete": "설정 완료되지 않음",
         "steps": {
           "back": "뒤로",
@@ -4874,8 +4861,7 @@
         "creditsPerMonth": "월 {{credits}} 크레딧",
         "emailSupport": "이메일 지원",
         "payAsYouGo": "이후 사용량 기반 결제",
-        "prioritySupport": "우선 지원",
-        "unlimitedAgents": "무제한 에이전트"
+        "prioritySupport": "우선 지원"
       },
       "proDescription": "여러 작업을 병렬로 실행하고 대기열을 건너뜁니다.",
       "recommended": "추천",
@@ -5678,7 +5664,6 @@
         "conflict": "설치 상태가 일관되지 않아 Morning Brief를 일시적으로 사용할 수 없습니다.",
         "description": "내 시간대 기준 오전 7:00 전에 일일 우선순위를 받습니다.",
         "errorMessage": "Morning Brief 설정을 불러오거나 업데이트할 수 없습니다.",
-        "missingDefaultAgent": "이 워크스페이스에서 Okou를 사용할 수 없습니다. 관리자에게 문의하세요.",
         "missingTimezone": "Morning Brief를 활성화하기 전에 유효한 시간대를 설정하세요.",
         "preparationFailed": "일시적으로 사용할 수 없습니다.",
         "preparing": "첫 모닝 브리프를 준비하고 있습니다. 언제든지 끌 수 있습니다.",
@@ -5687,7 +5672,6 @@
       "proactiveSuggestions": {
         "description": "연결된 소스를 매시간 확인하고, 사용자 프로필을 매일 업데이트하며, 유용한 다음 단계를 제안합니다.",
         "errorMessage": "제안 설정을 불러오거나 업데이트하지 못했습니다.",
-        "missingDefaultAgent": "이 워크스페이스에서 Okou를 사용할 수 없습니다. 관리자에게 문의하세요.",
         "missingTimezone": "환경설정에서 시간대를 설정하세요.",
         "preparationFailed": "일시적으로 사용할 수 없습니다.",
         "preparing": "시간별 제안을 준비하고 있습니다. 언제든지 끌 수 있습니다.",
@@ -6879,8 +6863,6 @@
     },
     "createDialog": {
       "addAutomation": "자동화 추가",
-      "chooseAgentAutomation": "이 자동화에 사용할 에이전트를 선택하세요",
-      "chooseAgentWorkflow": "이 워크플로에 사용할 에이전트를 선택하세요.",
       "chooseWorkflow": "자동화할 워크플로를 선택하거나 채팅에서 새로 만드세요.",
       "createAutomation": "자동화 생성",
       "createInChat": "채팅에서 생성",
@@ -6911,8 +6893,6 @@
         "uploadAria": "워크플로 파일 업로드"
       },
       "metadata": {
-        "agent": "에이전트",
-        "agentDescription": "이 워크플로는 이 에이전트에 속합니다.",
         "aria": "워크플로 메타데이터",
         "description": "설명",
         "descriptionHelp": "에이전트가 이 워크플로를 언제 사용할지 알려주세요.",
@@ -7132,7 +7112,6 @@
     },
     "wechat": {
       "accountLabel": "계정",
-      "agentLabel": "에이전트",
       "code": "인증 코드",
       "connect": "연결",
       "connected": "연결됨",

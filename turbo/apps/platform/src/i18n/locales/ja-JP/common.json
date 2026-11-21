@@ -2273,7 +2273,6 @@
       "unavailable": "このメールはもう利用できません。"
     },
     "messageDocument": {
-      "agent": "[エージェント: {{name}}]",
       "chatThread": "[チャット スレッド: {{title}}]",
       "file": "[ファイル: {{filename}}]",
       "template": "[テンプレート: {{title}}]"
@@ -3473,7 +3472,6 @@
         "addBot": "ボットの追加",
         "addDialogDescription": "Agent タイプのエンタープライズアプリを作成し、Feishu 開発者コンソールで次の手順を完了してください。",
         "addDialogTitle": "Feishu ボットを追加する",
-        "agentDescription": "このボットに送信されたメッセージを処理するエージェントを選択します。",
         "backToIntegrations": "統合に戻る",
         "botFallback": "Feishu ボット",
         "botIconAlt": "{{bot}} ボット アイコン",
@@ -3500,12 +3498,9 @@
           "imageAlt": "Feishu アプリ ID とアプリ シークレットの場所を示すアプリ作成結果",
           "title": "アプリの認証情報を追加する"
         },
-        "defaultAgent": "デフォルトエージェント",
-        "defaultAgentAria": "{{appId}} のデフォルト エージェント",
         "developerConsole": "Feishu 開発者コンソール",
         "dialogAdminRequired": "組織管理者はアプリを構成する必要があります。セットアップが完了したら、Feishu ボット リストから自分のアカウントに接続できます。",
         "documentTitle": "Feishu",
-        "emptyAdmin": "Feishu メッセージをエージェントにルーティングするカスタム アプリを追加します。",
         "emptyMember": "Feishu ボットを追加するように組織管理者に依頼します。",
         "emptyTitle": "Feishu ボットはまだありません",
         "events": {
@@ -3563,8 +3558,6 @@
         "reviewGuide": "レビューガイド",
         "reviewGuideDescription": "この Feishu ボットの完了したセットアップ手順を確認してください。",
         "reviewGuideTitle": "Feishu レビュー ガイド",
-        "routeDescription": "Feishu メッセージをエージェントにルーティングする",
-        "selectAgent": "エージェントを選択してください",
         "setupIncomplete": "セットアップが不完全",
         "steps": {
           "back": "戻る",
@@ -3605,7 +3598,6 @@
         "addBot": "ボットの追加",
         "addDialogDescription": "Agent タイプのエンタープライズアプリを作成し、Lark 開発者コンソールで次の手順を完了してください。",
         "addDialogTitle": "Lark ボットを追加する",
-        "agentDescription": "このボットに送信されたメッセージを処理するエージェントを選択します。",
         "backToIntegrations": "統合に戻る",
         "botFallback": "Lark ボット",
         "botIconAlt": "{{bot}} ボット アイコン",
@@ -3632,12 +3624,9 @@
           "imageAlt": "Feishu アプリ ID とアプリ シークレットの場所を示すアプリ作成結果",
           "title": "アプリの認証情報を追加する"
         },
-        "defaultAgent": "デフォルトエージェント",
-        "defaultAgentAria": "{{appId}} のデフォルト エージェント",
         "developerConsole": "Lark 開発者コンソール",
         "dialogAdminRequired": "組織管理者はアプリを構成する必要があります。セットアップが完了したら、Lark ボット リストから自分のアカウントに接続できます。",
         "documentTitle": "Lark",
-        "emptyAdmin": "Lark メッセージをエージェントにルーティングするカスタム アプリを追加します。",
         "emptyMember": "Lark ボットを追加するように組織管理者に依頼します。",
         "emptyTitle": "Lark ボットはまだありません",
         "events": {
@@ -3700,8 +3689,6 @@
         "reviewGuide": "レビューガイド",
         "reviewGuideDescription": "この Lark ボットの完了したセットアップ手順を確認してください。",
         "reviewGuideTitle": "Lark レビュー ガイド",
-        "routeDescription": "Lark メッセージをエージェントにルーティングする",
-        "selectAgent": "エージェントを選択してください",
         "setupIncomplete": "セットアップが不完全",
         "steps": {
           "back": "戻る",
@@ -4874,8 +4861,7 @@
         "creditsPerMonth": "{{credits}} クレジット / 月",
         "emailSupport": "メールサポート",
         "payAsYouGo": "その後は従量料金を支払う",
-        "prioritySupport": "優先サポート",
-        "unlimitedAgents": "無制限の合計エージェント"
+        "prioritySupport": "優先サポート"
       },
       "proDescription": "複数のタスクを並行して実行し、キューをスキップします。",
       "recommended": "おすすめ",
@@ -5678,7 +5664,6 @@
         "conflict": "インストール状態に不整合があるため、Morning Brief は一時的に利用できません。",
         "description": "お使いのタイムゾーンの午前7:00までに毎日の優先事項を受け取ります。",
         "errorMessage": "Morning Brief の設定を読み込むか更新できませんでした。",
-        "missingDefaultAgent": "このワークスペースでは Okou を利用できません。管理者にお問い合わせください。",
         "missingTimezone": "Morning Brief を有効にする前に、有効なタイムゾーンを設定してください。",
         "preparationFailed": "一時的に利用できません。",
         "preparing": "最初のモーニングブリーフを準備中です。いつでもオフにできます。",
@@ -5687,7 +5672,6 @@
       "proactiveSuggestions": {
         "description": "接続済みの情報源を毎時間確認し、ユーザープロフィールを毎日更新して、役立つ次のアクションを提案します。",
         "errorMessage": "提案の設定を読み込みまたは更新できませんでした。",
-        "missingDefaultAgent": "このワークスペースでは Okou を利用できません。管理者にお問い合わせください。",
         "missingTimezone": "設定でタイムゾーンを指定してください。",
         "preparationFailed": "一時的に利用できません。",
         "preparing": "毎時間の提案を準備しています。いつでもオフにできます。",
@@ -6879,8 +6863,6 @@
     },
     "createDialog": {
       "addAutomation": "オートメーションを追加する",
-      "chooseAgentAutomation": "このオートメーションのエージェントを選択してください",
-      "chooseAgentWorkflow": "このワークフローのエージェントを選択します。",
       "chooseWorkflow": "自動化するワークフローを選択するか、チャットでワークフローを作成します。",
       "createAutomation": "オートメーションの作成",
       "createInChat": "チャットで作成",
@@ -6911,8 +6893,6 @@
         "uploadAria": "ワークフローファイルをアップロードする"
       },
       "metadata": {
-        "agent": "エージェント",
-        "agentDescription": "このワークフローはこのエージェントに属します。",
         "aria": "ワークフローメタデータ",
         "description": "説明",
         "descriptionHelp": "このワークフローをいつ使用するかをエージェントに伝えます。",
@@ -7132,7 +7112,6 @@
     },
     "wechat": {
       "accountLabel": "アカウント",
-      "agentLabel": "エージェント",
       "code": "確認コード",
       "connect": "接続",
       "connected": "接続済み",

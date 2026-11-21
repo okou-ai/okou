@@ -839,7 +839,6 @@ function mockWorkflowApis(
   workflows: WorkflowDetailResponse[],
   onUpdate?: (body: WorkflowUpdateRequest) => void,
 ): void {
-  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   const setAutomationEnabled = (
     automationId: string,
     enabled: boolean,
@@ -4076,7 +4075,6 @@ test("An earlier webhook response preserves a reopened creation form", async () 
 });
 
 test("Workspace Workflows ignore stale Agent filters and identify the caller's private override", async () => {
-  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   mockAgentPageApis();
   mockChatLifecycle(context);
   const shared = salesResearch();
@@ -4115,7 +4113,6 @@ test("Workspace Workflows ignore stale Agent filters and identify the caller's p
 });
 
 test("Make private copy opens the existing private definition without overwriting it", async () => {
-  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   mockAgentPageApis();
   mockChatLifecycle(context);
   const shared = salesResearch();
@@ -4172,7 +4169,6 @@ test("Make private copy opens the existing private definition without overwritin
 });
 
 test("Make private copy uses the workspace default without a destination or removal step", async () => {
-  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   mockAgentPageApis();
   mockChatLifecycle(context);
   const shared = { ...salesResearch(), canManage: false };
@@ -4215,7 +4211,6 @@ test("Make private copy uses the workspace default without a destination or remo
 });
 
 test("creates a workspace Workflow with the default Okou without choosing an Agent", async () => {
-  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   mockAgentPageApis();
   mockChatLifecycle(context);
   mockWorkflowApis([salesResearch()]);

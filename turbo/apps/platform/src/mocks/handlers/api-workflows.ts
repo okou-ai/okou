@@ -12,11 +12,13 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 
 import { mockApi } from "../msw-contract.ts";
-import { MOCK_DEFAULT_AGENT_ID } from "./api-onboarding.ts";
+
 import {
   getMockWorkflowAutomations,
   setMockWorkflowAutomations,
 } from "./workflow-automations-store.ts";
+
+const MOCK_DEFAULT_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 
 const DEFAULT_WORKFLOWS: WorkflowDetailResponse[] = [];
 

@@ -2282,7 +2282,6 @@
       "unavailable": "This email is no longer available."
     },
     "messageDocument": {
-      "agent": "[Agent: {{name}}]",
       "chatThread": "[Chat thread: {{title}}]",
       "file": "[File: {{filename}}]",
       "template": "[Template: {{title}}]"
@@ -3489,7 +3488,6 @@
         "addBot": "Add bot",
         "addDialogDescription": "Create an enterprise app with the Agent type, then complete these steps in the Feishu developer console.",
         "addDialogTitle": "Add a Feishu bot",
-        "agentDescription": "Choose the agent that should handle messages sent to this bot.",
         "backToIntegrations": "Back to integrations",
         "botFallback": "Feishu bot",
         "botIconAlt": "{{bot}} bot icon",
@@ -3516,12 +3514,9 @@
           "imageAlt": "Feishu app creation result showing where to find the App ID and App Secret",
           "title": "Add the app credentials"
         },
-        "defaultAgent": "Default agent",
-        "defaultAgentAria": "Default agent for {{appId}}",
         "developerConsole": "Feishu developer console",
         "dialogAdminRequired": "An organization admin must configure the app. You can connect your own account from the Feishu bot list after setup is complete.",
         "documentTitle": "Feishu",
-        "emptyAdmin": "Add a custom app to route Feishu messages to an agent.",
         "emptyMember": "Ask an organization admin to add a Feishu bot.",
         "emptyTitle": "No Feishu bots yet",
         "events": {
@@ -3579,8 +3574,6 @@
         "reviewGuide": "Review guide",
         "reviewGuideDescription": "Review the completed setup steps for this Feishu bot.",
         "reviewGuideTitle": "Feishu review guide",
-        "routeDescription": "Route Feishu messages to agents",
-        "selectAgent": "Select an agent",
         "setupIncomplete": "Setup incomplete",
         "steps": {
           "back": "Back",
@@ -3621,7 +3614,6 @@
         "addBot": "Add bot",
         "addDialogDescription": "Create an enterprise app with the Agent type, then complete these steps in the Lark developer console.",
         "addDialogTitle": "Add a Lark bot",
-        "agentDescription": "Choose the agent that should handle messages sent to this bot.",
         "backToIntegrations": "Back to integrations",
         "botFallback": "Lark bot",
         "botIconAlt": "{{bot}} bot icon",
@@ -3648,12 +3640,9 @@
           "imageAlt": "Feishu app creation result showing where to find the App ID and App Secret",
           "title": "Add the app credentials"
         },
-        "defaultAgent": "Default agent",
-        "defaultAgentAria": "Default agent for {{appId}}",
         "developerConsole": "Lark developer console",
         "dialogAdminRequired": "An organization admin must configure the app. You can connect your own account from the Lark bot list after setup is complete.",
         "documentTitle": "Lark",
-        "emptyAdmin": "Add a custom app to route Lark messages to an agent.",
         "emptyMember": "Ask an organization admin to add a Lark bot.",
         "emptyTitle": "No Lark bots yet",
         "events": {
@@ -3716,8 +3705,6 @@
         "reviewGuide": "Review guide",
         "reviewGuideDescription": "Review the completed setup steps for this Lark bot.",
         "reviewGuideTitle": "Lark review guide",
-        "routeDescription": "Route Lark messages to agents",
-        "selectAgent": "Select an agent",
         "setupIncomplete": "Setup incomplete",
         "steps": {
           "back": "Back",
@@ -4895,8 +4882,7 @@
         "creditsPerMonth": "{{credits}} credits / month",
         "emailSupport": "Email support",
         "payAsYouGo": "Pay as you go after that",
-        "prioritySupport": "Priority support",
-        "unlimitedAgents": "Unlimited total agents"
+        "prioritySupport": "Priority support"
       },
       "proDescription": "Run multiple tasks in parallel and skip the queue.",
       "recommended": "Recommended",
@@ -5700,7 +5686,6 @@
         "conflict": "Morning Brief is temporarily unavailable because its installation state is inconsistent.",
         "description": "Daily priorities by 7:00 AM in your time zone.",
         "errorMessage": "Morning Brief settings could not be loaded or updated.",
-        "missingDefaultAgent": "Okou is unavailable in this workspace. Contact a workspace administrator.",
         "missingTimezone": "Set a valid time zone before enabling Morning Brief.",
         "preparationFailed": "Temporarily unavailable.",
         "preparing": "Preparing your first Morning Brief. You can turn it off at any time.",
@@ -5709,7 +5694,6 @@
       "proactiveSuggestions": {
         "description": "Check connected sources hourly, update your user profile daily, and suggest useful next steps.",
         "errorMessage": "Proactive Suggestions settings could not be loaded or updated.",
-        "missingDefaultAgent": "Okou is unavailable in this workspace. Contact a workspace administrator.",
         "missingTimezone": "Set your time zone in Preferences.",
         "preparationFailed": "Temporarily unavailable.",
         "preparing": "Preparing hourly suggestions. You can turn this off at any time.",
@@ -6905,8 +6889,6 @@
     },
     "createDialog": {
       "addAutomation": "Add automation",
-      "chooseAgentAutomation": "Choose the agent for this automation",
-      "chooseAgentWorkflow": "Choose the agent for this workflow.",
       "chooseWorkflow": "Choose a workflow to automate, or create one in chat.",
       "createAutomation": "Create Automation",
       "createInChat": "Create in chat",
@@ -6937,8 +6919,6 @@
         "uploadAria": "Upload workflow files"
       },
       "metadata": {
-        "agent": "Agent",
-        "agentDescription": "This workflow belongs to this agent.",
         "aria": "Workflow metadata",
         "description": "Description",
         "descriptionHelp": "Tell the agent when to use this workflow.",
@@ -7158,7 +7138,6 @@
     },
     "wechat": {
       "accountLabel": "Account",
-      "agentLabel": "Agent",
       "code": "Verification code",
       "connect": "Connect",
       "connected": "Connected",

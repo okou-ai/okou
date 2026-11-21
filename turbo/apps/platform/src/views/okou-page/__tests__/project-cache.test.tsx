@@ -32,7 +32,6 @@ function installWorkspace() {
     caseId: 121,
     threads: [thread],
   });
-  context.mocks.data.onboardingStatus({ defaultAgentId: thread.agentId });
   context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, { draftUserMessage: null, draftAttachments: null });
   });

@@ -4,7 +4,6 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { state } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { integrationsWechatContract as contract } from "@okouai/api-contracts/contracts/integrations-wechat";
-import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { setupPage, click, fill } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
@@ -283,18 +282,6 @@ test.each([
       restored = true;
       return respond(204);
     });
-    context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-      return respond(200, {
-        agentId: params.id,
-        isDefaultAgent: true,
-        ownerId: "user_wechat_confirm",
-        displayName: "Workspace Assistant",
-        description: null,
-        sound: null,
-        avatarUrl: null,
-        visibility: "private",
-      });
-    });
     await setupPage({
       context,
       path: "/settings/wechat?token=signed-link",
@@ -319,7 +306,6 @@ test.each([
     expect(
       screen.getByText("WeChat Workspace", { selector: "dd" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Okou", { selector: "dd" })).toBeInTheDocument();
     expect(screen.queryByTestId("wechat-connect-qr")).not.toBeInTheDocument();
     const confirm = getAction("button", "Reconnect");
     expect(confirm).toBeEnabled();

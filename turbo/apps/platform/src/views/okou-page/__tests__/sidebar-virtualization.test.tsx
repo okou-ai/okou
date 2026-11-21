@@ -44,7 +44,6 @@ function mockThreads(
   projectMemberCount = 2,
   archived = false,
 ): void {
-  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   context.mocks.data.agents([
     {
       agentId: AGENT_ID,

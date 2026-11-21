@@ -542,7 +542,6 @@ function mockUnreadThreads(threadIds: readonly string[]): void {
 
 test("Archive an unread chat without changing reading state", async () => {
   prepareAgents();
-  context.mocks.data.userPreferences({ pinnedAgentIds: [AGENT_ID] });
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(INCIDENT_THREAD_ID, "Review later"),

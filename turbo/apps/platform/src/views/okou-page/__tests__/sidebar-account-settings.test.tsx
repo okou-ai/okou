@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
-  userPreferencesContract,
+  memberPreferencesContract,
   type UserPreferencesResponse,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -97,7 +97,6 @@ test("Toggle network-body capture in Debug settings", async () => {
     timezone: null,
     locale: "en-US",
     supportedLocales: ["en-US"],
-    pinnedAgentIds: [],
     sendMode: "enter",
     cloudBrowserEnabledByDefault: true,
     chatResourcesEnabledByDefault: true,
@@ -107,7 +106,7 @@ test("Toggle network-body capture in Debug settings", async () => {
     memoryInitialized: true,
   };
   context.mocks.data.userPreferences(preferences);
-  context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
+  context.mocks.api(memberPreferencesContract.update, ({ body, respond }) => {
     if (body.captureNetworkBodiesRemaining !== undefined) {
       submitted.push(body.captureNetworkBodiesRemaining);
     }

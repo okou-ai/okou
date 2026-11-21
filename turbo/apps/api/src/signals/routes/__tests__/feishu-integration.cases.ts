@@ -4540,7 +4540,6 @@ export function registerFeishuIntegrationTests(
         expect(status.body).toMatchObject({
           isInstalled: true,
           callbackVerified: true,
-          defaultAgentId: null,
         });
         const messageId = `om_${randomUUID()}`;
         const event = directMessage(

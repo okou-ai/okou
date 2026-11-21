@@ -1,30 +1,24 @@
 import {
   onboardingCompleteContract,
   onboardingDraftContract,
-  onboardingStatusContract,
-  type OnboardingStatusResponse,
+  memberOnboardingContract,
+  type MemberOnboardingStatus,
 } from "@okouai/api-contracts/contracts/onboarding";
-import { DEFAULT_AGENT_DISPLAY_NAME } from "@okouai/core/brand-presentation";
 import { mockApi } from "../msw-contract.ts";
 
-export const MOCK_DEFAULT_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
-
-const DEFAULT_ONBOARDING_STATUS: OnboardingStatusResponse = {
+const DEFAULT_ONBOARDING_STATUS: MemberOnboardingStatus = {
   needsOnboarding: false,
   onboardingComplete: true,
   isAdmin: true,
   hasOrg: true,
-  hasDefaultAgent: true,
-  defaultAgentId: MOCK_DEFAULT_AGENT_ID,
-  defaultAgentMetadata: { displayName: DEFAULT_AGENT_DISPLAY_NAME },
 };
 
-let mockOnboardingStatus: OnboardingStatusResponse = {
+let mockOnboardingStatus: MemberOnboardingStatus = {
   ...DEFAULT_ONBOARDING_STATUS,
 };
 
 export function setMockOnboardingStatus(
-  status: Partial<OnboardingStatusResponse>,
+  status: Partial<MemberOnboardingStatus>,
 ): void {
   mockOnboardingStatus = { ...mockOnboardingStatus, ...status };
 }
@@ -43,8 +37,8 @@ export const apiOnboardingHandlers = [
       },
     });
   }),
-  // GET /api/onboarding/status
-  mockApi(onboardingStatusContract.getStatus, ({ respond }) => {
+  // GET /api/onboarding/member-status
+  mockApi(memberOnboardingContract.getStatus, ({ respond }) => {
     return respond(200, mockOnboardingStatus);
   }),
 

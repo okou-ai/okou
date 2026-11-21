@@ -32,20 +32,27 @@ const c = initContract();
 /**
  * Onboarding status response schema
  */
-export const onboardingStatusResponseSchema = object({
+export const memberOnboardingStatusSchema = object({
   needsOnboarding: boolean(),
   onboardingComplete: boolean(),
   isAdmin: boolean(),
   hasOrg: boolean(),
-  hasDefaultAgent: boolean(),
-  defaultAgentId: string().nullable(),
-  defaultAgentMetadata: object({
-    displayName: string().optional(),
-    description: string().optional(),
-    sound: string().optional(),
-    avatarUrl: string().optional(),
-  }).nullable(),
 });
+export type MemberOnboardingStatus = zInfer<
+  typeof memberOnboardingStatusSchema
+>;
+
+export const onboardingStatusResponseSchema =
+  memberOnboardingStatusSchema.extend({
+    hasDefaultAgent: boolean(),
+    defaultAgentId: string().nullable(),
+    defaultAgentMetadata: object({
+      displayName: string().optional(),
+      description: string().optional(),
+      sound: string().optional(),
+      avatarUrl: string().optional(),
+    }).nullable(),
+  });
 
 export type OnboardingStatusResponse = zInfer<
   typeof onboardingStatusResponseSchema
@@ -114,6 +121,16 @@ export type OnboardingRecommendationStatus = zInfer<
 /**
  * Onboarding status contract for GET /api/onboarding/status
  */
+export const memberOnboardingContract = c.router({
+  getStatus: {
+    method: "GET",
+    path: "/api/onboarding/member-status",
+    headers: authHeadersSchema,
+    responses: { 200: memberOnboardingStatusSchema, 401: apiErrorSchema },
+    summary: "Read workspace membership onboarding status",
+  },
+});
+
 export const onboardingStatusContract = c.router({
   getStatus: {
     method: "GET",

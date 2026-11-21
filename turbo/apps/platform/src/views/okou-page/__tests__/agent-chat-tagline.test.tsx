@@ -25,7 +25,6 @@ function mountedAgent(agentIds: string[]): void {
       visibility: "public",
     };
   });
-  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   context.mocks.data.agents(agents);
   context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
     const agent = agents.find((candidate) => {

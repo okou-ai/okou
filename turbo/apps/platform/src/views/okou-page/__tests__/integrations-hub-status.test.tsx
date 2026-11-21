@@ -179,7 +179,6 @@ test("Authorize the official Telegram bot directly in a new tab from Integration
         kind: "official",
         username: "okou_bot",
         avatarUrl: null,
-        agent: null,
         isOwner: false,
         isConnected: false,
         tokenStatus: "valid",
@@ -192,7 +191,6 @@ test("Authorize the official Telegram bot directly in a new tab from Integration
         },
         official: {
           configured: true,
-          usesDefaultAgent: true,
           linkedTelegramUserId: null,
         },
       },
