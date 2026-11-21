@@ -6,9 +6,8 @@ import { createEmailThreadContext } from "./email-queued-launch-context.service"
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { createWechatThreadContext } from "./wechat-context.service";
 import { randomUUID } from "node:crypto";
-import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { computed, type Computed } from "ccstate";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
@@ -59,9 +58,6 @@ export interface ThreadContext extends ThreadWorkflowContext {
   /** Whether this run resumes the thread's native session, and its binding. */
   readonly threadContinuation$: Computed<
     Promise<ChatThreadContinuation | null>
-  >;
-  readonly computerUseHostGrant$: Computed<
-    Promise<{ readonly hostId: string; readonly displayName: string } | null>
   >;
   readonly slackContext$: ReturnType<typeof createSlackThreadContext>;
   readonly feishuContext$: ReturnType<typeof createFeishuThreadContext>;
@@ -144,7 +140,6 @@ export function createThreadContext(
     sourceSettings.disabledPaidTools$,
     bootstrap,
   );
-  const computerUseHostGrant$ = createThreadHostGrant(bootstrap, thread$);
   const phoneUseGrant$ = createThreadPhoneUseGrant(bootstrap, thread$);
   const runIds$ = createRunIds();
   const threadContinuation$ = createThreadContinuation(
@@ -165,7 +160,6 @@ export function createThreadContext(
   const inputSources = {
     connectorSelection$: connectedAccounts.connectorSelection$,
     templateSources$: templates.sources$,
-    computerUseHostGrant$,
     phoneUseGrant$,
     modelRoute$: model.modelRoute$,
     threadContinuation$,
@@ -184,7 +178,6 @@ export function createThreadContext(
     projectContext$: resources.projectContext$,
     incompleteContext$: resources.incompleteContext$,
     threadContinuation$,
-    computerUseHostGrant$,
     phoneUseGrant$,
     slackContext$: integrations.slackContext$,
     feishuContext$: integrations.feishuContext$,
@@ -260,7 +253,6 @@ function createThreadInputResources(
     ThreadContext,
     | "connectorSelection$"
     | "templateSources$"
-    | "computerUseHostGrant$"
     | "phoneUseGrant$"
     | "modelRoute$"
     | "threadContinuation$"
@@ -307,7 +299,6 @@ function createThreadInputResources(
     await Promise.allSettled([
       get(context.connectorSelection$),
       get(context.templateSources$),
-      get(context.computerUseHostGrant$),
       get(context.phoneUseGrant$),
       get(incompleteContext$),
       get(integrationSources[event.contextType]),
@@ -430,34 +421,6 @@ function createThreadExecutionPackageSources(
       throw result.error;
     }
     return result.value;
-  });
-}
-
-function createThreadHostGrant(
-  selected: AgentRunContextSignals,
-  thread$: Computed<Promise<PickedChatThread | null>>,
-) {
-  return computed(async (get) => {
-    const thread = await get(thread$);
-    if (!thread?.computerUseHostId || thread.userId !== selected.userId) {
-      return null;
-    }
-    const [host] = await get(db$)
-      .select({
-        hostId: computerUseHosts.id,
-        displayName: computerUseHosts.displayName,
-      })
-      .from(computerUseHosts)
-      .where(
-        and(
-          eq(computerUseHosts.id, thread.computerUseHostId),
-          eq(computerUseHosts.orgId, selected.orgId),
-          eq(computerUseHosts.userId, selected.userId),
-          isNull(computerUseHosts.revokedAt),
-        ),
-      )
-      .limit(1);
-    return host ?? null;
   });
 }
 
