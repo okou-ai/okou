@@ -57,6 +57,27 @@ import {
   forYouCovers,
 } from "../../lib/for-you-artwork.ts";
 
+// The header sits on the cover. This scrim holds the page color behind the
+// title, subtitle and progress, then eases out past the header's bottom edge
+// so no band edge shows on dark covers.
+const HEADER_SCRIM = {
+  backgroundImage: `linear-gradient(${[
+    [0.88, 0],
+    [0.88, 45],
+    [0.73, 55],
+    [0.54, 63],
+    [0.36, 71],
+    [0.21, 79],
+    [0.09, 87],
+    [0.03, 94],
+    [0, 100],
+  ]
+    .map(([alpha, stop]) => {
+      return `hsl(var(--for-you-scrim) / ${String(alpha)}) ${String(stop)}%`;
+    })
+    .join(", ")})`,
+} satisfies CSSProperties;
+
 const STACK_LAYERS = [
   "z-3 translate-y-2 scale-x-[0.98] shadow-[0_1px_2px_rgb(37_33_33/0.05),0_4px_8px_rgb(37_33_33/0.035)]",
   "z-2 translate-y-4 scale-x-[0.96] shadow-[0_1px_2px_rgb(37_33_33/0.05),0_4px_8px_rgb(37_33_33/0.035)]",
@@ -385,7 +406,12 @@ function ForYouHeader() {
   const browse = useSet(browseForYou$);
   const signal = useGet(pageSignal$);
   return (
-    <header className="absolute inset-x-0 top-0 z-10 grid h-14 bg-linear-to-b from-brand-off-white via-brand-off-white via-50% to-brand-off-white/0 dark:from-background dark:via-background dark:to-background/0 grid-flow-col grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 px-4 sm:h-15 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8 sm:px-8">
+    <header className="absolute inset-x-0 top-0 z-10 grid h-14 grid-flow-col grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 px-4 sm:h-15 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8 sm:px-8 [--for-you-scrim:var(--brand-off-white)] dark:[--for-you-scrim:var(--background)]">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-27"
+        style={HEADER_SCRIM}
+      />
       <div className="min-w-0">
         <h1 className="text-base font-semibold sm:text-lg">
           {t(($) => {
@@ -444,7 +470,7 @@ function ForYouHeader() {
                 <span
                   aria-hidden
                   className={cn(
-                    "h-1 w-full rounded-full bg-divider transition-colors",
+                    "h-1 w-full rounded-full bg-foreground/10 transition-colors",
                     index === position &&
                       "bg-linear-to-r from-primary/65 via-primary to-primary-hover",
                   )}
@@ -456,7 +482,7 @@ function ForYouHeader() {
         {cards.length > 0 && (
           <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
             <span className="text-foreground">{position + 1}</span>
-            <span aria-hidden className="mx-1 text-border">
+            <span aria-hidden className="mx-1 text-foreground/25">
               /
             </span>
             {cards.length}
