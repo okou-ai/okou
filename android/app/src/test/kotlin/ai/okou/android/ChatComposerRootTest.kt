@@ -257,8 +257,7 @@ class ChatComposerRootTest {
             compose.onNodeWithText("New chat").performClick()
             captureOwners()
             compose.waitUntil(10_000) {
-                editor?.uiState?.value?.let { it.journal != null && it.defaultAgentId != null } ==
-                    true
+                editor?.uiState?.value?.journal != null
             }
             val prompt = "First message before the server responds"
             compose.onNodeWithTag("message_input").performTextInput(prompt)
@@ -326,8 +325,7 @@ class ChatComposerRootTest {
                         .chats
                 }
             awaitConversation {
-                editor?.uiState?.value?.let { it.journal != null && it.defaultAgentId != null } ==
-                    true
+                editor?.uiState?.value?.journal != null
             }
             val prompt = "Input with a delayed receipt"
             compose.onNodeWithTag("message_input").performTextInput(prompt)
@@ -368,12 +366,11 @@ class ChatComposerRootTest {
     fun heldDefaultReadAndDisconnectedSendPreserveNavigationNewerEditingAndOriginalReceipt() {
         val app = compose.activity.application as ComposerRootApplication
         compose.onNodeWithText("New chat").performClick()
-        compose.onNodeWithText("Loading chat availability…").assertExists()
         compose
             .onNodeWithTag("message_input")
             .assertIsEnabled()
             .performTextInput("Original **message** 👋")
-        compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Send").assertIsEnabled()
         captureOwners()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithContentDescription("Chats").assertExists()

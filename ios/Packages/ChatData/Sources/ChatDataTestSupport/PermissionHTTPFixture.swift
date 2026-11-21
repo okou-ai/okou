@@ -12,7 +12,7 @@ public final class PermissionHTTPFixture: Sendable {
     public var metadataStatus = 200
     public var permission = "mail.send"
     public var defaultPolicy = "ask"
-    public var threadAgentID = PermissionHTTPFixture.agentID
+    public var metadataThreadID = PermissionHTTPFixture.threadID
     public var failApplyOnce = false
     public var loseApplyResponseOnce = false
     public var loseResumeResponseOnce = false
@@ -65,7 +65,7 @@ public final class PermissionHTTPFixture: Sendable {
         if path == threadPath + "/metadata" {
           return ChatHTTPResponse(
             body: """
-              {"id":"\(Self.threadID)","agentId":"\(value.threadAgentID)","computerUseHostId":null,"cloudBrowserEnabled":false}
+              {"id":"\(value.metadataThreadID)","agentId":"\(Self.agentID)","computerUseHostId":null,"cloudBrowserEnabled":false}
               """)
         }
         if path == "/api/agents/\(Self.agentID)" {

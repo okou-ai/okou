@@ -312,6 +312,7 @@ public actor ChatCommands {
   {
     let metadata: ThreadMetadata = try await client.request(
       "/api/chat-threads/\(threadID)/metadata")
+    guard metadata.id.lowercased() == threadID.lowercased() else { throw APIClientError.incompatibleData }
     return metadata
   }
 
