@@ -61,11 +61,18 @@ internal fun PersonalInstructionsSettings(
     val state by model.uiState.collectAsStateWithLifecycle()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val connectionOffline by rememberUpdatedState(offline)
+    var opened by rememberSettingsFlag()
     DisposableEffect(model, lifecycle) {
-        if (!connectionOffline || model.uiState.value.read == InstructionsRead.Idle) model.open()
+        val read = model.uiState.value.read
+        val restoring = opened && read == InstructionsRead.Ready
+        if (!restoring && (!connectionOffline || read == InstructionsRead.Idle)) model.open()
+        opened = true
+        var firstResume = true
         val observer = LifecycleEventObserver { _, event ->
-            if (!connectionOffline && event == Lifecycle.Event.ON_RESUME)
-                model.refreshFromForeground()
+            if (event == Lifecycle.Event.ON_RESUME) {
+                if (!firstResume && !connectionOffline) model.refreshFromForeground()
+                firstResume = false
+            }
         }
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }

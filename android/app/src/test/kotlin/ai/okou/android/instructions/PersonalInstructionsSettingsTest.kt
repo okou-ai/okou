@@ -2,6 +2,7 @@ package ai.okou.android.instructions
 
 import ai.okou.android.InstructionsApiFixture
 import ai.okou.android.MainActivity
+import ai.okou.android.R
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.auth.SessionModel
 import android.content.Intent
@@ -294,13 +295,21 @@ class PersonalInstructionsSettingsTest {
         val large = "Personal instructions 👋 ".repeat(5_000)
         input.performScrollTo().performClick().performTextReplacement(large)
         input.performTextInputSelection(TextRange(13))
+        app.fixture.rejectSave = true
+        save.performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
+        val rejected = compose.onNodeWithText(app.getString(R.string.instructions_save_rejected))
+        compose.waitUntil(10_000) { compose.runOnIdle { model.uiState.value.saveRejected } }
+        rejected.assertExists()
         input.assertIsFocused()
+        val requestCount = app.fixture.requests.size
         // Recreation also verifies the shared whole-Activity saved-state budget.
         compose.activityRule.scenario.recreate()
         compose.waitUntil(10_000) {
             compose.runOnIdle { model.uiState.value.phase == InstructionsPhase.Ready }
         }
         input.assertIsFocused()
+        rejected.assertExists()
+        assertEquals(requestCount, app.fixture.requests.size)
         assertEquals(
             large,
             input.fetchSemanticsNode().config[SemanticsProperties.EditableText].text,

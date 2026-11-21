@@ -21,6 +21,7 @@ class InstructionsApiFixture : Closeable {
     val requests = ConcurrentLinkedQueue<RecordedRequest>()
     @Volatile var denied = false
     @Volatile var disconnectSave = false
+    @Volatile var rejectSave = false
     @Volatile var beforeRead: () -> Unit = {}
     @Volatile var responseOwner: String? = null
     private val lock = Any()
@@ -66,7 +67,7 @@ class InstructionsApiFixture : Closeable {
                                 return json("""{"error":{"code":"CONFLICT","message":"Changed"}}""")
                                     .setResponseCode(409)
                             val content = input.getValue("content").jsonPrimitive.content
-                            if (content.contains('\u0000'))
+                            if (rejectSave || content.contains('\u0000'))
                                 return MockResponse().setResponseCode(400)
                             externalEdit(content)
                         }
