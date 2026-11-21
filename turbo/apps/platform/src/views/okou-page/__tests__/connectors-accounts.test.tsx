@@ -1,5 +1,10 @@
+import {
+  getAction,
+  findAction,
+} from "./connector-integrations-test-helpers.ts";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
+import { waitFor, screen, within } from "@testing-library/react";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -91,4 +96,213 @@ test("connectors-accounts-026 reopening GitHub account management reflects an ex
   const refreshed = await screen.findByRole("dialog", { name: manage });
   await within(refreshed).findByRole("group", { name: "Updated elsewhere" });
   expect(within(refreshed).queryByText("Work")).not.toBeInTheDocument();
+});
+
+function githubAccounts(members: Record<string, boolean>) {
+  const accounts = Object.entries(members).map(
+    ([displayName, enabled], index) => {
+      return {
+        record: connectorAccountFixture(target, {
+          displayName,
+          isDefault: index === 0,
+        }),
+        enabled,
+      };
+    },
+  );
+  mockSavedConnectorAccounts(context, () => {
+    return accounts.map((a) => {
+      return a.record;
+    });
+  });
+  const defaults = () => {
+    return accounts.map(({ record, enabled }) => {
+      return {
+        connectionId: record.id,
+        displayName: record.displayName,
+        isDefault: record.isDefault,
+        defaultEnabled: enabled,
+      };
+    });
+  };
+  context.mocks.api(
+    chatConnectorAccessContract.accountDefaults,
+    ({ respond }) => {
+      return respond(200, defaults());
+    },
+  );
+  context.mocks.api(
+    chatConnectorAccessContract.updateAccountDefault,
+    ({ params, body, respond }) => {
+      const row = accounts.find((a) => {
+        return a.record.id === params.connectionId;
+      });
+      if (!row) {
+        throw new Error("Unknown GitHub connection");
+      }
+      row.enabled = body.enabled;
+      return respond(200, {
+        connectionId: row.record.id,
+        displayName: row.record.displayName,
+        isDefault: row.record.isDefault,
+        defaultEnabled: row.enabled,
+      });
+    },
+  );
+  const deletion = { ready: Promise.resolve(), failure: false, affected: 0 };
+  context.mocks.api(
+    connectorAccountsContract.deletionImpact,
+    ({ params, respond }) => {
+      return respond(200, {
+        connectionId: params.connectionId,
+        explicitSelectionCount: deletion.affected,
+        hasSibling: accounts.length > 1,
+      });
+    },
+  );
+  context.mocks.api(
+    connectorAccountsContract.delete,
+    async ({ params, respond }) => {
+      await deletion.ready;
+      if (deletion.failure) {
+        return respond(403, {
+          error: { code: "FORBIDDEN", message: "Disconnect failed" },
+        });
+      }
+      const index = accounts.findIndex((a) => {
+        return a.record.id === params.connectionId;
+      });
+      if (index === -1) {
+        throw new Error("Unknown account deletion");
+      }
+      accounts.splice(index, 1);
+      return respond(200, {
+        deletedConnectionId: params.connectionId,
+        resolvedSelectionCount: deletion.affected,
+        promotedDefaultConnectionId: accounts[0]?.record.id ?? null,
+      });
+    },
+  );
+  return deletion;
+}
+async function manageAccounts() {
+  await setupPage({ context, path: "/connectors?scope=connected" });
+  click(await findButton(manage));
+  return screen.findByRole("dialog", { name: manage });
+}
+async function disconnectDialog(label: string) {
+  const row = await screen.findByRole("group", { name: label });
+  click(getAction("button", "Account actions", row));
+  click(
+    await screen.findByText("Disconnect", { selector: '[role="menuitem"]' }),
+  );
+  return screen.findByRole("dialog", { name: "Disconnect " + label + "?" });
+}
+test("connectors-accounts-001 disabling the saved default leaves the other GitHub account available", async () => {
+  githubAccounts({ Work: true, Personal: true });
+  const manager = await manageAccounts();
+  const work = await within(manager).findByRole("switch", {
+    name: "Enable Work by default",
+    checked: true,
+  });
+  expect(
+    within(manager).getByRole("switch", { name: "Enable Personal by default" }),
+  ).toBeChecked();
+  click(work);
+  await within(manager).findByRole("switch", {
+    name: "Enable Work by default",
+    checked: false,
+  });
+  expect(
+    within(manager).getByRole("switch", { name: "Enable Personal by default" }),
+  ).toBeChecked();
+  expect(
+    within(manager).getByText(
+      "Choose which GitHub accounts Okou can use across your chats. You can change access in each chat.",
+    ),
+  ).toBeInTheDocument();
+});
+test("connectors-accounts-003 enabling Personal persists after Work is removed", async () => {
+  githubAccounts({ Work: true, Personal: false });
+  const manager = await manageAccounts();
+  await within(manager).findByRole("switch", {
+    name: "Enable Work by default",
+    checked: true,
+  });
+  const personal = within(manager).getByRole("switch", {
+    name: "Enable Personal by default",
+  });
+  expect(personal).not.toBeChecked();
+  click(personal);
+  await within(manager).findByRole("switch", {
+    name: "Enable Personal by default",
+    checked: true,
+  });
+  const confirmation = await disconnectDialog("Work");
+  click(getAction("button", "Disconnect account", confirmation));
+  await waitFor(() => {
+    return expect(
+      within(manager).queryByRole("group", { name: "Work", hidden: true }),
+    ).toBeNull();
+  });
+  await within(manager).findByRole("switch", {
+    name: "Enable Personal by default",
+    checked: true,
+  });
+  expect(within(manager).queryByText("Work")).toBeNull();
+});
+test("connectors-accounts-018 retrying the last account deletion preserves the impact explanation until success", async () => {
+  const deletion = githubAccounts({ octocat: true });
+  deletion.affected = 2;
+  deletion.failure = true;
+  const pending = context.mocks.deferred<void>();
+  deletion.ready = pending.promise;
+  const manager = await manageAccounts();
+  const confirm = await disconnectDialog("octocat");
+  expect(
+    within(confirm).getByText(
+      "This disconnects the account from Okou. 2 threads will return to default inheritance. The provider account will not be deleted.",
+    ),
+  ).toBeInTheDocument();
+  click(getAction("button", "Disconnect account", confirm));
+  await expect(
+    findAction("button", "Disconnecting...", confirm),
+  ).resolves.toBeDisabled();
+  pending.resolve();
+  await expect(
+    screen.findByText("Disconnect failed"),
+  ).resolves.toBeInTheDocument();
+  const retry = getAction("button", "Disconnect account", confirm);
+  expect(retry).toBeEnabled();
+  deletion.failure = false;
+  click(retry);
+  await expect(
+    within(manager).findByText("No accounts found"),
+  ).resolves.toBeInTheDocument();
+  expect(getAction("button", "Add account", manager)).toBeEnabled();
+  expect(
+    screen.queryByRole("dialog", { name: "Disconnect octocat?" }),
+  ).toBeNull();
+});
+test("connectors-accounts-019 late deletion of Work leaves Personal's confirmation actionable", async () => {
+  const deletion = githubAccounts({ Work: true, Personal: true });
+  const pending = context.mocks.deferred<void>();
+  deletion.ready = pending.promise;
+  const manager = await manageAccounts();
+  const work = await disconnectDialog("Work");
+  click(getAction("button", "Disconnect account", work));
+  await expect(
+    findAction("button", "Disconnecting...", work),
+  ).resolves.toBeDisabled();
+  click(getAction("button", "Cancel", work));
+  const personal = await disconnectDialog("Personal");
+  pending.resolve();
+  await waitFor(() => {
+    return expect(within(manager).queryByText("Work")).toBeNull();
+  });
+  expect(within(manager).getByText("Personal")).toBeInTheDocument();
+  expect(getAction("button", "Disconnect account", personal)).toBeEnabled();
+  expect(
+    screen.getByRole("dialog", { name: "Disconnect Personal?" }),
+  ).toBeInTheDocument();
 });

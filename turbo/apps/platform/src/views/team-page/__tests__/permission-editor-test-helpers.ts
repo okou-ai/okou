@@ -28,15 +28,10 @@ import {
 
 export type SavedPermissionGrant = ConnectorPermissions["grants"][number];
 
-/**
- * Serves one connected built-in connector with its permission metadata and
- * the member's saved connector-wide rules. Returns every applied rule change.
- */
-export function mockConnectorPermissionRules(
+export function mockPermissionDirectory(
   context: TestContext,
   metadata: PublicConnectorCatalogPermissionDetail,
-  grants: readonly SavedPermissionGrant[],
-): ApplyConnectorPermissions[] {
+) {
   const connector = catalogConnectorFixture(
     metadata.connectorSlug,
     metadata.label,
@@ -54,6 +49,18 @@ export function mockConnectorPermissionRules(
           });
     },
   );
+}
+
+/**
+ * Serves one connected built-in connector with its permission metadata and
+ * the member's saved connector-wide rules. Returns every applied rule change.
+ */
+export function mockConnectorPermissionRules(
+  context: TestContext,
+  metadata: PublicConnectorCatalogPermissionDetail,
+  grants: readonly SavedPermissionGrant[],
+): ApplyConnectorPermissions[] {
+  mockPermissionDirectory(context, metadata);
   const applied: ApplyConnectorPermissions[] = [];
   context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
     return respond(200, { target: query, grants: [...grants] });
@@ -71,6 +78,12 @@ export async function openConnectorPermissions(
   label: string,
 ): Promise<HTMLElement> {
   await setupPage({ context, path: "/connectors?scope=connected" });
+  return showPermissionsDialog(label);
+}
+
+export async function showPermissionsDialog(
+  label: string,
+): Promise<HTMLElement> {
   const permissions = await waitFor(() => {
     const action = getConnectorAction(
       "button",
