@@ -189,7 +189,10 @@ const listChatThreadLifecycleEventsInner$ = computed(async (get) => {
   };
 });
 
-const indicatorTransforms = [iosLegacyIndicators, androidLegacyIndicators];
+const indicatorTransforms = [
+  iosLegacyIndicators,
+  androidLegacyIndicators,
+] as const;
 
 const listChatIndicatorsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);

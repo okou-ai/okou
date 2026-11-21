@@ -1,3 +1,4 @@
+import { pgNullDecoder } from "../../lib/db-structured-result";
 import { normalChatInputInsertSql } from "./normal-chat-input-publication-sql";
 import { db$, writeDb$ } from "../external/db";
 import {
@@ -354,7 +355,7 @@ function newestUnreadIndicators(rows: UnreadIndicatorRow[]) {
 function createIndicatorRows(args: IndicatorScope) {
   const legacyThreadAgentId = args.includeLegacyAgents
     ? legacyChatThreads.agentId
-    : sql<null>`NULL`;
+    : sql`NULL`.mapWith(pgNullDecoder);
   const activeRows$ = computed(
     async (get): Promise<readonly IndicatorThreadRow[]> => {
       return await get(db$)
