@@ -4,6 +4,7 @@ import ai.okou.android.CONNECTOR_AUTHORIZATION_URL
 import ai.okou.android.CONNECTOR_CALENDAR
 import ai.okou.android.CONNECTOR_CALENDAR_PRIMARY
 import ai.okou.android.CONNECTOR_GMAIL_ACCOUNT
+import ai.okou.android.CONNECTOR_SLACK_ACCOUNT
 import ai.okou.android.ConnectorApiFixture
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -70,6 +71,21 @@ class ConnectorModelTest {
                     .displayName,
             )
             assertEquals(2, renamed.accountsFor(CONNECTOR_CALENDAR).size)
+        }
+
+    @Test
+    fun disconnectingTheLastAccountKeepsTheSelectedService() =
+        withModel("slack") { _, model ->
+            model.await { it.connected.data?.containsKey("slack") == true }
+            model.prepareDisconnect(CONNECTOR_SLACK_ACCOUNT)
+            model.await { it.impact?.read?.data != null }
+
+            model.disconnect(CONNECTOR_SLACK_ACCOUNT)
+
+            val disconnected = model.await { it.action?.result == ConnectorResult.Disconnected }
+            assertEquals("slack", disconnected.detail.data?.entry?.slug)
+            assertEquals(emptyList<ConnectorSavedAccount>(), disconnected.accountsFor("slack"))
+            assertFalse(requireNotNull(disconnected.connected.data).containsKey("slack"))
         }
 
     private fun withModel(
