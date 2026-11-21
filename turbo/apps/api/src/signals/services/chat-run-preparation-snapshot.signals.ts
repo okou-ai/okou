@@ -203,14 +203,18 @@ export function createChatRunPreparationSnapshot(
     if (!row) {
       throw new Error("Chat preparation occupancy returned no row");
     }
+    const snapshot = {
+      hasCapacity: row.hasCapacity,
+      threadHasActiveRun: row.threadHasActiveRun,
+      memoryHead: {
+        memory: row.memory,
+        revision: row.revision,
+        archiveCache: row.archiveCache,
+      },
+    };
     const { thread, head: picked } = row;
     if (!thread || !picked) {
-      return {
-        hasCapacity: row.hasCapacity,
-        threadHasActiveRun: row.threadHasActiveRun,
-        pickedEvent: null,
-        memoryHead: undefined,
-      };
+      return { ...snapshot, pickedEvent: null };
     }
     // Only this request's actual FIFO head may use its canonical input facts.
     const owned = requestInput?.id === picked.id ? requestInput : undefined;
@@ -229,15 +233,6 @@ export function createChatRunPreparationSnapshot(
         captureNetworkBodies: row.captureNetworkBodies,
       },
     };
-    return {
-      hasCapacity: row.hasCapacity,
-      threadHasActiveRun: row.threadHasActiveRun,
-      pickedEvent,
-      memoryHead: {
-        memory: row.memory,
-        revision: row.revision,
-        archiveCache: row.archiveCache,
-      },
-    };
+    return { ...snapshot, pickedEvent };
   });
 }
