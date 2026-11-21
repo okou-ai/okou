@@ -18,9 +18,7 @@ import {
   continuityThread,
   installContinuityWorkspace,
 } from "./chat-continuity-test-helpers.ts";
-import {
-  chatListThread,
-} from "./chat-list-test-helpers.ts";
+import { chatListThread } from "./chat-list-test-helpers.ts";
 import { menuItemByText } from "./sidebar-test-helpers.tsx";
 
 const context = testContext();
