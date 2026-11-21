@@ -11,9 +11,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,6 +28,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -81,6 +85,7 @@ internal fun PersonalInstructionsSettings(
     var confirmDiscard by rememberSettingsFlag()
     var offlineSave by rememberSettingsFlag()
     var editorFocused by rememberSettingsFlag()
+    var editorKeyboardVisible by rememberSettingsFlag()
     var wasOffline by remember(model) { mutableStateOf(offline) }
     LaunchedEffect(model, offline) {
         val reconnected = wasOffline && !offline
@@ -198,7 +203,17 @@ internal fun PersonalInstructionsSettings(
             if (editing != null) {
                 val focus = remember { FocusRequester() }
                 val restoreFocus = remember { editorFocused }
-                LaunchedEffect(focus) { if (restoreFocus) focus.requestFocus() }
+                val restoreKeyboard = remember { editorKeyboardVisible }
+                val keyboard = LocalSoftwareKeyboardController.current
+                val keyboardVisible = WindowInsets.isImeVisible
+                SideEffect {
+                    if (editorFocused && lifecycle.currentState == Lifecycle.State.RESUMED) {
+                        editorKeyboardVisible = keyboardVisible
+                    }
+                }
+                LaunchedEffect(focus) {
+                    if (restoreFocus && focus.requestFocus() && !restoreKeyboard) keyboard?.hide()
+                }
                 OutlinedTextField(
                     value = editing.value,
                     onValueChange = { value ->
