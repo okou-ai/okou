@@ -82,6 +82,16 @@ internal data class ChatListSection(
 
     val firstChatRow: Int
         get() = if (group.project == null) firstRow else firstRow + 1
+
+    val pinTail: Int
+        get() = group.pinnedTailIndex(hasProvisional = provisionalChats.isNotEmpty())
+
+    val showsEmptyProjectAction: Boolean
+        get() =
+            group.project != null &&
+                foldedActivity == null &&
+                group.threads.isEmpty() &&
+                provisionalChats.isEmpty()
 }
 
 internal fun chatListSections(

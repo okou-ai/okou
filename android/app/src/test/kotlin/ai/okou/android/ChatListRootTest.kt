@@ -516,14 +516,14 @@ class ChatListRootTest {
             projectResponse()
         }
         val rows =
-            (1..30).joinToString(",") { index ->
+            (1..190).joinToString(",") { index ->
                 val suffix = index.toString().padStart(12, '0')
                 chatEventWire(
                     id = "61000000-0000-4000-8000-$suffix",
                     seq = index.toLong(),
                     thread = "62000000-0000-4000-8000-$suffix",
                     title = "Startup chat $index",
-                    extra = if (index <= 4) ",\"projectId\":\"$CHAT_PROJECT\"" else "",
+                    extra = if (index <= 160) ",\"projectId\":\"$CHAT_PROJECT\"" else "",
                 )
             }
         app.fixture.events = { request ->
@@ -537,35 +537,28 @@ class ChatListRootTest {
                     currentList()?.source == ai.okou.android.chat.ChatListSource.Network
             }
             val list = compose.onNodeWithTag("chat_list")
-            val projectChat = compose.onNodeWithText("Startup chat 4")
-            val outsideChat = compose.onNodeWithText("Startup chat 30")
+            val projectChat = compose.onNodeWithText("Startup chat 160")
             projectChat.assertIsDisplayed()
-            outsideChat.assertIsDisplayed()
-            assertTrue(
-                projectChat.getUnclippedBoundsInRoot().let { bounds ->
-                    val outside = outsideChat.getUnclippedBoundsInRoot()
-                    bounds.left > outside.left && bounds.top < outside.top
-                }
-            )
+            val projectInset = projectChat.getUnclippedBoundsInRoot().left
             compose.onNodeWithText("Research").assertDoesNotExist()
 
-            list.performScrollToIndex(9)
+            // The header will replace 160 rows, taking the anchor outside Compose's key window.
+            list.performScrollToIndex(165)
             list.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 12f) }
-            val anchor = compose.onNodeWithText("Startup chat 25")
-            val offset = anchor.getUnclippedBoundsInRoot().top
+            val anchor = compose.onNodeWithText("Startup chat 185")
+            anchor.assertIsDisplayed()
+            val anchorBounds = anchor.getUnclippedBoundsInRoot()
+            assertTrue(projectInset > anchorBounds.left)
             projectGate.countDown()
             awaitListAndNames()
-            assertEquals(offset, anchor.getUnclippedBoundsInRoot().top)
+            assertEquals(anchorBounds, anchor.getUnclippedBoundsInRoot())
 
             list.performScrollToIndex(0)
             compose.onNodeWithText("Research").assertIsDisplayed()
             projectChat.assertDoesNotExist()
             setResearchExpanded(true)
             projectChat.assertIsDisplayed()
-            assertTrue(
-                projectChat.getUnclippedBoundsInRoot().left >
-                    outsideChat.getUnclippedBoundsInRoot().left
-            )
+            assertEquals(projectInset, projectChat.getUnclippedBoundsInRoot().left)
         } finally {
             projectGate.countDown()
         }
