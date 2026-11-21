@@ -28,7 +28,7 @@
     <string name="output_catching_up">Aggiornamento dei messaggi salvati. Il testo ricevuto viene conservato.</string>
     <string name="settings">Impostazioni</string>
     <string name="back">Indietro</string>
-    <string name="appearance">Aspetto</string>
+    <string name="appearance">Modalità di visualizzazione</string>
     <string name="appearance_system">Segui il sistema</string>
     <string name="appearance_light">Chiaro</string>
     <string name="appearance_dark">Scuro</string>
@@ -45,13 +45,13 @@
     <string name="auth_unavailable">Impossibile caricare la sessione o lo spazio di lavoro. Riprova.</string>
     <string name="auth_sign_out">Esci</string>
     <string name="auth_signing_out">Disconnessione…</string>
-    <string name="auth_workspace">Spazio di lavoro</string>
+    <string name="auth_workspace">Spazio di lavoro attuale</string>
     <string name="auth_switch_workspace">Cambia spazio di lavoro</string>
     <string name="auth_browser_unavailable">Installa un browser per configurare lo spazio di lavoro.</string>
-    <string name="preferences_title">Preferenze dello spazio di lavoro</string>
+    <string name="preferences_title">Preferenze condivise</string>
     <string name="preference_loading">Aggiornamento delle preferenze…</string>
     <string name="preference_saving">Salvataggio delle preferenze…</string>
-    <string name="preference_save_failed">Impossibile confermare il salvataggio. Riprova o aggiorna.</string>
+    <string name="preference_save_failed">Impossibile salvare le preferenze. Le tue scelte sono ancora attive.</string>
     <string name="preference_refresh_failed">Impossibile aggiornare le preferenze. Riprova.</string>
     <string name="preference_refresh">Aggiorna preferenze</string>
     <string name="preference_color_theme">Tema colore</string>
@@ -76,7 +76,7 @@
     <string name="language_hi_in">हिन्दी</string>
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
-    <string name="instructions_title">Istruzioni</string>
+    <string name="instructions_title">Istruzioni personali</string>
     <string name="instructions_timing">Le modifiche salvate si applicano alle attività future.</string>
     <string name="instructions_loading">Caricamento istruzioni…</string>
     <string name="instructions_saving">Salvataggio istruzioni…</string>
@@ -90,7 +90,7 @@
     <string name="instructions_save_rejected">Salvataggio rifiutato. Le modifiche sono conservate.</string>
     <string name="instructions_invalid">Il testo contiene un carattere non supportato.</string>
     <string name="instructions_refresh">Controlla versione salvata</string>
-    <string name="instructions_save">Salva istruzioni</string>
+    <string name="instructions_save">Salva</string>
     <string name="instructions_reload">Carica ultima versione e scarta modifiche</string>
     <string name="instructions_discard">Scarta modifiche</string>
     <string name="instructions_retry_save">Riprova lo stesso salvataggio</string>
@@ -157,4 +157,13 @@
     <string name="settings_account">Account</string>
     <string name="chat_project_expansion_read_failed">Impossibile caricare lo stato di espansione dei progetti su questo dispositivo.</string>
     <string name="chat_project_expansion_save_failed">Impossibile salvare lo stato di espansione dei progetti su questo dispositivo.</string>
+    <string name="settings_switch">Cambia</string>
+    <string name="settings_view">Visualizza</string>
+    <string name="settings_cancel">Annulla</string>
+    <string name="settings_saving">Salvataggio…</string>
+    <string name="settings_sign_out_title">Disconnettersi?</string>
+    <string name="settings_sign_out_body">Per usare di nuovo Okou su questo dispositivo, accedi di nuovo. Le bozze restano associate a questo account.</string>
+    <string name="updates_waiting_to_check">Verifica in attesa</string>
+    <string name="updates_waiting_to_download">Download in attesa</string>
+    <string name="instructions_placeholder">Che cosa vuoi che Okou tenga a mente?</string>
 </resources>

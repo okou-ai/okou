@@ -28,7 +28,7 @@
     <string name="output_catching_up">Gespeicherte Nachrichten werden geladen. Empfangener Text bleibt erhalten.</string>
     <string name="settings">Einstellungen</string>
     <string name="back">Zurück</string>
-    <string name="appearance">Erscheinungsbild</string>
+    <string name="appearance">Anzeigemodus</string>
     <string name="appearance_system">Systemeinstellung</string>
     <string name="appearance_light">Hell</string>
     <string name="appearance_dark">Dunkel</string>
@@ -45,13 +45,13 @@
     <string name="auth_unavailable">Sitzung oder Arbeitsbereich konnte nicht geladen werden. Versuche es erneut.</string>
     <string name="auth_sign_out">Abmelden</string>
     <string name="auth_signing_out">Abmeldung läuft…</string>
-    <string name="auth_workspace">Arbeitsbereich</string>
+    <string name="auth_workspace">Aktueller Arbeitsbereich</string>
     <string name="auth_switch_workspace">Arbeitsbereich wechseln</string>
     <string name="auth_browser_unavailable">Installiere einen Browser, um den Arbeitsbereich einzurichten.</string>
-    <string name="preferences_title">Arbeitsbereichseinstellungen</string>
+    <string name="preferences_title">Gemeinsame Einstellungen</string>
     <string name="preference_loading">Einstellungen werden aktualisiert…</string>
     <string name="preference_saving">Einstellungen werden gespeichert…</string>
-    <string name="preference_save_failed">Das Speichern konnte nicht bestätigt werden. Versuche es erneut oder aktualisiere.</string>
+    <string name="preference_save_failed">Deine Einstellungen konnten nicht gespeichert werden. Deine Auswahl bleibt aktiv.</string>
     <string name="preference_refresh_failed">Einstellungen konnten nicht aktualisiert werden. Versuche es erneut.</string>
     <string name="preference_refresh">Einstellungen aktualisieren</string>
     <string name="preference_color_theme">Farbthema</string>
@@ -76,7 +76,7 @@
     <string name="language_hi_in">हिन्दी</string>
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
-    <string name="instructions_title">Anweisungen</string>
+    <string name="instructions_title">Persönliche Anweisungen</string>
     <string name="instructions_timing">Gespeicherte Änderungen gelten für künftige Aufgaben.</string>
     <string name="instructions_loading">Anweisungen werden geladen…</string>
     <string name="instructions_saving">Anweisungen werden gespeichert…</string>
@@ -90,7 +90,7 @@
     <string name="instructions_save_rejected">Das Speichern wurde abgelehnt. Deine Änderungen bleiben erhalten.</string>
     <string name="instructions_invalid">Der Text enthält ein nicht unterstütztes Zeichen.</string>
     <string name="instructions_refresh">Gespeicherte Version prüfen</string>
-    <string name="instructions_save">Anweisungen speichern</string>
+    <string name="instructions_save">Speichern</string>
     <string name="instructions_reload">Neueste Version laden und Änderungen verwerfen</string>
     <string name="instructions_discard">Änderungen verwerfen</string>
     <string name="instructions_retry_save">Dasselbe Speichern erneut versuchen</string>
@@ -157,4 +157,13 @@
     <string name="settings_account">Konto</string>
     <string name="chat_project_expansion_read_failed">Die Anzeigeeinstellungen für Projekte konnten auf diesem Gerät nicht geladen werden.</string>
     <string name="chat_project_expansion_save_failed">Die Anzeigeeinstellungen für Projekte konnten auf diesem Gerät nicht gespeichert werden.</string>
+    <string name="settings_switch">Wechseln</string>
+    <string name="settings_view">Anzeigen</string>
+    <string name="settings_cancel">Abbrechen</string>
+    <string name="settings_saving">Wird gespeichert…</string>
+    <string name="settings_sign_out_title">Abmelden?</string>
+    <string name="settings_sign_out_body">Um Okou auf diesem Gerät erneut zu nutzen, melde dich wieder an. Entwürfe bleiben bei diesem Konto.</string>
+    <string name="updates_waiting_to_check">Warten auf Prüfung</string>
+    <string name="updates_waiting_to_download">Warten auf Download</string>
+    <string name="instructions_placeholder">Was soll Okou berücksichtigen?</string>
 </resources>

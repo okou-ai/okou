@@ -6,6 +6,7 @@ import ai.okou.android.api.generated.Organization
 import ai.okou.android.chat.AssistantRecoveryModel
 import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ChatComposerModel
+import ai.okou.android.chat.ChatListFilter
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.ProjectExpansionModel
@@ -17,6 +18,7 @@ import ai.okou.android.instructions.PersonalInstructionsModel
 import ai.okou.android.preferences.MemberAppearance
 import ai.okou.android.preferences.MemberAppearanceCache
 import ai.okou.android.preferences.MemberPreferencesModel
+import ai.okou.android.preferences.PreferenceChange
 import ai.okou.android.preferences.appearance
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -106,6 +108,9 @@ class SessionModel(
     @Volatile private var generation = 0L
     private val mutable = MutableStateFlow(SessionUiState(generation))
     val uiState = mutable.asStateFlow()
+    val account = authentication.account
+    private val workspaceFilters = mutableMapOf<Pair<String, String>, ChatListFilter>()
+    private val pendingPreferences = mutableMapOf<Pair<String, String>, PreferenceChange>()
     private var observed: AuthenticationState? = null
     private var operation: Job? = null
     private var membershipLoad: Job? = null
@@ -124,6 +129,20 @@ class SessionModel(
     }
 
     private fun retire() {
+        val state = mutable.value
+        val ready = state.ready
+        val opened = state.opening as? OpeningWorkspace.Authorized
+        val identity = ready?.identity ?: opened?.identity
+        if (identity != null) {
+            val key = identity.userId to identity.workspaceId
+            val filter = (ready?.chats ?: opened?.chats)?.uiState?.value?.filter
+            if (filter != null) workspaceFilters[key] = filter
+            if (ready != null) {
+                val intent = ready.preferences.uiState.value.pending
+                if (intent == null) pendingPreferences.remove(key)
+                else pendingPreferences[key] = intent
+            }
+        }
         generation++
         operation?.cancel()
         operation = null
@@ -273,6 +292,9 @@ class SessionModel(
                                 dispatcher = dispatcher,
                                 realtime = owner,
                                 connectivity = connectivity,
+                                initialFilter =
+                                    workspaceFilters[identity.userId to identity.workspaceId]
+                                        ?: ChatListFilter.Inbox,
                             )
                         }
                     val controls =
@@ -410,6 +432,9 @@ class SessionModel(
                     owner,
                     authorized = { current(ticket, snapshot) },
                     onFailure = { error -> workspaceFailure(ticket, snapshot, error) },
+                    connectivity = connectivity,
+                    initialPending =
+                        pendingPreferences[opened.identity.userId to opened.identity.workspaceId],
                 )
             }
         val instructions =

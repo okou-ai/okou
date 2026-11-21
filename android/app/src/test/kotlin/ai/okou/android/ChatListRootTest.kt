@@ -268,14 +268,14 @@ class ChatListRootTest {
                 .performScrollToNode(hasText("Native history", substring = true))
             compose.onNodeWithText("Native history", substring = true).assertExists()
             compose.onNodeWithContentDescription("Settings").performClick()
-            compose.onNodeWithText("Appearance").assertExists()
+            compose.onNodeWithText("Display mode").assertExists()
             release.countDown()
             compose.waitUntil(10_000) {
                 compose.runOnIdle {
                     chats.warming.state.value.phase == ai.okou.android.chat.ChatReadPhase.Failed
                 }
             }
-            compose.onNodeWithText("Appearance").assertExists()
+            compose.onNodeWithText("Display mode").assertExists()
             compose.onNodeWithContentDescription("Back").performClick()
             compose
                 .onNodeWithTag("conversation")
@@ -328,7 +328,7 @@ class ChatListRootTest {
                 .performScrollToNode(hasText("Loading conversation…"))
             compose.onNodeWithText("Loading conversation…").assertExists()
             compose.onNodeWithContentDescription("Settings").performClick()
-            compose.onNodeWithText("Appearance").assertExists()
+            compose.onNodeWithText("Display mode").assertExists()
             gate.countDown()
             val chats =
                 compose.runOnIdle {
@@ -426,7 +426,7 @@ class ChatListRootTest {
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Personal chat"))
         compose.onNodeWithText("Personal chat").assertExists()
         compose.onNodeWithContentDescription("Settings").performClick()
-        compose.onNodeWithText("Appearance").assertExists()
+        compose.onNodeWithText("Display mode").assertExists()
     }
 
     @Test
@@ -460,7 +460,7 @@ class ChatListRootTest {
         assertTrue(descriptors.get() >= 2)
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithContentDescription("Settings").performClick()
-        compose.onNodeWithText("Appearance").assertExists()
+        compose.onNodeWithText("Display mode").assertExists()
     }
 
     @Test
@@ -470,9 +470,9 @@ class ChatListRootTest {
         compose.onNodeWithContentDescription("Loading chats…").assertExists()
         compose.onNodeWithContentDescription("Switch workspace", substring = true).performClick()
         compose.onNodeWithText("Workspace B").assertExists()
-        compose.onNodeWithText("Back").performClick()
+        compose.onNodeWithText("Workspace A").assertIsSelected().performClick()
         compose.onNodeWithContentDescription("Settings").performClick()
-        compose.onNodeWithText("Appearance").assertExists()
+        compose.onNodeWithText("Display mode").assertExists()
         (compose.activity.application as ChatListApplication).responseGate.countDown()
         compose.onNodeWithContentDescription("Back").performClick()
         awaitListAndNames()

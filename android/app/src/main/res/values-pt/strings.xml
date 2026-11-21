@@ -28,7 +28,7 @@
     <string name="output_catching_up">Atualizando as mensagens salvas. O texto recebido é mantido.</string>
     <string name="settings">Configurações</string>
     <string name="back">Voltar</string>
-    <string name="appearance">Aparência</string>
+    <string name="appearance">Modo de exibição</string>
     <string name="appearance_system">Seguir o sistema</string>
     <string name="appearance_light">Claro</string>
     <string name="appearance_dark">Escuro</string>
@@ -45,13 +45,13 @@
     <string name="auth_unavailable">Não foi possível carregar sua sessão ou espaço de trabalho. Tente novamente.</string>
     <string name="auth_sign_out">Sair</string>
     <string name="auth_signing_out">Saindo…</string>
-    <string name="auth_workspace">Espaço de trabalho</string>
+    <string name="auth_workspace">Espaço de trabalho atual</string>
     <string name="auth_switch_workspace">Trocar espaço de trabalho</string>
     <string name="auth_browser_unavailable">Instale um navegador para abrir a configuração do espaço de trabalho.</string>
-    <string name="preferences_title">Preferências do espaço de trabalho</string>
+    <string name="preferences_title">Preferências compartilhadas</string>
     <string name="preference_loading">Atualizando preferências…</string>
     <string name="preference_saving">Salvando preferências…</string>
-    <string name="preference_save_failed">Não foi possível confirmar o salvamento. Tente novamente ou atualize.</string>
+    <string name="preference_save_failed">Não foi possível salvar suas preferências. Suas escolhas continuam em uso.</string>
     <string name="preference_refresh_failed">Não foi possível atualizar as preferências. Tente novamente.</string>
     <string name="preference_refresh">Atualizar preferências</string>
     <string name="preference_color_theme">Tema de cores</string>
@@ -76,7 +76,7 @@
     <string name="language_hi_in">हिन्दी</string>
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
-    <string name="instructions_title">Instruções</string>
+    <string name="instructions_title">Instruções pessoais</string>
     <string name="instructions_timing">As alterações salvas se aplicam às próximas tarefas.</string>
     <string name="instructions_loading">Carregando instruções…</string>
     <string name="instructions_saving">Salvando instruções…</string>
@@ -90,7 +90,7 @@
     <string name="instructions_save_rejected">O salvamento foi rejeitado. Suas alterações foram mantidas.</string>
     <string name="instructions_invalid">O texto contém um caractere não compatível.</string>
     <string name="instructions_refresh">Conferir versão salva</string>
-    <string name="instructions_save">Salvar instruções</string>
+    <string name="instructions_save">Salvar</string>
     <string name="instructions_reload">Carregar versão mais recente e descartar alterações</string>
     <string name="instructions_discard">Descartar alterações</string>
     <string name="instructions_retry_save">Repetir o mesmo salvamento</string>
@@ -157,4 +157,13 @@
     <string name="settings_account">Conta</string>
     <string name="chat_project_expansion_read_failed">Não foi possível carregar o estado de expansão dos projetos neste dispositivo.</string>
     <string name="chat_project_expansion_save_failed">Não foi possível salvar o estado de expansão dos projetos neste dispositivo.</string>
+    <string name="settings_switch">Alternar</string>
+    <string name="settings_view">Ver</string>
+    <string name="settings_cancel">Cancelar</string>
+    <string name="settings_saving">Salvando…</string>
+    <string name="settings_sign_out_title">Sair?</string>
+    <string name="settings_sign_out_body">Para voltar a usar o Okou neste dispositivo, entre novamente. Os rascunhos permanecem nesta conta.</string>
+    <string name="updates_waiting_to_check">Aguardando verificação</string>
+    <string name="updates_waiting_to_download">Aguardando download</string>
+    <string name="instructions_placeholder">O que você quer que o Okou leve em conta?</string>
 </resources>

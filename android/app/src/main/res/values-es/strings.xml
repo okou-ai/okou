@@ -28,7 +28,7 @@
     <string name="output_catching_up">Actualizando los mensajes guardados. Se conserva el texto recibido.</string>
     <string name="settings">Ajustes</string>
     <string name="back">Volver</string>
-    <string name="appearance">Apariencia</string>
+    <string name="appearance">Modo de visualización</string>
     <string name="appearance_system">Seguir el sistema</string>
     <string name="appearance_light">Claro</string>
     <string name="appearance_dark">Oscuro</string>
@@ -45,13 +45,13 @@
     <string name="auth_unavailable">No se pudo cargar la sesión o el espacio de trabajo. Inténtalo de nuevo.</string>
     <string name="auth_sign_out">Cerrar sesión</string>
     <string name="auth_signing_out">Cerrando sesión…</string>
-    <string name="auth_workspace">Espacio de trabajo</string>
+    <string name="auth_workspace">Espacio de trabajo actual</string>
     <string name="auth_switch_workspace">Cambiar de espacio de trabajo</string>
     <string name="auth_browser_unavailable">Instala un navegador para configurar el espacio de trabajo.</string>
-    <string name="preferences_title">Preferencias del espacio de trabajo</string>
+    <string name="preferences_title">Preferencias compartidas</string>
     <string name="preference_loading">Actualizando preferencias…</string>
     <string name="preference_saving">Guardando preferencias…</string>
-    <string name="preference_save_failed">No se pudo confirmar el guardado. Inténtalo de nuevo o actualiza.</string>
+    <string name="preference_save_failed">No se pudieron guardar las preferencias. Tus opciones siguen activas.</string>
     <string name="preference_refresh_failed">No se pudieron actualizar las preferencias. Inténtalo de nuevo.</string>
     <string name="preference_refresh">Actualizar preferencias</string>
     <string name="preference_color_theme">Tema de color</string>
@@ -76,7 +76,7 @@
     <string name="language_hi_in">हिन्दी</string>
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
-    <string name="instructions_title">Instrucciones</string>
+    <string name="instructions_title">Instrucciones personales</string>
     <string name="instructions_timing">Los cambios guardados se aplican a las tareas futuras.</string>
     <string name="instructions_loading">Cargando instrucciones…</string>
     <string name="instructions_saving">Guardando instrucciones…</string>
@@ -90,7 +90,7 @@
     <string name="instructions_save_rejected">Se rechazó el guardado. Tus cambios se conservan.</string>
     <string name="instructions_invalid">El texto contiene un carácter no compatible.</string>
     <string name="instructions_refresh">Comprobar versión guardada</string>
-    <string name="instructions_save">Guardar instrucciones</string>
+    <string name="instructions_save">Guardar</string>
     <string name="instructions_reload">Cargar última versión y descartar cambios</string>
     <string name="instructions_discard">Descartar cambios</string>
     <string name="instructions_retry_save">Reintentar el mismo guardado</string>
@@ -157,4 +157,13 @@
     <string name="settings_account">Cuenta</string>
     <string name="chat_project_expansion_read_failed">No se pudo cargar el estado de expansión de los proyectos en este dispositivo.</string>
     <string name="chat_project_expansion_save_failed">No se pudo guardar el estado de expansión de los proyectos en este dispositivo.</string>
+    <string name="settings_switch">Cambiar</string>
+    <string name="settings_view">Ver</string>
+    <string name="settings_cancel">Cancelar</string>
+    <string name="settings_saving">Guardando…</string>
+    <string name="settings_sign_out_title">¿Cerrar sesión?</string>
+    <string name="settings_sign_out_body">Para volver a usar Okou en este dispositivo, inicia sesión. Los borradores se conservan en esta cuenta.</string>
+    <string name="updates_waiting_to_check">Esperando para comprobar</string>
+    <string name="updates_waiting_to_download">Esperando para descargar</string>
+    <string name="instructions_placeholder">¿Qué quieres que Okou tenga en cuenta?</string>
 </resources>

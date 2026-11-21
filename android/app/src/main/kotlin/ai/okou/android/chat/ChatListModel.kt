@@ -238,8 +238,9 @@ class ChatListModel(
     private val monotonicMillis: () -> Long = { System.nanoTime() / 1_000_000 },
     connectivity: Flow<Boolean> = emptyFlow(),
     private val wallMillis: () -> Long = System::currentTimeMillis,
+    initialFilter: ChatListFilter = ChatListFilter.Inbox,
 ) : ViewModel() {
-    private val mutable = MutableStateFlow(ChatListUiState())
+    private val mutable = MutableStateFlow(ChatListUiState(filter = initialFilter))
     val uiState = mutable.asStateFlow()
     @Volatile private var retired = false
     private val cache = cacheStore.open(identity) { current() }

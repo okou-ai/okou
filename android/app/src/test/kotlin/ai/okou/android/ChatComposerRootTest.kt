@@ -251,11 +251,11 @@ class ChatComposerRootTest {
         // Native focus loss collapses an active selection; preserve the cursor on recreation.
         input.performTextInputSelection(TextRange(13))
         compose.onNodeWithContentDescription("Settings").performClick()
-        compose.onNodeWithText("Appearance").assertExists()
+        compose.onNodeWithText("Display mode").assertExists()
         captureOwners()
         // Recreation runs the same complete Activity budget check as every Debug save.
         compose.activityRule.scenario.recreate()
-        compose.onNodeWithText("Appearance").assertExists()
+        compose.onNodeWithText("Display mode").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
         assertEquals(
             large,

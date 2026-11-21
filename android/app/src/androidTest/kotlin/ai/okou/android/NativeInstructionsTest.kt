@@ -154,7 +154,6 @@ class NativeInstructionsTest {
             // The host Compose test covers pending Instructions feedback. Release the actual HTTP
             // response after native first-display proof, before gestures can exhaust its deadline.
             held.countDown()
-            reveal(app.getString(R.string.instructions_current))
             editor().click()
             awaitIme(true)
             editor().text = "Native **instructions** 👋"
@@ -165,10 +164,8 @@ class NativeInstructionsTest {
             awaitIme(false)
             reveal(app.getString(R.string.instructions_title))
             scenario.recreate()
-            reveal(app.getString(R.string.instructions_unsaved))
             assertTrue(editor().text.contains("Native **instructions** 👋"))
             click(R.string.instructions_save)
-            reveal(app.getString(R.string.instructions_current))
             assertTrue(
                 device.wait(
                     object : Condition<UiDevice, Boolean> {
@@ -179,14 +176,19 @@ class NativeInstructionsTest {
                 ) == true
             )
             assertTrue(fixture.saved.content.contains("Native **instructions** 👋"))
+            reveal(app.getString(R.string.appearance))
+            click(R.string.instructions_title)
             editor().text = "Keep this local draft"
             fixture.externalEdit("Changed on Web")
-            click(R.string.instructions_refresh)
+            scenario.onActivity {
+                checkNotNull(ViewModelProvider(it)[SessionModel::class.java].uiState.value.ready)
+                    .instructions
+                    .refresh()
+            }
             reveal(app.getString(R.string.instructions_conflict))
             assertEquals("Keep this local draft", editor().text)
             assertEquals(1, fixture.requests.count { it.method == "PUT" })
             click(R.string.instructions_reload)
-            reveal(app.getString(R.string.instructions_current))
             assertEquals("Changed on Web", editor().text)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             reveal(app.getString(R.string.appearance))

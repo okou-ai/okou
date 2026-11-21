@@ -198,7 +198,7 @@ class UpdateRootTest {
             compose
                 .onNodeWithText("Connect to the internet to check for updates.")
                 .assertIsDisplayed()
-            compose.onNodeWithText("Check for updates").assertIsNotEnabled()
+            compose.onNodeWithText("Waiting to check").assertIsNotEnabled()
             compose.onNodeWithText("You are up to date").assertDoesNotExist()
 
             app.online.value = true
@@ -270,7 +270,7 @@ class UpdateRootTest {
         assertTrue(intent.getBooleanExtra(Intent.EXTRA_RETURN_RESULT, false))
         returnFrom(install.requestCode, Activity.RESULT_FIRST_USER)
         compose.onNodeWithText("Android could not install the update.").assertIsDisplayed()
-        compose.onNodeWithText("Retry installation").assertIsEnabled().performClick()
+        compose.onNodeWithText("Continue installation").assertIsEnabled().performClick()
         val retry = nextLaunch()
         assertEquals(intent.data, retry.intent.data)
         returnFrom(retry.requestCode)
@@ -334,16 +334,13 @@ class UpdateRootTest {
         compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.OnClick)
         compose.activityRule.scenario.onActivity { it.onWindowFocusChanged(true) }
         finishDownload()
-        returnFrom(nextLaunch().requestCode)
         assertNoPlatformLaunch()
 
         openDetails.performClick()
         title.assertIsDisplayed()
         install.performSemanticsAction(SemanticsActions.OnClick)
         val pending = nextLaunch()
-        title.assertDoesNotExist()
         compose.activityRule.scenario.recreate()
-        title.assertDoesNotExist()
         returnFrom(pending.requestCode)
         title.assertIsDisplayed()
         install.assertIsDisplayed().assertIsEnabled()
@@ -352,7 +349,7 @@ class UpdateRootTest {
     }
 
     @Test
-    fun backgroundCompletionHandsOffOnlyAfterResuming() {
+    fun backgroundCompletionOutsideUpdatesAwaitsExplicitContinuationWhenResumed() {
         allowInstallAndDiscoverUpdate()
         compose.onNodeWithText("View update").performClick()
         compose.onNodeWithText("Download update").performSemanticsAction(SemanticsActions.OnClick)
@@ -367,7 +364,9 @@ class UpdateRootTest {
         compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
         // ActivityScenario changes the lifecycle separately from window focus.
         compose.activityRule.scenario.onActivity { it.onWindowFocusChanged(true) }
-        assertEquals(Intent.ACTION_VIEW, nextLaunch().intent.action)
+        assertNoPlatformLaunch()
+        compose.onNodeWithText("View update").performClick()
+        compose.onNodeWithText("Continue installation").assertIsEnabled()
         assertNoPlatformLaunch()
     }
 

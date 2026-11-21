@@ -23,7 +23,7 @@ internal fun SettingsPage(scroll: ScrollState, content: @Composable () -> Unit) 
         HorizontalDivider()
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             Column(
-                Modifier.widthIn(max = 768.dp)
+                Modifier.widthIn(max = 720.dp)
                     .fillMaxWidth()
                     .verticalScroll(scroll)
                     .padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 32.dp),

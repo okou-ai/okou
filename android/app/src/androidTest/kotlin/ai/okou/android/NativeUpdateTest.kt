@@ -36,7 +36,7 @@ import org.junit.runners.model.MultipleFailureException
 @RunWith(AndroidJUnit4::class)
 class NativeUpdateTest {
     @Test
-    fun updateSharesProgressWaitsForTheMenuAndKeepsTheRequiredGateAcrossRecreation() {
+    fun updateSharesProgressContinuesExplicitlyAndKeepsTheRequiredGateAcrossRecreation() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext.applicationContext as TestOkouApplication
         val device = UiDevice.getInstance(instrumentation)
@@ -267,6 +267,14 @@ class NativeUpdateTest {
                 )
             )
             device.pressBack()
+            val continueInstall =
+                button(By.pkg(app.packageName).desc(app.getString(R.string.updates_ready)))
+            assertFalse(
+                device.hasObject(
+                    By.pkg(app.packageName).text(app.getString(R.string.updates_open_settings))
+                )
+            )
+            continueInstall.click()
             exists(R.string.updates_open_settings)
             captureState("install-permission")
             click(R.string.updates_later)

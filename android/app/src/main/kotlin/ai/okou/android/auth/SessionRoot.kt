@@ -1,18 +1,27 @@
 package ai.okou.android.auth
 
+import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.OkouApp
 import ai.okou.android.R
+import ai.okou.android.SettingsChoiceRow
+import ai.okou.android.SettingsConfirmation
 import ai.okou.android.SettingsGroup
 import ai.okou.android.SettingsIcon
+import ai.okou.android.SettingsPickerRow
 import ai.okou.android.SettingsRow
 import ai.okou.android.SettingsScreen
 import ai.okou.android.SettingsSection
+import ai.okou.android.SettingsSheet
+import ai.okou.android.SettingsTrigger
 import ai.okou.android.api.generated.Organization
 import ai.okou.android.chat.WorkspaceRealtimeLifecycle
 import ai.okou.android.instructions.PersonalInstructionsSettings
 import ai.okou.android.preferences.MemberPreferencesSettings
 import ai.okou.android.state.SettingsDestination
+import ai.okou.android.state.rememberSettingsFlag
+import ai.okou.android.state.rememberWorkspaceSwitchTarget
 import ai.okou.android.updates.UpdateToolbarAction
+import ai.okou.android.updates.updateFocusOutline
 import ai.okou.android.workspaceSearchControlHeight
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -22,11 +31,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,14 +48,19 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -54,6 +69,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.clerk.api.ui.ClerkColors
 import com.clerk.api.ui.ClerkTheme
 import com.clerk.api.ui.ClerkTypography
@@ -66,17 +82,23 @@ internal fun SessionRoot(
     chooseWorkspace: (String) -> Unit,
     signOut: () -> Unit,
     openWorkspaceSetup: () -> Unit,
+    account: NativeAccount? = null,
     appUpdates: @Composable (() -> Unit)? = null,
     updateToolbarAction: UpdateToolbarAction? = null,
     onUpdateEditingChanged: (Boolean) -> Unit = {},
 ) {
     val textButtonColors =
         ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
+    var switchTarget by rememberWorkspaceSwitchTarget()
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         val ready = state.ready
         val opened = state.opening as? OpeningWorkspace.Authorized
         val identity = ready?.identity ?: state.opening?.identity
         val organization = ready?.organization ?: opened?.organization
+        val switchWorkspace: (String) -> Unit = { id ->
+            switchTarget = id
+            chooseWorkspace(id)
+        }
         if (identity != null) {
             key(
                 identity.apiOrigin,
@@ -91,20 +113,31 @@ internal fun SessionRoot(
                     ready?.composer ?: opened?.composer,
                     ready?.controls,
                     projectExpansion = ready?.projectExpansion ?: opened?.projectExpansion,
-                    settingsContent = { destination, openInstructions ->
+                    settingsContent = { destination, openInstructions, closeInstructions ->
                         if (ready != null) {
-                            when (destination) {
-                                SettingsDestination.Overview ->
-                                    SettingsScreen(
-                                        appUpdates = appUpdates,
-                                        workspacePreferences = {
-                                            MemberPreferencesSettings(ready.preferences)
-                                        },
-                                        workspace = { WorkspaceSettings(state, chooseWorkspace) },
-                                        account = { AccountSettings(openInstructions, signOut) },
+                            val instructionsOpen = destination == SettingsDestination.Instructions
+                            SettingsScreen(
+                                appUpdates = appUpdates,
+                                workspacePreferences = {
+                                    MemberPreferencesSettings(ready.preferences)
+                                },
+                                workspace = { WorkspaceSettings(state, switchWorkspace) },
+                                account = {
+                                    AccountSettings(
+                                        account?.takeIf { it.userId == ready.identity.userId },
+                                        instructionsOpen,
+                                        openInstructions,
+                                        signOut,
                                     )
-                                SettingsDestination.Instructions ->
-                                    PersonalInstructionsSettings(ready.instructions)
+                                },
+                            )
+                            if (instructionsOpen) {
+                                val chatState by ready.chats.uiState.collectAsStateWithLifecycle()
+                                PersonalInstructionsSettings(
+                                    ready.instructions,
+                                    closeInstructions,
+                                    chatState.offline,
+                                )
                             }
                         }
                     },
@@ -112,7 +145,15 @@ internal fun SessionRoot(
                     workspaceName = organization?.name,
                     workspaceAvatar =
                         organization?.let { workspace ->
-                            { WorkspaceAvatar(workspace, state, chooseWorkspace) }
+                            {
+                                WorkspaceAvatar(
+                                    workspace,
+                                    state,
+                                    switchWorkspace,
+                                    restoreFocus = switchTarget == workspace.id,
+                                    onRestored = { switchTarget = null },
+                                )
+                            }
                         },
                     updateToolbarAction = updateToolbarAction,
                     onUpdateEditingChanged = onUpdateEditingChanged,
@@ -272,47 +313,78 @@ private fun OkouAuthLogo() {
 
 @Composable
 private fun WorkspaceSettings(state: SessionUiState, chooseWorkspace: (String) -> Unit) {
-    var choosing by remember { mutableStateOf(false) }
     val organization = checkNotNull(state.ready).organization
-    val canSwitch = state.memberships.size > 1
     SettingsSection(stringResource(R.string.auth_workspace)) {
         SettingsGroup {
-            SettingsRow(
+            SettingsPickerRow(
                 organization.name,
-                leading = {
-                    val logo = remember(organization.id) { workspaceLogo(organization.id) }
-                    Image(
-                        painterResource(logo),
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp).clip(RoundedCornerShape(6.dp)),
-                    )
-                },
-                value = if (canSwitch) stringResource(R.string.auth_switch_workspace) else null,
-                onClick = if (canSwitch) ({ choosing = true }) else null,
-            )
+                leading = { WorkspaceLogo(organization.id, Modifier.size(20.dp)) },
+                value = stringResource(R.string.settings_switch),
+            ) { dismiss ->
+                WorkspaceChooser(organization.id, state.memberships, chooseWorkspace, dismiss)
+            }
         }
-    }
-    if (choosing) {
-        WorkspaceChooser(state, chooseWorkspace) { choosing = false }
     }
 }
 
 @Composable
-private fun AccountSettings(openInstructions: () -> Unit, signOut: () -> Unit) {
+private fun AccountSettings(
+    account: NativeAccount?,
+    instructionsOpen: Boolean,
+    openInstructions: () -> Unit,
+    signOut: () -> Unit,
+) {
+    val instructionsFocus = remember { FocusRequester() }
+    var focused by remember { mutableStateOf(false) }
+    var restoreFocus by rememberSettingsFlag()
+    LaunchedEffect(instructionsOpen) {
+        if (!instructionsOpen && restoreFocus) {
+            restoreFocus = false
+            instructionsFocus.requestFocus()
+        }
+    }
     SettingsSection(stringResource(R.string.settings_account)) {
         SettingsGroup {
+            if (account != null) {
+                SettingsRow(account.email, leading = { SettingsIcon(R.drawable.ic_account_circle) })
+                HorizontalDivider()
+            }
             SettingsRow(
                 stringResource(R.string.instructions_title),
                 leading = { SettingsIcon(R.drawable.ic_settings) },
-                onClick = openInstructions,
+                modifier =
+                    Modifier.focusRequester(instructionsFocus).onFocusChanged {
+                        focused = it.isFocused
+                    },
+                value = stringResource(R.string.settings_view),
+                onClick = {
+                    restoreFocus = focused
+                    openInstructions()
+                },
             )
             HorizontalDivider()
-            SettingsRow(
-                stringResource(R.string.auth_sign_out),
-                leading = { SettingsIcon(R.drawable.ic_logout) },
-                onClick = signOut,
-                showChevron = false,
-            )
+            SettingsTrigger(
+                content = { dismiss ->
+                    SettingsConfirmation(
+                        title = stringResource(R.string.settings_sign_out_title),
+                        message = stringResource(R.string.settings_sign_out_body),
+                        confirm = stringResource(R.string.auth_sign_out),
+                        onDismiss = dismiss,
+                        onConfirm = {
+                            dismiss()
+                            signOut()
+                        },
+                    )
+                }
+            ) { modifier, open ->
+                SettingsRow(
+                    stringResource(R.string.auth_sign_out),
+                    leading = { SettingsIcon(R.drawable.ic_logout) },
+                    modifier = modifier,
+                    onClick = open,
+                    showChevron = false,
+                )
+            }
         }
     }
 }
@@ -322,31 +394,45 @@ private fun WorkspaceAvatar(
     workspace: Organization,
     state: SessionUiState,
     chooseWorkspace: (String) -> Unit,
+    restoreFocus: Boolean,
+    onRestored: () -> Unit,
 ) {
-    val canSwitch = state.ready != null && state.memberships.size > 1
-    var choosing by remember { mutableStateOf(false) }
-    val logo = remember(workspace.id) { workspaceLogo(workspace.id) }
     val size = workspaceSearchControlHeight()
-    val avatar: @Composable () -> Unit = {
-        Image(
-            painterResource(logo),
-            contentDescription = if (canSwitch) null else workspace.name,
-            modifier = Modifier.size(size).clip(CircleShape),
-        )
-    }
-    if (canSwitch) {
+    if (state.ready != null) {
         val label = stringResource(R.string.auth_switch_workspace)
-        IconButton(
-            onClick = { choosing = true },
-            modifier =
-                Modifier.size(size).semantics { contentDescription = "$label, ${workspace.name}" },
-        ) {
-            avatar()
+        val destinationFocus = remember { FocusRequester() }
+        SettingsTrigger(
+            content = { dismiss ->
+                WorkspaceChooser(workspace.id, state.memberships, chooseWorkspace, dismiss)
+            }
+        ) { modifier, open ->
+            IconButton(
+                onClick = open,
+                modifier =
+                    Modifier.focusRequester(destinationFocus)
+                        .then(modifier)
+                        .size(size)
+                        .updateFocusOutline(CircleShape, LocalActivityStatusColor.current)
+                        .semantics { contentDescription = "$label, ${workspace.name}" },
+            ) {
+                WorkspaceLogo(workspace.id, Modifier.size(size))
+            }
         }
-        if (choosing) WorkspaceChooser(state, chooseWorkspace) { choosing = false }
+        LaunchedEffect(restoreFocus) {
+            if (restoreFocus) {
+                destinationFocus.requestFocus()
+                onRestored()
+            }
+        }
     } else {
-        avatar()
+        WorkspaceLogo(workspace.id, Modifier.size(size), workspace.name)
     }
+}
+
+@Composable
+private fun WorkspaceLogo(id: String, modifier: Modifier, label: String? = null) {
+    val logo = remember(id) { workspaceLogo(id) }
+    Image(painterResource(logo), contentDescription = label, modifier = modifier.clip(CircleShape))
 }
 
 // The Web and iOS clients use FNV-1a over UTF-16 to select the same bundled brand tile.
@@ -369,32 +455,32 @@ private val workspaceLogos =
 
 @Composable
 private fun WorkspaceChooser(
-    state: SessionUiState,
+    currentId: String,
+    memberships: List<WorkspaceMembership>,
     chooseWorkspace: (String) -> Unit,
     dismiss: () -> Unit,
 ) {
-    val colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
-    AlertDialog(
-        onDismissRequest = dismiss,
-        title = { Text(stringResource(R.string.auth_choose_workspace)) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                state.memberships.forEach { workspace ->
-                    TextButton(
-                        onClick = {
-                            dismiss()
-                            chooseWorkspace(workspace.id)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = colors,
-                    ) {
-                        Text(workspace.name)
-                    }
-                }
+    SettingsSheet(stringResource(R.string.auth_switch_workspace), dismiss) {
+        val selected = remember { BringIntoViewRequester() }
+        Column(Modifier.fillMaxWidth().selectableGroup()) {
+            memberships.forEach { workspace ->
+                val current = workspace.id == currentId
+                SettingsChoiceRow(
+                    workspace.name,
+                    selected = current,
+                    enabled = true,
+                    onClick = {
+                        dismiss()
+                        if (!current) chooseWorkspace(workspace.id)
+                    },
+                    modifier = if (current) Modifier.bringIntoViewRequester(selected) else Modifier,
+                    leading = { WorkspaceLogo(workspace.id, Modifier.size(28.dp)) },
+                )
             }
-        },
-        confirmButton = {
-            TextButton(onClick = dismiss, colors = colors) { Text(stringResource(R.string.back)) }
-        },
-    )
+        }
+        LaunchedEffect(currentId) {
+            withFrameNanos {}
+            selected.bringIntoView()
+        }
+    }
 }

@@ -45,13 +45,13 @@
     <string name="auth_unavailable">無法載入登入狀態或工作區，請重試。</string>
     <string name="auth_sign_out">登出</string>
     <string name="auth_signing_out">正在登出…</string>
-    <string name="auth_workspace">工作區</string>
+    <string name="auth_workspace">目前的工作區</string>
     <string name="auth_switch_workspace">切換工作區</string>
     <string name="auth_browser_unavailable">請安裝瀏覽器以開啟工作區設定頁面。</string>
-    <string name="preferences_title">共享偏好</string>
+    <string name="preferences_title">共用偏好設定</string>
     <string name="preference_loading">正在重新整理偏好設定…</string>
     <string name="preference_saving">正在儲存偏好設定…</string>
-    <string name="preference_save_failed">無法確認是否儲存成功，請重試或重新整理。</string>
+    <string name="preference_save_failed">無法儲存偏好設定。目前仍使用你的選擇。</string>
     <string name="preference_refresh_failed">無法重新整理偏好設定，請重試。</string>
     <string name="preference_refresh">重新整理偏好設定</string>
     <string name="preference_color_theme">配色主題</string>
@@ -90,7 +90,7 @@
     <string name="instructions_save_rejected">儲存遭拒，變更已保留。</string>
     <string name="instructions_invalid">文字含有不支援的字元。</string>
     <string name="instructions_refresh">檢查已儲存版本</string>
-    <string name="instructions_save">儲存個人指令</string>
+    <string name="instructions_save">儲存</string>
     <string name="instructions_reload">載入最新版本並捨棄變更</string>
     <string name="instructions_discard">捨棄變更</string>
     <string name="instructions_retry_save">重試同一次儲存</string>
@@ -157,4 +157,13 @@
     <string name="settings_account">帳戶</string>
     <string name="chat_project_expansion_read_failed">無法載入此裝置上的專案展開狀態。</string>
     <string name="chat_project_expansion_save_failed">無法在此裝置上儲存專案展開狀態。</string>
+    <string name="settings_switch">切換</string>
+    <string name="settings_view">查看</string>
+    <string name="settings_cancel">取消</string>
+    <string name="settings_saving">正在儲存…</string>
+    <string name="settings_sign_out_title">登出？</string>
+    <string name="settings_sign_out_body">在這部裝置上繼續使用 Okou 時需要重新登入。草稿會保留在目前的帳戶下。</string>
+    <string name="updates_waiting_to_check">等待檢查</string>
+    <string name="updates_waiting_to_download">等待下載</string>
+    <string name="instructions_placeholder">填寫你希望 Okou 遵循的回覆偏好</string>
 </resources>

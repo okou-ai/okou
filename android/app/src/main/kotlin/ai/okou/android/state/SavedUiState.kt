@@ -42,6 +42,16 @@ internal fun rememberUpdateDetailsOpen(): MutableState<Boolean> = rememberSaveab
 }
 
 @Composable
+internal fun rememberSettingsFlag(): MutableState<Boolean> = rememberSaveable {
+    mutableStateOf(false)
+}
+
+@Composable
+internal fun rememberWorkspaceSwitchTarget(): MutableState<String?> = rememberSaveable {
+    mutableStateOf(null)
+}
+
+@Composable
 internal fun rememberUpdateWorkspaceState(): SaveableStateHolder = rememberSaveableStateHolder()
 
 private const val MAX_SAVED_SEARCH_QUERY_CHARS = 256

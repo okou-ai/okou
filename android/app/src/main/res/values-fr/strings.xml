@@ -28,7 +28,7 @@
     <string name="output_catching_up">Chargement des messages enregistrés. Le texte reçu est conservé.</string>
     <string name="settings">Paramètres</string>
     <string name="back">Retour</string>
-    <string name="appearance">Apparence</string>
+    <string name="appearance">Mode d’affichage</string>
     <string name="appearance_system">Suivre le système</string>
     <string name="appearance_light">Clair</string>
     <string name="appearance_dark">Sombre</string>
@@ -45,13 +45,13 @@
     <string name="auth_unavailable">Impossible de charger votre session ou votre espace de travail. Réessayez.</string>
     <string name="auth_sign_out">Se déconnecter</string>
     <string name="auth_signing_out">Déconnexion…</string>
-    <string name="auth_workspace">Espace de travail</string>
+    <string name="auth_workspace">Espace de travail actuel</string>
     <string name="auth_switch_workspace">Changer d’espace de travail</string>
     <string name="auth_browser_unavailable">Installez un navigateur pour configurer votre espace de travail.</string>
-    <string name="preferences_title">Préférences de l’espace de travail</string>
+    <string name="preferences_title">Préférences partagées</string>
     <string name="preference_loading">Actualisation des préférences…</string>
     <string name="preference_saving">Enregistrement des préférences…</string>
-    <string name="preference_save_failed">Impossible de confirmer l’enregistrement. Réessayez ou actualisez.</string>
+    <string name="preference_save_failed">Vos préférences n’ont pas pu être enregistrées. Vos choix restent actifs.</string>
     <string name="preference_refresh_failed">Impossible d’actualiser les préférences. Réessayez.</string>
     <string name="preference_refresh">Actualiser les préférences</string>
     <string name="preference_color_theme">Thème de couleur</string>
@@ -76,7 +76,7 @@
     <string name="language_hi_in">हिन्दी</string>
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
-    <string name="instructions_title">Instructions</string>
+    <string name="instructions_title">Instructions personnelles</string>
     <string name="instructions_timing">Les modifications enregistrées concernent les prochaines tâches.</string>
     <string name="instructions_loading">Chargement des instructions…</string>
     <string name="instructions_saving">Enregistrement des instructions…</string>
@@ -90,7 +90,7 @@
     <string name="instructions_save_rejected">Enregistrement refusé. Vos modifications sont conservées.</string>
     <string name="instructions_invalid">Le texte contient un caractère non pris en charge.</string>
     <string name="instructions_refresh">Vérifier la version enregistrée</string>
-    <string name="instructions_save">Enregistrer les instructions</string>
+    <string name="instructions_save">Enregistrer</string>
     <string name="instructions_reload">Charger la dernière version et abandonner les modifications</string>
     <string name="instructions_discard">Abandonner les modifications</string>
     <string name="instructions_retry_save">Réessayer le même enregistrement</string>
@@ -157,4 +157,13 @@
     <string name="settings_account">Compte</string>
     <string name="chat_project_expansion_read_failed">Impossible de charger les préférences d’affichage des projets sur cet appareil.</string>
     <string name="chat_project_expansion_save_failed">Impossible d’enregistrer les préférences d’affichage des projets sur cet appareil.</string>
+    <string name="settings_switch">Changer</string>
+    <string name="settings_view">Afficher</string>
+    <string name="settings_cancel">Annuler</string>
+    <string name="settings_saving">Enregistrement…</string>
+    <string name="settings_sign_out_title">Se déconnecter ?</string>
+    <string name="settings_sign_out_body">Pour utiliser à nouveau Okou sur cet appareil, reconnectez-vous. Les brouillons restent associés à ce compte.</string>
+    <string name="updates_waiting_to_check">Vérification en attente</string>
+    <string name="updates_waiting_to_download">Téléchargement en attente</string>
+    <string name="instructions_placeholder">Que souhaitez-vous qu’Okou garde à l’esprit ?</string>
 </resources>

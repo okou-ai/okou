@@ -146,9 +146,9 @@ class PersonalInstructionsSettingsTest {
         val app = compose.activity.application as InstructionsApplication
         compose.onNodeWithContentDescription("Chats").assertExists()
         compose.onNodeWithContentDescription("Settings").performClick()
-        compose.onNodeWithText("Appearance").assertExists()
-        compose.onNodeWithText("Instructions").performScrollTo().performClick()
-        compose.onNodeWithText("Loading Instructions…").assertExists()
+        compose.onNodeWithText("Display mode").assertExists()
+        compose.onNodeWithText("Personal Instructions").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Loading Instructions…").assertExists()
         val model =
             compose.runOnIdle {
                 checkNotNull(
@@ -179,14 +179,14 @@ class PersonalInstructionsSettingsTest {
             TextRange(5, 8),
             input.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
         )
-        compose.onNodeWithText("Save Instructions").assertIsNotEnabled()
+        compose.onNodeWithText("Save").assertIsNotEnabled()
         assertEquals(0, app.fixture.requests.count { it.method == "PUT" })
         compose.onNodeWithText("Reload latest and discard changes").performScrollTo().performClick()
         awaitPhase(InstructionsPhase.Ready)
-        input.assertTextEquals("Instructions", "Changed on Web")
+        input.assertTextEquals("Changed on Web")
         app.fixture.disconnectSave = true
         input.performScrollTo().performTextReplacement("Accepted despite lost response")
-        compose.onNodeWithText("Save Instructions").performScrollTo().performClick()
+        compose.onNodeWithText("Save").performClick()
         compose.waitUntil(10_000) {
             compose.runOnIdle {
                 model.uiState.value.phase == InstructionsPhase.Ready &&
@@ -195,6 +195,9 @@ class PersonalInstructionsSettingsTest {
         }
         assertEquals("Accepted despite lost response", app.fixture.saved.content)
         assertEquals(1, app.fixture.requests.count { it.method == "PUT" })
+        input.assertDoesNotExist()
+        compose.onNodeWithText("Personal Instructions").performScrollTo().performClick()
+        awaitPhase(InstructionsPhase.Ready)
         val large = "Personal instructions 👋 ".repeat(5_000)
         input.performScrollTo().performTextReplacement(large)
         input.performTextInputSelection(TextRange(13))
@@ -211,8 +214,8 @@ class PersonalInstructionsSettingsTest {
             TextRange(13),
             input.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
         )
-        compose.onNodeWithContentDescription("Back").performClick()
-        compose.onNodeWithText("Appearance").assertExists()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.onNodeWithText("Display mode").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithContentDescription("Chats").assertExists()
     }
