@@ -580,7 +580,7 @@ internal fun OkouApp(
                                         when (listWidth) {
                                             344 -> 24.dp
                                             320 -> 16.dp
-                                            else -> 0.dp
+                                            else -> 16.dp
                                         }
                                 )
                             ) {

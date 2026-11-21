@@ -85,7 +85,7 @@
     <string name="instructions_retry_save">重试同一次保存</string>
     <string name="composer_new">新对话</string>
     <string name="composer_new_project">在此项目中新建对话</string>
-    <string name="composer_message">消息</string>
+    <string name="composer_message">发消息</string>
     <string name="composer_send">发送</string>
     <string name="composer_local_failed">草稿更改未能保存到此设备。</string>
     <string name="composer_unconfirmed">消息是否送达尚未确认。</string>
