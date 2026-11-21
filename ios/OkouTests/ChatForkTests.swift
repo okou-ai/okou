@@ -2,6 +2,7 @@ import ChatData
 import ChatDataTestSupport
 import ChatDomain
 import Foundation
+import SwiftUI
 import Synchronization
 import XCTest
 
@@ -61,6 +62,27 @@ final class ChatForkTests: XCTestCase {
     XCTAssertEqual(success.actionTitle, "Open")
     await success.action()
     XCTAssertEqual(workspace.selectedThreadID, sent.threadId)
+  }
+
+  func testForkSheetGivesItsQuotedNoteNativeFocusOnceItIsFitted() async throws {
+    let fixture = ForkFixture()
+    let workspace = try await fixture.workspace(owner: self)
+    let source = try XCTUnwrap(workspace.selectedConversation)
+    workspace.startFork(try fixture.selection(in: source), from: source)
+    let fork = try XCTUnwrap(workspace.fork)
+    let note = try XCTUnwrap(fork.composer.editorBlocks.first(where: \.isFeedback))
+    let host = UIHostingController(
+      rootView: ChatForkView(
+        flow: fork, webURL: workspace.webURL, threads: workspace.list.threads, project: nil,
+        needsUpgrade: false, dismiss: {}))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let input = try XCTUnwrap(
+      mentionInputs(in: host.view).first {
+        $0.accessibilityIdentifier == "feedback-note-\(note.id)"
+      })
+    // The sheet defers native focus until it has measured its fitted height.
+    try await eventually(message: mentionInputStatus(input)) { input.isFirstResponder }
   }
 
   func testFailedSendRetainsSheetAndRetriesTheSameMessageAndThread() async throws {

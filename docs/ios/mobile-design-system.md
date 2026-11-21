@@ -710,7 +710,11 @@ feature; the catalog shows each one.
   provenance is still retained when sending. Keep the shared composer geometry. The model
   control stays in the composer's toolbar, as in ordinary chat. Fit the sheet vertically to this
   content rather than reserving a half/full page, and let the native editor scroll for a
-  long draft. Sending still closes only after acceptance and leaves the source chat open.
+  long draft. Measure the fitted height from the first layout, and let the quoted note take
+  native focus only after that height has settled, so the keyboard never resizes a sheet
+  that is still presenting. UIKit lifts the fitted sheet above the keyboard; a draft short
+  enough to clear it ignores SwiftUI's keyboard inset so its content stays fixed under the
+  title. Sending still closes only after acceptance and leaves the source chat open.
 - **Chat header** has no title: the menu glass circle on the left, the chat's "…" menu on
   the right, over a soft blur. The selected row in the sidebar says which chat
   is open. The "…" menu is titled with the chat and starts with Pin chat.
