@@ -18,6 +18,29 @@ report = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(report)
 
 
+def pressure_policy_fixture():
+    """Build a fresh ordered baseline for synthetic pressure reports."""
+    gib = 1024**3
+    return {
+        "host_total_bytes": 64 * gib,
+        "operating_floor_bytes": gib,
+        "cleanup_reserve_bytes": 256 * 1024**2,
+        "critical_available_bytes": 12 * gib,
+        "recovery_available_bytes": 20 * gib,
+        "live_growth_bytes": 4 * 1024**2,
+        "tail_growth_bytes": 65 * 1024**2,
+        "replacement_preparation_bytes": 32 * 1024**2,
+        "max_sample_age_millis": 1000,
+        "max_operations": 8,
+        "max_cleanup_inflight": 2,
+        "pressure_sample_period_millis": 50,
+        "pressure_recovery_sustain_millis": 100,
+        "pressure_wave_cooldown_millis": 100,
+        "pressure_optional_start_interval_millis": 100,
+        "pressure_max_wave_entries": 1,
+    }
+
+
 def witness_receipt(
     case, phase, *, monotonic_ns, unix_ns, sandbox_id, backing_generation, evidence
 ):
