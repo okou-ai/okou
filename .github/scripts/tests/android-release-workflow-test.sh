@@ -29,8 +29,8 @@ assert checkout['with']['persist-credentials'] is False
 assert checkout['with']['fetch-depth'] == 1
 assert job['env']['ANDROID_RELEASE_SOURCE_SHA'] == checkout['with']['ref']
 history, = (step for step in job['steps'] if step.get('name') == 'Fetch complete history for the release source')
-build, = (step for step in job['steps'] if 'SENTRY_DSN_ANDROID' in step.get('env', {}))
-assert job['steps'].index(checkout) < job['steps'].index(history) < job['steps'].index(build)
+publisher, = (step for step in job['steps'] if 'SENTRY_DSN_ANDROID' in step.get('env', {}))
+assert job['steps'].index(checkout) < job['steps'].index(history) < job['steps'].index(publisher)
 
 with tempfile.TemporaryDirectory() as temp:
     origin = Path(temp) / 'origin'
@@ -83,7 +83,6 @@ assert 'publish-android' in jobs['update-rollback-dashboard']['needs']
 android = json.loads(subprocess.check_output(
     ['yq', '-o=json', 'explode(.)', str(root / '.github/workflows/android.yml')], text=True))['jobs']
 smoke, = (step for step in android['release-smoke']['steps'] if step.get('id') == 'release-smoke')
-publisher, = (step for step in job['steps'] if 'SENTRY_DSN_ANDROID' in step.get('env', {}))
 assert smoke['env']['SENTRY_DSN_ANDROID'] == publisher['env']['SENTRY_DSN_ANDROID']
 screenshots = json.loads(subprocess.check_output(
     ['yq', '-o=json', '.', str(root / '.github/workflows/android-screenshots.yml')], text=True))['jobs']['capture']
