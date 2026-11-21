@@ -1,10 +1,7 @@
 import { command } from "ccstate";
 import { ZodError } from "zod";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import type {
-  FirewallPolicies,
-  NetworkPolicies,
-} from "@okouai/connectors/firewall-types";
+import type { NetworkPolicies } from "@okouai/connectors/firewall-types";
 import { nowDate } from "../../lib/time";
 import { THREAD_CONTEXT_PRIORITY } from "../../lib/conversation-guidance";
 import { formatConversationContext } from "../../lib/integration-conversation-context";
@@ -20,8 +17,10 @@ import {
 } from "../external/email-message-reader";
 import type { ConnectorRuntimeAuthLookup } from "./connector-catalog-runtime.service";
 import type { ConnectorServerFirewallSelection } from "./connector-server-firewall-catalog.service";
-import { defaultFirewallPolicyForPermissionIndex } from "./firewall-network-policy.service";
-import { resolveConnectorNetworkPolicy } from "./connector-runtime-preparation.service";
+import {
+  defaultFirewallPolicyForPermissionIndex,
+  networkPolicyForFirewallPolicy,
+} from "./firewall-network-policy.service";
 import {
   builtinConnectorCredentialRuntimeValueRef,
   loadBuiltinConnectorCredentialConnection$,
@@ -123,8 +122,7 @@ const readSourceMessage$ = command(
     { set },
     args: SourceAccess & {
       readonly messageId: string;
-      readonly policies: FirewallPolicies | null;
-      readonly networkPolicies?: NetworkPolicies;
+      readonly networkPolicies: NetworkPolicies;
     },
     signal: AbortSignal,
   ): Promise<SourceMessageResult> => {
@@ -138,12 +136,11 @@ const readSourceMessage$ = command(
       return { status: "permission-required" as const };
     }
     const policy =
-      args.networkPolicies?.[connectorSlug] ??
-      resolveConnectorNetworkPolicy({
-        permissionNames: [...index.permissionNames],
-        defaultPolicy: defaultFirewallPolicyForPermissionIndex(index),
-        policy: args.policies?.[connectorSlug],
-      });
+      args.networkPolicies[connectorSlug] ??
+      networkPolicyForFirewallPolicy(
+        [...index.permissionNames],
+        defaultFirewallPolicyForPermissionIndex(index),
+      );
     const reader = {
       connectorSlug,
       firewall,
@@ -327,8 +324,7 @@ export const loadEmailSourceMessageContext$ = command(
       readonly userId: string;
       readonly snapshot: SourceAccess["snapshot"];
       readonly featureSwitchContext: FeatureSwitchContext;
-      readonly policies: FirewallPolicies | null;
-      readonly networkPolicies?: NetworkPolicies;
+      readonly networkPolicies: NetworkPolicies;
     },
     signal: AbortSignal,
   ): Promise<string> => {

@@ -32,6 +32,10 @@ export interface ChatRunPreparationFacts {
     readonly hostId: string;
     readonly displayName: string;
   } | null;
+  readonly phoneUseGrant: {
+    readonly deviceId: string;
+    readonly grantId: string;
+  } | null;
   readonly projectReferences?: readonly ProjectReferenceRow[];
 }
 

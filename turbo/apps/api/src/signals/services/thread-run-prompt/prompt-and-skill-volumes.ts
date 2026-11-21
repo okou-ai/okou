@@ -251,7 +251,6 @@ export function createPromptAndSkillVolumesSignals(
   const userPrompt$ = createUserPrompt(memberMetadata$);
   const deviceUsePrompts = createDeviceUsePrompts(
     pickedEvent$,
-    threadContext,
     featureSwitches$,
   );
   const { computerUsePrompt$, phoneUsePrompt$ } = deviceUsePrompts;
@@ -315,15 +314,11 @@ export function createPromptAndSkillVolumesSignals(
 
 function createDeviceUsePrompts(
   event$: Parameters<typeof createComputerUsePrompt>[0],
-  threadContext: ThreadContext,
   features$: Parameters<typeof createComputerUsePrompt>[1],
 ) {
   return {
     computerUsePrompt$: createComputerUsePrompt(event$, features$),
-    phoneUsePrompt$: createPhoneUsePrompt(
-      threadContext.phoneUseGrant$,
-      features$,
-    ),
+    phoneUsePrompt$: createPhoneUsePrompt(event$, features$),
   };
 }
 

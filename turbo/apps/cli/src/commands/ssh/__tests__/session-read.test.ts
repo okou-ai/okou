@@ -84,18 +84,29 @@ function page(cursor: number, bytes: Buffer, end: number, chunkSize = 4096) {
 }
 const stdout: Buffer[] = [];
 const stderr: Buffer[] = [];
+let activeRead: ReturnType<typeof sshCommand.parseAsync> | undefined;
+
 function result(): unknown {
   return JSON.parse(Buffer.concat(stdout).toString());
 }
-async function read(...args: string[]) {
-  await sshCommand.parseAsync(["session", "read", id, "--json", ...args], {
+
+async function runRead(args: readonly string[]) {
+  const work = sshCommand.parseAsync(["session", "read", id, ...args], {
     from: "user",
   });
+  activeRead = work;
+  try {
+    await work;
+  } finally {
+    activeRead = undefined;
+  }
 }
-async function plain(...args: string[]) {
-  await sshCommand.parseAsync(["session", "read", id, ...args], {
-    from: "user",
-  });
+
+function read(...args: string[]) {
+  return runRead(["--json", ...args]);
+}
+function plain(...args: string[]) {
+  return runRead(args);
 }
 function requests(): unknown[] {
   return helper.requests.map((request) => {
@@ -139,7 +150,13 @@ beforeEach(() => {
     for (const option of command.options)
       command.setOptionValue(option.attributeName(), option.defaultValue);
 });
-afterEach(() => {
+afterEach(async () => {
+  // A timed-out test can still own a read and its helper process.
+  const work = activeRead;
+  if (work) {
+    process.emit("SIGINT");
+    await Promise.allSettled([work]);
+  }
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
   process.exitCode = 0;

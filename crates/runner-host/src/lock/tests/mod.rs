@@ -642,49 +642,51 @@ fn try_acquire_existing_or_missing_blocking_rejects_unsafe_file() {
     );
 }
 
-#[tokio::test]
-async fn try_acquire_existing_shared_or_missing_does_not_create_missing_lock() {
+#[test]
+fn try_acquire_existing_shared_or_missing_does_not_create_missing_lock() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("missing.lock");
 
-    let result = try_acquire_existing_shared_or_missing(path.clone())
-        .await
-        .unwrap();
+    let result = try_acquire_existing_shared_or_missing_blocking(&path).unwrap();
 
     assert!(matches!(result, ExistingTryLock::Missing));
     assert!(!path.exists());
 }
 
-#[tokio::test]
-async fn try_acquire_existing_shared_or_missing_does_not_create_missing_parent() {
+#[test]
+fn try_acquire_existing_shared_or_missing_does_not_create_missing_parent() {
     let dir = tempfile::tempdir().unwrap();
     let parent = dir.path().join("missing-parent");
     let path = parent.join("missing.lock");
 
-    let result = try_acquire_existing_shared_or_missing(path).await.unwrap();
+    let result = try_acquire_existing_shared_or_missing_blocking(&path).unwrap();
 
     assert!(matches!(result, ExistingTryLock::Missing));
     assert!(!parent.exists());
 }
 
-#[tokio::test]
-async fn try_acquire_existing_shared_or_missing_succeeds_with_existing_shared_lock() {
+#[test]
+fn try_acquire_existing_shared_or_missing_succeeds_with_existing_shared_lock() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("test.lock");
-    let _guard = acquire_shared(path.clone()).await.unwrap();
+    let _guard = Flock::lock(open_lock_file(&path).unwrap(), FlockArg::LockSharedNonblock).unwrap();
 
-    let result = try_acquire_existing_shared_or_missing(path).await.unwrap();
+    let result = try_acquire_existing_shared_or_missing_blocking(&path).unwrap();
 
     assert!(matches!(result, ExistingTryLock::Acquired(_)));
 }
 
-#[tokio::test]
-async fn try_acquire_existing_shared_or_missing_reports_busy_when_exclusive_lock_held() {
+#[test]
+fn try_acquire_existing_shared_or_missing_reports_busy_when_exclusive_lock_held() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("test.lock");
-    let _guard = acquire(path.clone()).await.unwrap();
+    let _guard = Flock::lock(
+        open_lock_file(&path).unwrap(),
+        FlockArg::LockExclusiveNonblock,
+    )
+    .unwrap();
 
-    let result = try_acquire_existing_shared_or_missing(path).await.unwrap();
+    let result = try_acquire_existing_shared_or_missing_blocking(&path).unwrap();
 
     assert!(matches!(result, ExistingTryLock::Busy));
 }
