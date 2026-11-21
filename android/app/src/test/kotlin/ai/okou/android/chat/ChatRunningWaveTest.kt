@@ -12,10 +12,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Canvas
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -27,6 +35,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = TestOkouApplication::class)
@@ -48,6 +57,35 @@ class ChatRunningWaveTest {
         }
 
     @get:Rule val compose = createComposeRule(effectContext = motion)
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun drawsCenterDotAtFrameOffsetsThatCrashedTheEasingSolver() {
+        val frameOffsetsAndAlpha =
+            listOf(
+                1_247_999_553L to 0.52f,
+                1_247_999_680L to 0.52f,
+                1_247_999_809L to 0.52f,
+                2_399_999_617L to 0.34f,
+            )
+        for ((frameNanos, expectedAlpha) in frameOffsetsAndAlpha) {
+            val bitmap = ImageBitmap(14, 14)
+            CanvasDrawScope().draw(
+                Density(1f),
+                LayoutDirection.Ltr,
+                Canvas(bitmap),
+                Size(14f, 14f),
+            ) {
+                drawRunningWave(Color.Black, frameNanos, row = 0)
+            }
+            assertEquals(
+                "Center alpha at ${frameNanos}ns",
+                expectedAlpha,
+                bitmap.toPixelMap()[7, 7].alpha,
+                1f / 255f,
+            )
+        }
+    }
 
     @Test
     fun sharedFrameAdvancesOnlyForVisibleRunningRowsWithMotionEnabled() {
