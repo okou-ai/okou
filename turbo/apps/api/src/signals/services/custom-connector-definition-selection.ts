@@ -1,4 +1,4 @@
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { customConnectorNetworkBindingSelection } from "./custom-connector-network-binding";
 import type { infer as zInfer } from "zod";

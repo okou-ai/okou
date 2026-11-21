@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
+import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
+import { schema } from "../src/index";
+import { orgCustomConnectors } from "../src/runtime/org-custom-connector";
 
 export async function validateConnectorSkillBundleSchema(
   databaseUrl: string,
@@ -22,13 +25,26 @@ export async function validateConnectorSkillBundleSchema(
     return result.rows;
   }
   try {
-    await client.query(
-      `INSERT INTO org_custom_connectors
-        (id, org_id, slug, display_name, auth_mode, prefix_templates, created_by)
-       VALUES ($1, $2, '_schema-connector', 'Schema Connector', 'none',
-         '["https://schema.example.test/"]', 'schema-user')`,
-      [connectorId, orgId],
+    const db = drizzle(client, { schema });
+    const create = db
+      .insert(orgCustomConnectors)
+      .values({
+        id: connectorId,
+        orgId,
+        slug: "_schema-connector",
+        displayName: "Schema Connector",
+        authMode: "none",
+        prefixTemplates: ["https://schema.example.test/"],
+        createdBy: "schema-user",
+      })
+      .returning();
+    // Drizzle includes even omitted columns in implicit INSERT/RETURNING and SELECT lists.
+    assert.doesNotMatch(create.toSQL().sql, /skill_storage_version_id/);
+    assert.doesNotMatch(
+      db.select().from(schema.orgCustomConnectors).toSQL().sql,
+      /skill_storage_version_id/,
     );
+    await create;
     assert.deepEqual(await readPublication(), []);
     await client.query(
       `INSERT INTO connector_catalog_entries(hash,slug,label,description,category,icon,tags,generation,auth_methods,mcp,skill,firewall,permission_summary)

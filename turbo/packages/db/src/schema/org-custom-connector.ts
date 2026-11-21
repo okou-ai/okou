@@ -1,26 +1,13 @@
 import {
-  bigint,
-  boolean,
   check,
+  index,
   pgTable,
-  uuid,
-  varchar,
-  text,
-  jsonb,
-  timestamp,
   unique,
   uniqueIndex,
-  index,
+  varchar,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type {
-  OrgCustomConnectorFields,
-  OrgCustomConnectorHeaderInjections,
-  OrgCustomConnectorPrefixTemplates,
-  OrgCustomConnectorQueryInjections,
-} from "@okouai/db/jsonb-contracts/org-custom-connector";
-
-import { connectorSkillBundleColumns } from "../columns/connector-skill-bundle";
+import { orgCustomConnectorColumns } from "../columns/org-custom-connector";
 
 export type {
   OrgCustomConnectorField,
@@ -28,9 +15,10 @@ export type {
   OrgCustomConnectorQueryInjection,
 } from "@okouai/db/jsonb-contracts/org-custom-connector";
 
-export type OrgCustomConnectorAuthMode =
-  "none" | "manual" | "oauth" | "automatic";
-export type OrgCustomConnectorMcpTransport = "streamable-http";
+export type {
+  OrgCustomConnectorAuthMode,
+  OrgCustomConnectorMcpTransport,
+} from "../columns/org-custom-connector";
 
 /**
  * Org-defined custom connectors (v1 of the connector gallery).
@@ -42,50 +30,9 @@ export type OrgCustomConnectorMcpTransport = "streamable-http";
 export const orgCustomConnectors = pgTable(
   "org_custom_connectors",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    orgId: text("org_id").notNull(),
-    slug: varchar("slug", { length: 64 }).notNull(),
-    displayName: varchar("display_name", { length: 128 }).notNull(),
-    prefixTemplates: jsonb("prefix_templates")
-      .notNull()
-      .default(sql`'[]'::jsonb`)
-      .$type<OrgCustomConnectorPrefixTemplates>(),
-    fields: jsonb("fields")
-      .notNull()
-      .default(sql`'[]'::jsonb`)
-      .$type<OrgCustomConnectorFields>(),
-    headerInjections: jsonb("header_injections")
-      .notNull()
-      .default(sql`'[]'::jsonb`)
-      .$type<OrgCustomConnectorHeaderInjections>(),
-    queryInjections: jsonb("query_injections")
-      .notNull()
-      .default(sql`'[]'::jsonb`)
-      .$type<OrgCustomConnectorQueryInjections>(),
-    authMode: varchar("auth_mode", { length: 16 })
-      .$type<OrgCustomConnectorAuthMode>()
-      .notNull()
-      .default("manual"),
-    enabled: boolean("enabled").notNull().default(true),
-    permissionBundleRef: varchar("permission_bundle_ref", { length: 128 }),
-    mcpEndpoint: text("mcp_endpoint"),
-    mcpTransport: varchar("mcp_transport", {
-      length: 32,
-    }).$type<OrgCustomConnectorMcpTransport>(),
-    skillMarkdown: text("skill_markdown"),
-    skillStorageVersionId: varchar("skill_storage_version_id", {
-      length: 64,
-    }),
-    // Retain the source-ID column for preceding claim readers. New publishers
-    // use the complete bundle SHA-256; historical Storage-derived IDs stay valid.
-    // The field no longer references the generic Storage registry.
-    ...connectorSkillBundleColumns(),
-    storageVersion: bigint("storage_version", { mode: "number" })
-      .notNull()
-      .default(1),
-    createdBy: text("created_by").notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    ...orgCustomConnectorColumns(),
+    // Retained for rollback to API 2.100.1, which still writes the mirror.
+    skillStorageVersionId: varchar("skill_storage_version_id", { length: 64 }),
   },
   (table) => {
     return [

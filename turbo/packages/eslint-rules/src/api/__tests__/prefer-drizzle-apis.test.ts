@@ -8,6 +8,7 @@ RuleTester.describe = describe;
 RuleTester.it = it;
 
 const ruleTester = new RuleTester();
+const runtimeConnectorModule = "@okouai/db/runtime/org-custom-connector";
 
 const preamble = `
   import { integer, pgTable, text } from "drizzle-orm/pg-core";
@@ -126,6 +127,14 @@ ruleTester.run("prefer-drizzle-apis", preferDrizzleApis, {
     },
   ],
   invalid: [
+    {
+      code: `${preamble}
+        import { sql } from "drizzle-orm";
+        import { orgCustomConnectors as connectors } from "${runtimeConnectorModule}";
+        db.select().from(connectors).where(sql\`\${connectors.id} = \${"connector-id"}\`);
+      `,
+      errors: [{ messageId: "typedApi", data: { helper: "eq" } }],
+    },
     {
       code: `${preamble}
         import { eq, sql } from "drizzle-orm";
