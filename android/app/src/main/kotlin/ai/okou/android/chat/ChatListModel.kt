@@ -288,7 +288,6 @@ class ChatListModel(
     private class ListReadBatch {
         var refresh = false
         var userRequested = false
-        var resetCompletedActivity = false
         val discardOnSuccess = mutableSetOf<String>()
         val confirmations = mutableListOf<ListConfirmation>()
     }
@@ -311,6 +310,8 @@ class ChatListModel(
     )
 
     private var pendingListRead: ListReadBatch? = null
+    // Reconciliation survives transport backoff and lasts until a read publishes successfully.
+    private var completedActivityReconciliation: Any? = null
     private var listRetry: Job? = null
     private var listRetryAt: Long? = null
     private var refreshOnReconnect = false
@@ -1140,11 +1141,12 @@ class ChatListModel(
         userRequested: Boolean = false,
         resetCompletedActivity: Boolean = userRequested,
     ) {
-        if (!current() || (discardOnSuccess.isEmpty() && !canRefreshList())) return
+        if (!current()) return
+        if (resetCompletedActivity) completedActivityReconciliation = Any()
+        if (discardOnSuccess.isEmpty() && !canRefreshList()) return
         val batch = listReadBatch()
         batch.refresh = true
         batch.userRequested = batch.userRequested || userRequested
-        batch.resetCompletedActivity = batch.resetCompletedActivity || resetCompletedActivity
         batch.discardOnSuccess.addAll(discardOnSuccess)
         listReadRequests.trySend(Unit)
     }
@@ -1241,13 +1243,16 @@ class ChatListModel(
         try {
             // A normal catch-up still needs the sort event. Resume or an explicit refresh can
             // restore the canonical order for completed attempts after a successful read.
+            val reconciliation = completedActivityReconciliation
             val finishedActivity =
-                if (batch.resetCompletedActivity)
+                if (reconciliation != null)
                     outgoingActivity.filterValues { it.result != OutgoingResult.Sending }
                 else emptyMap()
             val result = sync.synchronize(confirmed?.checkpoint)
             val retrying = mutable.value.listReadFailure == ChatListReadFailure.Retrying
             publishList(result, discardOnSuccess, finishedActivity = finishedActivity)
+            if (completedActivityReconciliation === reconciliation)
+                completedActivityReconciliation = null
             if (retrying) refreshFailedListDependencies()
             if (result.shouldRebase && confirmed?.checkpoint === result.checkpoint) {
                 startListRebase(result.checkpoint)

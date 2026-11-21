@@ -1228,6 +1228,75 @@ class ChatListModelTest {
     }
 
     @Test
+    fun sendOrderReconciliationSurvivesBackoffAndFailedReads() = runTest {
+        val other =
+            chatEventWire(
+                    id = "77777777-7777-4777-8777-777777777777",
+                    seq = 18,
+                    thread = CHAT_IN_PROJECT,
+                )
+                .replace(CHAT_DATE, "2026-11-14T00:00:00.000Z")
+        val pending =
+            PendingText(
+                "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                CHAT_PERSONAL,
+                null,
+                json.decodeFromString<SendRequestVariant1>(
+                    """{"prompt":"Hello","threadId":"$CHAT_PERSONAL",
+                            "userMessage":{"version":1,"parts":[{"type":"text","text":"Hello"}]},
+                            "hasTextContent":true,
+                            "chatThreadSortEventId":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}"""
+                ),
+                TextStage.Sending,
+            )
+        for (requestDuringBackoff in listOf(false, true)) {
+            val service = Service().apply { listRead = { page(listOf(chatEventWire(), other)) } }
+            withCatchUpModel(service) { model ->
+                model.refresh()
+                runCurrent()
+                val baseline = model.uiState.value.threads.map { it.id }
+                assertEquals(listOf(CHAT_IN_PROJECT, CHAT_PERSONAL), baseline)
+                model.showOutgoingActivity(pending)
+                model.acknowledgeOutgoingActivity(pending)
+                var reads = 0
+                service.listRead = {
+                    if (++reads == 1) throw ApiFailure.Http(503, null, null, null)
+                    page(emptyList())
+                }
+                if (requestDuringBackoff) model.refreshList() else model.refresh()
+                runCurrent()
+                assertEquals(ChatListReadFailure.Retrying, model.uiState.value.listReadFailure)
+                if (requestDuringBackoff) model.refresh()
+                advanceTimeBy(4_999)
+                assertEquals(1, reads)
+                assertEquals(CHAT_PERSONAL, model.uiState.value.threads.first().id)
+                advanceTimeBy(1)
+                runCurrent()
+                assertEquals(2, reads)
+                assertEquals(baseline, model.uiState.value.threads.map { it.id })
+
+                model.showOutgoingActivity(pending)
+                model.acknowledgeOutgoingActivity(pending)
+                model.refreshList()
+                runCurrent()
+                assertEquals(CHAT_PERSONAL, model.uiState.value.threads.first().id)
+
+                val held = CompletableDeferred<Unit>()
+                service.listRead = {
+                    held.await()
+                    page(emptyList())
+                }
+                model.refresh()
+                runCurrent()
+                model.showOutgoingActivity(pending)
+                held.complete(Unit)
+                runCurrent()
+                assertEquals(CHAT_PERSONAL, model.uiState.value.threads.first().id)
+            }
+        }
+    }
+
+    @Test
     fun createAndDeleteInOneCatchUpRetireTheAcceptedPreview() = runTest {
         val service = Service().apply { listRead = { page(listOf(chatEventWire())) } }
         withCatchUpModel(service) { model ->
