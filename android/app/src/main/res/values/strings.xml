@@ -29,7 +29,7 @@
     <string name="app_name" translatable="false">Okou</string>
     <string name="settings">Settings</string>
     <string name="back">Back</string>
-    <string name="appearance">Appearance</string>
+    <string name="appearance">Display mode</string>
     <string name="appearance_system">Follow system</string>
     <string name="appearance_light">Light</string>
     <string name="appearance_dark">Dark</string>
@@ -46,15 +46,12 @@
     <string name="auth_unavailable">Could not load your session or workspace. Please try again.</string>
     <string name="auth_sign_out">Sign out</string>
     <string name="auth_signing_out">Signing out…</string>
-    <string name="auth_workspace">Workspace</string>
+    <string name="auth_workspace">Current workspace</string>
     <string name="auth_switch_workspace">Switch workspace</string>
     <string name="auth_browser_unavailable">Install a browser to open workspace setup.</string>
-    <string name="preferences_title">Workspace preferences</string>
-    <string name="preference_loading">Refreshing preferences…</string>
-    <string name="preference_saving">Saving preferences…</string>
-    <string name="preference_save_failed">Could not confirm the save. Try again or refresh.</string>
+    <string name="preferences_title">Shared preferences</string>
+    <string name="preference_save_failed">Could not save your preferences. Your selections are still in use.</string>
     <string name="preference_refresh_failed">Could not refresh preferences. Try again.</string>
-    <string name="preference_refresh">Refresh preferences</string>
     <string name="preference_color_theme">Color theme</string>
     <string name="preference_language">Language</string>
     <string name="palette_default">Default</string>
@@ -77,21 +74,18 @@
     <string name="language_hi_in">हिन्दी</string>
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
-    <string name="instructions_title">Instructions</string>
-    <string name="instructions_timing">Saved changes apply to future tasks.</string>
+    <string name="instructions_title">Personal Instructions</string>
     <string name="instructions_loading">Loading Instructions…</string>
-    <string name="instructions_saving">Saving Instructions…</string>
     <string name="instructions_conflict">Saved Instructions changed elsewhere. Reload the latest version to discard your local changes.</string>
     <string name="instructions_uncertain">The save is not confirmed. Your text is kept. Check the saved version before retrying.</string>
     <string name="instructions_load_failed">Could not load Instructions.</string>
     <string name="instructions_unavailable">Personal Instructions are unavailable in this context.</string>
-    <string name="instructions_current">Instructions are up to date.</string>
     <string name="instructions_unsaved">You have unsaved changes.</string>
     <string name="instructions_local_failed">Could not save the local draft. Try again.</string>
     <string name="instructions_save_rejected">The save was rejected. Your changes are kept.</string>
     <string name="instructions_invalid">The text contains an unsupported character.</string>
     <string name="instructions_refresh">Check saved version</string>
-    <string name="instructions_save">Save Instructions</string>
+    <string name="instructions_save">Save</string>
     <string name="instructions_reload">Reload latest and discard changes</string>
     <string name="instructions_discard">Discard changes</string>
     <string name="instructions_retry_save">Retry the same save</string>
@@ -117,7 +111,6 @@
     <string name="updates_preparing">Preparing…</string>
     <string name="updates_installing">Installing…</string>
     <string name="updates_install_failed">Installation failed</string>
-    <string name="updates_retry_install">Retry installation</string>
     <string name="updates_waiting_for_connection">Waiting for connection</string>
     <string name="updates_connect_to_check">Connect to the internet to check for updates.</string>
     <string name="updates_connect_to_download">Connect to the internet to download the update.</string>
@@ -135,7 +128,7 @@
     <string name="updates_permission">Android needs your permission to install this update. Allow Okou as an installation source in Settings, then return to install.</string>
     <string name="updates_required">Update Okou to continue</string>
     <string name="updates_required_description">This version is no longer supported. Update to keep working.</string>
-    <string name="updates_downloading">Updating · %1$s</string>
+    <string name="updates_downloading">Downloading · %1$s</string>
     <string name="updates_new_version">New version available</string>
     <string name="updates_package_size">Package: %1$s</string>
     <string name="updates_check_in_progress">Checking…</string>
@@ -158,4 +151,13 @@
     <string name="settings_account">Account</string>
     <string name="chat_project_expansion_read_failed">Could not load Project expansion on this device.</string>
     <string name="chat_project_expansion_save_failed">Could not save Project expansion on this device.</string>
+    <string name="settings_switch">Switch</string>
+    <string name="settings_view">View</string>
+    <string name="settings_cancel">Cancel</string>
+    <string name="settings_saving">Saving…</string>
+    <string name="settings_sign_out_title">Sign out?</string>
+    <string name="settings_sign_out_body">To use Okou again on this device, sign in. Drafts stay with this account.</string>
+    <string name="updates_waiting_to_check">Waiting to check</string>
+    <string name="updates_waiting_to_download">Waiting to download</string>
+    <string name="instructions_placeholder">What would you like Okou to keep in mind?</string>
 </resources>

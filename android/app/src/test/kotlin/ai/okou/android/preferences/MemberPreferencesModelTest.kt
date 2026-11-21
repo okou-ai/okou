@@ -1,6 +1,7 @@
 package ai.okou.android.preferences
 
 import ai.okou.android.TestChatService
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequestTheme
 import ai.okou.android.api.generated.UserPreferences
@@ -20,6 +21,7 @@ import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.resetMain
@@ -86,6 +88,7 @@ class MemberPreferencesModelTest {
 
     private fun check(
         service: Service = Service(),
+        online: MutableStateFlow<Boolean> = MutableStateFlow(true),
         block: suspend TestScope.(MemberPreferencesModel, Service, ViewModelStore) -> Unit,
     ) = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
@@ -96,7 +99,7 @@ class MemberPreferencesModelTest {
                     store,
                     viewModelFactory {
                         initializer {
-                            MemberPreferencesModel(service.stored, service, { true }, {})
+                            MemberPreferencesModel(service.stored, service, { true }, {}, online)
                         }
                     },
                 )[MemberPreferencesModel::class.java]
@@ -132,7 +135,7 @@ class MemberPreferencesModelTest {
     }
 
     @Test
-    fun heldSavePreviewsTheLocaleButDoesNotConfirmOrOverlapARefresh() {
+    fun heldSaveKeepsTheLatestChoicesAndSerializesTheNextPatch() {
         val gate = CompletableDeferred<Unit>()
         val service =
             Service().apply {
@@ -150,14 +153,23 @@ class MemberPreferencesModelTest {
             assertEquals(UserPreferencesLocale.EN_US, model.uiState.value.confirmed.locale)
             model.refresh()
             model.selectColorTheme(UserPreferencesColorTheme.BERRY_BLUSH)
+            model.selectLocale(UserPreferencesLocale.JA_JP)
+            model.selectLocale(UserPreferencesLocale.ZH_HANS)
             assertEquals(PreferenceStatus.Saving, model.uiState.value.status)
+            assertEquals(UserPreferencesLocale.ZH_HANS, model.uiState.value.locale)
+            assertEquals(1, api.requests.size)
             gate.complete(Unit)
             runCurrent()
             assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
-            assertEquals(UserPreferencesLocale.ZH_HANT, model.uiState.value.confirmed.locale)
-            assertNull(api.requests.single().colorTheme)
-            assertNull(api.requests.single().theme)
-            assertNull(api.requests.single().timezone)
+            assertEquals(UserPreferencesLocale.ZH_HANS, model.uiState.value.confirmed.locale)
+            assertEquals(
+                UserPreferencesColorTheme.BERRY_BLUSH,
+                model.uiState.value.confirmed.colorTheme,
+            )
+            assertEquals(2, api.requests.size)
+            assertNull(api.requests.first().colorTheme)
+            assertNull(api.requests.last().theme)
+            assertNull(api.requests.last().timezone)
         }
     }
 
@@ -220,7 +232,7 @@ class MemberPreferencesModelTest {
             model.selectColorTheme(UserPreferencesColorTheme.DEEP_LAGOON)
             runCurrent()
             assertEquals(PreferenceStatus.SaveFailed, model.uiState.value.status)
-            model.refresh()
+            model.retry()
             runCurrent()
             assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
             assertEquals(
@@ -228,6 +240,7 @@ class MemberPreferencesModelTest {
                 model.uiState.value.confirmed.colorTheme,
             )
             assertNull(model.uiState.value.pending)
+            assertEquals(1, api.requests.size)
             api.write = { throw IOException("offline") }
             model.selectLocale(UserPreferencesLocale.JA_JP)
             runCurrent()
@@ -238,6 +251,53 @@ class MemberPreferencesModelTest {
             runCurrent()
             assertEquals(UserPreferencesLocale.JA_JP, model.uiState.value.confirmed.locale)
             assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
+        }
+    }
+
+    @Test
+    fun retryReadsTheCanonicalPreferenceWhenTheSaveResponseCannotBeDecoded() {
+        val service =
+            Service().apply {
+                val commit = write
+                write = { request ->
+                    commit(request)
+                    throw ApiFailure.IncompatibleResponse()
+                }
+            }
+        check(service) { model, api, _ ->
+            model.selectColorTheme(UserPreferencesColorTheme.DEEP_LAGOON)
+            runCurrent()
+            assertEquals(PreferenceStatus.SaveFailed, model.uiState.value.status)
+            assertEquals(UserPreferencesColorTheme.DEEP_LAGOON, model.uiState.value.colorTheme)
+
+            model.retry()
+            runCurrent()
+
+            assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
+            assertEquals(
+                UserPreferencesColorTheme.DEEP_LAGOON,
+                model.uiState.value.confirmed.colorTheme,
+            )
+            assertNull(model.uiState.value.pending)
+            assertEquals(1, api.requests.size)
+        }
+    }
+
+    @Test
+    fun offlineChoicesStayLocalUntilReconnectAndOnlyTheLastValueIsSent() {
+        val online = MutableStateFlow(false)
+        check(online = online) { model, api, _ ->
+            runCurrent()
+            model.selectTheme(UserPreferencesTheme.DARK)
+            model.selectTheme(UserPreferencesTheme.LIGHT)
+            runCurrent()
+            assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.theme)
+            assertTrue(api.requests.isEmpty())
+
+            online.value = true
+            runCurrent()
+            assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.confirmed.theme)
+            assertEquals(UpdatePreferencesRequestTheme.LIGHT, api.requests.single().theme)
         }
     }
 

@@ -36,7 +36,7 @@ import org.junit.runners.model.MultipleFailureException
 @RunWith(AndroidJUnit4::class)
 class NativeUpdateTest {
     @Test
-    fun updateSharesProgressWaitsForTheMenuAndKeepsTheRequiredGateAcrossRecreation() {
+    fun updateSharesProgressContinuesExplicitlyAndKeepsTheRequiredGateAcrossRecreation() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext.applicationContext as TestOkouApplication
         val device = UiDevice.getInstance(instrumentation)
@@ -185,9 +185,10 @@ class NativeUpdateTest {
             awaitMenuFocus(filter)
             assertTrue(device.pressDPadCenter())
             awaitMenuFocus(inbox)
-            assertTrue(device.pressBack())
+            // A popup can close without emitting the accessibility event that pressBack awaits.
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             awaitMenuFocus(filter)
-            assertTrue(device.pressBack())
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             val moreLabel = app.getString(R.string.chat_more_actions)
             device.awaitKeyboardFocus(By.pkg(app.packageName).desc(moreLabel))
             assertTrue(device.wait(Until.gone(By.pkg(app.packageName).text(filter)), 10_000))
@@ -266,7 +267,16 @@ class NativeUpdateTest {
                     By.pkg(app.packageName).text(app.getString(R.string.updates_allow_install))
                 )
             )
-            device.pressBack()
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            assertTrue(device.wait(Until.gone(By.pkg(app.packageName).text(filter)), 10_000))
+            val continueInstall =
+                button(By.pkg(app.packageName).desc(app.getString(R.string.updates_ready)))
+            assertFalse(
+                device.hasObject(
+                    By.pkg(app.packageName).text(app.getString(R.string.updates_open_settings))
+                )
+            )
+            continueInstall.click()
             exists(R.string.updates_open_settings)
             captureState("install-permission")
             click(R.string.updates_later)
