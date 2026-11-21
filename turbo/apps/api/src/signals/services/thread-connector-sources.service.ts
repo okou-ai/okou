@@ -4,7 +4,10 @@ import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-con
 import { and, asc, eq, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { array, object, unknown as zUnknown } from "zod";
-import { zodDriverValueDecoder } from "../../lib/db-structured-result";
+import {
+  nullableDriverValueDecoder,
+  zodDriverValueDecoder,
+} from "../../lib/db-structured-result";
 import {
   contextJsonProjection,
   contextJsonRows,
@@ -31,7 +34,7 @@ const threadSourcesDecoder = zodDriverValueDecoder(
   object({
     selections: array(contextProjectionSchema(selectionColumns)),
     accessOverrides: array(contextProjectionSchema(accessColumns)),
-  }).nullable(),
+  }),
 );
 
 export function threadConnectorSourcesColumn(
@@ -83,5 +86,7 @@ export function threadConnectorSourcesColumn(
       ),
     )
     .limit(1);
-  return sql`(${statement})`.mapWith(threadSourcesDecoder);
+  return sql`(${statement})`.mapWith(
+    nullableDriverValueDecoder(threadSourcesDecoder),
+  );
 }

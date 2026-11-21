@@ -66,14 +66,13 @@ may instead receive a computed dependency for input that must be queried or
 derived first; connect that dependency when constructing the owning graph.
 
 **Narrow exception — `AgentRunContextSignals`:** the identity-grouped read-only
-interface returned by `createAgentRunContextSignals(userId, orgId, agentId)` may
-cross the enqueue, pick and Thread graph boundaries. It contains only the three
-plain identity strings and async computed nodes. It must contain no command or
-state and must perform no writes. Consumers read only the groups they need;
-computed dependencies share the same identity-scoped sources. This interface exception
-does not permit database handles, accessors, commands, mutable state or unrelated
-graph interfaces across boundaries. Read-only computed factory inputs follow
-the separate graph-construction allowance above.
+interface returned by `createAgentRunContextSignals(identity, requestInputs)` may
+cross the enqueue, pick and Thread graph boundaries. Its values consist of the
+organization, user, Agent and Chat Thread IDs and async computed nodes. Consumers
+read the groups they need. Dependencies share a source when their identity scope
+matches. Database handles, accessors, commands, mutable state and unrelated graph
+interfaces stay with their owners. Read-only computed factory inputs follow the
+separate graph-construction allowance above.
 
 **Picked-event context — `ThreadContext`:**
 `createThreadContext(bootstrap, pickedEvent$, chatThreadId)` builds the read-only
@@ -92,9 +91,9 @@ only declare computeds and verified computed bundles.
 Keep the three inputs distinct: consumers receive bootstrap, the picked event,
 and ThreadContext directly. Do not re-export bootstrap nodes or picked-event
 fields through ThreadContext; derive any required projections at the consumer.
-ThreadContext exposes resolved Thread and event facts, such as access overrides,
-session reads, channel contexts and execution-identity selection. Entry points
-start independent sources explicitly; consumers join only the sources they need.
+ThreadContext exposes resolved Thread and event facts, such as Connector account
+selection, session continuation and channel contexts. Entry points start
+independent sources explicitly. Consumers join the sources they need.
 
 Build the owning graph before commands execute. Do not call `command()` inside
 another command callback, including indirectly through a factory. Private nodes
