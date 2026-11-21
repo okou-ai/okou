@@ -49,7 +49,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -600,26 +599,23 @@ private fun KeepChatListProjectAnchor(
     findAnchor: (Any, Int) -> ChatListScrollAnchor?,
 ) {
     val previous = remember(listState) { ChatListProjectIds(projectIds) }
-    if (previous.ids == projectIds) return
-    // A folded Project can move a chat beyond Compose's nearby-key index.
-    val anchor =
-        Snapshot.withoutReadObservation {
-            if (
-                listState.isScrollInProgress ||
-                    (listState.canScrollBackward && !listState.canScrollForward)
-            ) {
-                null
-            } else {
-                listState.layoutInfo.visibleItemsInfo
-                    .firstOrNull { it.index == listState.firstVisibleItemIndex }
-                    ?.let { findAnchor(it.key, listState.firstVisibleItemScrollOffset) }
-            }
-        }
     SideEffect {
+        if (previous.ids == projectIds) return@SideEffect
         previous.ids = projectIds
-        if (anchor != null && !listState.isScrollInProgress) {
-            listState.requestScrollToItem(anchor.index, anchor.offset)
+        if (
+            listState.isScrollInProgress ||
+                (listState.canScrollBackward && !listState.canScrollForward)
+        ) {
+            return@SideEffect
         }
+        // A folded Project can move a chat beyond Compose's nearby-key index.
+        val firstIndex = listState.firstVisibleItemIndex
+        val first =
+            listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == firstIndex }
+                ?: return@SideEffect
+        val anchor =
+            findAnchor(first.key, listState.firstVisibleItemScrollOffset) ?: return@SideEffect
+        listState.requestScrollToItem(anchor.index, anchor.offset)
     }
 }
 
