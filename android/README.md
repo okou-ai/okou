@@ -204,7 +204,8 @@ bash android/scripts/check.sh
 
 This audits source-manifest entry points, generated colors, Kotlin/Gradle formatting,
 state-holder tests, Robolectric Compose/lifecycle interactions, Android lint, and debug APK
-assembly. Android Lint treats warnings as errors. Verification uses two Gradle
+assembly. Android Lint treats warnings as errors and reports newer dependency
+and Gradle toolchain versions as informational hints. Verification uses two Gradle
 workers, a 1536 MB build heap and in-process Kotlin compilation by default for
 small sandboxes.
 
