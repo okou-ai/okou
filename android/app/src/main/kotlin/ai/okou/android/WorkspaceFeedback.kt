@@ -3,6 +3,7 @@ package ai.okou.android
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatRowAction
+import ai.okou.android.chat.ChatRowUndo
 import ai.okou.android.chat.ChatUndoPhase
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
@@ -50,6 +51,7 @@ private val feedbackActionGap = 4.dp
 private val feedbackTouchTarget = 48.dp
 
 private data class UndoContent(
+    val undo: ChatRowUndo,
     val message: String,
     val actionLabel: String?,
     val enabled: Boolean,
@@ -105,6 +107,7 @@ internal fun ChatUndoFeedback(
         val content =
             rememberUpdatedState(
                 UndoContent(
+                    undo,
                     message,
                     action,
                     !list.offline &&
@@ -116,7 +119,9 @@ internal fun ChatUndoFeedback(
         LaunchedEffect(snackbar) {
             snackbar.currentSnackbarData?.dismiss()
             val result =
-                snackbar.showSnackbar(ChatUndoSnackbar(content) { chats.undoRowAction(undo) })
+                snackbar.showSnackbar(
+                    ChatUndoSnackbar(content) { chats.undoRowAction(content.value.undo) }
+                )
             if (result == SnackbarResult.ActionPerformed) {
                 if (undo.action.updatesChat) chats.reloadAfterRowActionFailure()
                 else chats.refreshIndicators()
