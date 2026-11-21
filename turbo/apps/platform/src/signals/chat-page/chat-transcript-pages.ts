@@ -8,7 +8,7 @@ import type { ThreadScrollPosition } from "./chat-thread-scroll.ts";
 // Measure whole stretches of natural-flow rows, including their gaps and folded
 // work. An event can have no DOM of its own. Keep each run in a single page.
 const GROUPS_PER_PAGE = 8;
-const MIN_VIRTUAL_GROUPS = 40;
+const MIN_VIRTUAL_GROUPS = 20;
 const ESTIMATED_GROUP_HEIGHT = 144;
 
 interface TranscriptPage {
