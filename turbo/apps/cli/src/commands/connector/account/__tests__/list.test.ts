@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../../test/fixtures/captured-run-token";
 import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
 import chalk from "chalk";
 import { http, HttpResponse } from "msw";
@@ -728,8 +729,8 @@ describe("okou connector account list command", () => {
   });
 
   it("reports the current and disabled saved accounts of this Chat", async () => {
-    vi.stubEnv("OKOU_AGENT_ID", "agent-123");
-    vi.stubEnv("OKOU_TOKEN", "agent-token");
+    const token = capturedRunToken(["connector:read"]);
+    vi.stubEnv("OKOU_TOKEN", token);
     const target = { kind: "builtin", connectorSlug: "github" } as const;
     const primary = connectorAccount({
       id: FIRST_CONNECTION_ID,
@@ -744,9 +745,7 @@ describe("okou connector account list command", () => {
       http.get(
         "http://localhost:3000/api/connector-accounts/connections",
         ({ request }) => {
-          expect(request.headers.get("authorization")).toBe(
-            "Bearer agent-token",
-          );
+          expect(request.headers.get("authorization")).toBe(`Bearer ${token}`);
           return HttpResponse.json({
             connections: [primary, secondary],
             defaultConnection: primary,

@@ -112,6 +112,7 @@ import {
 import { setupOAuthConsentPage$ } from "./oauth-consent-page-setup.ts";
 import { setupHostedSiteAuthorizationPage$ } from "./hosted-site-authorization-page-setup.ts";
 import { setupHostedSiteAccessPage$ } from "./hosted-site-access-page-setup.ts";
+import { setupStandaloneChatApprovalPage$ } from "./standalone-chat-approval-page-setup.ts";
 import { setupPermissionAllowPage$ } from "./permission-allow/permission-allow-page-setup.ts";
 import { setupPermissionBatchPage$ } from "./permission-allow/permission-batch-page-setup.ts";
 import { setupLabPage$ } from "./lab-page/lab-page-setup.ts";
@@ -322,6 +323,14 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.browserAuthorize,
     setup: setupAuthPageWrapper(setupBrowserAuthorizationPage$),
+  },
+  {
+    path: ROUTES.bankingAccess,
+    setup: setupAuthPageWrapper(setupStandaloneChatApprovalPage$),
+  },
+  {
+    path: ROUTES.connectorAccountSelect,
+    setup: setupAuthPageWrapper(setupStandaloneChatApprovalPage$),
   },
   {
     path: ROUTES.bankingConnectReturnResult,

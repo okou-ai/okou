@@ -3,7 +3,6 @@ import chalk from "chalk";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
 import { bankingCommand } from "../index";
-const AGENT_ID = "550e8400-e29b-41d4-a716-446655440000";
 const THREAD_ID = "550e8400-e29b-41d4-a716-446655440001";
 
 describe("okou banking command", () => {
@@ -20,7 +19,6 @@ describe("okou banking command", () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_APP_URL", "https://app.example.test");
-    vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
     vi.stubEnv("OKOU_CHAT_THREAD_ID", THREAD_ID);
   });
 
@@ -147,13 +145,13 @@ describe("okou banking command", () => {
       .flat()
       .map(String)
       .find((value) => {
-        return value.startsWith("https://app.example.test/agents/");
+        return value.startsWith("https://app.example.test/banking/access");
       });
     if (!urlText) {
       throw new Error("Expected a banking access URL");
     }
     const url = new URL(urlText);
-    expect(url.pathname).toBe(`/agents/${AGENT_ID}/banking`);
+    expect(url.pathname).toBe("/banking/access");
     expect(Array.from(url.searchParams.entries())).toStrictEqual([
       ["reason", "Review recent expenses"],
       ["callbackPrompt", "Continue the expense review"],

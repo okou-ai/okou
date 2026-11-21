@@ -59,11 +59,6 @@ describe("okou workflow view command", () => {
 
   beforeEach(() => {
     server.use(
-      http.get("*/api/agents", () => {
-        return HttpResponse.json([{ agentId: AGENT_ID, isDefaultAgent: true }]);
-      }),
-    );
-    server.use(
       http.get(
         "http://localhost:3000/api/workflows/:workflowId/owner-profile",
         ownerProfileRequest,
@@ -72,7 +67,6 @@ describe("okou workflow view command", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", capturedRunToken(["agent:read"]));
-    vi.stubEnv("OKOU_AGENT_ID", undefined);
   });
 
   afterEach(() => {
@@ -226,7 +220,7 @@ describe("okou workflow view command", () => {
 
       await viewCommand.parseAsync(["node", "cli", "tell-a-joke"]);
 
-      expect(capturedUrl).toContain(`agentId=${AGENT_ID}`);
+      expect(capturedUrl).toContain("scope=workspace");
       const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
       expect(logCalls).toContain(`ID:           ${PRIVATE_WORKFLOW_ID}`);
       expect(logCalls).toContain("Tell a joke private");

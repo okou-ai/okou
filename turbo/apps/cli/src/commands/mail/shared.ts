@@ -1,5 +1,5 @@
+import { isRunBoundConnectorContext } from "../connector/run-account-context";
 import type { MailProvider } from "@okouai/api-contracts/contracts/mail";
-import { getOkouAgentId } from "../../lib/okou-env";
 
 export const MAIL_CONNECTOR_SLUG_BY_PROVIDER = {
   gmail: "gmail",
@@ -15,12 +15,10 @@ export function parseMailProvider(value: string): MailProvider {
   });
 }
 
-export function currentAgentId(): string {
-  const agentId = getOkouAgentId()?.trim();
-  if (!agentId) {
+export function requireMailRunContext(): void {
+  if (!isRunBoundConnectorContext()) {
     throw new Error("The current Run execution context is unavailable", {
-      cause: new Error("Run this command from an active agent run"),
+      cause: new Error("Run this command from an active Okou Run"),
     });
   }
-  return agentId;
 }

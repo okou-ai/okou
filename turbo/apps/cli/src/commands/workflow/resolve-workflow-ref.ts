@@ -1,4 +1,3 @@
-import { workspaceExecutorId } from "../../lib/command/workspace-executor";
 import { listWorkflows } from "../../lib/api/domains/workflows";
 
 const UUID_RE =
@@ -20,9 +19,7 @@ export async function resolveWorkflowRef(ref: string): Promise<string> {
     );
   }
 
-  const workflows = await listWorkflows({
-    agentId: await workspaceExecutorId(),
-  });
+  const workflows = await listWorkflows();
   const matches = workflows.filter((workflow) => {
     return workflow.name === ref && !workflow.official;
   });

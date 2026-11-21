@@ -1,4 +1,3 @@
-import { workspaceExecutorId } from "../../lib/command/workspace-executor";
 import { ApiRequestError } from "../../lib/api/core/client-factory";
 import { Command } from "commander";
 import chalk from "chalk";
@@ -26,19 +25,16 @@ Examples:
   )
   .action(
     withErrorHandler(async (workflowRef: string) => {
-      const targetAgentId = await workspaceExecutorId();
       const workflowId = await resolveWorkflowRef(workflowRef);
       const existingCopy = async () => {
         const source = await getWorkflow(workflowId);
-        return (await listWorkflows({ agentId: targetAgentId })).find(
-          (item) => {
-            return (
-              item.visibility === "private" &&
-              !item.official &&
-              item.name === source.name
-            );
-          },
-        );
+        return (await listWorkflows()).find((item) => {
+          return (
+            item.visibility === "private" &&
+            !item.official &&
+            item.name === source.name
+          );
+        });
       };
       const existing = await existingCopy();
       if (existing) {
@@ -46,7 +42,7 @@ Examples:
         console.log(`Open it: okou workflow view ${existing.id}`);
         return;
       }
-      const workflow = await copyWorkflow(workflowId, targetAgentId).catch(
+      const workflow = await copyWorkflow(workflowId).catch(
         async (error: unknown) => {
           if (error instanceof ApiRequestError && error.status === 409) {
             const existing = await existingCopy();

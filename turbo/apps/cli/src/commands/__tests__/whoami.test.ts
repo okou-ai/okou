@@ -179,9 +179,8 @@ describe("okou whoami command", () => {
     await whoamiCommand.parseAsync(["node", "cli", ...args]);
   }
 
-  describe("sandbox mode (OKOU_AGENT_ID set)", () => {
+  describe("sandbox mode", () => {
     it("shows shared builtin and custom permissions with the original expiry", async () => {
-      vi.stubEnv("OKOU_AGENT_ID", "agent-123");
       vi.stubEnv(
         "OKOU_TOKEN",
         buildOkouToken({
@@ -256,7 +255,6 @@ describe("okou whoami command", () => {
         iat: 1000,
         exp: 2000,
       });
-      vi.stubEnv("OKOU_AGENT_ID", "agent-123");
       vi.stubEnv("OKOU_TOKEN", token);
 
       await runWhoami();
@@ -305,7 +303,6 @@ describe("okou whoami command", () => {
     });
 
     it("should show the workspace name and tier", async () => {
-      vi.stubEnv("OKOU_AGENT_ID", "agent-123");
       vi.stubEnv(
         "OKOU_TOKEN",
         buildOkouToken({
@@ -336,7 +333,6 @@ describe("okou whoami command", () => {
     });
 
     it("should still print identity when the org lookup fails", async () => {
-      vi.stubEnv("OKOU_AGENT_ID", "agent-123");
       vi.stubEnv(
         "OKOU_TOKEN",
         buildOkouToken({
@@ -380,8 +376,6 @@ describe("okou whoami command", () => {
     });
 
     it("should show unavailable when OKOU_TOKEN is missing", async () => {
-      vi.stubEnv("OKOU_AGENT_ID", "agent-no-token");
-
       await runWhoami();
 
       const output = getAllOutput();
@@ -413,7 +407,6 @@ describe("okou whoami command", () => {
     });
 
     it("should show unavailable when OKOU_TOKEN is malformed", async () => {
-      vi.stubEnv("OKOU_AGENT_ID", "agent-bad-token");
       vi.stubEnv("OKOU_TOKEN", "not-a-valid-token");
 
       await runWhoami();
@@ -441,7 +434,6 @@ describe("okou whoami command", () => {
         iat: 1000,
         exp: 2000,
       });
-      vi.stubEnv("OKOU_AGENT_ID", "agent-123");
       vi.stubEnv("OKOU_TOKEN", token);
       vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
 
@@ -494,7 +486,6 @@ describe("okou whoami command", () => {
         iat: 1000,
         exp: 2000,
       });
-      vi.stubEnv("OKOU_AGENT_ID", "agent-123");
       vi.stubEnv("OKOU_TOKEN", token);
       vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
 
@@ -547,7 +538,6 @@ describe("okou whoami command", () => {
     });
 
     it("should ignore a reconnect-required default when the run account is healthy", async () => {
-      vi.stubEnv("OKOU_AGENT_ID", "agent-123");
       vi.stubEnv(
         "OKOU_TOKEN",
         buildOkouToken({
@@ -612,7 +602,6 @@ describe("okou whoami command", () => {
         iat: 1000,
         exp: 2000,
       });
-      vi.stubEnv("OKOU_AGENT_ID", "agent-123");
       vi.stubEnv("OKOU_TOKEN", token);
       vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
 
@@ -664,7 +653,6 @@ describe("okou whoami command", () => {
         iat: 1000,
         exp: 2000,
       });
-      vi.stubEnv("OKOU_AGENT_ID", "agent-123");
       vi.stubEnv("OKOU_TOKEN", token);
       vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
 
@@ -684,7 +672,6 @@ describe("okou whoami command", () => {
     });
 
     it("should retain a deleted exact account without falling back", async () => {
-      vi.stubEnv("OKOU_AGENT_ID", "agent-123");
       vi.stubEnv(
         "OKOU_TOKEN",
         buildOkouToken({
@@ -724,7 +711,6 @@ describe("okou whoami command", () => {
     });
 
     it("should show a null run account as unavailable without falling back", async () => {
-      vi.stubEnv("OKOU_AGENT_ID", "agent-123");
       vi.stubEnv(
         "OKOU_TOKEN",
         buildOkouToken({
@@ -757,7 +743,6 @@ describe("okou whoami command", () => {
     });
 
     it("should show unavailable when a legacy run has no projection", async () => {
-      vi.stubEnv("OKOU_AGENT_ID", "agent-123");
       vi.stubEnv(
         "OKOU_TOKEN",
         buildOkouToken({
@@ -771,6 +756,7 @@ describe("okou whoami command", () => {
         }),
       );
       vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", "");
+      vi.stubEnv("OKOU_CHAT_THREAD_ID", "test-chat");
 
       await runWhoami();
 
@@ -780,7 +766,6 @@ describe("okou whoami command", () => {
     });
 
     it("should show unavailable when the run projection is malformed", async () => {
-      vi.stubEnv("OKOU_AGENT_ID", "agent-123");
       vi.stubEnv(
         "OKOU_TOKEN",
         buildOkouToken({
@@ -812,7 +797,6 @@ describe("okou whoami command", () => {
         iat: 1000,
         exp: 2000,
       });
-      vi.stubEnv("OKOU_AGENT_ID", "agent-123");
       vi.stubEnv("OKOU_TOKEN", token);
       vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
 
@@ -863,7 +847,6 @@ describe("okou whoami command", () => {
         iat: 1000,
         exp: 2000,
       });
-      vi.stubEnv("OKOU_AGENT_ID", "agent-123");
       vi.stubEnv("OKOU_TOKEN", token);
       vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
 
@@ -902,10 +885,9 @@ describe("okou whoami command", () => {
     });
   });
 
-  describe("local mode (no OKOU_AGENT_ID)", () => {
+  describe("local mode", () => {
     beforeEach(() => {
       vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", undefined);
-      vi.stubEnv("OKOU_AGENT_ID", "");
     });
 
     it("should show authenticated via OKOU_TOKEN env var", async () => {
