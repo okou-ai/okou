@@ -393,7 +393,7 @@ final class ThreadListStore {
             continue
           }
           activeThreadIDs = Set(result.threads.filter { $0.value == .active }.map(\.key))
-          unreadAgentIDs = Set(result.agents.filter { $0.value == .unread }.map(\.key))
+          unreadAgentIDs = Set(threads.filter { result.threads[$0.id] == .unread }.compactMap(\.agentID))
           threads = threads.map { thread in
             var updated = thread
             updated.indicator = result.threads[thread.id]

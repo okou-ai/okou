@@ -730,7 +730,7 @@ internal fun OkouApp(
                                                 val composerTarget =
                                                     ComposerTarget(
                                                         thread.id,
-                                                        thread.agentId,
+                                                        null,
                                                         thread.projectId,
                                                     )
                                                 RunControlsPanel(controls, chats.history, thread.id)

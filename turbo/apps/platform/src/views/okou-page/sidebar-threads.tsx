@@ -113,7 +113,7 @@ import {
   selectChatThreadFilter$,
   type ChatThreadFilter,
 } from "../../signals/okou-page/chat-thread-filter-selection.ts";
-import { currentChatAgentHasUnread$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
+import { hasMarkableUnreadChats$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
 import { markAgentThreadsRead$ } from "../../signals/chat-page/sidebar-unread-threads.ts";
 import {
   closeRenameChatThreadDialog$,
@@ -1214,7 +1214,7 @@ function useNewChatAction() {
 function useMarkAllReadMenuAction(showMarkAllRead: boolean) {
   const currentChatAgentId = useLastResolved(currentChatAgentId$) ?? null;
   const currentAgentHasUnread =
-    useLastResolved(currentChatAgentHasUnread$) ?? false;
+    useLastResolved(hasMarkableUnreadChats$) ?? false;
   const [markReadLoadable, markAgentThreadsRead] = useLoadableSet(
     markAgentThreadsRead$,
   );

@@ -3,7 +3,6 @@ import Foundation
 /// The canonical workspace search response. Sequence IDs identify hits, not rendered row IDs.
 public struct ChatSearchResult: Decodable, Identifiable, Sendable {
   public let chatThreadId: String
-  public let agentName: String
   public let matchedMessage: Message
   public let matchedRanges: [MatchRange]
   public var id: String { "\(matchedMessage.chatThreadId):\(matchedMessage.seqId)" }

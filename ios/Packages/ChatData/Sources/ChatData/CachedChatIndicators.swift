@@ -12,7 +12,6 @@ public struct CachedChatIndicators: Codable, Sendable {
 
   public var indicators: Indicators {
     Indicators(
-      agents: Dictionary(uniqueKeysWithValues: unreadAgentIDs.map { ($0, .unread) }),
       threads: unreadAt.mapValues { _ in .unread }, unreadAt: unreadAt)
   }
 
@@ -63,7 +62,7 @@ struct ChatIndicatorCacheState: Codable {
     snapshot = CachedChatIndicators(
       revision: (snapshot?.revision ?? 0) + 1, savedAt: Date(),
       unreadAt: indicators.unreadAt.filter { indicators.threads[$0.key] == .unread },
-      unreadAgentIDs: Set(indicators.agents.filter { $0.value == .unread }.map(\.key)),
+      unreadAgentIDs: Set(threads.filter { indicators.threads[$0.id] == .unread }.compactMap(\.agentID)),
       threadAgentIDs: Dictionary(
         uniqueKeysWithValues: threads.filter { indicators.unreadAt[$0.id] != nil }
           .compactMap { thread in thread.agentID.map { (thread.id, $0) } }))

@@ -120,7 +120,6 @@ struct ThreadDetail: Decodable, Sendable {
 }
 
 public struct Indicators: Decodable, Sendable {
-  public let agents: [String: ChatIndicator]
   public let threads: [String: ChatIndicator]
   public let unreadAt: [String: Date]
 }

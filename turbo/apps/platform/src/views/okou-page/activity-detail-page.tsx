@@ -393,17 +393,6 @@ function prepareRenderData(
   return { prompt, appendSystemPrompt, showSystemPrompt };
 }
 
-function resolveDisplayName(
-  detail: { displayName: string | null; agentId: string | null } | null,
-  isStale: boolean,
-  fallback: string,
-): string {
-  if (!detail || isStale) {
-    return fallback;
-  }
-  return detail.displayName ?? detail.agentId ?? fallback;
-}
-
 type ActivityTab = "steps" | "context" | "runner" | "network";
 
 function ActivityStepsContent({
@@ -986,22 +975,14 @@ function ActivityDetailContent({
 }
 
 export function ActivityDetailPage() {
-  const { t } = useTranslation();
   const currentRunId = useGet(currentRunId$);
   const detailLoadable = useLastLoadable(activityDetail$);
   const eventsLoadable = useLastLoadable(activityEvents$);
-  // Resolve agent display name from the detail response
   const detail =
     detailLoadable.state === "hasData" ? detailLoadable.data : null;
   // Detect stale detail from previous navigation (useLastLoadable keeps old data)
   const isStale = detail !== null && detail.id !== currentRunId;
-  const displayName = resolveDisplayName(
-    detail,
-    isStale,
-    t(($) => {
-      return $.activity.detail.fallbackAgent;
-    }),
-  );
+  const displayName = "Okou";
 
   const features = useLastResolved(featureSwitches$);
   const events =
@@ -1178,7 +1159,6 @@ function downloadJson(
   const data: Record<string, unknown> = {
     meta: {
       id: detail.id,
-      displayName: detail.displayName,
       status: detail.status,
       triggerSource: detail.triggerSource,
       modelProvider: detail.modelProvider,
@@ -1192,7 +1172,6 @@ function downloadJson(
       createdAt: detail.createdAt,
       startedAt: detail.startedAt,
       completedAt: detail.completedAt,
-      agentId: detail.agentId,
       sessionId: detail.sessionId,
     },
     events,

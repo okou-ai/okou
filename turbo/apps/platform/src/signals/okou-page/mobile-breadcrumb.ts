@@ -9,7 +9,6 @@ import {
   currentChatThreadId$,
   currentChatAgentDisplayName$,
 } from "../agent-chat.ts";
-import { activityDetail$ } from "../activity-page/activity-signals.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { currentWorkflowDetail$ } from "../workflows-page/workflows-signals.ts";
@@ -73,17 +72,6 @@ const activityDetailBreadcrumb$ = computed(
     const features = await get(featureSwitches$);
     if (!features?.[FeatureSwitchKey.OkouDebug]) {
       return null;
-    }
-    const params = get(pathParams$) as Params;
-    const activityRunId = getStringParam(params, "activityRunId");
-    if (activityRunId) {
-      const detail = await get(activityDetail$);
-      if (detail && detail.id === activityRunId) {
-        return {
-          section,
-          name: detail.displayName ?? undefined,
-        };
-      }
     }
     return { section };
   },

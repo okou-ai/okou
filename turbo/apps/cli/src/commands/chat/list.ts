@@ -117,9 +117,7 @@ Lists your chats in the current workspace. Supports archived, unread, Project an
             ...(options.projectId !== undefined || options.limit === "all"
               ? { complete: threads.length === matchingThreads.length }
               : {}),
-            threads: threads.map(({ agentId: _agentId, ...thread }) => {
-              return thread;
-            }),
+            threads,
           }),
         );
         return;

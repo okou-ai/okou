@@ -2739,8 +2739,6 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       return entry.id === webRun.runId;
     });
     expect(webEntry).toMatchObject({
-      agentId: null,
-      displayName: null,
       framework: "claude-code",
       triggerSource: "web",
       status: "cancelled",
@@ -2750,8 +2748,6 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       return entry.id === automationRun.runId;
     });
     expect(automationEntry).toMatchObject({
-      agentId: null,
-      displayName: null,
       triggerSource: "automation-event",
     });
     expect(listed.body.filters.statuses).toContain("cancelled");
@@ -2759,7 +2755,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       "automation-event",
       "web",
     ]);
-    expect(listed.body.filters.agents).toStrictEqual([]);
+    expect(listed.body.filters).not.toHaveProperty("agents");
   });
 
   it("pages run logs and falls back from malformed cursors", async () => {
@@ -2792,51 +2788,8 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     expect(malformedCursor.body.data[0]?.id).toBe(pageOne.body.data[0]?.id);
   });
 
-  it("filters run logs by search, agent, status, and source", async () => {
-    const { actor, agentOne, agentOneName, secondAgentRun, webRun } =
-      await setupRunLogFixture();
-    const fuzzy = await reads.requestListLogs(
-      actor,
-      { search: agentOneName.toUpperCase() },
-      [200],
-    );
-    mustOk(fuzzy, "the fuzzy search list");
-    expect(
-      fuzzy.body.data
-        .map((entry) => {
-          return entry.id;
-        })
-        .sort(),
-    ).toStrictEqual([]);
-
-    const byName = await reads.requestListLogs(
-      actor,
-      { name: agentOneName },
-      [200],
-    );
-    mustOk(byName, "the name-filtered list");
-    expect(
-      byName.body.data
-        .map((entry) => {
-          return entry.id;
-        })
-        .sort(),
-    ).toStrictEqual([]);
-
-    const byAgentId = await reads.requestListLogs(
-      actor,
-      { agentId: agentOne.agentId, search: "zzz-no-such-agent" },
-      [200],
-    );
-    mustOk(byAgentId, "the agent-id list");
-    expect(
-      byAgentId.body.data
-        .map((entry) => {
-          return entry.id;
-        })
-        .sort(),
-    ).toStrictEqual([]);
-
+  it("filters run logs by status and source", async () => {
+    const { actor, secondAgentRun, webRun } = await setupRunLogFixture();
     const byStatusAndSource = await reads.requestListLogs(
       actor,
       { status: "cancelled", triggerSource: "web" },

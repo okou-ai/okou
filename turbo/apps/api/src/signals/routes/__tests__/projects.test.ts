@@ -449,13 +449,9 @@ describe("private cross-Agent Projects", () => {
         [200],
       )
     ).body.threads;
-    expect(
-      members
-        .map((t) => {
-          return t.agentId;
-        })
-        .sort(),
-    ).toStrictEqual([undefined, undefined]);
+    expect(members.map((thread) => thread.id).sort()).toEqual(
+      [first.id, second.id].sort(),
+    );
     expect(
       members.find((t) => {
         return t.id === first.id;

@@ -208,7 +208,7 @@ internal class RunControlsOwner(
                     RunControlIntent(
                         UUID.randomUUID().toString(),
                         threadId,
-                        thread.agentId,
+                        null,
                         RunControlKind.Interrupt,
                         it,
                     )
@@ -227,7 +227,7 @@ internal class RunControlsOwner(
                 RunControlIntent(
                     UUID.randomUUID().toString(),
                     threadId,
-                    thread.agentId,
+                    null,
                     RunControlKind.Revoke,
                     eventId,
                 )

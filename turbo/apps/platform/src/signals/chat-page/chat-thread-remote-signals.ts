@@ -168,7 +168,7 @@ export const patchChatThreadModelSelection$ = command(
         id: modelSelectionEventId,
         kind: "model_selection_updated",
         chatThreadId: threadId,
-        agentId: threadMeta.agentId,
+
         selectedModel: modelSelection?.selectedModel ?? null,
         ...(modelSettingsPatch === undefined ? {} : { modelSettingsPatch }),
         createdAt,
@@ -177,7 +177,7 @@ export const patchChatThreadModelSelection$ = command(
         id: serviceTierEventId,
         kind: "service_tier_updated",
         chatThreadId: threadId,
-        agentId: threadMeta.agentId,
+
         serviceTier: apiServiceTierFromSelection(modelSelection),
         createdAt,
       });
@@ -218,7 +218,7 @@ export const patchChatThreadComputerUseHost$ = command(
         id: eventId,
         kind: "computer_use_host_updated",
         chatThreadId: threadId,
-        agentId: threadMeta.agentId,
+
         computerUseHostId,
         cloudBrowserEnabled,
       });

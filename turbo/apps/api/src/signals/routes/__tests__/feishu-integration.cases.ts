@@ -5711,7 +5711,7 @@ export function registerFeishuIntegrationTests(
         });
         const chatThreadCreated = requireValue(
           threadEvents.body.events.find((event) => {
-            return event.kind === "created" && event.agentId === defaultAgentId;
+            return event.kind === "created";
           }),
           "Expected the canonical Feishu file chat thread",
         );
@@ -5989,9 +5989,7 @@ export function registerFeishuIntegrationTests(
           });
           const thread = requireValue(
             threads.body.events.find((event) => {
-              return (
-                event.kind === "created" && event.agentId === defaultAgentId
-              );
+              return event.kind === "created";
             }),
             "Expected a canonical rich post thread",
           );
@@ -6623,7 +6621,7 @@ export function registerFeishuIntegrationTests(
         });
         const thread = requireValue(
           threads.body.events.find((event) => {
-            return event.kind === "created" && event.agentId === defaultAgentId;
+            return event.kind === "created";
           }),
           "Expected the integration chat thread",
         );
@@ -6786,7 +6784,7 @@ export function registerFeishuIntegrationTests(
         });
         const chatThreadCreated = requireValue(
           threadEvents.body.events.find((event) => {
-            return event.kind === "created" && event.agentId === defaultAgentId;
+            return event.kind === "created";
           }),
           "Expected the canonical Feishu chat thread",
         );
@@ -7653,7 +7651,6 @@ export function registerSharedFeishuConversationTests(): void {
       });
       expect(created).toHaveLength(1);
       const thread = requireValue(created[0], "Expected the new DM thread");
-      expect(thread.agentId).toBe(defaultAgentId);
 
       const movedPrompt = "continue in the changed Feishu chat";
       const moved = await own(() => {
@@ -8146,7 +8143,7 @@ export function registerSharedFeishuConversationTests(): void {
       });
       const thread = requireValue(
         threadEvents.body.events.find((event) => {
-          return event.kind === "created" && event.agentId === defaultAgentId;
+          return event.kind === "created";
         }),
         "Expected the queued Feishu chat thread",
       );
@@ -8341,7 +8338,7 @@ export function registerSharedFeishuConversationTests(): void {
       });
       const thread = requireValue(
         threadEvents.body.events.find((event) => {
-          return event.kind === "created" && event.agentId === defaultAgentId;
+          return event.kind === "created";
         }),
         "Expected the failed-delivery Feishu chat thread",
       );

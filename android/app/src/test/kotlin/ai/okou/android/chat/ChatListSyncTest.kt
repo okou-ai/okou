@@ -74,7 +74,6 @@ class ChatListSyncTest {
                 assertEquals(23L, confirmed.cursor.seqId)
                 val row = replayChats(confirmed).single()
                 assertEquals("Renamed chat", row.title)
-                assertEquals(CHAT_AGENT, row.agentId)
                 assertNull(row.serviceTier)
                 val snapshot = fixture.server.takeRequest()
                 val archive = fixture.server.takeRequest()

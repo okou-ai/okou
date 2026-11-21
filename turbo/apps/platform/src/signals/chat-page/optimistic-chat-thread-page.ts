@@ -378,7 +378,6 @@ const mintOptimisticThreadWithEvent$ = command(
       id: args.eventId,
       kind: "created",
       chatThreadId: args.threadId,
-      agentId: args.agentId,
       projectId: args.projectId,
       title: args.title ?? null,
       selectedModel: args.selectedModel,

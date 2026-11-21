@@ -66,11 +66,10 @@ export const mcpProjectChatSearchContract = c.router({
       ...mcpChatSearchContract.search.responses,
       200: object({
         results: array(
-          mcpChatSearchResultSchema
-            .extend({
-              projectId: uuid().nullable(),
-              projectName: string().nullable(),
-            }),
+          mcpChatSearchResultSchema.extend({
+            projectId: uuid().nullable(),
+            projectName: string().nullable(),
+          }),
         ).max(CHAT_SEARCH_RESULT_LIMIT),
       }),
     },

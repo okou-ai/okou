@@ -1,8 +1,6 @@
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { db$ } from "../external/db";
-import {
-  chatThreadOrganizationPredicate,
-} from "../services/chat-thread-organization.service";
+import { chatThreadOrganizationPredicate } from "../services/chat-thread-organization.service";
 import { iosChatUltrafastTransforms } from "@okouai/api-contracts/client-transforms/chat-ultrafast";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";

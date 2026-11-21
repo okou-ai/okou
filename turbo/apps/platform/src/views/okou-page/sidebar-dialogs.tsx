@@ -279,7 +279,7 @@ function SpotlightMessageCommandItem({
   readonly onSelect: () => void;
   readonly shortcutNumber: number | undefined;
 }) {
-  const title = thread?.title ?? message.agentName;
+  const title = thread?.title ?? "Okou";
 
   return (
     <CommandItem
@@ -287,11 +287,7 @@ function SpotlightMessageCommandItem({
       onClick={onSelect}
       className={SPOTLIGHT_ROW_CLASS}
     >
-      <AgentAvatarImg
-        name={thread?.agentId ?? message.agentName}
-        alt=""
-        className={SPOTLIGHT_AVATAR_CLASS}
-      />
+      <AgentAvatarImg name="Okou" alt="" className={SPOTLIGHT_AVATAR_CLASS} />
       {/*
         A message result needs no type label: it is the only row that carries a
         second line, so the snippet already tells the two kinds apart.

@@ -87,7 +87,7 @@ class AssistantRecoveryModel(
         val failure = latestAssistantFailure(checkpoint, transcript) ?: return null
         return RecoverySelection(
             thread.id,
-            thread.agentId,
+            null,
             failure.id,
             thread.selectedModel,
             thread.serviceTier == ChatArchiveChatThreadsItemServiceTier.PRIORITY,

@@ -611,7 +611,6 @@ function registerProjectTools(
       description:
         "List Chats currently in your Project. Pass nextAfter as after to read the next page.",
       inputSchema: projectsContract.threads.query
-        .omit({ agentId: true })
         .extend({
           projectId: projectsContract.threads.pathParams.shape.id,
         })

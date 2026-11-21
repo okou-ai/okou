@@ -1,6 +1,6 @@
 import { computed } from "ccstate";
 import { currentChatAgentScope$ } from "../agent-chat.ts";
-import { unreadAgentIds$ } from "../chat-page/chat-thread-indicators-from-worker.ts";
+import { hasUnreadChats$ } from "../chat-page/chat-thread-indicators-from-worker.ts";
 import { chatThreadOnlyArchived$ } from "../chat-page/chat-thread-only-archived.ts";
 import { chatThreadOnlyMuted$ } from "../chat-page/chat-thread-only-muted.ts";
 import { chatThreadOnlyUnread$ } from "../chat-page/chat-thread-only-unread.ts";
@@ -22,6 +22,4 @@ export const pwaChatThreadScrollSignals$ = computed((get) => {
   });
 });
 
-export const pwaHasUnreadChats$ = computed(async (get) => {
-  return (await get(unreadAgentIds$)).size > 0;
-});
+export const pwaHasUnreadChats$ = hasUnreadChats$;

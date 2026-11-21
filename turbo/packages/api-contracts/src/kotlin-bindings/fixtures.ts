@@ -58,7 +58,6 @@ const event = {
   seqId: 17,
   kind: "created",
   chatThreadId: threadId,
-  agentId,
   title: null,
   selectedModel: null,
   serviceTier: null,
@@ -105,7 +104,6 @@ export function kotlinFixtureJson(): string {
           hasMore: false,
         }),
         indicators: wire(chatThreadsContract.indicators.responses[200], {
-          agents: { [agentId]: "active" },
           threads: { [threadId]: "unread" },
           unreadAt: { [threadId]: date },
         }),
@@ -135,7 +133,6 @@ export function kotlinFixtureJson(): string {
           chatThreads: [
             {
               id: threadId,
-              agentId,
               projectId,
               title: "Saved conversation",
               sortAt: date,

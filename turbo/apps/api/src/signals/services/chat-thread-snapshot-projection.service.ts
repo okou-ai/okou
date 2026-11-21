@@ -3,9 +3,7 @@ import { command } from "ccstate";
 import { chatThreadSnapshotProjectionSchema } from "@okouai/api-contracts/contracts/chat-threads";
 import { modelSettingsSchema } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { and, desc, eq, lt, sql, type SQLWrapper } from "drizzle-orm";
-import {
-  chatThreadOrganizationPredicate,
-} from "./chat-thread-organization.service";
+import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import type { infer as zInfer } from "zod";
 import {

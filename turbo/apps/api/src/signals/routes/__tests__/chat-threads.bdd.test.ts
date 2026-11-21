@@ -1227,7 +1227,6 @@ describe("CHAT-01 chat thread read state", () => {
       prompt: "other org unread thread stays isolated",
     });
 
-    await expect(chat.listUnreadAgents(owner)).resolves.toStrictEqual([]);
     await expect(chat.listUnreadChatThreadIds(owner)).resolves.toStrictEqual(
       [],
     );
@@ -1244,7 +1243,6 @@ describe("CHAT-01 chat thread read state", () => {
       prompt: "unread aggregate with active run",
     });
     const activeExecution = await runExecution(runnerGroup, activeRun.runId);
-    await expect(chat.listUnreadAgents(owner)).resolves.toStrictEqual([]);
     await expect(chat.listUnreadChatThreadIds(owner)).resolves.toStrictEqual(
       [],
     );
@@ -1259,7 +1257,6 @@ describe("CHAT-01 chat thread read state", () => {
         );
       });
     });
-    await expect(chat.listUnreadAgents(owner)).resolves.toStrictEqual([]);
     await expect(chat.listUnreadChatThreadIds(owner)).resolves.toStrictEqual([
       activeRun.threadId,
     ]);
@@ -1280,7 +1277,6 @@ describe("CHAT-01 chat thread read state", () => {
     const repeatedRead = await chat.markThreadRead(owner, activeRun.threadId);
     expect(repeatedRead.lastReadAt).toBe(firstRead.lastReadAt);
     expect(context.mocks.ably.publish).not.toHaveBeenCalled();
-    await expect(chat.listUnreadAgents(owner)).resolves.toStrictEqual([]);
     await expect(chat.listUnreadChatThreadIds(owner)).resolves.toStrictEqual(
       [],
     );
@@ -1294,20 +1290,16 @@ describe("CHAT-01 chat thread read state", () => {
       prompt: "unread aggregate B",
     });
 
-    const unreadAgents = await chat.listUnreadAgents(owner);
-    expect(unreadAgents).toStrictEqual([]);
     expect(new Set(await chat.listUnreadChatThreadIds(owner))).toStrictEqual(
       new Set([runA.threadId, runB.threadId]),
     );
 
     await chat.markThreadRead(owner, runA.threadId);
-    await expect(chat.listUnreadAgents(owner)).resolves.toStrictEqual([]);
     await expect(chat.listUnreadChatThreadIds(owner)).resolves.toStrictEqual([
       runB.threadId,
     ]);
 
     await chat.markThreadRead(owner, runB.threadId);
-    await expect(chat.listUnreadAgents(owner)).resolves.toStrictEqual([]);
     await expect(chat.listUnreadChatThreadIds(owner)).resolves.toStrictEqual(
       [],
     );
@@ -1327,14 +1319,11 @@ describe("CHAT-01 chat thread read state", () => {
     await expect(chat.listUnreadChatThreadIds(actor)).resolves.toStrictEqual([
       other.threadId,
     ]);
-    await expect(chat.listUnreadAgents(actor)).resolves.toStrictEqual([]);
     await chat.markThreadRead(actor, other.threadId);
-    await expect(chat.listUnreadAgents(actor)).resolves.toStrictEqual([]);
     await chat.requestSetThreadMuted(actor, muted.threadId, false, [204]);
     await expect(chat.listUnreadChatThreadIds(actor)).resolves.toStrictEqual([
       muted.threadId,
     ]);
-    await expect(chat.listUnreadAgents(actor)).resolves.toStrictEqual([]);
   });
 
   it("lists active thread ids without hiding the agent's unread state", async () => {
@@ -1391,7 +1380,6 @@ describe("CHAT-01 chat thread read state", () => {
       new Set([runningRun.threadId, queuedRun.threadId]),
     );
     await expect(chat.listIndicators(owner)).resolves.toStrictEqual({
-      agents: {},
       threads: {
         [completedRun.threadId]: "unread",
         [runningRun.threadId]: "active",
@@ -1416,7 +1404,6 @@ describe("CHAT-01 chat thread read state", () => {
       new Set([queuedRun.threadId]),
     );
     await expect(chat.listIndicators(owner)).resolves.toStrictEqual({
-      agents: {},
       threads: {
         [completedRun.threadId]: "unread",
         [runningRun.threadId]: "unread",
@@ -1455,7 +1442,6 @@ describe("CHAT-01 chat thread read state", () => {
 
       mockNow(currentTime);
       await expect(chat.listIndicators(actor)).resolves.toStrictEqual({
-        agents: {},
         threads: {
           [recentRun.threadId]: "unread",
           [activeRun.threadId]: "active",
@@ -1491,7 +1477,6 @@ describe("CHAT-01 chat thread read state", () => {
 
       mockNow(firstCompletedAt + 60_000);
       const indicators = await chat.listIndicators(actor);
-      expect(indicators.agents).toStrictEqual({});
       if (!indicators.unreadAt) {
         throw new Error("Expected unread timestamps from the current API");
       }

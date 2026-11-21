@@ -304,7 +304,7 @@ export const createProject$ = command(
         id: eventId,
         kind: "project_updated",
         chatThreadId: thread.id,
-        agentId: thread.agentId,
+
         projectId: eventId,
         createdAt: thread.sortAt,
       });
@@ -470,7 +470,7 @@ export const moveProjectThread$ = command(
         id: eventId,
         kind: "project_updated",
         chatThreadId: threadId,
-        agentId: thread.agentId,
+
         projectId,
         createdAt: thread.sortAt,
       });
