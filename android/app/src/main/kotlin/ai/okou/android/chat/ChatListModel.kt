@@ -257,6 +257,7 @@ class ChatListModel(
     private var confirmedRows = ReplayedChats(emptyList(), emptyList())
     private var rowEdits = emptyList<ChatRowEdit>()
     private val unconfirmedRowEvents = mutableSetOf<String>()
+    private val rejectedRowEvents = mutableSetOf<String>()
     private var confirmedProjects: CachedProjects? = null
     private var cacheRead = false
     private var restoreJob: Job? = null
@@ -870,7 +871,7 @@ class ChatListModel(
     }
 
     internal fun reloadAfterRowActionFailure() {
-        requestListRead(unconfirmedRowEvents, userRequested = true)
+        requestListRead(unconfirmedRowEvents + rejectedRowEvents, userRequested = true)
     }
 
     internal fun dismissRowActionFailure(action: ChatRowAction) {
@@ -1082,13 +1083,16 @@ class ChatListModel(
         val completion = CompletableDeferred<Unit>(currentCoroutineContext()[Job])
         val batch = listReadBatch()
         batch.confirmations.add(ListConfirmation(edits, completion))
-        // Definitive rejections restore from a successful read.
-        if (writeRejected) edits.forEach { batch.discardOnSuccess.add(it.eventId) }
+        if (writeRejected) {
+            for (edit in edits) {
+                if (edit in rowEdits) rejectedRowEvents.add(edit.eventId)
+            }
+        }
         listReadRequests.trySend(Unit)
         completion.await()
         requireCurrent()
         val unresolved = edits.filter { it in rowEdits }
-        if (unresolved.isNotEmpty()) unconfirmedRowEvents.addAll(unresolved.map { it.eventId })
+        if (!writeRejected) unresolved.mapTo(unconfirmedRowEvents) { it.eventId }
         val deleted =
             action == ChatRowAction.Delete &&
                 confirmedRows.byRecency.none { it.id == edits.single().threadId }
@@ -1153,11 +1157,14 @@ class ChatListModel(
             return
         val reportingFilterGeneration =
             filterGeneration.takeIf { !batch.userRequested && filterIsVisible && listInForeground }
+        // A rejected edit stays recoverable if its first read fails. Only a read started after
+        // the rejection can restore that row.
+        val discardOnSuccess = batch.discardOnSuccess + rejectedRowEvents
         mutable.value = mutable.value.copy(listPhase = ChatReadPhase.Loading)
         try {
             val result = sync.synchronize(confirmed?.checkpoint)
             val retrying = mutable.value.listReadFailure == ChatListReadFailure.Retrying
-            publishList(result, batch.discardOnSuccess)
+            publishList(result, discardOnSuccess)
             if (retrying) refreshFailedListDependencies()
             if (result.shouldRebase && confirmed?.checkpoint === result.checkpoint) {
                 startListRebase(result.checkpoint)
@@ -1325,7 +1332,10 @@ class ChatListModel(
                 val settled =
                     edit.eventId in discarded ||
                         index <= (settledThrough[edit.threadId to edit.field] ?: -1)
-                if (settled) unconfirmedRowEvents.remove(edit.eventId)
+                if (settled) {
+                    unconfirmedRowEvents.remove(edit.eventId)
+                    rejectedRowEvents.remove(edit.eventId)
+                }
                 !settled
             }
     }
