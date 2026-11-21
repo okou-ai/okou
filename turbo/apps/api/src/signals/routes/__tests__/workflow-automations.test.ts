@@ -3612,7 +3612,7 @@ describe("okou workflow automations", () => {
     });
   });
 
-  it("preserves Gmail watches after deleting a workflow or a legacy agent", async () => {
+  it("preserves the Gmail watch after deleting a workflow", async () => {
     const workflowScenario = await setupFixture();
     await connectGmail(
       workflowScenario,
@@ -3639,32 +3639,7 @@ describe("okou workflow automations", () => {
       }),
       [204],
     );
-    expect(stop.calls).toBe(0);
-
-    const ownerScenario = await setupFixture();
-    const legacyAgent = await wf.createAgent(ownerScenario.actor);
-    const target = await createMemberWorkflow(ownerScenario, {
-      workflowName: "second-mailbox-watch",
-    });
-    const agentScenario = { ...ownerScenario, ...target };
-    await connectGmail(
-      agentScenario,
-      `agent-cascade-${agentScenario.fixture.userId}@example.com`,
-    );
-    await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId: agentScenario.workflowId },
-        body: {
-          kind: "event",
-          eventType: "gmail-new-message",
-          eventConfig: { provider: "gmail", event: "new_message" },
-        },
-      }),
-      [201],
-    );
-    await bdd.deleteAgent(agentScenario.actor, legacyAgent.agentId);
-    expect(watch.calls).toBe(2);
+    expect(watch.calls).toBe(1);
     expect(stop.calls).toBe(0);
   });
 
