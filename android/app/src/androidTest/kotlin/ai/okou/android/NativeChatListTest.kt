@@ -315,8 +315,12 @@ class NativeChatListTest {
                 click(UiSelector().description(filter))
                 text(app.getString(R.string.chat_inbox))
                 instrumentation.setInTouchMode(false)
-                assertTrue(device.pressBack())
-                assertTrue(device.wait(Until.gone(inbox), 10_000))
+                // The popup can close without the accessibility event that pressBack() awaits.
+                assertTrue("Could not inject Back", device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+                assertTrue(
+                    "Chat filter popup stayed open after Back",
+                    device.wait(Until.gone(inbox), 10_000),
+                )
                 device.awaitKeyboardFocus(By.pkg(app.packageName).desc(filter))
                 assertTrue(device.pressDPadCenter())
                 text(app.getString(R.string.chat_inbox))
