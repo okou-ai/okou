@@ -316,7 +316,6 @@ describe("workflows", () => {
     const agent = await workspaceExecutor(owner);
 
     const created = await createWorkflow(owner, {
-      agentId: agent.agentId,
       name: `owner-workflow-${randomUUID().slice(0, 8)}`,
       displayName: "Owner Workflow",
       instruction: "# owner workflow",
@@ -332,7 +331,10 @@ describe("workflows", () => {
     });
 
     const ownerList = await accept(
-      collectionClient().list({ headers: authHeaders(owner) }),
+      collectionClient().list({
+        headers: authHeaders(owner),
+        query: { scope: "workspace" },
+      }),
       [200],
     );
     expect(names(ownerList.body)).toContain(created.body.name);
@@ -1574,7 +1576,7 @@ describe("workflows", () => {
           detailClient().copy({
             headers: authHeaders(actor),
             params: { workflowId: source.workflowId },
-            body: { toAgentId: targetAgent.agentId },
+            body: {},
           }),
           [201, 409],
         );

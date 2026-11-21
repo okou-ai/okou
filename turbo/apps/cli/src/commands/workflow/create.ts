@@ -1,4 +1,3 @@
-import { workspaceExecutorId } from "../../lib/command/workspace-executor";
 import { Command } from "commander";
 import chalk from "chalk";
 import { readFileSync } from "node:fs";
@@ -70,7 +69,6 @@ Notes:
           : undefined;
 
         const workflow = await createWorkflow({
-          agentId: await workspaceExecutorId(),
           chatThreadId: getOkouChatThreadId(),
           name,
           instruction,

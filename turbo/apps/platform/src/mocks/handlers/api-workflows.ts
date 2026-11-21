@@ -12,6 +12,7 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 
 import { mockApi } from "../msw-contract.ts";
+import { MOCK_DEFAULT_AGENT_ID } from "./api-onboarding.ts";
 import {
   getMockWorkflowAutomations,
   setMockWorkflowAutomations,
@@ -102,7 +103,8 @@ export function resetMockWorkflows(): void {
 
 export const apiWorkflowsHandlers = [
   mockApi(workflowsCollectionContract.list, ({ query, respond }) => {
-    const agentId = query.agentId;
+    const agentId =
+      query.scope === "workspace" ? MOCK_DEFAULT_AGENT_ID : query.agentId;
     const visible = agentId
       ? mockWorkflows.filter((workflow) => {
           return workflow.agentId === agentId;
@@ -133,7 +135,7 @@ export const apiWorkflowsHandlers = [
     const now = new Date().toISOString();
     const created: WorkflowDetailResponse = {
       id: crypto.randomUUID(),
-      agentId: body.agentId,
+      agentId: body.agentId ?? MOCK_DEFAULT_AGENT_ID,
       agentName: null,
       agentDisplayName: null,
       name: body.name,
@@ -243,7 +245,7 @@ export const apiWorkflowsHandlers = [
     const copied: WorkflowDetailResponse = {
       ...source,
       id: crypto.randomUUID(),
-      agentId: body.toAgentId,
+      agentId: body.toAgentId ?? MOCK_DEFAULT_AGENT_ID,
       visibility: "private",
       ownerUserId: "test-user-123",
       canPublish: true,

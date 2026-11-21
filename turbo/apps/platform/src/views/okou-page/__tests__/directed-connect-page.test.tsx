@@ -980,7 +980,7 @@ test("Connect a no-auth connector and continue the originating chat", async () =
   });
   await setupPage({
     context,
-    path: `/connectors/stripe/connect?agentId=${AGENT_ID}&threadId=${threadId}&callbackPrompt=${encodeURIComponent(callbackPrompt)}`,
+    path: `/connectors/stripe/connect?threadId=${threadId}&callbackPrompt=${encodeURIComponent(callbackPrompt)}`,
   });
 
   await waitFor(() => {

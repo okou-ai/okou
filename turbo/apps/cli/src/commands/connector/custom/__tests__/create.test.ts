@@ -12,7 +12,6 @@ import { createCustomConnectorCommand } from "../create";
 import { customConnectorCommand } from "../index";
 
 const CONNECTOR_ID = "33333333-3333-4333-8333-333333333333";
-const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const THREAD_ID = "22222222-2222-4222-8222-222222222222";
 
 function buildOkouToken(capabilities: readonly string[]): string {
@@ -120,7 +119,6 @@ describe("okou connector custom create", () => {
     tempDir = mkdtempSync(join(tmpdir(), "custom-connector-create-"));
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", buildOkouToken(["connector:write"]));
-    vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
     vi.stubEnv("OKOU_CHAT_THREAD_ID", "");
   });
 
@@ -218,7 +216,7 @@ describe("okou connector custom create", () => {
     expect(output).toContain('Custom connector "Acme API" created');
     expect(output).toContain("awaiting connection");
     expect(output).toContain(
-      `Connect it at: [Connect Acme API](http://localhost:3000/connectors/_acme-search/connect?agentId=${AGENT_ID})`,
+      `Connect it at: [Connect Acme API](http://localhost:3000/connectors/_acme-search/connect)`,
     );
   });
 
@@ -278,7 +276,7 @@ describe("okou connector custom create", () => {
     expect(output).toContain('Custom connector "Acme OAuth API" created');
     expect(output).toContain("Authentication: oauth");
     expect(output).toContain(
-      `Connect it at: [Connect Acme OAuth API](http://localhost:3000/connectors/_acme-search/connect?agentId=${AGENT_ID})`,
+      `Connect it at: [Connect Acme OAuth API](http://localhost:3000/connectors/_acme-search/connect)`,
     );
     expect(output).not.toContain("oauth-client-secret");
   });
@@ -335,7 +333,7 @@ describe("okou connector custom create", () => {
     expect(output).toMatchObject({
       id: CONNECTOR_ID,
       kind: "mcp",
-      connectUrl: `http://localhost:3000/connectors/_acme-mcp/connect?agentId=${AGENT_ID}&callbackPrompt=Verify+MCP+tools&threadId=${THREAD_ID}`,
+      connectUrl: `http://localhost:3000/connectors/_acme-mcp/connect?callbackPrompt=Verify+MCP+tools&threadId=${THREAD_ID}`,
     });
   });
 
