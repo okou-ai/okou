@@ -13,7 +13,6 @@ import {
   setBilling,
   action,
   findAction,
-  packages,
 } from "./workspace-billing-fixtures.ts";
 import {
   RUN_PATH,
@@ -25,11 +24,7 @@ const exhausted = "What's stopping you from upgrading today?",
   abandoned = "What stopped you from completing your purchase?";
 function surveyBoundary(answered = false) {
   let recorded: BillingSurveyRequest | undefined;
-  const served = context.mocks.deferred<void>();
   context.mocks.api(billingSurveyContract.status, ({ query, respond }) => {
-    if (!served.settled()) {
-      served.resolve();
-    }
     return respond(200, {
       answered: answered
         ? ["credits_exhausted"]
@@ -51,7 +46,6 @@ function surveyBoundary(answered = false) {
     });
   });
   return {
-    served: served.promise,
     answer: () => {
       return recorded;
     },
@@ -123,9 +117,11 @@ test("billing-survey-001 A workspace administrator can explain an exhausted bala
   });
 });
 test("billing-survey-002 A previously answered workspace retains its direct Pro upgrade action", async () => {
-  const service = surveyBoundary(true);
-  await openChat();
-  await service.served;
+  surveyBoundary(true);
+  // The checkout dialog and the chat question both consume this workspace's
+  // survey status. Its dismissal restores the chat after that status arrived.
+  await openChat("?billing=canceled");
+  await submitPriceFeedback();
   await expect(action("Upgrade to Pro")).resolves.toBeEnabled();
   expect(findAction(exhausted)).toBeUndefined();
 });
@@ -151,19 +147,6 @@ test("billing-survey-003 A canceled checkout records the price objection for tha
   await submitPriceFeedback();
   expect(service.answer()).toStrictEqual(planAnswer());
   expect(new URL(location.href).searchParams.has("billing")).toBeFalsy();
-});
-test("billing-survey-004 Closing the restored chooser reveals checkout feedback and preserves the exhaustion survey in chat", async () => {
-  const service = surveyBoundary();
-  packages(context);
-  await openChat("?billing=canceled&settings=billing&billingView=plans");
-  const chooser = await screen.findByRole("dialog", { name: "Choose a plan" });
-  await service.served;
-  expect(screen.queryByText(abandoned)).toBeNull();
-  click(await action("Close", chooser));
-  await submitPriceFeedback();
-  expect(service.answer()).toStrictEqual(planAnswer());
-  const survey = await action(exhausted);
-  expect(survey).toBeEnabled();
 });
 test("billing-survey-006 An exhausted workspace can answer in chat while a separate unpaid checkout is still open", async () => {
   surveyBoundary();

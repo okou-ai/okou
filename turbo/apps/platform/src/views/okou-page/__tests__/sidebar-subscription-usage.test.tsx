@@ -304,24 +304,25 @@ test("sidebar-subscription-usage-015 Robin stays signed in on Workflows while pr
     context.mocks.clerk().sessionSignedOut(true);
     return Promise.resolve();
   });
-  const rejected = context.mocks.deferred<void>();
   context.mocks.api(thirdPartySubscriptionsMainContract.list, ({ respond }) => {
-    if (!rejected.settled()) {
-      rejected.resolve();
-    }
     return respond(401, {
       error: { code: "UNAUTHORIZED", message: "Session expired at provider" },
     });
   });
   await visit();
-  await rejected.promise;
   click(await action("Robin"));
   const menu = await screen.findByRole("menu");
   await within(menu).findByText("12,500 credits");
   expect(location.pathname).toBe("/workflows");
   click(within(menu).getByText("Settings"));
-  await screen.findByRole("dialog", { name: "Settings" });
+  const settings = await screen.findByRole("dialog", { name: "Settings" });
+  click(await action("Models", settings));
+  await within(settings).findByText("Couldn’t load your accounts.");
   expect(location.pathname).toBe("/workflows");
+  click(await action("Close", settings));
+  click(await action("Robin"));
+  const signedIn = await screen.findByRole("menu");
+  await within(signedIn).findByText("12,500 credits");
 });
 test("sidebar-subscription-usage-019 An account without linked providers still shows its 12,500-credit balance", async () => {
   robinBalance();

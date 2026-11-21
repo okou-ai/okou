@@ -57,3 +57,25 @@ test.each([
     ).not.toContain("Redeem credits");
   },
 );
+
+test("redeem-campaign-page-003 A processing campaign identifies the workspace whose credits are on the way", async () => {
+  const campaign = "winter-launch";
+  context.mocks.api(billingRedeemContract.create, ({ params, respond }) => {
+    expect(params.campaign).toBe(campaign);
+    return respond(200, { status: "processing" });
+  });
+  await setupPage({
+    context,
+    path: "/redeem/" + campaign,
+    auth: {
+      user: { id: "winter-recipient", fullName: "Winter Recipient" },
+      organization: { activeOrg: { id: "winter-org", name: "Default Org" } },
+    },
+  });
+  await screen.findByText("Payment received");
+  expect(
+    screen.getByText(
+      "We're applying your credits to Default Org now. This usually takes a few seconds.",
+    ),
+  ).toBeInTheDocument();
+});
