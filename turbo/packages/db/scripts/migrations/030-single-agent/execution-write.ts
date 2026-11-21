@@ -222,7 +222,7 @@ function metadataEvents(
           ON CONFLICT(user_id,org_id) DO UPDATE SET last_seq_id=chat_thread_event_sequences.last_seq_id+EXCLUDED.last_seq_id
           RETURNING user_id,last_seq_id
         ), chat_published AS (
-          INSERT INTO chat_thread_events(id,user_id,org_id,seq_id,chat_thread_id,kind,agent_id,project_id,pin_order,created_at)
+          INSERT INTO chat_thread_events(id,user_id,org_id,seq_id,chat_thread_id,kind,event_executor_id,project_id,pin_order,created_at)
           SELECT gen_random_uuid(),p.user_id,$1,
             r.last_seq_id-c.total+row_number() OVER(PARTITION BY p.user_id ORDER BY p.id,event.ordinal),
             p.id,CASE WHEN event.ordinal=1 THEN 'project_updated' ELSE 'agent_reassigned' END::chat_thread_event_kind,
