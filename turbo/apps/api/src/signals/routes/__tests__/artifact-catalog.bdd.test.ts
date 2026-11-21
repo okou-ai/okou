@@ -1378,6 +1378,8 @@ describe("GET /api/artifacts/catalog", () => {
       chat.listArtifactCatalog(owner.actor, { chatThreadId: second.threadId }),
     ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
 
+    const { sourceChatThreadId, ...detailWithoutSource } = detail;
+    expect(sourceChatThreadId).toBe(hosted.threadId);
     await chat.deleteThread(owner.actor, hosted.threadId);
 
     await expect(
@@ -1391,7 +1393,7 @@ describe("GET /api/artifacts/catalog", () => {
     );
     await expect(
       chat.getArtifactCatalogEntry(owner.actor, entry.id),
-    ).resolves.toStrictEqual(detail);
+    ).resolves.toStrictEqual(detailWithoutSource);
 
     // A real later publication must not reattach the artifact after deletion
     // cleared its original thread, even when the projection stays in B.
@@ -2154,6 +2156,8 @@ describe("shared thread routes", () => {
     const directDetail = asRecord(await directDetailResponse.json());
     expect(directDetail.kind).toBe("shared-thread");
 
+    const { sourceChatThreadId, ...detailWithoutSource } = detail;
+    expect(sourceChatThreadId).toBe(run.threadId);
     await chat.deleteThread(owner.actor, run.threadId);
     const afterSourceDeletion = await readSharedThreadSnapshot(first.id);
     expect(afterSourceDeletion.body).toStrictEqual(publicSnapshot.body);
@@ -2168,7 +2172,7 @@ describe("shared thread routes", () => {
     ).resolves.toStrictEqual(catalog);
     await expect(
       chat.getArtifactCatalogEntry(owner.actor, artifactId),
-    ).resolves.toStrictEqual(detail);
+    ).resolves.toStrictEqual(detailWithoutSource);
 
     webhooks.configureClerkWebhookSecret();
     context.mocks.stripe.subscriptions.list.mockResolvedValue({
