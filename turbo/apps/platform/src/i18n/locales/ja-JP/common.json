@@ -378,7 +378,6 @@
         "openAutomations": "モバイルでオートメーションを開く"
       },
       "navigation": {
-        "agents": "エージェント",
         "artifacts": "アーティファクト",
         "connectors": "コネクター",
         "settings": "設定",
@@ -2786,7 +2785,6 @@
       "noEmojiFound": "絵文字が見つかりませんでした",
       "notFound": "チャットスレッドが見つかりません",
       "openBrowser": "ブラウザを開く",
-      "openNamedAgent": "エージェント {{name}} を開く",
       "openNamedChat": "チャットを開く {{title}}",
       "pickEmoji": "絵文字を選択",
       "scrollToBottom": "一番下までスクロール",

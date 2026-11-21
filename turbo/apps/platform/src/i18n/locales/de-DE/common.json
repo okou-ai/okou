@@ -378,7 +378,6 @@
         "openAutomations": "Automatisierungen auf dem Mobilgerät öffnen"
       },
       "navigation": {
-        "agents": "Agenten",
         "artifacts": "Artefakte",
         "connectors": "Integrationen",
         "settings": "Einstellungen",
@@ -2801,7 +2800,6 @@
       "noEmojiFound": "Kein Emoji gefunden",
       "notFound": "Chat-Thread nicht gefunden",
       "openBrowser": "Browser öffnen",
-      "openNamedAgent": "Agent {{name}} öffnen",
       "openNamedChat": "Chat {{title}} öffnen",
       "pickEmoji": "Ein Emoji auswählen",
       "scrollToBottom": "Nach unten scrollen",

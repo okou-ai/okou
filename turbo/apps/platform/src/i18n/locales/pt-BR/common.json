@@ -392,7 +392,6 @@
         "openAutomations": "Abrir automações no celular"
       },
       "navigation": {
-        "agents": "Agentes",
         "artifacts": "Artefatos",
         "connectors": "Conectores",
         "settings": "Configurações",
@@ -2851,7 +2850,6 @@
       "noEmojiFound": "Nenhum emoji encontrado",
       "notFound": "Conversa não encontrada",
       "openBrowser": "Abrir navegador",
-      "openNamedAgent": "Abrir agente {{name}}",
       "openNamedChat": "Abrir conversa {{title}}",
       "pickEmoji": "Escolha um emoji",
       "scrollToBottom": "Rolar até o final",

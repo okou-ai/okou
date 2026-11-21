@@ -378,7 +378,6 @@
         "openAutomations": "Buka otomatisasi mobile"
       },
       "navigation": {
-        "agents": "Agen",
         "artifacts": "Artifact",
         "connectors": "Konektor",
         "settings": "Pengaturan",
@@ -2786,7 +2785,6 @@
       "noEmojiFound": "Emoji tidak ditemukan",
       "notFound": "Utas chat tidak ditemukan",
       "openBrowser": "Buka browser",
-      "openNamedAgent": "Buka agen {{name}}",
       "openNamedChat": "Buka chat {{title}}",
       "pickEmoji": "Pilih emoji",
       "scrollToBottom": "Gulir ke bawah",

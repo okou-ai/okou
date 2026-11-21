@@ -378,7 +378,6 @@
         "openAutomations": "打开自动化面板"
       },
       "navigation": {
-        "agents": "智能体",
         "artifacts": "成果",
         "connectors": "连接器",
         "settings": "设置",
@@ -2786,7 +2785,6 @@
       "noEmojiFound": "没有找到表情",
       "notFound": "找不到该聊天会话",
       "openBrowser": "打开浏览器",
-      "openNamedAgent": "打开智能体 {{name}}",
       "openNamedChat": "打开聊天 {{title}}",
       "pickEmoji": "选择表情",
       "scrollToBottom": "滚动到底部",
