@@ -52,4 +52,8 @@
     <string name="chat_title_field">Judul chat</string>
     <string name="chat_rename_confirm">Ubah nama</string>
     <string name="chat_rename_cancel">Batal</string>
+    <string name="chat_delete">Hapus chat</string>
+    <string name="chat_delete_title">Hapus chat?</string>
+    <string name="chat_delete_description">Ini akan menghapus chat ini secara permanen. Setiap tugas yang sedang berjalan di chat ini akan dihentikan segera. Semua automasi yang ditautkan akan dijeda. Tindakan ini tidak dapat dibatalkan.</string>
+    <string name="chat_delete_confirm">Hapus</string>
 </resources>

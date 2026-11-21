@@ -44,6 +44,9 @@ open class TestChatService : ChatListService {
     override suspend fun setArchived(threadId: String, archived: Boolean, eventId: String): Unit =
         error("Unexpected archive change")
 
+    override suspend fun deleteThread(threadId: String, eventId: String): Unit =
+        error("Unexpected deletion")
+
     override suspend fun renameThread(threadId: String, title: String, eventId: String): Unit =
         error("Unexpected rename")
 

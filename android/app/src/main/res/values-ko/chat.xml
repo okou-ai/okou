@@ -52,4 +52,8 @@
     <string name="chat_title_field">채팅 제목</string>
     <string name="chat_rename_confirm">이름 변경</string>
     <string name="chat_rename_cancel">취소</string>
+    <string name="chat_delete">채팅 삭제</string>
+    <string name="chat_delete_title">채팅을 삭제하시겠습니까?</string>
+    <string name="chat_delete_description">이 채팅을 영구 삭제합니다. 현재 실행 중인 작업은 즉시 중단됩니다. 연결된 자동화는 일시 중지됩니다. 이 작업은 되돌릴 수 없습니다.</string>
+    <string name="chat_delete_confirm">삭제</string>
 </resources>

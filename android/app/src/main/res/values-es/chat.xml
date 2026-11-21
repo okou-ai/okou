@@ -54,4 +54,8 @@
     <string name="chat_title_field">Título del chat</string>
     <string name="chat_rename_confirm">Renombrar</string>
     <string name="chat_rename_cancel">Cancelar</string>
+    <string name="chat_delete">Eliminar chat</string>
+    <string name="chat_delete_title">¿Eliminar el chat?</string>
+    <string name="chat_delete_description">Esto eliminará permanentemente este chat. Cualquier tarea que se esté ejecutando en este chat se detendrá inmediatamente. Todas las automatizaciones vinculadas se pausarán. Esta acción no puede deshacerse.</string>
+    <string name="chat_delete_confirm">Eliminar</string>
 </resources>
