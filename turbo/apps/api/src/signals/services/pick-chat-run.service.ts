@@ -161,11 +161,7 @@ function createPickObjects() {
         // Install the private receipt node synchronously, before its model
         // promise can yield. Concurrent receipt-list evaluations share it.
         graph = computed(() => {
-          const context = matchAgentRunContextSignals(
-            claim.context,
-            claim.userId,
-            claim.orgId,
-          );
+          const context = matchAgentRunContextSignals(claim.context, claim);
           return Promise.resolve(createCapturedClaimObjects(claim, context));
         });
         graphCache.set(claim, graph);
@@ -417,9 +413,6 @@ function createPickObjects() {
         get(claimed.orgHasCapacity$),
         get(claimed.hasFirstPickableChatEvent$),
       ]);
-      // Issue critical availability reads first. This bounded Thread source
-      // can overlap them; each later consumer still joins its own node.
-      waitUntil(settle(get(claimed.threadResources$)));
       const [threadHasActiveRun, hasCapacity, hasInput] = await availability;
       signal.throwIfAborted();
       // Publication can wait for a launch whose active row was not visible in

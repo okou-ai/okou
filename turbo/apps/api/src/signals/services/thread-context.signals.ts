@@ -30,7 +30,6 @@ import {
   type ConnectedAccounts,
   createConnectedAccountsSignals,
 } from "./thread-connected-accounts.signals";
-import { createThreadConnectorSources } from "./thread-connector-sources.service";
 import {
   createThreadAutomationPayload,
   createThreadAutomationSnapshot,
@@ -56,9 +55,6 @@ type ThreadModels = ReturnType<typeof createThreadModelSignals>;
 
 /** Read-only facts for one claimed Thread and its eventual picked event. */
 export interface ThreadContext extends ThreadWorkflowContext {
-  readonly threadConnectorSources$: ReturnType<
-    typeof createThreadConnectorSources
-  >;
   /** Background source acquisition; consumers join the individual nodes below. */
   readonly inputResources$: Computed<Promise<void>>;
   readonly projectContext$: ReturnType<typeof createThreadProjectContext>;
@@ -121,10 +117,6 @@ export function createThreadContext(
     return new ApiDispatchTimingCollector();
   });
   const sourceSettings = createThreadSourceSettings(bootstrap);
-  const threadConnectorSources$ = createThreadConnectorSourceContext(
-    bootstrap,
-    chatThreadId,
-  );
   const thread$ = computed(async (get) => {
     return (await get(pickedEvent$))?.thread ?? null;
   });
@@ -171,7 +163,6 @@ export function createThreadContext(
     bootstrap,
     pickedEvent$,
     dispatchTiming$,
-    threadConnectorSources$,
   );
   const emailMailboxConnections$ = createEmailMailboxConnections(
     pickedEvent$,
@@ -195,7 +186,6 @@ export function createThreadContext(
     inputSources,
   );
   return {
-    threadConnectorSources$,
     inputResources$: resources.inputResources$,
     projectContext$: resources.projectContext$,
     incompleteContext$: resources.incompleteContext$,
@@ -229,35 +219,6 @@ export function createThreadContext(
     connectorSnapshot$: connectedAccounts.connectorSnapshot$,
     connectorThreadSelections$: connectedAccounts.threadSelections$,
   };
-}
-
-/** Bind a request's first Thread observation without waiting for unrelated sources. */
-function createThreadConnectorSourceContext(
-  bootstrap: AgentRunContextSignals,
-  chatThreadId: string,
-) {
-  const orgId = bootstrap.orgId;
-  const identity$ = computed(() => {
-    return Promise.resolve({
-      chatThreadId,
-      userId: bootstrap.userId,
-      orgId,
-    });
-  });
-  const ownConnectorSources$ = createThreadConnectorSources(identity$);
-  const threadConnectorSources$ = computed(async (get) => {
-    const identity = await get(bootstrap.requestThreadConnectorIdentity$);
-    const matches =
-      identity?.chatThreadId === chatThreadId &&
-      identity.userId === bootstrap.userId &&
-      identity.orgId === orgId;
-    // A matching cached miss or failure remains authoritative. The cold source
-    // is selected only for another identity, never to recheck accepted data.
-    return await get(
-      matches ? bootstrap.requestThreadConnectorSources$ : ownConnectorSources$,
-    );
-  });
-  return threadConnectorSources$;
 }
 
 function createThreadModelContext(
