@@ -54,7 +54,6 @@ import {
   ROUTES,
   type RouteKey,
 } from "../route-paths.ts";
-import { defaultAgentId$ } from "../agent.ts";
 import { ensureDraft$ } from "../chat-page/create-chat-thread.ts";
 import {
   reloadWorkflowData$,
@@ -745,10 +744,6 @@ export const allWorkflowAutomationEntries$ = computed(
     get(workflowReloadVersion$);
     const locale = get(locale$);
 
-    const agentId = await get(defaultAgentId$);
-    if (!agentId) {
-      throw new Error("Workspace default executor is unavailable");
-    }
     const automationClient = get(apiClient$)(workflowAutomationsContract);
     const automationResult = await accept(
       automationClient.listWorkspace(),
@@ -756,10 +751,7 @@ export const allWorkflowAutomationEntries$ = computed(
     );
     return automationResult.body
       .filter((entry) => {
-        return (
-          !isOfficialWorkflow(entry.workflow) &&
-          entry.workflow.agentId === agentId
-        );
+        return !isOfficialWorkflow(entry.workflow);
       })
       .sort((a, b) => {
         if (a.automation.enabled !== b.automation.enabled) {

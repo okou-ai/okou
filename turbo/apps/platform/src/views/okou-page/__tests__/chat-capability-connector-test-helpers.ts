@@ -16,10 +16,7 @@ import type {
 } from "@okouai/api-contracts/contracts/connector-identity";
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 
-import {
-  CAPABILITY_AGENT_ID,
-  RUN_THREAD_ID,
-} from "./chat-capability-test-helpers.ts";
+import { RUN_THREAD_ID } from "./chat-capability-test-helpers.ts";
 
 const APP_ORIGIN = "https://app.okou.ai";
 
@@ -192,9 +189,8 @@ export function connectorActionUrl(args: {
   const action =
     args.action ?? (args.slug.startsWith("_") ? "connect" : "authorize");
   const url = new URL(`/connectors/${args.slug}/${action}`, APP_ORIGIN);
-  url.searchParams.set("agentId", CAPABILITY_AGENT_ID);
+  url.searchParams.set("threadId", RUN_THREAD_ID);
   if (args.callbackPrompt) {
-    url.searchParams.set("threadId", RUN_THREAD_ID);
     url.searchParams.set("callbackPrompt", args.callbackPrompt);
   }
   return url.href;
@@ -207,7 +203,9 @@ export function permissionActionUrl(args: {
   readonly expiresIn?: "1h" | "24h" | "7d" | "always";
   readonly callbackPrompt?: string;
 }): string {
-  const url = new URL(`/agents/${CAPABILITY_AGENT_ID}/permissions`, APP_ORIGIN);
+  const url = new URL("/connectors/permissions", APP_ORIGIN);
+  url.searchParams.set("orgId", "org_default");
+  url.searchParams.set("userId", "test-user-123");
   url.searchParams.set("connectorSlug", args.connectorSlug);
   url.searchParams.set("permission", args.permission);
   url.searchParams.set("action", args.action ?? "allow");
@@ -225,7 +223,7 @@ export function bankingActionUrl(args: {
   readonly reason: string;
   readonly callbackPrompt: string;
 }): string {
-  const url = new URL(`/agents/${CAPABILITY_AGENT_ID}/banking`, APP_ORIGIN);
+  const url = new URL("/banking/access", APP_ORIGIN);
   url.searchParams.set("reason", args.reason);
   url.searchParams.set("threadId", RUN_THREAD_ID);
   url.searchParams.set("callbackPrompt", args.callbackPrompt);

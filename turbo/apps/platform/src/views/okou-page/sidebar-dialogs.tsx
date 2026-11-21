@@ -1,3 +1,5 @@
+import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
+import { assistantName$ } from "../../signals/branding.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import {
@@ -62,7 +64,7 @@ import {
   threadNumberShortcutIndex$,
 } from "../../signals/okou-page/thread-number-shortcuts.ts";
 import { ThreadNumberShortcutHint } from "./thread-number-shortcut-hint.tsx";
-import { AgentAvatarImg, ChatThreadStateText } from "./sidebar-shared.tsx";
+import { AvatarFromUrl, ChatThreadStateText } from "./sidebar-shared.tsx";
 import {
   threeColumnArtifactSearchResults$,
   threeColumnWorkflowSearchResults$,
@@ -255,7 +257,11 @@ function SpotlightThreadCommandItem({
       onClick={onSelect}
       className={SPOTLIGHT_ROW_CLASS}
     >
-      <AgentAvatarImg name="Okou" alt="" className={SPOTLIGHT_AVATAR_CLASS} />
+      <AvatarFromUrl
+        avatarUrl={DEFAULT_AGENT_AVATAR_URL}
+        alt=""
+        className={SPOTLIGHT_AVATAR_CLASS}
+      />
       <span className="min-w-0 flex-1 truncate text-left text-sm text-foreground">
         {thread.title}
       </span>
@@ -279,7 +285,8 @@ function SpotlightMessageCommandItem({
   readonly onSelect: () => void;
   readonly shortcutNumber: number | undefined;
 }) {
-  const title = thread?.title ?? "Okou";
+  const assistantName = useGet(assistantName$);
+  const title = thread?.title ?? assistantName;
 
   return (
     <CommandItem
@@ -287,7 +294,11 @@ function SpotlightMessageCommandItem({
       onClick={onSelect}
       className={SPOTLIGHT_ROW_CLASS}
     >
-      <AgentAvatarImg name="Okou" alt="" className={SPOTLIGHT_AVATAR_CLASS} />
+      <AvatarFromUrl
+        avatarUrl={DEFAULT_AGENT_AVATAR_URL}
+        alt=""
+        className={SPOTLIGHT_AVATAR_CLASS}
+      />
       {/*
         A message result needs no type label: it is the only row that carries a
         second line, so the snippet already tells the two kinds apart.

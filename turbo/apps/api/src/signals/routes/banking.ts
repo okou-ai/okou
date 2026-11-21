@@ -1,7 +1,9 @@
+import { workspaceWorkflowNamespace$ } from "../services/workflow-namespace.service";
 import {
   bankingContract,
   bankingPublicContract,
   bankingUserContract,
+  bankingWorkspaceContract,
 } from "@okouai/api-contracts/contracts/banking";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -151,24 +153,31 @@ const bankingUserAuth = {
   accept: ["session"],
 } as const;
 
-const accessRequestStatusInner$ = command(async ({ get, set }) => {
-  if (!(await set(bankingEnabled$))) {
-    return bankingDisabled;
-  }
-  const auth = get(organizationAuthContext$);
-  const params = get(accessRequestParams$);
-  return await set(bankingAccessRequestStatus$, {
-    owner: { orgId: auth.orgId, userId: auth.userId },
-    agentId: params.agentId,
-  });
-});
-
-const createConnectSessionInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+function createAccessRequestStatus(workspace: boolean) {
+  return command(async ({ get, set }) => {
     if (!(await set(bankingEnabled$))) {
       return bankingDisabled;
     }
-    const body = await get(connectSessionBody$);
+    const auth = get(organizationAuthContext$);
+    const agentId = workspace
+      ? await get(workspaceWorkflowNamespace$)
+      : get(accessRequestParams$).agentId;
+    return await set(bankingAccessRequestStatus$, {
+      owner: { orgId: auth.orgId, userId: auth.userId },
+      agentId,
+    });
+  });
+}
+
+function createConnectSession(workspace: boolean) {
+  const readBody$ = workspace
+    ? bodyResultOf(bankingWorkspaceContract.createConnectSession)
+    : connectSessionBody$;
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    if (!(await set(bankingEnabled$))) {
+      return bankingDisabled;
+    }
+    const body = await get(readBody$);
     signal.throwIfAborted();
     if (!body.ok) {
       return body.response;
@@ -183,44 +192,69 @@ const createConnectSessionInner$ = command(
       startBankingConnectSession$,
       {
         owner: { orgId: auth.orgId, userId: auth.userId },
-        body: body.data,
+        body: {
+          ...body.data,
+          agentId:
+            "agentId" in body.data
+              ? body.data.agentId
+              : await get(workspaceWorkflowNamespace$),
+        },
         redirectOrigin,
         webhookOrigin,
       },
       signal,
     );
-  },
-);
-
-const saveAgentGrantInner$ = command(async ({ get, set }) => {
-  if (!(await set(bankingEnabled$))) {
-    return bankingDisabled;
-  }
-  const body = await get(saveGrantBody$);
-  if (!body.ok) {
-    return body.response;
-  }
-  const auth = get(organizationAuthContext$);
-  return await set(saveBankingAgentGrant$, {
-    owner: { orgId: auth.orgId, userId: auth.userId },
-    body: body.data,
   });
-});
+}
 
-const revokeAgentGrantInner$ = command(async ({ get, set }) => {
-  if (!(await set(bankingEnabled$))) {
-    return bankingDisabled;
-  }
-  const body = await get(revokeGrantBody$);
-  if (!body.ok) {
-    return body.response;
-  }
-  const auth = get(organizationAuthContext$);
-  return await set(revokeBankingAgentGrant$, {
-    owner: { orgId: auth.orgId, userId: auth.userId },
-    agentId: body.data.agentId,
+function createSaveGrant(workspace: boolean) {
+  const readBody$ = workspace
+    ? bodyResultOf(bankingWorkspaceContract.saveGrant)
+    : saveGrantBody$;
+  return command(async ({ get, set }) => {
+    if (!(await set(bankingEnabled$))) {
+      return bankingDisabled;
+    }
+    const body = await get(readBody$);
+    if (!body.ok) {
+      return body.response;
+    }
+    const auth = get(organizationAuthContext$);
+    return await set(saveBankingAgentGrant$, {
+      owner: { orgId: auth.orgId, userId: auth.userId },
+      body: {
+        ...body.data,
+        agentId:
+          "agentId" in body.data
+            ? body.data.agentId
+            : await get(workspaceWorkflowNamespace$),
+      },
+    });
   });
-});
+}
+
+function createRevokeGrant(workspace: boolean) {
+  const readBody$ = workspace
+    ? bodyResultOf(bankingWorkspaceContract.revokeGrant)
+    : revokeGrantBody$;
+  return command(async ({ get, set }) => {
+    if (!(await set(bankingEnabled$))) {
+      return bankingDisabled;
+    }
+    const body = await get(readBody$);
+    if (!body.ok) {
+      return body.response;
+    }
+    const auth = get(organizationAuthContext$);
+    return await set(revokeBankingAgentGrant$, {
+      owner: { orgId: auth.orgId, userId: auth.userId },
+      agentId:
+        "agentId" in body.data
+          ? body.data.agentId
+          : await get(workspaceWorkflowNamespace$),
+    });
+  });
+}
 
 const connectReturn$ = command(() => {
   const { assistantName } = BRAND_PRESENTATION;
@@ -299,20 +333,36 @@ export const bankingRoutes: readonly RouteEntry[] = [
     handler: authRoute(bankingAuth, transactionsInner$),
   },
   {
+    route: bankingWorkspaceContract.accessRequestStatus,
+    handler: authRoute(bankingUserAuth, createAccessRequestStatus(true)),
+  },
+  {
+    route: bankingWorkspaceContract.createConnectSession,
+    handler: authRoute(bankingUserAuth, createConnectSession(true)),
+  },
+  {
+    route: bankingWorkspaceContract.saveGrant,
+    handler: authRoute(bankingUserAuth, createSaveGrant(true)),
+  },
+  {
+    route: bankingWorkspaceContract.revokeGrant,
+    handler: authRoute(bankingUserAuth, createRevokeGrant(true)),
+  },
+  {
     route: bankingUserContract.accessRequestStatus,
-    handler: authRoute(bankingUserAuth, accessRequestStatusInner$),
+    handler: authRoute(bankingUserAuth, createAccessRequestStatus(false)),
   },
   {
     route: bankingUserContract.createConnectSession,
-    handler: authRoute(bankingUserAuth, createConnectSessionInner$),
+    handler: authRoute(bankingUserAuth, createConnectSession(false)),
   },
   {
     route: bankingUserContract.saveAgentGrant,
-    handler: authRoute(bankingUserAuth, saveAgentGrantInner$),
+    handler: authRoute(bankingUserAuth, createSaveGrant(false)),
   },
   {
     route: bankingUserContract.revokeAgentGrant,
-    handler: authRoute(bankingUserAuth, revokeAgentGrantInner$),
+    handler: authRoute(bankingUserAuth, createRevokeGrant(false)),
   },
   {
     route: bankingPublicContract.connectReturn,

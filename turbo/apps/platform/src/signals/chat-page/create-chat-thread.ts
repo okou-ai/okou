@@ -3896,7 +3896,6 @@ const createChatForwardComposerSignals: ChatForwardComposerFactory = (
   projectId?: string,
 ) => {
   const composer = createForwardAgentComposerSignals(
-    target.id,
     forward,
     onOptimisticSend,
     projectId,

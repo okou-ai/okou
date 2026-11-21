@@ -378,7 +378,6 @@
         "openAutomations": "모바일 자동화 열기"
       },
       "navigation": {
-        "agents": "에이전트",
         "artifacts": "아티팩트",
         "connectors": "커넥터",
         "settings": "설정",
@@ -1811,7 +1810,7 @@
       "repair": "복구",
       "repairRequired": "{{institution}}에 복구가 필요합니다",
       "revoke": "철회",
-      "revokeConfirm": "이 에이전트의 뱅킹 접근을 철회하시겠습니까?",
+      "revokeConfirm": "이 워크스페이스의 뱅킹 접근 권한을 철회하시겠습니까?",
       "selectAccounts": "계좌 선택",
       "sevenDays": "7일",
       "thirtyDays": "30일",
@@ -2786,7 +2785,6 @@
       "noEmojiFound": "이모지가 없습니다",
       "notFound": "채팅 스레드를 찾을 수 없습니다",
       "openBrowser": "브라우저 열기",
-      "openNamedAgent": "에이전트 {{name}} 열기",
       "openNamedChat": "채팅 {{title}} 열기",
       "pickEmoji": "이모지 선택",
       "scrollToBottom": "맨 아래로 스크롤",

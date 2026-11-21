@@ -7,7 +7,10 @@ import {
   runConnectorAccountUnavailableMessage,
   type RunConnectorAccountEntry,
 } from "../connector/run-account-context";
-import { MAIL_CONNECTOR_SLUG_BY_PROVIDER, currentAgentId } from "./shared";
+import {
+  MAIL_CONNECTOR_SLUG_BY_PROVIDER,
+  requireMailRunContext,
+} from "./shared";
 
 interface MailListRow {
   readonly provider: string;
@@ -92,10 +95,10 @@ async function printRunMailList(): Promise<void> {
 export const listCommand = new Command()
   .name("list")
   .alias("ls")
-  .description("List Gmail and Outlook Mail availability for the current agent")
+  .description("List Gmail and Outlook Mail availability for the current Run")
   .action(
     withErrorHandler(async () => {
-      currentAgentId();
+      requireMailRunContext();
       await printRunMailList();
     }),
   );

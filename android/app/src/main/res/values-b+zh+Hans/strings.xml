@@ -159,4 +159,5 @@
     <string name="updates_waiting_to_check">等待检查</string>
     <string name="updates_waiting_to_download">等待下载</string>
     <string name="instructions_placeholder">填写你希望 Okou 遵循的回复偏好</string>
+    <string name="instructions_save_when_online">联网后可保存，修改已保留。</string>
 </resources>

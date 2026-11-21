@@ -57,10 +57,9 @@ function batchUrl(
     readonly callbackPrompt?: string;
   } = {},
 ): string {
-  const url = new URL(
-    "/connectors/permissions/batch?orgId=org_default&userId=test-user-123",
-    "https://app.okou.ai",
-  );
+  const url = new URL(`/connectors/permissions/batch`, "https://app.okou.ai");
+  url.searchParams.set("orgId", "org_default");
+  url.searchParams.set("userId", "test-user-123");
   url.searchParams.set("items", JSON.stringify(args.rows ?? items));
   url.searchParams.set("action", "allow");
   url.searchParams.set("expiresIn", "1h");
@@ -518,10 +517,9 @@ test("A batch save does not empty sibling permission cards during a grants reloa
       refreshing = true;
     },
   );
-  const single = new URL(
-    "/connectors/permissions?orgId=org_default&userId=test-user-123",
-    "https://app.okou.ai",
-  );
+  const single = new URL(`/connectors/permissions`, "https://app.okou.ai");
+  single.searchParams.set("orgId", "org_default");
+  single.searchParams.set("userId", "test-user-123");
   single.searchParams.set("connectorSlug", "reports-service");
   single.searchParams.set("permission", items[2]!.permission);
   single.searchParams.set("action", "allow");

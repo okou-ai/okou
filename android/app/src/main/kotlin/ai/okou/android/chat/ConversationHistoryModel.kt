@@ -217,7 +217,10 @@ class ConversationHistoryModel(
                         requireCurrent(ticket)
                         diskFailed = true
                     }
-                    val transcript = withContext(dispatcher) { projectHistory(next.checkpoint) }
+                    // Room may select a different prefix at the same cursor.
+                    val transcript =
+                        confirmed?.takeIf { it.history.checkpoint === next.checkpoint }?.transcript
+                            ?: withContext(dispatcher) { projectHistory(next.checkpoint) }
                     requireCurrent(ticket)
                     confirmed = ConfirmedTimeline(next, transcript)
                     publish(

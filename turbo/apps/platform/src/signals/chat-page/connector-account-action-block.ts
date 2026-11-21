@@ -13,7 +13,7 @@ import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-id
 
 import { runConnectorAccountsContract } from "@okouai/api-contracts/client/run-connector-accounts";
 
-import { command, computed, type Command, type Computed } from "ccstate";
+import { command, computed, state, type Command, type Computed } from "ccstate";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
@@ -24,10 +24,9 @@ import {
   chatActionCallbackFromUrl,
   runChatActionCallback$,
 } from "./action-callback.ts";
-import {
-  chatActionIdMatches,
-  type ChatActionContext,
-  type ChatActionParseResult,
+import type {
+  ChatActionContext,
+  ChatActionParseResult,
 } from "./chat-action-context.ts";
 import {
   createCardSignalsRegistry,
@@ -36,7 +35,6 @@ import {
 import { parseTrustedPlatformUrl } from "./trusted-platform-url.ts";
 
 export interface ConnectorAccountActionDescriptor {
-  readonly agentId: string;
   readonly selection: ConnectorAccountSelection;
   readonly originalUrl: string;
   readonly callbackPrompt: string;
@@ -76,7 +74,7 @@ type ConnectorAccountActionCardSignalsRegistry = CardSignalsRegistry<
 export function connectorAccountActionResourceKey(
   descriptor: ConnectorAccountActionDescriptor,
 ): string {
-  const path = `/agents/${encodeURIComponent(descriptor.agentId.toLowerCase())}/connector-accounts/${encodeURIComponent(descriptor.selection.connectionId.toLowerCase())}/select`;
+  const path = `/connectors/accounts/${encodeURIComponent(descriptor.selection.connectionId.toLowerCase())}/select`;
   const targetKey = connectorAccountTargetKey(descriptor.selection.target);
   const params = new URLSearchParams({
     target:
@@ -117,21 +115,17 @@ export function parseConnectorAccountActionUrl(
   if (!url) {
     return { status: "unrelated" };
   }
-  const match = url.pathname.match(
-    /^\/agents\/([^/]+)\/connector-accounts\/([^/]+)\/select$/u,
+  const current = url.pathname.match(
+    /^\/connectors\/accounts\/([^/]+)\/select$/u,
   );
-  if (!match) {
+  const connectionId = current?.[1];
+  if (!connectionId) {
     return { status: "unrelated" };
   }
-  const agentId = match[1] ?? "";
-  const connectionId = match[2] ?? "";
   const selection = selectionFromUrl(url, connectionId);
   const callback = context ? chatActionCallbackFromUrl(url, context) : null;
   if (
     !context ||
-    !agentId ||
-    !context.agentId ||
-    !chatActionIdMatches(agentId, context.agentId) ||
     !selection ||
     !callback?.callbackPrompt ||
     !callback.threadId
@@ -141,7 +135,6 @@ export function parseConnectorAccountActionUrl(
   return {
     status: "valid",
     descriptor: {
-      agentId: context.agentId,
       selection,
       originalUrl: value,
       callbackPrompt: callback.callbackPrompt,
@@ -179,7 +172,7 @@ function customActionConnector(
 function createConnectorAccountConfirmSignal(
   descriptor: ConnectorAccountActionDescriptor,
   status$: ConnectorAccountActionSignals["status$"],
-  connector: ComposerConnectorSignals,
+  reload$: Command<void, []>,
 ): ConnectorAccountActionSignals["confirm$"] {
   return command(async ({ get, set }, signal: AbortSignal): Promise<void> => {
     const status = await get(status$);
@@ -202,7 +195,7 @@ function createConnectorAccountConfirmSignal(
       [200],
       signal,
     );
-    set(connector.chatAccess.reload$);
+    set(reload$);
     await set(
       runChatActionCallback$,
       {
@@ -215,19 +208,31 @@ function createConnectorAccountConfirmSignal(
   });
 }
 
-function createConnectorAccountActionSignals(
+export function createConnectorAccountActionSignals(
   descriptor: ConnectorAccountActionDescriptor,
-  connector: ComposerConnectorSignals,
+  connector?: ComposerConnectorSignals,
 ): ConnectorAccountActionSignals {
   const target = descriptor.selection.target;
   const connector$ =
     target.kind === "builtin"
       ? builtinActionConnector(target.connectorSlug)
       : customActionConnector(target.customConnectorId);
-  const accessRevision$ = connector.chatAccess.targetRevision(target);
+  const revision$ = state(0);
+  const accessRevision$ = connector?.chatAccess.targetRevision(target);
+  const reload$ =
+    connector?.chatAccess.reload$ ??
+    command(({ set }) => {
+      set(revision$, (revision) => {
+        return revision + 1;
+      });
+    });
   const status$ = computed(
     async (get): Promise<ConnectorAccountActionStatus> => {
-      get(accessRevision$);
+      if (accessRevision$) {
+        get(accessRevision$);
+      } else {
+        get(revision$);
+      }
       const client = get(apiClient$);
       const [account, access] = await Promise.all([
         accept(
@@ -260,11 +265,7 @@ function createConnectorAccountActionSignals(
     ...descriptor,
     status$,
     connector$,
-    confirm$: createConnectorAccountConfirmSignal(
-      descriptor,
-      status$,
-      connector,
-    ),
+    confirm$: createConnectorAccountConfirmSignal(descriptor, status$, reload$),
   };
 }
 

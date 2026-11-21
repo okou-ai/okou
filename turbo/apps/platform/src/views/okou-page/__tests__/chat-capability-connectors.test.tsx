@@ -13,7 +13,7 @@ import {
   mockOAuthCompletions,
 } from "./connector-page-test-helpers.ts";
 import {
-  bankingUserContract,
+  bankingWorkspaceContract,
   type BankingAccessRequestStatusResponse,
 } from "@okouai/api-contracts/contracts/banking";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
@@ -276,16 +276,15 @@ describe("with an unconnected banking conversation", () => {
       sends,
     });
     context.mocks.api(
-      bankingUserContract.accessRequestStatus,
+      bankingWorkspaceContract.accessRequestStatus,
       ({ respond }) => {
         return respond(200, status);
       },
     );
     context.mocks.api(
-      bankingUserContract.createConnectSession,
+      bankingWorkspaceContract.createConnectSession,
       ({ body, respond }) => {
         expect(body).toStrictEqual({
-          agentId: CAPABILITY_AGENT_ID,
           mode: "connect",
         });
         status = {
@@ -365,7 +364,6 @@ describe("with connected accounts awaiting a banking grant", () => {
     let status = connectedBankingStatus();
     const savedRequests: {
       readonly accountIds: string[];
-      readonly agentId: string;
       readonly duration: "1h" | "24h" | "7d" | "30d";
       readonly purpose: string;
     }[] = [];
@@ -377,13 +375,13 @@ describe("with connected accounts awaiting a banking grant", () => {
       sends,
     });
     context.mocks.api(
-      bankingUserContract.accessRequestStatus,
+      bankingWorkspaceContract.accessRequestStatus,
       ({ respond }) => {
         return respond(200, status);
       },
     );
     context.mocks.api(
-      bankingUserContract.saveAgentGrant,
+      bankingWorkspaceContract.saveGrant,
       ({ body, respond }) => {
         savedRequests.push(body);
         status = connectedBankingStatus({
@@ -432,7 +430,6 @@ describe("with connected accounts awaiting a banking grant", () => {
     expect(savedRequests).toStrictEqual([
       {
         accountIds: [BANK_ACCOUNT_ID],
-        agentId: CAPABILITY_AGENT_ID,
         duration: "7d",
         purpose,
       },
@@ -464,12 +461,12 @@ describe("with an active banking grant", () => {
       sends,
     });
     context.mocks.api(
-      bankingUserContract.accessRequestStatus,
+      bankingWorkspaceContract.accessRequestStatus,
       ({ respond }) => {
         return respond(200, status);
       },
     );
-    context.mocks.api(bankingUserContract.revokeAgentGrant, ({ respond }) => {
+    context.mocks.api(bankingWorkspaceContract.revokeGrant, ({ respond }) => {
       revokeCount += 1;
       status = connectedBankingStatus(null);
       return respond(200, status);
@@ -524,7 +521,7 @@ describe("with an active banking grant", () => {
 
     click(getButton("Revoke", card));
     expect(
-      within(card).getByText("Revoke this Agent's banking access?"),
+      within(card).getByText("Revoke banking access for this workspace?"),
     ).toBeVisible();
     click(getButton("Revoke", card));
 

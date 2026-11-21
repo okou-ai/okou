@@ -2,11 +2,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import {
-  agentsByIdContract,
-  agentsMainContract,
-  type AgentResponse,
-} from "@okouai/api-contracts/contracts/agents";
+import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import {
   chatThreadByIdContract,
   chatThreadsContract,
@@ -285,14 +281,9 @@ test("Browse and filter mobile browser chats before opening a conversation and r
 
   click(screen.getByLabelText("New chat"));
 
-  await waitFor(() => {
-    expect(
-      screen.getByRole("textbox", { name: "Message" }),
-    ).toBeInTheDocument();
-    expect(new URLSearchParams(window.location.search).get("compose")).toBe(
-      "1",
-    );
-  });
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeInTheDocument();
   expect(window.location.pathname).toBe(CHAT_LIST_PATH);
   expect(new URLSearchParams(window.location.search).get("compose")).toBe("1");
   expect(screen.getByLabelText("Back to chats")).toBeInTheDocument();
@@ -427,14 +418,9 @@ test("My Okou's chats tab is its chat list at / and composes a new chat there", 
 
   click(screen.getByLabelText("New chat"));
 
-  await waitFor(() => {
-    expect(
-      screen.getByRole("textbox", { name: "Message" }),
-    ).toBeInTheDocument();
-    expect(new URLSearchParams(window.location.search).get("compose")).toBe(
-      "1",
-    );
-  });
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeInTheDocument();
   expect(window.location.pathname).toBe("/");
   expect(new URLSearchParams(window.location.search).get("compose")).toBe("1");
   expect(screen.getByLabelText("Back to chats")).toHaveAttribute("href", "/");
@@ -563,14 +549,9 @@ test("Start the first chat from an empty mobile chat list", async () => {
 
   click(fastButton("New chat", emptyMessage.parentElement!));
 
-  await waitFor(() => {
-    expect(
-      screen.getByRole("textbox", { name: "Message" }),
-    ).toBeInTheDocument();
-    expect(new URLSearchParams(window.location.search).get("compose")).toBe(
-      "1",
-    );
-  });
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeInTheDocument();
   expect(window.location.pathname).toBe(CHAT_LIST_PATH);
   expect(new URLSearchParams(window.location.search).get("compose")).toBe("1");
 });
@@ -610,43 +591,15 @@ test("Step back to Me from the pages it opens", async () => {
 
 test("Show the Chats tab unread indicator across all Chats", async () => {
   mockDisplayMode({ standalone: false, desktop: false });
-  const researchAgentId = "c7000000-0000-4000-a000-000000000003";
   const thread = continuityThread(80, 1, "Launch planning");
   const workspace = installContinuityWorkspace(context, {
     caseId: 80,
     threads: [thread],
   });
-  const listAgent: AgentResponse = {
-    agentId: CHAT_LIST_AGENT_ID,
-    isDefaultAgent: false,
-    ownerId: "chat-list-owner",
-    displayName: "List agent",
-    description: null,
-    sound: null,
-    avatarUrl: null,
-    visibility: "private",
-  };
-  const agents = [
-    listAgent,
-    { ...listAgent, agentId: researchAgentId, displayName: "Research agent" },
-  ];
-  context.mocks.api(agentsMainContract.list, ({ respond }) => {
-    return respond(200, agents);
-  });
-  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-    const agent = agents.find((candidate) => {
-      return candidate.agentId === params.id;
-    });
-    return agent
-      ? respond(200, agent)
-      : respond(404, {
-          error: { code: "NOT_FOUND", message: "Agent not found" },
-        });
-  });
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
       threads: { [thread.id]: "unread" },
-      unreadAt: { [thread.id]: thread.updatedAt },
+      unreadAt: { [thread.id]: "2026-11-21T00:00:00.000Z" },
     });
   });
 

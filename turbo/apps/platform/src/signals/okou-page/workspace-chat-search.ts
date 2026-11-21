@@ -37,7 +37,6 @@ function workspaceSearchChatThread(
       i18n.t(($) => {
         return $.chat.newChat;
       }),
-
     sortAt: thread.sortAt,
   };
 }

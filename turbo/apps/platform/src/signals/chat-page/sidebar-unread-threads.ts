@@ -54,12 +54,12 @@ export const sidebarUnreadThreadIds$ = computed(
   },
 );
 
-export const markAgentThreadsRead$ = command(
-  async ({ get }, agentId: string, signal: AbortSignal) => {
+export const markWorkspaceThreadsRead$ = command(
+  async ({ get }, signal: AbortSignal) => {
     const client = get(apiClient$)(chatThreadMarkAgentReadContract);
     await accept(
       client.markAgentRead({
-        body: { agentId },
+        body: {},
         fetchOptions: { signal },
       }),
       [204],

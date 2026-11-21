@@ -39,7 +39,7 @@ export const setChatThreadArchivedWithFeedback$ = command(
       readonly threadId: string;
       readonly archived: boolean;
       // The mobile header fills the screen with the thread, so archiving
-      // returns to the agent's list (My Okou's `/`) instead of staying on a
+      // returns to the workspace chat list instead of staying on a
       // hidden chat.
       readonly leaveThread?: boolean;
     },

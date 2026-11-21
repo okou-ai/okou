@@ -3,7 +3,6 @@ import { detachedNavigateTo$ } from "../route.ts";
 import { ROUTES, type RouteKey } from "../route-paths.ts";
 import { setupGlobalShortcut } from "../../lib/setup-global-shortcut.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
-import { newChatAgentId$ } from "../agent-chat.ts";
 import { setChatShortcutHelpOpen$ } from "../chat-page/chat-shortcut-help.ts";
 import { openThreeColumnSearchDialog$ } from "./sidebar-state.ts";
 import { writeToClipboard } from "./clipboard.ts";
@@ -23,12 +22,8 @@ export const navigateToChat$ = command(({ set }, chatThreadId: string) => {
 // With mobile navigation the bare chat page URL is the chat list, so a new
 // chat asks for the composer explicitly.
 export const navigateToNewChat$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const agentId = await get(newChatAgentId$);
+  ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
-    if (!agentId) {
-      return;
-    }
     set(
       detachedNavigateTo$,
       ROUTES.home,
@@ -101,11 +96,7 @@ export const showChatSidebar$ = command(({ set }) => {
 
 export function isChatRoute(key: RouteKey | null): boolean {
   return (
-    key === "home" ||
-    key === "forYou" ||
-    key === "agentChat" ||
-    key === "chat" ||
-    key === "project"
+    key === "home" || key === "forYou" || key === "chat" || key === "project"
   );
 }
 

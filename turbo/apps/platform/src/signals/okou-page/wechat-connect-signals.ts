@@ -2,7 +2,7 @@ import { command, computed } from "ccstate";
 import { integrationsWechatContract } from "@okouai/api-contracts/client/integrations-wechat";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
-import { defaultAgentName$ } from "../agent.ts";
+import { assistantName$ } from "../branding.ts";
 import { apiClient$ } from "../api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { currentOrgInfo$ } from "../auth.ts";
@@ -32,7 +32,7 @@ export const wechatConnectPageStatus$ = computed(async (get) => {
     }
     const [org, agent] = await Promise.all([
       get(currentOrgInfo$),
-      get(defaultAgentName$),
+      get(assistantName$),
     ]);
     return {
       kind: "reconnect",

@@ -56,7 +56,10 @@ import {
 import { pathname } from "../../../signals/location.ts";
 import { PLACEHOLDER } from "./chat-test-helpers.ts";
 import { mockChatEventRows } from "./chat-event-test-helpers.ts";
-import { changeChatThreadReadCursor } from "../../../mocks/mock-helpers.ts";
+import {
+  changeChatIndicators,
+  changeChatThreadReadCursor,
+} from "../../../mocks/mock-helpers.ts";
 
 const context = testContext();
 const {
@@ -1263,7 +1266,7 @@ test("The Okou rail entry opens My Okou's chat page at /", async () => {
   expect(newChat).toHaveAttribute("aria-current", "page");
 });
 
-test("Mark all current-agent chats read from the chat-list menu", async () => {
+test("Mark all workspace chats read from the chat-list menu", async () => {
   prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Existing conversation"),
@@ -1271,7 +1274,7 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
   ]);
 
   let hasUnread = true;
-  const markedAgentIds: string[] = [];
+  let markReadRequests = 0;
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
       threads: hasUnread ? { [INCIDENT_THREAD_ID]: "unread" } : {},
@@ -1282,17 +1285,10 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
   });
   context.mocks.api(
     chatThreadMarkAgentReadContract.markAgentRead,
-    ({ body, respond }) => {
-      markedAgentIds.push(body.agentId);
+    ({ respond }) => {
+      markReadRequests += 1;
       hasUnread = false;
-      // More cursors moved than one payload carries, so the server publishes an
-      // agent-scoped invalidation with no ids. Authoritative indicators still
-      // have to reload from it: this list never depends on the id array.
-      changeChatThreadReadCursor({
-        agentId: AGENT_ID,
-        threadIds: [],
-        scope: "agent",
-      });
+      changeChatIndicators();
       return respond(204);
     },
   );
@@ -1347,7 +1343,7 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
 
   await within(list).findByText("No unread chats");
   await waitFor(() => {
-    expect(markedAgentIds).toStrictEqual([AGENT_ID]);
+    expect(markReadRequests).toBe(1);
     expect(
       within(list).queryByText("Unread conversation"),
     ).not.toBeInTheDocument();

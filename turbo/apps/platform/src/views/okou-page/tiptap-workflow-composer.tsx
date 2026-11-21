@@ -466,7 +466,7 @@ function useComposerWorkflowSuggestions(
 }
 
 /**
- * The @-mention half of the suggestion menu. Only show results for the current query.
+ * The @-mention menu shows results for the current query.
  */
 function useComposerMentionSuggestions(
   composer: ComposerSignals,

@@ -27,7 +27,6 @@ import { withSelectedModelAnnotation } from "./model-selection-request.ts";
 export interface ChatAgentRunSource {
   readonly runId: string;
   readonly threadId: string;
-  readonly agentId?: string;
   readonly titleSnapshot: string;
 }
 
@@ -46,7 +45,6 @@ export function withOptimisticAgentRunSource(
         kind: "agent",
         runId: source.runId,
         threadId: source.threadId,
-        agentId: source.agentId,
         titleSnapshot: source.titleSnapshot,
         href: `/chats/${source.threadId}#run-${source.runId}`,
       },

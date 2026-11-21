@@ -107,28 +107,13 @@ async function openDebug(learning = true) {
   await screen.findByRole("heading", { name: "Debug" });
 }
 
-test("runs the current default agent's official Learning while its nightly schedule is paused", async () => {
+test("runs the workspace's official Learning while its nightly schedule is paused", async () => {
   const unrelated = learningEntry();
-  const formerDefault = learningEntry();
   context.mocks.api(
     workflowAutomationsContract.listWorkspace,
     ({ respond }) => {
       return respond(200, [
         customLearningEntry(),
-        {
-          ...formerDefault,
-          workflow: {
-            ...formerDefault.workflow,
-            id: "33333333-3333-4333-8333-333333333333",
-            agentId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-            agentName: "former-default",
-            agentDisplayName: "Former default",
-          },
-          automation: {
-            ...formerDefault.automation,
-            id: "44444444-4444-4444-8444-444444444444",
-          },
-        },
         {
           ...unrelated,
           workflow: {

@@ -1,6 +1,7 @@
 import { computed } from "ccstate";
-import { currentChatAgentScope$ } from "../agent-chat.ts";
-import { hasUnreadChats$ } from "../chat-page/chat-thread-indicators-from-worker.ts";
+
+import { sidebarUnreadThreadIds$ } from "../chat-page/sidebar-unread-threads.ts";
+import { eventDrivenChatThreads$ } from "../chat-page/chat-thread-event-sourcing.ts";
 import { chatThreadOnlyArchived$ } from "../chat-page/chat-thread-only-archived.ts";
 import { chatThreadOnlyMuted$ } from "../chat-page/chat-thread-only-muted.ts";
 import { chatThreadOnlyUnread$ } from "../chat-page/chat-thread-only-unread.ts";
@@ -11,8 +12,7 @@ export const PWA_CHAT_THREAD_ROW_HEIGHT = 60;
 
 export const pwaChatThreadScrollSignals$ = computed((get) => {
   // Returning from a conversation retains this graph and its scroll position.
-  // A different agent or filter starts a new list at the top.
-  get(currentChatAgentScope$);
+  // A different filter starts a new list at the top.
   get(chatThreadOnlyUnread$);
   get(chatThreadOnlyArchived$);
   get(chatThreadOnlyMuted$);
@@ -22,4 +22,12 @@ export const pwaChatThreadScrollSignals$ = computed((get) => {
   });
 });
 
-export const pwaHasUnreadChats$ = hasUnreadChats$;
+export const pwaHasUnreadChats$ = computed(async (get) => {
+  const unread = await get(sidebarUnreadThreadIds$);
+  const archived = new Set(
+    get(eventDrivenChatThreads$)
+      .filter((thread) => thread.archived)
+      .map((thread) => thread.id),
+  );
+  return [...unread].some((threadId) => !archived.has(threadId));
+});

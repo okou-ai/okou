@@ -1,17 +1,8 @@
-import {
-  chatActionIdMatches,
-  type ChatActionContext,
-} from "./chat-action-context.ts";
-
-// Keep Agent links readable until supported clients and saved approvals no longer need them.
-// Retirement is tracked in https://github.com/okou-ai/okou/issues/45476.
-export type PermissionActionOwner =
-  | { readonly kind: "agent"; readonly agentId: string }
-  | {
-      readonly kind: "member";
-      readonly orgId: string;
-      readonly userId: string;
-    };
+export type PermissionActionOwner = {
+  readonly kind: "member";
+  readonly orgId: string;
+  readonly userId: string;
+};
 
 export function memberPermissionOwner(
   params: URLSearchParams,
@@ -31,17 +22,4 @@ export function memberPermissionOwner(
     return null;
   }
   return { kind: "member", orgId, userId };
-}
-
-export function permissionActionOwner(
-  url: URL,
-  legacyAgentId: string | undefined,
-  context: ChatActionContext,
-): PermissionActionOwner | null {
-  if (legacyAgentId === undefined) {
-    return memberPermissionOwner(url.searchParams);
-  }
-  return context.agentId && chatActionIdMatches(legacyAgentId, context.agentId)
-    ? { kind: "agent", agentId: context.agentId }
-    : null;
 }

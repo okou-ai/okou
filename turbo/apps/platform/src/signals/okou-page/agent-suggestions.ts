@@ -5,7 +5,7 @@ import type {
 } from "@okouai/api-contracts/contracts/feed";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
-import { defaultAgentId$ } from "../agent.ts";
+
 import { rootSignal$ } from "../root-signal.ts";
 import { navigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
@@ -110,7 +110,7 @@ interface SuggestionThreadTarget {
  * when the card names none or that chat is no longer available.
  */
 type SuggestionDirectionTarget =
-  { readonly kind: "new"; readonly agentId: string } | SuggestionThreadTarget;
+  { readonly kind: "new" } | SuggestionThreadTarget;
 
 interface SuggestionDirectionSession {
   readonly entry: AgentSuggestionEntry;
@@ -139,13 +139,9 @@ const directionGraph$ = computed((get) => {
   if (target.kind === "new") {
     return {
       kind: target.kind,
-      composer: createInPlaceAgentComposerSignals(
-        target.agentId,
-        (threadId, submission) => {
-          session.finish(threadId, submission);
-        },
-        session.entry.item.content.title,
-      ),
+      composer: createInPlaceAgentComposerSignals((threadId, submission) => {
+        session.finish(threadId, submission);
+      }, session.entry.item.content.title),
     };
   }
   return {
@@ -274,11 +270,7 @@ export const openSuggestionDirection$ = command(
   ): Promise<void> => {
     const signal = set(resetDirection$, pageSignal);
     set(internalDirectionComposer$, null);
-    const agentId = await get(defaultAgentId$);
     signal.throwIfAborted();
-    if (!agentId) {
-      throw new Error("Suggestion target is unavailable");
-    }
     const { threadId } = entry.item.content.customOption;
     // Only the thread source can say the named chat is gone; a chat the local
     // list has not loaded yet still receives the direction.
@@ -298,7 +290,7 @@ export const openSuggestionDirection$ = command(
               kind: "thread",
               id: threadId,
             }
-          : { kind: "new", agentId },
+          : { kind: "new" },
       finish: (sentThreadId, submission) => {
         set(
           finishSuggestionDirection$,
@@ -335,7 +327,6 @@ const sendAgentSuggestionOption$ = command(
     { set },
     entry: AgentSuggestionEntry,
     option: SuggestionOption,
-    agentId: string,
     signal: AbortSignal,
   ): Promise<void> => {
     const userMessage = option.draft.draftUserMessage;
@@ -363,7 +354,6 @@ const sendAgentSuggestionOption$ = command(
     const sent = await set(
       sendNewThreadWithoutNavigation$,
       {
-        agentId,
         title: entry.item.content.title,
         draft,
         preserveAgentDraft: true,
@@ -428,10 +418,7 @@ export const startAgentSuggestion$ = command(
     optionId: string,
     pageSignal: AbortSignal,
   ): Promise<void> => {
-    const [entries, agentId] = await Promise.all([
-      get(agentSuggestionEntries$),
-      get(defaultAgentId$),
-    ]);
+    const entries = await get(agentSuggestionEntries$);
     pageSignal.throwIfAborted();
     const entry = entries.find((candidate) => {
       return candidate.item.id === suggestionId;
@@ -445,9 +432,6 @@ export const startAgentSuggestion$ = command(
     if (!option) {
       throw new Error("Suggestion option is unavailable");
     }
-    if (!agentId) {
-      throw new Error("Suggestion target is unavailable");
-    }
     set(closeSuggestionDirection$);
     // The send and the recorded choice outlive the home visit.
     const signal = get(rootSignal$);
@@ -460,13 +444,7 @@ export const startAgentSuggestion$ = command(
         { type: "sent", threadId: null },
         pageSignal,
       );
-      const sending = set(
-        sendAgentSuggestionOption$,
-        entry,
-        option,
-        agentId,
-        signal,
-      );
+      const sending = set(sendAgentSuggestionOption$, entry, option, signal);
       set(entry.sending$, sending);
       await sending;
       return;

@@ -380,7 +380,6 @@ const canonicalThreadMetaMap$ = computed((get) => {
   for (const thread of get(allEventDrivenChatThreads$)) {
     metaById.set(thread.id, {
       id: thread.id,
-
       title: thread.title,
       pinnedAt: thread.pinnedAt,
       archived: thread.archived,
@@ -449,7 +448,6 @@ export function threadComputerAccessVersion(threadId: string) {
 function threadMetaFromMetadata(metadata: ChatThreadMetadata): ThreadMeta {
   return {
     id: metadata.id,
-
     title: metadata.title,
     pinnedAt: metadata.pinnedAt,
     archived: metadata.archived,

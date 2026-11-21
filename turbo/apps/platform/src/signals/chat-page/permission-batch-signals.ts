@@ -207,7 +207,7 @@ function createBatchSaveCommand(
         get(resources.metadata$),
       ]);
       signal.throwIfAborted();
-      if (descriptor.owner.kind === "member" && descriptor.threadId) {
+      if (descriptor.threadId) {
         await verifyPermissionCallbackThread(
           get(apiClient$),
           descriptor.threadId,

@@ -1,25 +1,13 @@
 import { computed } from "ccstate";
 
 import { chatThreadIndicatorsFromWorker$ } from "../shared-database.ts";
-import { eventDrivenChatThreads$ } from "./chat-thread-event-sourcing.ts";
+import { sidebarUnreadThreadIds$ } from "./sidebar-unread-threads.ts";
 
-export const hasUnreadChats$ = computed(async (get) => {
-  const indicators = await get(chatThreadIndicatorsFromWorker$);
-  const metadata = new Map(
-    get(eventDrivenChatThreads$).map((thread) => [thread.id, thread] as const),
-  );
-  return Object.entries(indicators.threads).some(([id, indicator]) => {
-    const thread = metadata.get(id);
-    return indicator === "unread" && !thread?.muted && !thread?.archived;
-  });
-});
-
-export const hasMarkableUnreadChats$ = computed(async (get) => {
-  const indicators = await get(chatThreadIndicatorsFromWorker$);
-  return get(eventDrivenChatThreads$).some(
-    (thread) => !thread.muted && indicators.threads[thread.id] === "unread",
-  );
-});
+export const workspaceHasUnreadChats$ = computed(
+  async (get): Promise<boolean> => {
+    return (await get(sidebarUnreadThreadIds$)).size > 0;
+  },
+);
 
 export const sidebarActiveThreadIds$ = computed(
   async (get): Promise<ReadonlySet<string>> => {

@@ -4,16 +4,14 @@ import { createPermissionBatchSignals } from "../chat-page/permission-batch-sign
 import { featureSwitches$ } from "../external/feature-switch.ts";
 import { parsePermissionBatchActionUrl } from "../chat-page/permission-batch-action-block.ts";
 import { pathname, search, hash } from "../location.ts";
-import { pathParams$, searchParams$ } from "../route.ts";
+import { searchParams$ } from "../route.ts";
 
 export const permissionBatchPageDescriptor$ = computed((get) => {
-  const agentId = get(pathParams$)?.agentId;
   const params = get(searchParams$);
   // The resource graph verifies URL claims before allowing a mutation.
   const parsed = parsePermissionBatchActionUrl(
     `${pathname()}${search()}${hash()}`,
     {
-      agentId: typeof agentId === "string" ? agentId : undefined,
       threadId: params.get("threadId") ?? "",
     },
   );

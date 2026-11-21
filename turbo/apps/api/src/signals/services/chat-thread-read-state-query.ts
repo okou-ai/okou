@@ -89,11 +89,14 @@ export function createChatThreadReadPreparation(args: {
 
 /** Bounded caller-owned candidates and one terminal watermark query per Agent. */
 export function createAgentThreadReadPreparation(args: {
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly userId: string;
   readonly orgId: string;
 }) {
   const agent$ = computed(async (get) => {
+    if (args.agentId === undefined) {
+      return true;
+    }
     const [agent] = await get(db$)
       .select({ id: agents.id })
       .from(agents)
