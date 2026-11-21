@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="chat_search">Cerca</string>
-    <string name="chat_search_hint">Cerca chat</string>
+    <string name="chat_search_workspace">Cerca nell’area di lavoro</string>
     <string name="chat_search_clear">Cancella ricerca</string>
     <string name="chat_search_recent">Chat recenti</string>
     <string name="chat_search_empty">Nessuna chat corrispondente</string>

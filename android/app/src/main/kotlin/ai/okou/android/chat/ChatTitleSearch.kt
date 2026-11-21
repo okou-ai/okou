@@ -1,24 +1,25 @@
 package ai.okou.android.chat
 
 import ai.okou.android.R
+import ai.okou.android.WorkspaceSearchField
+import ai.okou.android.WorkspaceSearchToolbar
 import ai.okou.android.state.ChatSearchState
+import ai.okou.android.workspaceSearchControlHeight
+import ai.okou.android.workspaceSearchTextStyle
 import androidx.annotation.StringRes
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -45,6 +46,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -57,6 +59,9 @@ import androidx.compose.ui.unit.sp
 internal fun ChatTitleSearch(
     state: ChatListUiState,
     search: ChatSearchState,
+    widthDp: Int,
+    listWidth: Int?,
+    workspaceName: String?,
     focusOnEntry: Boolean,
     onFocused: () -> Unit,
     onClose: () -> Unit,
@@ -68,7 +73,6 @@ internal fun ChatTitleSearch(
     val keyboard = LocalSoftwareKeyboardController.current
     val inputFocus = remember { FocusRequester() }
     var inputFocused by remember { mutableStateOf(false) }
-    val fieldShape = RoundedCornerShape(18.dp)
     LaunchedEffect(focusOnEntry) {
         if (focusOnEntry) {
             inputFocus.requestFocus()
@@ -76,8 +80,9 @@ internal fun ChatTitleSearch(
             onFocused()
         }
     }
-    val searchLabel = stringResource(R.string.chat_search_hint)
-    val inputStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface)
+    val searchLabel = stringResource(R.string.chat_search_workspace)
+    val inputStyle = workspaceSearchTextStyle().copy(color = colors.onSurface)
+    val contentWidth = Modifier.widthIn(max = 720.dp).fillMaxWidth()
     val untitled = stringResource(R.string.chat_untitled)
     val archived = stringResource(R.string.chat_archived)
     val projectNames = remember(state.projects) { state.projects.associate { it.id to it.name } }
@@ -89,89 +94,118 @@ internal fun ChatTitleSearch(
             else visible.filter { it.searchTitle(untitled).lowercase().contains(keyword) }.toList()
         }
 
-    Column(Modifier.widthIn(max = 720.dp).fillMaxSize().imePadding().testTag("chat_search")) {
-        Row(
-            Modifier.fillMaxWidth().padding(start = 4.dp, top = 8.dp, end = 16.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onClose) {
-                Icon(painterResource(R.drawable.ic_arrow_back), stringResource(R.string.back))
-            }
-            BasicTextField(
-                value = query,
-                onValueChange = search::edit,
-                modifier =
-                    Modifier.weight(1f)
-                        .focusRequester(inputFocus)
-                        .onFocusChanged { inputFocused = it.isFocused }
-                        .testTag("chat_search_query")
-                        .semantics { contentDescription = searchLabel },
-                textStyle = inputStyle,
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
-                cursorBrush = SolidColor(colors.onSurface),
-                decorationBox = { input ->
-                    Row(
-                        Modifier.fillMaxWidth()
-                            .heightIn(min = 48.dp)
-                            .background(colors.surfaceVariant, fieldShape)
-                            .border(
-                                1.dp,
-                                if (inputFocused) colors.primary else colors.outlineVariant,
-                                fieldShape,
-                            )
-                            .padding(
-                                start = 12.dp,
-                                end = if (query.text.isEmpty()) 12.dp else 0.dp,
-                            ),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(Modifier.weight(1f)) {
-                            if (query.text.isEmpty()) {
-                                Text(
-                                    searchLabel,
-                                    style = inputStyle,
-                                    color = colors.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                            input()
-                        }
-                        if (query.text.isNotEmpty()) {
-                            IconButton(
-                                onClick = {
-                                    search.reset()
-                                    inputFocus.requestFocus()
-                                    keyboard?.show()
+    Column(
+        Modifier.fillMaxSize().imePadding().testTag("chat_search"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        WorkspaceSearchToolbar(
+            widthDp,
+            listWidth,
+            leading = {
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier.size(workspaceSearchControlHeight()),
+                ) {
+                    Icon(
+                        painterResource(R.drawable.ic_arrow_back),
+                        stringResource(R.string.back),
+                        tint = colors.onSurface,
+                    )
+                }
+            },
+            field = { fieldModifier ->
+                BasicTextField(
+                    value = query,
+                    onValueChange = search::edit,
+                    modifier =
+                        fieldModifier
+                            .focusRequester(inputFocus)
+                            .onFocusChanged { inputFocused = it.isFocused }
+                            .testTag("chat_search_query")
+                            .semantics {
+                                contentDescription =
+                                    workspaceName?.let { "$searchLabel, $it" } ?: searchLabel
+                            },
+                    textStyle = inputStyle,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
+                    cursorBrush = SolidColor(colors.onSurface),
+                    decorationBox = { input ->
+                        WorkspaceSearchField(
+                            Modifier.fillMaxWidth(),
+                            focused = inputFocused,
+                            hasTrailingAction = query.text.isNotEmpty(),
+                        ) {
+                            Box(Modifier.weight(1f).padding(vertical = 8.dp)) {
+                                if (query.text.isEmpty()) {
+                                    Text(
+                                        searchLabel,
+                                        style = inputStyle,
+                                        color = colors.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
                                 }
-                            ) {
-                                Icon(
-                                    painterResource(R.drawable.ic_close),
-                                    stringResource(R.string.chat_search_clear),
-                                )
+                                input()
+                            }
+                            if (query.text.isNotEmpty()) {
+                                IconButton(
+                                    onClick = {
+                                        search.reset()
+                                        inputFocus.requestFocus()
+                                        keyboard?.show()
+                                    }
+                                ) {
+                                    Icon(
+                                        painterResource(R.drawable.ic_close),
+                                        stringResource(R.string.chat_search_clear),
+                                        modifier = Modifier.size(20.dp),
+                                        tint = colors.onSurfaceVariant,
+                                    )
+                                }
                             }
                         }
-                    }
-                },
+                    },
+                )
+            },
+        )
+        if (workspaceName != null) {
+            Text(
+                workspaceName,
+                contentWidth
+                    .padding(start = 16.dp, end = 16.dp, bottom = 4.dp)
+                    .clearAndSetSemantics {},
+                color = colors.onSurfaceVariant,
+                fontSize = 13.sp,
+                lineHeight = 20.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         val failure = state.listReadFailure
         val retryFailedRead =
             retry.takeIf { !state.offline && failure == ChatListReadFailure.NeedsRetry }
         val retryEnabled = state.listPhase != ChatReadPhase.Loading
+        val awaitingResults = state.confirmedAt == null && !state.offline && failure == null
+        val showSkeleton = rememberChatWaitIndicator(awaitingResults)
+        val resultsWidth = contentWidth.weight(1f).padding(horizontal = 16.dp)
         if (state.confirmedAt == null) {
             // Let the restored list position apply to the result rows once data is available.
-            SearchNotice(
+            LazyColumn(resultsWidth) {
                 when {
-                    state.offline -> R.string.chat_list_load_when_online
-                    failure != null -> R.string.chat_list_first_load_failed
-                    else -> R.string.chat_loading
-                },
-                retryFailedRead,
-                retryEnabled,
-            )
+                    state.offline -> item { SearchNotice(R.string.chat_list_load_when_online) }
+                    failure != null ->
+                        item {
+                            SearchNotice(
+                                R.string.chat_list_first_load_failed,
+                                retryFailedRead,
+                                retryEnabled,
+                            )
+                        }
+                    showSkeleton -> item { ChatListSkeleton() }
+                }
+            }
             return@Column
         }
         val anchor = search.pendingAnchor
@@ -183,20 +217,8 @@ internal fun ChatTitleSearch(
             }
             return@Column
         }
-        LazyColumn(
-            Modifier.fillMaxWidth()
-                .weight(1f)
-                .padding(horizontal = 16.dp)
-                .testTag("chat_search_results"),
-            state = search.position,
-        ) {
-            // Keep result indices stable when the cache or refresh notice changes.
-            item {
-                if (failure != null && !state.offline) {
-                    SearchNotice(R.string.chat_refresh_failed, retryFailedRead, retryEnabled)
-                } else if (state.source == ChatListSource.Cache) {
-                    SearchNotice(R.string.chat_cached)
-                }
+        LazyColumn(resultsWidth.testTag("chat_search_results"), state = search.position) {
+            item(key = "search_heading") {
                 if (results.isEmpty()) {
                     SearchNotice(R.string.chat_search_empty)
                 } else {
@@ -220,15 +242,15 @@ internal fun ChatTitleSearch(
                         else project
                     Column(
                         Modifier.fillMaxWidth()
-                            .heightIn(min = 52.dp)
-                            .clip(RoundedCornerShape(8.dp))
+                            .heightIn(min = ChatListRowHeight)
+                            .clip(ChatListRowShape)
                             .clickable(role = Role.Button) { onOpen(chat) }
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                            .padding(ChatListRowPadding),
                         verticalArrangement = Arrangement.Center,
                     ) {
                         Text(
                             chat.searchTitle(untitled),
-                            style = MaterialTheme.typography.bodyLarge,
+                            style = chatListTitleStyle(),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -242,6 +264,18 @@ internal fun ChatTitleSearch(
                         }
                     }
                 }
+            }
+            when {
+                state.offline ->
+                    item(key = "search_status") { SearchNotice(R.string.chat_list_offline) }
+                state.sustainedRefreshFailure ->
+                    item(key = "search_status") {
+                        SearchNotice(
+                            R.string.chat_list_refresh_failed,
+                            retryFailedRead,
+                            retryEnabled,
+                        )
+                    }
             }
         }
     }

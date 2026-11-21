@@ -91,7 +91,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.text.NumberFormat
-import kotlinx.coroutines.delay
 
 @Composable
 internal fun ChatListScreen(
@@ -307,13 +306,7 @@ internal fun ChatListScreen(
             !state.offline &&
             firstLoadFailure == null &&
             (startupRecovery == null || state.listPhase != ChatReadPhase.Idle)
-    var skeletonVisible by remember(awaitingFirstList) { mutableStateOf(false) }
-    LaunchedEffect(awaitingFirstList) {
-        if (awaitingFirstList) {
-            delay(100)
-            skeletonVisible = true
-        }
-    }
+    val skeletonVisible = rememberChatWaitIndicator(awaitingFirstList)
     // Follow changes to refreshed content without turning Project expansion into a scroll action.
     val lastContentKey =
         remember(groups, pendingByProject) {
@@ -660,8 +653,8 @@ private fun ProjectRow(
     Box {
         Row(
             Modifier.fillMaxWidth()
-                .heightIn(min = 52.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .heightIn(min = ChatListRowHeight)
+                .clip(ChatListRowShape)
                 .contextMenuInput(openMenu)
                 .focusRequester(rowFocus)
                 .onFocusChanged { rowFocused = it.isFocused }
@@ -686,7 +679,7 @@ private fun ProjectRow(
                         }
                     }
                 }
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(ChatListRowPadding),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
@@ -819,7 +812,6 @@ private fun ChatRow(
                 )
             },
         )
-    val shape = RoundedCornerShape(8.dp)
     val colors = MaterialTheme.colorScheme
     val readAction =
         actions.firstOrNull { it == ChatRowAction.MarkRead || it == ChatRowAction.MarkUnread }
@@ -833,8 +825,8 @@ private fun ChatRow(
         Row(
             swipeModifier
                 .fillMaxWidth()
-                .heightIn(min = 52.dp)
-                .clip(shape)
+                .heightIn(min = ChatListRowHeight)
+                .clip(ChatListRowShape)
                 .background(if (isSelected) colors.secondaryContainer else colors.background)
                 .contextMenuInput(openMenu)
                 .focusRequester(rowFocus)
@@ -848,7 +840,7 @@ private fun ChatRow(
                     if (isSelected) selected = true
                     if (labels.isNotEmpty()) stateDescription = labels.joinToString()
                 }
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(ChatListRowPadding),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -886,7 +878,7 @@ private fun ChatRow(
 }
 
 @Composable
-private fun chatListTitleStyle() =
+internal fun chatListTitleStyle() =
     MaterialTheme.typography.bodyLarge.copy(
         fontSize = 16.sp,
         lineHeight = 24.sp,

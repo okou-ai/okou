@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="history_syncing">Nachrichten werden synchronisiert…</string>
     <string name="history_loading">Unterhaltung wird geladen…</string>
     <string name="history_failed">Die Unterhaltung konnte nicht aktualisiert werden. Bitte erneut versuchen.</string>
     <string name="history_missing">Diese Unterhaltung wurde gelöscht oder ist nicht verfügbar.</string>

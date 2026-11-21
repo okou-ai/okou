@@ -178,6 +178,22 @@ class NativeChatListTest {
         fixture.beforeResponse = { gate.await() }
         app.chatService = fixture.service
         auth.state.value = testAuthenticationState(user = "project-list-${UUID.randomUUID()}")
+        val firstHistory = CountDownLatch(1)
+        val firstSnapshotResponse = fixture.historySnapshot
+        val firstRowsResponse = fixture.historyRows
+        val firstCatchUpResponse = fixture.historyCatchUp
+        fixture.historySnapshot = {
+            firstHistory.await()
+            firstSnapshotResponse()
+        }
+        fixture.historyRows = { request ->
+            firstHistory.await()
+            firstRowsResponse(request)
+        }
+        fixture.historyCatchUp = { request ->
+            firstHistory.await()
+            firstCatchUpResponse(request)
+        }
         var scenario: ActivityScenario<MainActivity>? = null
         var chatJob: Job? = null
         val failures = mutableListOf<Throwable>()
@@ -238,10 +254,18 @@ class NativeChatListTest {
             assertNotNull(
                 device.wait(Until.findObject(By.desc(app.getString(R.string.chat_loading))), 10_000)
             )
+            takeScreenshot().writeToTestStorage("android-list-loading")
             click(UiSelector().description(app.getString(R.string.settings)))
             text(app.getString(R.string.appearance))
             gate.countDown()
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            device.awaitChatList(app)
+            revealText("Research")
+            takeScreenshot().writeToTestStorage("android-list-home")
+            click(UiSelector().description(app.getString(R.string.chat_search_workspace)))
+            text(app.getString(R.string.chat_search_recent))
+            takeScreenshot().writeToTestStorage("android-list-search")
+            click(UiSelector().description(app.getString(R.string.back)))
             device.awaitChatList(app)
             revealText("Research")
             assertTrue(device.wait(Until.gone(By.text("Project chat")), 10_000))
@@ -258,6 +282,14 @@ class NativeChatListTest {
             scenario.recreate()
             revealText("Project chat")
             clickText("Project chat")
+            assertNotNull(
+                device.wait(
+                    Until.findObject(By.desc(app.getString(R.string.history_loading))),
+                    10_000,
+                )
+            )
+            takeScreenshot().writeToTestStorage("android-conversation-loading")
+            firstHistory.countDown()
             text(app.getString(R.string.history_completed))
             text("Research")
             assertTrue(
@@ -397,6 +429,7 @@ class NativeChatListTest {
             }
         } finally {
             gate.countDown()
+            firstHistory.countDown()
             for (cleanup in
                 listOf<() -> Unit>(
                     { scenario?.close() },

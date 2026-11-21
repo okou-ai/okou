@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,7 +21,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -40,6 +44,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import kotlinx.coroutines.delay
+
+internal val ChatListRowHeight = 52.dp
+internal val ChatListRowShape = RoundedCornerShape(8.dp)
+internal val ChatListRowPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
 
 internal enum class ChatListStatus {
     Offline,
@@ -239,20 +248,40 @@ private fun ListStatus(status: ChatListStatus) {
 }
 
 @Composable
+internal fun rememberChatWaitIndicator(waiting: Boolean, delayMillis: Long = 100): Boolean {
+    var visible by remember(waiting, delayMillis) { mutableStateOf(false) }
+    LaunchedEffect(waiting, delayMillis) {
+        if (waiting) {
+            delay(delayMillis)
+            visible = true
+        }
+    }
+    return visible
+}
+
+@Composable
+internal fun ChatSkeletonBlock(modifier: Modifier, cornerRadius: Dp = 8.dp) {
+    Box(
+        modifier.background(
+            MaterialTheme.colorScheme.surfaceVariant,
+            RoundedCornerShape(cornerRadius),
+        )
+    )
+}
+
+@Composable
 internal fun ChatListSkeleton() {
     val label = stringResource(R.string.chat_loading)
-    val fill = MaterialTheme.colorScheme.surfaceVariant
     Column(Modifier.semantics { this.contentDescription = label }) {
-        for (width in listOf(.45f, .62f, .51f, .39f, .55f, .47f)) {
+        val widths = listOf(.56f, .70f, .44f)
+        repeat(6) { index ->
             Box(
-                Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 12.dp),
+                Modifier.fillMaxWidth()
+                    .heightIn(min = ChatListRowHeight)
+                    .padding(ChatListRowPadding),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                Box(
-                    Modifier.fillMaxWidth(width)
-                        .height(14.dp)
-                        .background(fill, RoundedCornerShape(8.dp))
-                )
+                ChatSkeletonBlock(Modifier.fillMaxWidth(widths[index % widths.size]).height(14.dp))
             }
         }
     }

@@ -18,6 +18,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -128,7 +129,11 @@ class ConversationRouteTest {
                 ConversationRoute(model.history, CHAT_IN_PROJECT, list, visible = visible.value)
             }
         }
-        compose.onNodeWithText("Loading conversation…").assertExists()
+        compose.mainClock.advanceTimeBy(160)
+        compose.waitUntilExactlyOneExists(
+            hasContentDescription(compose.activity.getString(R.string.history_loading)),
+            5_000,
+        )
         compose.waitUntil(10_000) {
             compose.runOnIdle { model.uiState.value.listPhase == ChatReadPhase.Ready }
         }

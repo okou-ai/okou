@@ -32,6 +32,7 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -48,6 +49,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -210,7 +212,9 @@ class PendingWorkspaceRootTest {
         compose.mainClock.advanceTimeBy(120)
         compose.onNodeWithContentDescription("Loading chats…").assertExists()
         compose.onNodeWithText(CACHED_CHAT).assertDoesNotExist()
-        compose.onNodeWithContentDescription("Search").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Search workspace").assertDoesNotExist()
+        val searchEntry = compose.onNodeWithTag("workspace_search_entry")
+        val startupBounds = searchEntry.getUnclippedBoundsInRoot()
         compose.runOnIdle { app.organizationResponse.complete(Unit) }
         awaitCachedRow()
         compose.onNodeWithTag("chat_$CHAT_PERSONAL").assertIsEnabled().performClick()
@@ -224,7 +228,7 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("New chat").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Settings").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Search").performClick()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
         compose.onNodeWithTag("chat_search_query").performTextReplacement("startup")
         compose.onNodeWithText(CACHED_CHAT).performClick()
         compose.onNodeWithTag("conversation").assertExists()
@@ -241,13 +245,14 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithContentDescription("Settings").assertExists()
         compose.onNodeWithText("New chat").assertIsEnabled()
+        assertEquals(startupBounds, searchEntry.getUnclippedBoundsInRoot())
     }
 
     @Test
     fun preferenceFailureAndRetryKeepTheAuthorizedCachedRowsActionable() {
         compose.runOnIdle { app.organizationResponse.complete(Unit) }
         awaitCachedRow()
-        compose.onNodeWithContentDescription("Search").performClick()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
         compose.onNodeWithText(CACHED_CHAT).assertExists()
         compose.runOnIdle {
             app.preferencesResponse.completeExceptionally(ApiFailure.Http(503, null, null, null))

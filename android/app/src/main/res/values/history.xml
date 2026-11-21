@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="history_syncing">Syncing messages…</string>
     <string name="history_loading">Loading conversation…</string>
     <string name="history_failed">Could not refresh this conversation. Try again.</string>
     <string name="history_missing">This conversation was deleted or is unavailable.</string>
