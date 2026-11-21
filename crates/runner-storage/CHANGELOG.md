@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.9](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.8...runner-storage-v0.12.9) (2026-11-21)
+
+
+### Performance Improvements
+
+* **runner-storage:** read cache metadata and archive in one task ([#49717](https://github.com/okou-ai/okou/issues/49717)) ([1e32cda](https://github.com/okou-ai/okou/commit/1e32cdabce639aa768735c1fc05fdaa4f8f519d1))
+* **runner-storage:** read cached archives in one blocking task ([#49695](https://github.com/okou-ai/okou/issues/49695)) ([2770366](https://github.com/okou-ai/okou/commit/2770366377cd2c78d7deeb47d66dcbc3a678e2ad))
+
 ## [0.12.8](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.7...runner-storage-v0.12.8) (2026-11-21)
 
 

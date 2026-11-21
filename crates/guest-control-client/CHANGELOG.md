@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.121](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.120...guest-control-client-v0.23.121) (2026-11-21)
+
+
+### Refactoring
+
+* **guest-control:** share pending normal operation tracking ([#49649](https://github.com/okou-ai/okou/issues/49649)) ([1bb5203](https://github.com/okou-ai/okou/commit/1bb5203e52109588bea0343233907a9f5a958e01))
+
 ## [0.23.120](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.119...guest-control-client-v0.23.120) (2026-11-20)
 
 ## [0.23.119](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.118...guest-control-client-v0.23.119) (2026-11-20)
