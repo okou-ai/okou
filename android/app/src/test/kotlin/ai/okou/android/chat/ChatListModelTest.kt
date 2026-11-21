@@ -6,6 +6,7 @@ import ai.okou.android.CHAT_EVENT
 import ai.okou.android.CHAT_IN_PROJECT
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.CHAT_PROJECT
+import ai.okou.android.HISTORY_LAST_EVENT
 import ai.okou.android.TestChatService
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.TestRealtimeService
@@ -23,6 +24,7 @@ import ai.okou.android.api.generated.ProjectEvents
 import ai.okou.android.api.generated.ProjectSnapshot
 import ai.okou.android.api.generated.ReadState
 import ai.okou.android.api.generated.SendRequestVariant1
+import ai.okou.android.api.generated.ThreadDetail
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.chatEventWire
 import androidx.lifecycle.ViewModelProvider
@@ -1293,6 +1295,51 @@ class ChatListModelTest {
                 runCurrent()
                 assertEquals(CHAT_PERSONAL, model.uiState.value.threads.first().id)
             }
+        }
+    }
+
+    @Test
+    fun restoredAcceptedChatWaitsForTheListWhenDetailConfirmsItExists() = runTest {
+        val detail = CompletableDeferred<ThreadDetail>()
+        var detailReads = 0
+        val preview = ProvisionalChat(CHAT_IN_PROJECT, CHAT_PROJECT)
+        val service =
+            object : Service() {
+                override suspend fun threadDetail(threadId: String): ThreadDetail {
+                    assertEquals(preview.threadId, threadId)
+                    if (++detailReads == 1) throw ApiFailure.Http(503, null, null, null)
+                    return detail.await()
+                }
+            }
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            runCurrent()
+            model.retainAcceptedNewChats(listOf(preview), restored = true)
+            runCurrent()
+            assertEquals(listOf(preview), model.uiState.value.acceptedNewChats)
+
+            service.listRead = { page(emptyList()) }
+            model.refreshList()
+            runCurrent()
+            model.refreshList()
+            runCurrent()
+            assertEquals(2, detailReads)
+            detail.complete(ThreadDetail(null, false))
+            runCurrent()
+            assertEquals(listOf(preview), model.uiState.value.acceptedNewChats)
+
+            service.listRead = {
+                page(
+                    listOf(
+                        chatEventWire(id = HISTORY_LAST_EVENT, seq = 18, thread = preview.threadId)
+                    )
+                )
+            }
+            model.refreshList()
+            runCurrent()
+            assertTrue(model.uiState.value.threads.any { it.id == preview.threadId })
+            assertTrue(model.uiState.value.acceptedNewChats.isEmpty())
+            assertEquals(2, detailReads)
         }
     }
 
