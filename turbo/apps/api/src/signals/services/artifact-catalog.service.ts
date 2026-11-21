@@ -1774,6 +1774,7 @@ export const getArtifactCatalogEntry$ = command(
         entityId: artifacts.entityId,
         projectionFileId: artifacts.projectionFileId,
         projectionMetadata: runUploadedFiles.metadata,
+        sourceChatThreadId: chatThreads.id,
         displayKind: artifacts.displayKind,
         aliasUrl: artifacts.aliasUrl,
         sourceUrl: artifacts.sourceUrl,
@@ -1787,6 +1788,15 @@ export const getArtifactCatalogEntry$ = command(
       .leftJoin(
         runUploadedFiles,
         eq(runUploadedFiles.id, artifacts.projectionFileId),
+      )
+      .leftJoin(
+        chatThreads,
+        and(
+          eq(chatThreads.id, artifacts.chatThreadId),
+          eq(chatThreads.orgId, args.orgId),
+          eq(chatThreads.userId, args.userId),
+          eq(chatThreads.hidden, false),
+        ),
       )
       .where(
         and(
@@ -1802,7 +1812,12 @@ export const getArtifactCatalogEntry$ = command(
       return null;
     }
 
-    const summary = toArtifactSummary(row);
+    const summary = {
+      ...toArtifactSummary(row),
+      ...(row.sourceChatThreadId
+        ? { sourceChatThreadId: row.sourceChatThreadId }
+        : {}),
+    };
     if (
       row.kind === "file" &&
       isSharedThreadArtifactLogicalKey(row.logicalKey)

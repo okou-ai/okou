@@ -475,6 +475,10 @@ describe("GET /api/artifacts/catalog", () => {
     }
     // The publish-time API response already supplies the original identity.
     const originalCatalog = publications[0]!.catalog;
+    const artifactId = originalCatalog.artifacts[0]!.id;
+    await expect(
+      chat.getArtifactCatalogEntry(owner.actor, artifactId),
+    ).resolves.toMatchObject({ sourceChatThreadId: first.threadId });
     await completeChatRunOk(first.runId, execution.sandboxHeaders);
     const second = await sendChatRun(owner.actor, {
       prompt: "Reuse the private video",
@@ -506,6 +510,9 @@ describe("GET /api/artifacts/catalog", () => {
     await expect(chat.listArtifactCatalog(owner.actor)).resolves.toMatchObject({
       artifacts: [{ id: originalCatalog.artifacts[0]!.id }],
     });
+    await expect(
+      chat.getArtifactCatalogEntry(owner.actor, artifactId),
+    ).resolves.not.toHaveProperty("sourceChatThreadId");
     await completeChatRunOk(second.runId, secondExecution.sandboxHeaders);
   });
 
