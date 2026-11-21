@@ -290,7 +290,8 @@ private fun PreviewContent(preview: ArtifactPreviewState?, offline: Boolean) {
                                     lineHeight = if (content.markdown) 28.sp else 24.sp
                                 )
                             ) {
-                                if (content.markdown) HistoryMarkdown(content.source)
+                                if (content.markdown)
+                                    HistoryMarkdown(content.source, compactLists = true)
                                 else Text(content.source)
                             }
                         }

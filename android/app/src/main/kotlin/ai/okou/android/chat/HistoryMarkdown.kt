@@ -25,6 +25,7 @@ import org.commonmark.node.HtmlInline
 import org.commonmark.node.Image
 import org.commonmark.node.IndentedCodeBlock
 import org.commonmark.node.Link
+import org.commonmark.node.ListBlock
 import org.commonmark.node.ListItem
 import org.commonmark.node.OrderedList
 import org.commonmark.node.Paragraph
@@ -36,15 +37,20 @@ import org.commonmark.parser.Parser
 
 /** UI-owned parsing stays off Main; no HTML execution, image downloads or automatic link opens. */
 @Composable
-internal fun HistoryMarkdown(source: String) {
+internal fun HistoryMarkdown(source: String, compactLists: Boolean = false) {
     val rendered by
-        produceState<AnnotatedString?>(null, source) {
-            value = withContext(Dispatchers.Default) { renderHistoryMarkdown(source) }
+        produceState<AnnotatedString?>(null, source, compactLists) {
+            value = withContext(Dispatchers.Default) { renderHistoryMarkdown(source, compactLists) }
         }
     Text(rendered ?: AnnotatedString(source))
 }
 
-internal fun renderHistoryMarkdown(source: String): AnnotatedString = buildAnnotatedString {
+internal fun renderHistoryMarkdown(source: String, compactLists: Boolean = false): AnnotatedString {
+    val text = renderMarkdown(source, compactLists)
+    return if (compactLists) text.subSequence(0, text.text.trimEnd('\n').length) else text
+}
+
+private fun renderMarkdown(source: String, compactLists: Boolean) = buildAnnotatedString {
     val builder = this
     Parser.builder()
         .build()
@@ -59,7 +65,14 @@ internal fun renderHistoryMarkdown(source: String): AnnotatedString = buildAnnot
 
                 override fun visit(node: Paragraph) {
                     visitChildren(node)
-                    append("\n\n")
+                    val item = node.parent as? ListItem
+                    val list = item?.parent as? ListBlock
+                    val beforeNewBlock =
+                        node.next == null && item?.next == null && list?.next != null
+                    append(
+                        if (compactLists && list?.isTight == true && !beforeNewBlock) "\n"
+                        else "\n\n"
+                    )
                 }
 
                 override fun visit(node: SoftLineBreak) {
