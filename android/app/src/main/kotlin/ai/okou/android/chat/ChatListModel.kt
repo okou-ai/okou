@@ -1500,17 +1500,18 @@ class ChatListModel(
                 val readBack = projectsJob
                 readBack?.join()
                 requireCurrent()
-                val readSucceeded =
-                    readBack !== previousRead && mutable.value.projectsPhase == ChatReadPhase.Ready
-                val observed =
-                    readSucceeded &&
-                        (confirmedProjectRows.any {
-                            it.id == rename.id && it.name == rename.name
-                        } ||
-                            confirmedProjects?.checkpoint?.events?.any {
-                                it.id == rename.eventId
-                            } == true)
-                if (!observed && confirmedProjectRows.any { it.id == rename.id }) {
+                val confirmedName = confirmedProjectRows.firstOrNull { it.id == rename.id }?.name
+                val observedName =
+                    readBack !== previousRead &&
+                        mutable.value.projectsPhase == ChatReadPhase.Ready &&
+                        confirmedName == rename.name
+                // The stream can deliver the receipt before the write response is lost.
+                val observedReceipt =
+                    confirmedProjects?.checkpoint?.let { checkpoint ->
+                        checkpoint.archive.latestEventId == rename.eventId ||
+                            checkpoint.events.any { it.id == rename.eventId }
+                    } == true
+                if (!observedName && !observedReceipt && confirmedName != null) {
                     // The server deduplicates retries by this Project event ID.
                     retryableProjectRenames[rename.id] = rename
                 }
@@ -1551,6 +1552,7 @@ class ChatListModel(
                         if (retryableProjectRenames.isNotEmpty()) {
                             val names = rows.associate { it.id to it.name }
                             val appliedEvents = saved.checkpoint.events.mapTo(hashSetOf()) { it.id }
+                            saved.checkpoint.archive.latestEventId?.let(appliedEvents::add)
                             retryableProjectRenames.entries.removeAll { (id, rename) ->
                                 names[id] == null ||
                                     names[id] == rename.name ||
