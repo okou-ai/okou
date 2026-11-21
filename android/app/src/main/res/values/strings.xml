@@ -100,8 +100,6 @@
     <string name="composer_message">Message</string>
     <string name="composer_send">Send</string>
     <string name="composer_local_failed">Draft changes could not be saved on this device.</string>
-    <string name="composer_target_loading">Loading chat availability…</string>
-    <string name="composer_target_unavailable">A new chat is not available for this account.</string>
     <string name="composer_unconfirmed">Message delivery is unconfirmed.</string>
     <string name="composer_sending">Sending…</string>
     <string name="composer_check">Check delivery</string>

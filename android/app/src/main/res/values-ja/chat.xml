@@ -26,7 +26,6 @@
     <string name="chat_project_empty">このプロジェクトにチャットはありません。</string>
     <string name="chat_empty">このビューにチャットはありません。</string>
     <string name="chat_untitled">無題のチャット</string>
-    <string name="chat_agent_identity">Okou · %1$s</string>
     <string name="chat_pinned">ピン留め済み</string>
     <string name="chat_active">アクティブ</string>
     <string name="chat_actions">チャットの操作</string>

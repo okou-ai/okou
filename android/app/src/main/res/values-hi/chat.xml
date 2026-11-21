@@ -27,7 +27,6 @@
     <string name="chat_project_empty">इस प्रोजेक्ट में कोई चैट नहीं है।</string>
     <string name="chat_empty">इस दृश्य में कोई चैट नहीं है।</string>
     <string name="chat_untitled">बिना शीर्षक की चैट</string>
-    <string name="chat_agent_identity">Okou · %1$s</string>
     <string name="chat_pinned">पिन की गई</string>
     <string name="chat_active">सक्रिय</string>
     <string name="chat_actions">चैट की कार्रवाइयाँ</string>
