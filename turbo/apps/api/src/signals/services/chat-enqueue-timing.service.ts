@@ -35,6 +35,7 @@ export class ChatEnqueueTimingCollector {
   private threadKind: "new" | "existing" | undefined;
   private outcome: "accepted" | "replayed" = "accepted";
   private attachmentDetails: Record<string, unknown> = {};
+  private mcpAttributionFetchInvoked: boolean | undefined;
 
   constructor(private readonly requestReceivedAt: number) {
     const startedAt = now();
@@ -54,6 +55,10 @@ export class ChatEnqueueTimingCollector {
 
   setOutcome(outcome: typeof this.outcome): void {
     this.outcome = outcome;
+  }
+
+  setMcpAttributionFetchInvoked(fetchInvoked: boolean): void {
+    this.mcpAttributionFetchInvoked = fetchInvoked;
   }
 
   setAttachmentDetails(details: {
@@ -107,6 +112,10 @@ export class ChatEnqueueTimingCollector {
           dimensions: {
             span_kind: observation?.spanKind ?? "nested",
             ...(stage === "attachments" ? this.attachmentDetails : {}),
+            ...(stage === "mcp_attribution" &&
+            this.mcpAttributionFetchInvoked !== undefined
+              ? { fetch_invoked: this.mcpAttributionFetchInvoked }
+              : {}),
           },
         });
       }

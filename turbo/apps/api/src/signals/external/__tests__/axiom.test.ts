@@ -156,29 +156,35 @@ describe("shared SDK ingestion", () => {
     });
   });
 
-  it("records ID-free MCP name-lookup timings through the API operation interface", async () => {
-    // Telemetry-client suite exception: this event has no API read endpoint.
-    await recordMcpClientNameLookup({
-      outcome: "validated",
-      fetchInvoked: true,
-      startedAt: performance.now(),
-    });
-    expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
-      "vm0-sandbox-op-log-dev",
-      [
-        {
-          _time: expect.any(String),
-          source: "api",
-          op_type: "mcp_client_display_name_lookup",
-          operation_domain: "api",
-          duration_ms: expect.any(Number),
-          success: true,
-          lookup_outcome: "validated",
-          fetch_invoked: true,
-        },
-      ],
-    );
-  });
+  it.each([
+    { outcome: "validated", fetchInvoked: true },
+    { outcome: "cache_hit", fetchInvoked: false },
+  ] as const)(
+    "records ID-free MCP name-lookup timings for $outcome",
+    async ({ outcome, fetchInvoked }) => {
+      // Telemetry-client suite exception: this event has no API read endpoint.
+      await recordMcpClientNameLookup({
+        outcome,
+        fetchInvoked,
+        startedAt: performance.now(),
+      });
+      expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
+        "vm0-sandbox-op-log-dev",
+        [
+          {
+            _time: expect.any(String),
+            source: "api",
+            op_type: "mcp_client_display_name_lookup",
+            operation_domain: "api",
+            duration_ms: expect.any(Number),
+            success: true,
+            lookup_outcome: outcome,
+            fetch_invoked: fetchInvoked,
+          },
+        ],
+      );
+    },
+  );
 
   it("contains even an abort-shaped MCP timing sink error", async () => {
     context.mocks.axiom.sdkIngest.mockImplementation(() => {

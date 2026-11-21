@@ -3302,18 +3302,20 @@ export const handleSendChatEvent$ = command(
     if (!isNormalSendBody(body)) {
       return badRequestMessage("Prompt is required");
     }
+    const timing = get(chatEnqueueTiming$);
     const clientName =
       auth.tokenType === "oauth"
-        ? await measureChatEnqueue(
-            get(chatEnqueueTiming$),
-            "mcp_attribution",
-            () => {
-              return mcpClientDisplayName(auth.clientId, signal);
-            },
-          )
+        ? await measureChatEnqueue(timing, "mcp_attribution", async () => {
+            const attribution = await mcpClientDisplayName(
+              auth.clientId,
+              signal,
+            );
+            signal.throwIfAborted();
+            timing?.setMcpAttributionFetchInvoked(attribution.fetchInvoked);
+            return attribution.name;
+          })
         : undefined;
     signal.throwIfAborted();
-    const timing = get(chatEnqueueTiming$);
     const result = await set(
       sendNormalEvent$,
       {

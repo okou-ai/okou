@@ -78,6 +78,7 @@ export function recordApiOperationTimings(
 export type McpClientNameLookupOutcome =
   | "ineligible"
   | "validated"
+  | "cache_hit"
   | "invalid_metadata"
   | "http_unavailable"
   | "unsafe_url"
@@ -97,7 +98,7 @@ export async function recordMcpClientNameLookup(args: {
       {
         actionType: "mcp_client_display_name_lookup",
         durationMs: Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, elapsed)),
-        success: args.outcome === "validated",
+        success: args.outcome === "validated" || args.outcome === "cache_hit",
         dimensions: {
           lookup_outcome: args.outcome,
           fetch_invoked: args.fetchInvoked,

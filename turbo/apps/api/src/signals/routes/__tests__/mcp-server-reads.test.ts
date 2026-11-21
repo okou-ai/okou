@@ -28,7 +28,12 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { array, number, object, string } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
-import { now, withMockNowForTest } from "../../../lib/time";
+import {
+  clearMockMonotonicNow,
+  mockMonotonicNow,
+  now,
+  withMockNowForTest,
+} from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mcpServerRoutes } from "../mcp-server";
 import { mcpProjectChatSearchContract } from "@okouai/api-contracts/contracts/mcp-chat-search";
@@ -76,6 +81,24 @@ async function send(
   });
   expect(result.isError, JSON.stringify(result.content)).not.toBeTruthy();
   return mcpSendChatMessageOutputSchema.parse(body(result));
+}
+
+async function appendOAuthInput(
+  token: string,
+  threadId: string,
+  prompt: string,
+  eventId: string = randomUUID(),
+) {
+  const response = await mcp.web(token, "/api/chat/events", "POST", {
+    threadId,
+    clientEventId: eventId,
+    prompt,
+    userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
+    hasTextContent: true,
+  });
+  expect(response.status, JSON.stringify(response.body)).toBe(201);
+  expect(response.body).toMatchObject({ threadId });
+  return eventId;
 }
 
 describe("thin MCP Web adapters", () => {
@@ -658,6 +681,154 @@ describe("thin MCP Web adapters", () => {
         ),
       ).toHaveLength(1);
     });
+  });
+
+  it("reuses a validated name across send routes until expiry and preserves accepted attribution on replay", async () => {
+    const f = await fixture();
+    const clientId = `https://oauth.example.com/client/${randomUUID()}`;
+    const token = f.token({ client_id: clientId });
+    mockMonotonicNow(0);
+    onTestFinished(clearMockMonotonicNow);
+    server.use(
+      http.get(clientId, () => {
+        return HttpResponse.json({
+          client_id: clientId,
+          client_name: "  Example   Client  ",
+        });
+      }),
+    );
+    const first = await send(
+      {
+        ...f,
+        token: () => {
+          return token;
+        },
+      },
+      "first input",
+    );
+
+    let outageRequests = 0;
+    server.use(
+      http.get(clientId, () => {
+        outageRequests++;
+        return new HttpResponse(null, { status: 503 });
+      }),
+    );
+    const expiresAt = 5 * 60 * 1000;
+    mockMonotonicNow(expiresAt - 1);
+    const warmId = await appendOAuthInput(token, first.threadId, "warm input");
+    expect(outageRequests).toBe(0);
+
+    server.use(
+      http.get(clientId, () => {
+        return HttpResponse.json({
+          client_id: clientId,
+          client_name: "Renamed Client",
+        });
+      }),
+    );
+    mockMonotonicNow(expiresAt);
+    await appendOAuthInput(token, first.threadId, "first input", first.eventId);
+    const refreshedId = await appendOAuthInput(
+      token,
+      first.threadId,
+      "refreshed input",
+    );
+    await flushWaitUntilForTest();
+    const rows = await chat.listThreadEventRows(f.actor, first.threadId);
+    for (const [eventId, prompt, clientName] of [
+      [first.eventId, "first input", "Example Client"],
+      [warmId, "warm input", "Example Client"],
+      [refreshedId, "refreshed input", "Renamed Client"],
+    ]) {
+      const inputs = rows.filter((row) => {
+        return row.id === eventId;
+      });
+      expect(inputs).toHaveLength(1);
+      expect(inputs[0]).toHaveProperty("payload.userMessage.parts", [
+        { type: "text", text: prompt },
+        { type: "source", kind: "mcp", clientId, clientName },
+      ]);
+    }
+  });
+
+  it("keeps client names isolated and recovers after a mismatched metadata document", async () => {
+    const f = await fixture();
+    const firstId = `https://oauth.example.com/client/${randomUUID()}`;
+    const secondId = `https://oauth.example.com/client/${randomUUID()}`;
+    const firstMetadata = { client_id: firstId, client_name: "First Client" };
+    server.use(
+      http.get(firstId, () => {
+        return HttpResponse.json(firstMetadata);
+      }),
+      http.get(secondId, () => {
+        return HttpResponse.json(firstMetadata);
+      }),
+    );
+    const first = await send(
+      {
+        ...f,
+        token: () => {
+          return f.token({ client_id: firstId });
+        },
+      },
+      "first client",
+    );
+    const token = f.token({ client_id: secondId });
+    const unavailableId = await appendOAuthInput(
+      token,
+      first.threadId,
+      "no name",
+    );
+    server.use(
+      http.get(secondId, () => {
+        return HttpResponse.json({
+          client_id: secondId,
+          client_name: "Second Client",
+        });
+      }),
+    );
+    const recoveredId = await appendOAuthInput(
+      token,
+      first.threadId,
+      "second client",
+    );
+    await flushWaitUntilForTest();
+    const rows = await chat.listThreadEventRows(f.actor, first.threadId);
+    expect(
+      rows.find((row) => {
+        return row.id === first.eventId;
+      }),
+    ).toHaveProperty("payload.userMessage.parts", [
+      { type: "text", text: "first client" },
+      {
+        type: "source",
+        kind: "mcp",
+        clientId: firstId,
+        clientName: "First Client",
+      },
+    ]);
+    expect(
+      rows.find((row) => {
+        return row.id === unavailableId;
+      }),
+    ).toHaveProperty("payload.userMessage.parts", [
+      { type: "text", text: "no name" },
+      { type: "source", kind: "mcp", clientId: secondId },
+    ]);
+    expect(
+      rows.find((row) => {
+        return row.id === recoveredId;
+      }),
+    ).toHaveProperty("payload.userMessage.parts", [
+      { type: "text", text: "second client" },
+      {
+        type: "source",
+        kind: "mcp",
+        clientId: secondId,
+        clientName: "Second Client",
+      },
+    ]);
   });
 
   it("uses ordinary Web send semantics for independent requests", async () => {
