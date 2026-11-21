@@ -99,8 +99,6 @@
     <string name="composer_message">メッセージ</string>
     <string name="composer_send">送信</string>
     <string name="composer_local_failed">下書きの変更をこの端末に保存できませんでした。</string>
-    <string name="composer_target_loading">チャットの利用状況を確認中…</string>
-    <string name="composer_target_unavailable">このアカウントでは新しいチャットを利用できません。</string>
     <string name="composer_unconfirmed">メッセージの送信結果は未確認です。</string>
     <string name="composer_sending">送信中…</string>
     <string name="composer_check">送信結果を確認</string>

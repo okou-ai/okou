@@ -99,8 +99,6 @@
     <string name="composer_message">Mensaje</string>
     <string name="composer_send">Enviar</string>
     <string name="composer_local_failed">No se pudieron guardar los cambios del borrador en este dispositivo.</string>
-    <string name="composer_target_loading">Cargando disponibilidad del chat…</string>
-    <string name="composer_target_unavailable">No hay un nuevo chat disponible para esta cuenta.</string>
     <string name="composer_unconfirmed">La entrega del mensaje no está confirmada.</string>
     <string name="composer_sending">Enviando…</string>
     <string name="composer_check">Comprobar entrega</string>

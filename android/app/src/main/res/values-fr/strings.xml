@@ -99,8 +99,6 @@
     <string name="composer_message">Message</string>
     <string name="composer_send">Envoyer</string>
     <string name="composer_local_failed">Les modifications du brouillon ne peuvent pas être enregistrées sur cet appareil.</string>
-    <string name="composer_target_loading">Chargement de la disponibilité des discussions…</string>
-    <string name="composer_target_unavailable">Aucune nouvelle discussion disponible pour ce compte.</string>
     <string name="composer_unconfirmed">La remise du message est non confirmée.</string>
     <string name="composer_sending">Envoi en cours…</string>
     <string name="composer_check">Vérifier la remise</string>

@@ -99,8 +99,6 @@
     <string name="composer_message">Messaggio</string>
     <string name="composer_send">Invia</string>
     <string name="composer_local_failed">Impossibile salvare le modifiche alla bozza su questo dispositivo.</string>
-    <string name="composer_target_loading">Caricamento disponibilità della chat…</string>
-    <string name="composer_target_unavailable">Una nuova chat non è disponibile per questo account.</string>
     <string name="composer_unconfirmed">La consegna del messaggio non è confermata.</string>
     <string name="composer_sending">Invio in corso…</string>
     <string name="composer_check">Verifica consegna</string>
