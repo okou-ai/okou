@@ -57,27 +57,6 @@ import {
   forYouCovers,
 } from "../../lib/for-you-artwork.ts";
 
-// The header sits on the cover. This scrim holds the page color behind the
-// title, subtitle and progress, then eases out past the header's bottom edge
-// so no band edge shows on dark covers.
-const HEADER_SCRIM = {
-  backgroundImage: `linear-gradient(${[
-    [0.88, 0],
-    [0.88, 45],
-    [0.73, 55],
-    [0.54, 63],
-    [0.36, 71],
-    [0.21, 79],
-    [0.09, 87],
-    [0.03, 94],
-    [0, 100],
-  ]
-    .map(([alpha, stop]) => {
-      return `hsl(var(--for-you-scrim) / ${String(alpha)}) ${String(stop)}%`;
-    })
-    .join(", ")})`,
-} satisfies CSSProperties;
-
 const STACK_LAYERS = [
   "z-3 translate-y-2 scale-x-[0.98] shadow-[0_1px_2px_rgb(37_33_33/0.05),0_4px_8px_rgb(37_33_33/0.035)]",
   "z-2 translate-y-4 scale-x-[0.96] shadow-[0_1px_2px_rgb(37_33_33/0.05),0_4px_8px_rgb(37_33_33/0.035)]",
@@ -406,13 +385,10 @@ function ForYouHeader() {
   const browse = useSet(browseForYou$);
   const signal = useGet(pageSignal$);
   return (
-    <header className="absolute inset-x-0 top-0 z-10 grid h-14 grid-flow-col grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 px-4 sm:h-15 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8 sm:px-8 [--for-you-scrim:var(--brand-off-white)] dark:[--for-you-scrim:var(--background)]">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-27"
-        style={HEADER_SCRIM}
-      />
-      <div className="min-w-0">
+    // The header sits on the cover, so its title and progress each carry
+    // their own translucent surface instead of a scrim over the artwork.
+    <header className="absolute inset-x-0 top-0 z-10 grid h-18 grid-flow-col grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 px-4 pt-2 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8 sm:px-8">
+      <div className="w-fit min-w-0 max-w-full rounded-xl bg-card/75 px-3 py-1.5 shadow-surface backdrop-blur-md">
         <h1 className="text-base font-semibold sm:text-lg">
           {t(($) => {
             return $.chat.agentSuggestions.forYou.title;
@@ -424,7 +400,12 @@ function ForYouHeader() {
           })}
         </p>
       </div>
-      <div className="flex min-w-0 items-center gap-2 sm:gap-5">
+      <div
+        className={cn(
+          "flex h-8 min-w-0 items-center gap-2 rounded-full px-2 sm:gap-5 sm:px-3",
+          cards.length > 0 && "bg-card/75 shadow-surface backdrop-blur-md",
+        )}
+      >
         <nav
           aria-label={t(($) => {
             return $.chat.agentSuggestions.homeCard.navigation;
@@ -465,12 +446,12 @@ function ForYouHeader() {
                     );
                   }
                 }}
-                className="group flex h-11 min-w-0 flex-1 items-center rounded-lg px-1.5 hover:bg-state-hover focus-visible:bg-state-hover sm:px-2"
+                className="group flex h-6 min-w-0 flex-1 items-center rounded-full px-1.5 hover:bg-state-hover focus-visible:bg-state-hover sm:px-2"
               >
                 <span
                   aria-hidden
                   className={cn(
-                    "h-1 w-full rounded-full bg-foreground/10 transition-colors",
+                    "h-1 w-full rounded-full bg-divider transition-colors",
                     index === position &&
                       "bg-linear-to-r from-primary/65 via-primary to-primary-hover",
                   )}
@@ -482,7 +463,7 @@ function ForYouHeader() {
         {cards.length > 0 && (
           <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
             <span className="text-foreground">{position + 1}</span>
-            <span aria-hidden className="mx-1 text-foreground/25">
+            <span aria-hidden className="mx-1 text-border">
               /
             </span>
             {cards.length}
