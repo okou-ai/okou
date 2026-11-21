@@ -167,7 +167,12 @@ class OkouAppTest {
                                             update: UpdatePreferencesRequest
                                         ): UserPreferences {
                                             if (failPreferenceSave())
-                                                throw ai.okou.android.api.ApiFailure.Http(400, null, null, null)
+                                                throw ai.okou.android.api.ApiFailure.Http(
+                                                    400,
+                                                    null,
+                                                    null,
+                                                    null,
+                                                )
                                             return service.updatePreferences(update)
                                         }
                                     },
@@ -625,9 +630,9 @@ class OkouAppTest {
             }
         render(fontScale = 2f, chatService = chatService)
         compose.onNodeWithContentDescription("Einstellungen").assertIsDisplayed().performClick()
-        selectAppearance("Dunkel", row = "Erscheinungsbild")
+        selectAppearance("Dunkel", row = "Anzeigemodus")
         compose.onNodeWithText("Dunkel").assertIsDisplayed()
-        compose.onNodeWithText("Arbeitsbereichseinstellungen").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Gemeinsame Einstellungen").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Zurück").assertIsDisplayed().performClick()
         compose.onNodeWithContentDescription("Chats").assertIsDisplayed()
         compose.mainClock.advanceTimeBy(120)

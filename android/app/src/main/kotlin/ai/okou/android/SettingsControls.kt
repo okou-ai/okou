@@ -20,8 +20,10 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -236,6 +238,7 @@ internal fun SettingsSheet(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val windowHeight = currentWindowSizeDp().height.dp
+    val scroll = rememberScrollState()
     SettingsModal(onDismiss) { centered ->
         Column(
             Modifier.fillMaxWidth()
@@ -255,9 +258,7 @@ internal fun SettingsSheet(
                     MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, lineHeight = 28.sp),
             )
             Column(
-                Modifier.weight(1f, fill = false)
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
+                Modifier.weight(1f, fill = false).fillMaxWidth().verticalScroll(scroll),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 content = content,
             )
@@ -274,17 +275,36 @@ internal fun SettingsConfirmation(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
+    val colors = MaterialTheme.colorScheme
     AlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.widthIn(max = 360.dp),
         shape = RoundedCornerShape(28.dp),
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = colors.surface,
         title = { Text(title) },
         text = { Text(message) },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_cancel)) }
+            TextButton(
+                onClick = onDismiss,
+                colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurface),
+            ) {
+                Text(stringResource(R.string.settings_cancel))
+            }
         },
-        confirmButton = { TextButton(onClick = onConfirm) { Text(confirm) } },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.heightIn(min = 48.dp),
+                colors =
+                    ButtonDefaults.buttonColors(
+                        containerColor = colors.inverseSurface,
+                        contentColor = colors.inverseOnSurface,
+                    ),
+            ) {
+                Text(confirm)
+            }
+        },
     )
 }
 

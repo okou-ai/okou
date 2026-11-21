@@ -20,6 +20,7 @@ import ai.okou.android.updates.UpdateService
 import ai.okou.android.updates.UpdateStore
 import android.app.LocaleManager
 import android.view.KeyEvent
+import android.view.accessibility.AccessibilityWindowInfo
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -62,10 +63,16 @@ class ScreenshotScenario {
         try {
             auth.state.value = testAuthenticationState(user = "settings-capture")
             auth.account.value = NativeAccount("settings-capture", "example@okou.test")
-            app.restoreApiPreferences(mapOf(
-                Triple(BuildConfig.API_ORIGIN, "settings-capture", "org-a") to
-                    testPreferences().copy(locale = UserPreferencesLocale.ZH_HANS, theme = UserPreferencesTheme.LIGHT)
-            ))
+            app.restoreApiPreferences(
+                mapOf(
+                    Triple(BuildConfig.API_ORIGIN, "settings-capture", "org-a") to
+                        testPreferences()
+                            .copy(
+                                locale = UserPreferencesLocale.ZH_HANS,
+                                theme = UserPreferencesTheme.LIGHT,
+                            )
+                )
+            )
             instructions.externalEdit("先给结论，再写关键依据。需要我的决定时，请指出最重要的取舍。")
             app.instructionsService = instructions.service
             app.updateOwner = owner
@@ -98,7 +105,30 @@ class ScreenshotScenario {
             backToSettings()
 
             tap(R.string.instructions_title)
-            checkNotNull(device.wait(Until.findObject(By.pkg(app.packageName).clazz("android.widget.EditText")), WAIT))
+            val editor =
+                checkNotNull(
+                    device.wait(
+                        Until.findObject(By.pkg(app.packageName).clazz("android.widget.EditText")),
+                        WAIT,
+                    )
+                )
+            editor.text = "先给结论，再写关键依据。需要我决定时，请列出最重要的取舍。"
+            checkNotNull(
+                device.wait(
+                    Until.findObject(
+                        By.pkg(app.packageName)
+                            .text(app.getString(R.string.instructions_save))
+                            .enabled(true)
+                    ),
+                    WAIT,
+                )
+            )
+            if (
+                instrumentation.uiAutomation.windows.any {
+                    it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD
+                }
+            )
+                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             capture("06-instructions.png")
             backToSettings()
 
@@ -130,11 +160,13 @@ class ScreenshotScenario {
             capture("11-large-type-palette.png")
         } catch (failure: Throwable) {
             runCatching {
-                ScreenshotCapture.capture("settings-capture-failure.png")
-                TestStorage().openOutputFile("settings-capture-hierarchy.xml").use {
-                    device.dumpWindowHierarchy(it)
+                    ScreenshotCapture.capture("settings-capture-failure.png")
+                    TestStorage().openOutputFile("settings-capture-hierarchy.xml").use {
+                        device.dumpWindowHierarchy(it)
+                    }
                 }
-            }.exceptionOrNull()?.let(failure::addSuppressed)
+                .exceptionOrNull()
+                ?.let(failure::addSuppressed)
             throw failure
         } finally {
             scenario?.close()
@@ -162,7 +194,13 @@ class ScreenshotScenario {
     private fun tap(label: Int) = waitForText(label).click()
 
     private fun tapDescription(label: Int) =
-        checkNotNull(device.wait(Until.findObject(By.pkg(app.packageName).desc(app.getString(label))), WAIT)).click()
+        checkNotNull(
+                device.wait(
+                    Until.findObject(By.pkg(app.packageName).desc(app.getString(label))),
+                    WAIT,
+                )
+            )
+            .click()
 
     private fun waitForText(label: Int) = waitForText(app.getString(label))
 
@@ -170,14 +208,17 @@ class ScreenshotScenario {
         val target = By.pkg(app.packageName).text(label)
         device.waitForIdle()
         if (!device.hasObject(target)) {
-            val reveal = object : Condition<UiObject2, Boolean> {
-                override fun apply(container: UiObject2) = device.hasObject(target)
-            }
+            val reveal =
+                object : Condition<UiObject2, Boolean> {
+                    override fun apply(container: UiObject2) = device.hasObject(target)
+                }
             val scroll = device.findObject(By.pkg(app.packageName).scrollable(true))
             if (scroll?.scrollUntil(Direction.UP, reveal) != true)
                 scroll?.scrollUntil(Direction.DOWN, reveal)
         }
-        return checkNotNull(device.wait(Until.findObject(target), WAIT)) { "Expected visible setting: $label" }
+        return checkNotNull(device.wait(Until.findObject(target), WAIT)) {
+            "Expected visible setting: $label"
+        }
     }
 
     private fun capture(file: String) {
@@ -186,8 +227,11 @@ class ScreenshotScenario {
     }
 
     private fun overrideValue(command: String) =
-        device.executeShellCommand(command).lineSequence()
-            .firstOrNull { it.startsWith("Override ") }?.substringAfter(": ")
+        device
+            .executeShellCommand(command)
+            .lineSequence()
+            .firstOrNull { it.startsWith("Override ") }
+            ?.substringAfter(": ")
 
     private fun setWindow(size: String, density: String, font: String) {
         device.executeShellCommand("wm size $size")
@@ -195,38 +239,62 @@ class ScreenshotScenario {
         device.executeShellCommand("settings put system font_scale $font")
     }
 
-    private fun awaitWindow(scenario: ActivityScenario<MainActivity>, width: IntRange, font: Float) {
-        assertTrue(device.wait(object : Condition<UiDevice, Boolean> {
-            override fun apply(device: UiDevice): Boolean {
-                var ready = false
-                scenario.onActivity { activity ->
-                    val configuration = activity.resources.configuration
-                    ready = configuration.screenWidthDp in width && configuration.fontScale == font &&
-                        configuration.locales[0].toLanguageTag().startsWith("zh")
-                }
-                return ready
-            }
-        }, WAIT) == true)
+    private fun awaitWindow(
+        scenario: ActivityScenario<MainActivity>,
+        width: IntRange,
+        font: Float,
+    ) {
+        assertTrue(
+            device.wait(
+                object : Condition<UiDevice, Boolean> {
+                    override fun apply(device: UiDevice): Boolean {
+                        var ready = false
+                        scenario.onActivity { activity ->
+                            val configuration = activity.resources.configuration
+                            ready =
+                                configuration.screenWidthDp in width &&
+                                    configuration.fontScale == font &&
+                                    configuration.locales[0].toLanguageTag().startsWith("zh")
+                        }
+                        return ready
+                    }
+                },
+                WAIT,
+            ) == true
+        )
     }
 
     private fun updates(finish: CompletableDeferred<File>): AppUpdates {
-        val release = AndroidUpdatesRelease(
-            "99.0.0", 24, 42_000_000, "a".repeat(64),
-            "https://static.okou.io/android-updates/releases/99.0.0/${"a".repeat(64)}.apk", "",
-        )
+        val release =
+            AndroidUpdatesRelease(
+                "99.0.0",
+                24,
+                42_000_000,
+                "a".repeat(64),
+                "https://static.okou.io/android-updates/releases/99.0.0/${"a".repeat(64)}.apk",
+                "",
+            )
         return AppUpdates(
             object : UpdateService {
                 override suspend fun initialize() = Unit
+
                 override suspend fun check() = AndroidUpdates(null, release)
+
                 override suspend fun recover(release: AndroidUpdatesRelease): File? = null
-                override suspend fun download(release: AndroidUpdatesRelease, progress: (Long) -> Unit): File {
+
+                override suspend fun download(
+                    release: AndroidUpdatesRelease,
+                    progress: (Long) -> Unit,
+                ): File {
                     progress(release.size / 2)
                     return finish.await()
                 }
+
                 override fun close() = Unit
             },
             object : UpdateStore {
                 override suspend fun load(): UpdateRecord? = null
+
                 override suspend fun save(record: UpdateRecord) = Unit
             },
             BuildConfig.VERSION_NAME,

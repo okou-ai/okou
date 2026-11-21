@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -36,6 +37,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -67,6 +69,13 @@ internal fun PersonalInstructionsSettings(
         }
     }
     val title = stringResource(R.string.instructions_title)
+    val editing =
+        if (
+            state.phase != InstructionsPhase.Unavailable &&
+                (state.saved != null || state.draft != null)
+        )
+            rememberJournalEditor(state.content, replacementSelection = TextRange.Zero)
+        else null
     fun save() {
         closeAfterSave = true
         model.save()
@@ -93,13 +102,24 @@ internal fun PersonalInstructionsSettings(
                     enabled = !offline && (state.canSave || state.canRetrySave),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.heightIn(min = 48.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.inverseSurface,
+                            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                        ),
                 ) {
                     Text(
                         stringResource(
                             if (state.phase == InstructionsPhase.Saving) R.string.settings_saving
                             else if (state.canRetrySave) R.string.instructions_retry_save
                             else R.string.instructions_save
-                        )
+                        ),
+                        style =
+                            MaterialTheme.typography.labelLarge.copy(
+                                fontSize = 13.sp,
+                                lineHeight = 20.sp,
+                            ),
                     )
                 }
             }
@@ -109,15 +129,11 @@ internal fun PersonalInstructionsSettings(
             Modifier.fillMaxWidth().testTag("personal_instructions"),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            val haveEditor =
-                state.phase != InstructionsPhase.Unavailable &&
-                    (state.saved != null || state.draft != null)
-            if (haveEditor) {
-                val editing =
-                    rememberJournalEditor(state.content, replacementSelection = TextRange.Zero)
+            if (editing != null) {
                 OutlinedTextField(
                     value = editing.value,
                     onValueChange = { value ->
+                        if (value.text != state.content) closeAfterSave = false
                         editing.edit(value)
                         model.edit(value.text)
                     },
@@ -135,7 +151,7 @@ internal fun PersonalInstructionsSettings(
                 )
             }
             val loading =
-                !haveEditor &&
+                editing == null &&
                     state.phase in setOf(InstructionsPhase.Idle, InstructionsPhase.Loading)
             if (loading && !offline) {
                 var showSkeleton by remember { mutableStateOf(false) }
@@ -221,8 +237,12 @@ private fun InstructionsAction(label: Int, action: () -> Unit, enabled: Boolean)
         onClick = action,
         enabled = enabled,
         modifier = Modifier.heightIn(min = 48.dp),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
-        Text(stringResource(label))
+        Text(
+            stringResource(label),
+            style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp, lineHeight = 20.sp),
+        )
     }
 }

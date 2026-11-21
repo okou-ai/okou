@@ -26,7 +26,7 @@ internal fun SettingsPage(scroll: ScrollState, content: @Composable () -> Unit) 
                 Modifier.widthIn(max = 720.dp)
                     .fillMaxWidth()
                     .verticalScroll(scroll)
-                    .padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 32.dp),
+                    .padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
                 content()

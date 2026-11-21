@@ -320,7 +320,10 @@ class SessionModelTest {
             val restored = requireNotNull(model.uiState.value.ready)
             assertEquals("org-a", restored.identity.workspaceId)
             assertNotSame(original.chats, restored.chats)
-            assertEquals(ai.okou.android.chat.ChatListFilter.Muted, restored.chats.uiState.value.filter)
+            assertEquals(
+                ai.okou.android.chat.ChatListFilter.Muted,
+                restored.chats.uiState.value.filter,
+            )
         }
     }
 

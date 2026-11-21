@@ -4,8 +4,7 @@ import ai.okou.android.auth.SessionModel
 import ai.okou.android.instructions.InstructionsPhase
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import android.view.KeyEvent
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
+import android.view.accessibility.AccessibilityWindowInfo
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
@@ -114,12 +113,10 @@ class NativeInstructionsTest {
                     device.wait(
                         object : Condition<UiDevice, Boolean> {
                             override fun apply(unused: UiDevice): Boolean {
-                                var actual = false
-                                checkNotNull(scenario).onActivity {
-                                    actual =
-                                        ViewCompat.getRootWindowInsets(it.window.decorView)
-                                            ?.isVisible(WindowInsetsCompat.Type.ime()) == true
-                                }
+                                val actual =
+                                    instrumentation.uiAutomation.windows.any {
+                                        it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD
+                                    }
                                 return actual == visible
                             }
                         },

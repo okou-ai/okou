@@ -98,7 +98,7 @@ class UpdateRootTest {
         app.fixture.heldCheck!!.complete(Unit)
         compose.waitUntil(10_000) { app.updates.state.value.available }
         compose.onNodeWithText("View update").performClick()
-        compose.onNodeWithText("A useful update").assertExists()
+        compose.onNodeWithText(app.getString(R.string.updates_version, "99.0.0")).assertExists()
         compose.onNodeWithText("Download update").performSemanticsAction(SemanticsActions.OnClick)
         compose.waitUntil(10_000) { app.fixture.progress != null }
         app.fixture.progress!!(617)
@@ -149,8 +149,8 @@ class UpdateRootTest {
             compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.OnClick)
             compose.activityRule.scenario.onActivity { it.onWindowFocusChanged(true) }
             finishDownload()
-            compose.onNodeWithText("Allow update installation").assertIsDisplayed()
-            compose.onNodeWithText("Later").performSemanticsAction(SemanticsActions.OnClick)
+            assertNoPlatformLaunch()
+            compose.onNodeWithText("Allow update installation").assertDoesNotExist()
             openDetails.performClick()
             val ready = compose.onNodeWithText("Continue installation")
             assertEquals(actionBounds, ready.assertIsDisplayed().getUnclippedBoundsInRoot())
