@@ -30,14 +30,21 @@ export function createThreadProjectContext(
     const refs = picked.userMessage
       ? userMessageReferences(picked.userMessage).projects
       : [];
+    const available = new Map(
+      picked.preparation.projectReferences?.map((project) => {
+        return [project.id, project] as const;
+      }),
+    );
     const ids = [
       ...new Set([
         ...refs.map((ref) => {
-          return ref.projectId;
+          return ref.projectId.toLowerCase();
         }),
         ...(picked.thread.projectId ? [picked.thread.projectId] : []),
       ]),
-    ];
+    ].filter((id) => {
+      return !available.has(id);
+    });
     const rows = ids.length
       ? await get(db$)
           .select({ id: projects.id, name: projects.name })
@@ -50,19 +57,18 @@ export function createThreadProjectContext(
             ),
           )
       : [];
+    for (const row of rows) {
+      available.set(row.id, row);
+    }
     return {
-      current:
-        rows.find((project) => {
-          return project.id === picked.thread.projectId;
-        }) ?? null,
+      current: picked.thread.projectId
+        ? (available.get(picked.thread.projectId) ?? null)
+        : null,
       references: refs.map((ref) => {
         return {
           projectId: ref.projectId,
           nameSnapshot: ref.nameSnapshot,
-          currentName:
-            rows.find((project) => {
-              return project.id === ref.projectId;
-            })?.name ?? null,
+          currentName: available.get(ref.projectId.toLowerCase())?.name ?? null,
         };
       }),
     };

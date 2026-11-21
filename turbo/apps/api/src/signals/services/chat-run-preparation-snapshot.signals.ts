@@ -246,6 +246,9 @@ export function createChatRunPreparationSnapshot(
       preparation: {
         isOfficialWorkflowThread: row.isOfficialWorkflowThread,
         captureNetworkBodies: row.captureNetworkBodies,
+        ...(owned?.projectReferences
+          ? { projectReferences: owned.projectReferences }
+          : {}),
       },
     };
     return { ...snapshot, pickedEvent };

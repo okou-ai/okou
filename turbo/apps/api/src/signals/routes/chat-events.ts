@@ -19,7 +19,7 @@ import {
   handleSendChatEvent$,
   chatEnqueueTiming$,
 } from "../services/chat-events.command";
-import { projectReferencesAvailable } from "../services/project-reference.service";
+import { captureProjectReferences } from "../services/project-reference.service";
 import {
   hasEmptySuggestionNote,
   suggestionFeedbacks,
@@ -49,14 +49,17 @@ export const sendValidatedChatEvent$ = command(
       return resourceUnavailable("Insufficient scope");
     }
     const timing = get(chatEnqueueTiming$);
-    if (
-      !(await measureChatEnqueue(timing, "references", () => {
-        return get(projectReferencesAvailable(auth, data.userMessage));
-      }))
-    ) {
+    const projectReferences = await measureChatEnqueue(
+      timing,
+      "references",
+      () => {
+        return get(captureProjectReferences(auth, data.userMessage));
+      },
+    );
+    signal.throwIfAborted();
+    if (projectReferences === null) {
       return notFound("Project or conversation not found");
     }
-    signal.throwIfAborted();
     const candidate =
       auth.tokenType === "session" &&
       data.userMessage &&
@@ -99,7 +102,7 @@ export const sendValidatedChatEvent$ = command(
     }
     const result = await set(
       handleSendChatEvent$,
-      { body: data, projectId },
+      { body: data, projectId, projectReferences },
       signal,
     );
     if (custom && result.status === 201 && data.clientEventId) {
