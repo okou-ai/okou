@@ -753,6 +753,7 @@ class ChatListModel(
         val readSession =
             if (action == ChatRowAction.MarkUnread) history.readSessionFor(threadId) else null
         val acknowledgement = readSession?.pendingAutomaticRead
+        val connectivityAtPress = connectivityGeneration
         val intent =
             if (!action.updatesChat) {
                 ChatReadIntent(action, state.displayUnreadAt?.get(threadId))
@@ -819,11 +820,12 @@ class ChatListModel(
                     acknowledgement?.join()
                     requireCurrent()
                     if (undoRequest != null) {
-                        // Marking unread can wait behind an automatic read acknowledgement.
+                        // A disconnect while waiting for automatic read requires a fresh press.
                         val latest = mutable.value
                         val interrupted =
                             when {
-                                latest.offline -> ChatUndoPhase.Offered
+                                connectivityAtPress != connectivityGeneration ->
+                                    ChatUndoPhase.Offered
                                 latest.undoTarget(undoRequest) == null -> ChatUndoPhase.Failed
                                 else -> null
                             }

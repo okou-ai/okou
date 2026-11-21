@@ -565,7 +565,7 @@ class ChatListModelTest {
     }
 
     @Test
-    fun anUndoInterruptedBeforeTheWritePreservesAutomaticReadsInTheOpenConversation() = runTest {
+    fun reconnectingBeforeAnUndoCanSendStillRequiresAnotherPress() = runTest {
         val connectivity = MutableStateFlow(true)
         val displayedRead = CompletableDeferred<Unit>()
         val unread =
@@ -631,12 +631,15 @@ class ChatListModelTest {
             assertEquals(ChatUndoPhase.Checking, model.uiState.value.rowUndo?.phase)
             connectivity.value = false
             runCurrent()
+            assertTrue(model.uiState.value.offline)
+            connectivity.value = true
+            runCurrent()
+            assertFalse(model.uiState.value.offline)
             displayedRead.complete(Unit)
             advanceUntilIdle()
             assertSame(offer, model.uiState.value.rowUndo)
             assertEquals(0, inverseWrites)
 
-            connectivity.value = true
             latestReply = HistoryCursor("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", 38)
             history.refresh()
             advanceUntilIdle()
@@ -644,6 +647,11 @@ class ChatListModelTest {
             advanceUntilIdle()
             assertEquals(3, reads)
             assertEquals(0, inverseWrites)
+
+            model.undoRowAction(offer)
+            advanceUntilIdle()
+            assertEquals(1, inverseWrites)
+            assertNull(model.uiState.value.rowUndo)
         }
     }
 
