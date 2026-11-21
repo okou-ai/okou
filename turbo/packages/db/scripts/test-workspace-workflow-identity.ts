@@ -85,10 +85,24 @@ export async function validateWorkspaceWorkflowIdentity(databaseUrl: string) {
       >`DELETE FROM workflows WHERE org_id = ${org} AND id <> ${hidden.id} RETURNING agent_id`;
       assert.equal(retained.length, 2);
     }
-    await sql`UPDATE workflows SET owner_user_id = 'other' WHERE id = ${hidden.id}`;
-    assert.equal((await sql.unsafe(audit))[0]?.problem, "two_private_readers");
-    await assert.rejects(migrate(), /two distinct legacy private readers/);
-    await sql`UPDATE workflows SET owner_user_id = 'owner' WHERE id = ${hidden.id}`;
+    const [shared] =
+      await sql`INSERT INTO workflows (org_id, agent_id, owner_user_id, name, visibility, created_by, updated_by)
+      VALUES (${org}, ${personal}, 'other', 'shared', 'public', 'other', 'other') RETURNING id`;
+    assert.ok(shared);
+    await sql`UPDATE workflows SET org_id = 'foreign' WHERE id = ${shared.id}`;
+    assert.equal((await sql.unsafe(audit))[0]?.problem, "foreign_workspace");
+    await assert.rejects(migrate(), /foreign workspace/);
+    await sql`UPDATE workflows SET org_id = ${org} WHERE id = ${shared.id}`;
+    const [duplicate] =
+      await sql`INSERT INTO workflows (org_id, agent_id, owner_user_id, name, visibility, created_by, updated_by)
+      VALUES (${org}, ${first}, 'owner', 'shared', 'public', 'owner', 'owner') RETURNING id`;
+    assert.ok(duplicate);
+    assert.equal((await sql.unsafe(audit))[0]?.problem, "public_name");
+    await assert.rejects(migrate(), {
+      code: "23505",
+      constraint_name: "idx_workflows_public_org_name_unique",
+    });
+    await sql`DELETE FROM workflows WHERE id = ${duplicate.id}`;
     await sql`UPDATE org_metadata SET default_agent_id = ${second} WHERE org_id = ${org}`;
     assert.equal((await sql.unsafe(audit))[0]?.problem, "default_executor");
     await assert.rejects(migrate(), /default executor differs/);
@@ -103,6 +117,10 @@ export async function validateWorkspaceWorkflowIdentity(databaseUrl: string) {
       await sql`SELECT owner_user_id, visibility FROM workflows WHERE id = ${hidden.id}`;
     assert.equal(after?.owner_user_id, "owner");
     assert.equal(after?.visibility, "private");
+    const [published] =
+      await sql`SELECT owner_user_id, visibility FROM workflows WHERE id = ${shared.id}`;
+    assert.equal(published?.owner_user_id, "other");
+    assert.equal(published?.visibility, "public");
     const columns = await sql`SELECT column_name FROM information_schema.columns
       WHERE table_schema = 'public' AND (table_name, column_name) IN
       (('workflows', 'agent_id'), ('org_metadata', 'default_agent_id'))`;

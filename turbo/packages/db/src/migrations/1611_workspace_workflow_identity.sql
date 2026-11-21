@@ -4,15 +4,14 @@ ALTER TABLE "org_metadata" DROP CONSTRAINT "org_metadata_default_agent_id_agents
 --> statement-breakpoint
 ALTER TABLE "workflows" DROP CONSTRAINT "workflows_agent_id_agents_id_fk";
 --> statement-breakpoint
--- These rows previously derived visibility or shared execution authority from
--- their Agent. Require an explicit resolution instead of broadening access.
+-- Verify workspace boundaries and the shared bootstrap identity before cutover.
 DO $scope$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM workflows w JOIN agents a ON a.id = w.agent_id
-    WHERE w.org_id <> a.org_id OR (w.visibility = 'public' AND a.visibility = 'private' AND w.owner_user_id <> a.owner)
+    WHERE w.org_id <> a.org_id
   ) THEN
-    RAISE EXCEPTION 'Workflow has a foreign workspace or two distinct legacy private readers'
+    RAISE EXCEPTION 'Workflow has a foreign workspace'
       USING HINT = 'Review scripts/audit-workspace-workflow-identity.sql before retrying.';
   END IF;
   IF EXISTS (
