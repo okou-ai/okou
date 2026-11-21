@@ -637,6 +637,12 @@ class NativeRealtimeTest {
                     .setResponseCode(201)
             }
             external.invalidate(ChatChanges(messageThreads = setOf(CHAT_PERSONAL)))
+            condition("Failed run is available in the conversation") {
+                chats?.history?.uiState?.value?.transcript?.messages?.any {
+                    it.runId == recoveryRun && it.status == "run.failed"
+                } == true
+            }
+            device.findObject(label(app.getString(R.string.conversation_view_progress)))?.click()
             reveal(app.getString(R.string.recovery_continue))
             text(app.getString(R.string.recovery_continue)).click()
             condition { recovery.inputs.size == 1 }

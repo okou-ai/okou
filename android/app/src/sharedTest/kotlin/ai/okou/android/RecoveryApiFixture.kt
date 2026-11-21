@@ -74,6 +74,31 @@ class RecoveryApiFixture(api: ChatListApiFixture) {
                 """{"rows":$rawRows,"cursor":{"lastEventId":${last?.let { JsonPrimitive(it.id) } ?: JsonNull},"lastSeqId":${last?.seqId ?: 0}},"hasMore":false}"""
             )
         }
+        api.historyCatchUp = { request ->
+            val history = rows.get()
+            val cursors = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonArray
+            val events =
+                cursors.associate { cursor ->
+                    val (id, sequence) = cursor.jsonArray
+                    val thread = id.jsonPrimitive.content
+                    val after = sequence.jsonPrimitive.long
+                    thread to
+                        JsonArray(
+                            history
+                                .filter { it.threadId == thread && it.seqId > after }
+                                .map { Json.parseToJsonElement(it.archiveJson()) }
+                        )
+                }
+            jsonResponse(
+                JsonObject(
+                        mapOf(
+                            "events" to JsonObject(events),
+                            "notFoundThreads" to JsonArray(emptyList()),
+                        )
+                    )
+                    .toString()
+            )
+        }
     }
 
     private fun read(body: String) =
