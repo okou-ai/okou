@@ -141,10 +141,9 @@ def test_legacy_x_json_fallback_ignores_boolean_result_count(x_usage, tmp_path, 
     payloads = x_usage.call_and_get_billing(flow)
 
     assert payloads == []
-    if jsonl_exists_after_flush(proxy_log):
-        entries = read_jsonl_entries_after_flush(proxy_log)
-        assert all(entry["level"] != "error" for entry in entries)
-        assert all("unparseable" not in entry["message"].lower() for entry in entries)
+    entries = read_jsonl_entries_after_flush(proxy_log, missing_ok=True)
+    assert all(entry["level"] != "error" for entry in entries)
+    assert all("unparseable" not in entry["message"].lower() for entry in entries)
 
 
 def test_truncated_buffer_with_no_hints_skips_billing(x_usage, tmp_path, real_flow):
