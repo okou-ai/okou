@@ -238,7 +238,6 @@ interface FeishuRunFixture extends FeishuInstallationFixture {
     readonly subscriptionId: string;
   };
   readonly runnerGroup: string;
-  readonly alternateAgentId: string;
 }
 
 function messageContent(message: CapturedFeishuMessage): string {
@@ -1252,17 +1251,9 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       onboarding.defaultAgentId,
       "Expected the normal default Agent",
     );
-    const [defaultAgent, alternateAgent] = await Promise.all([
-      own(() => {
-        return authOrgApi.readAgent(actor, defaultAgentId);
-      }),
-      own(() => {
-        return authOrgApi.createAgent(actor, {
-          displayName: "Feishu alternate agent",
-          visibility: "public",
-        });
-      }),
-    ]);
+    const defaultAgent = await own(() => {
+      return authOrgApi.readAgent(actor, defaultAgentId);
+    });
     const subscription = await grantEntitlement(actor);
     await own(() => {
       return runsApi.ensurePersonalSubscriptionModel(actor, {
@@ -1281,7 +1272,6 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       callbackUrl,
       installationId,
       defaultAgentId: defaultAgent.agentId,
-      alternateAgentId: alternateAgent.agentId,
     };
   }
 
