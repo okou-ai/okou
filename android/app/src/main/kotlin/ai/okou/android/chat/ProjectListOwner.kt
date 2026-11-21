@@ -139,11 +139,13 @@ internal class ProjectListOwner(
         }
     }
 
-    private fun hasProjectReceipt(eventId: String): Boolean =
-        confirmedProjects?.checkpoint?.let { checkpoint ->
-            checkpoint.archive.latestEventId == eventId ||
-                checkpoint.events.any { it.id == eventId }
-        } == true
+    private fun hasProjectReceipt(
+        eventId: String,
+        checkpoint: ProjectCheckpoint? = confirmedProjects?.checkpoint,
+    ): Boolean =
+        checkpoint != null &&
+            (checkpoint.archive.latestEventId == eventId ||
+                checkpoint.events.any { it.id == eventId })
 
     private fun publishProjects(
         rows: List<ConfirmedProject>,
@@ -270,9 +272,21 @@ internal class ProjectListOwner(
                                     rename.eventId in appliedEvents
                             }
                         }
+                        val snapshot = state
+                        val renameRejection =
+                            snapshot.renameRejection?.takeUnless {
+                                // A newer disk checkpoint can omit a receipt from this read.
+                                hasProjectReceipt(it.eventId) ||
+                                    (saved !== candidate &&
+                                        hasProjectReceipt(it.eventId, candidate.checkpoint))
+                            }
                         publishProjects(
                             rows,
-                            state.copy(phase = ChatReadPhase.Ready, source = ChatListSource.Network),
+                            snapshot.copy(
+                                phase = ChatReadPhase.Ready,
+                                source = ChatListSource.Network,
+                                renameRejection = renameRejection,
+                            ),
                         )
                     } catch (cancelled: CancellationException) {
                         throw cancelled
