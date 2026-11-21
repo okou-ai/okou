@@ -4,7 +4,7 @@ import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-conn
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { onboardingDraftContract } from "@okouai/api-contracts/contracts/onboarding";
-import { mockNow } from "../../../__tests__/time.ts";
+import { mockNow } from "../../../lib/time.ts";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
