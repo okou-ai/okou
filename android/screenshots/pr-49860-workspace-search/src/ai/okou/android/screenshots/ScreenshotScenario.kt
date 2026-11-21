@@ -109,6 +109,7 @@ class ScreenshotScenario {
         val finalReply = "Final launch reply"
         val hiddenReply = "Unrelated process is hidden"
         val olderRun = "bc1564cb-c2d4-49b1-8758-fe4e6e403e32"
+        fixture.indicators = { jsonResponse("""{"agents":{},"threads":{},"unreadAt":{}}""") }
         fixture.events = { request ->
             if (request.requestUrl?.queryParameter("sinceSeqId") != null) {
                 jsonResponse("""{"events":[],"hasMore":false}""")
@@ -210,10 +211,17 @@ class ScreenshotScenario {
                 }
                 fun openSearch() {
                     button(R.string.chat_search_workspace).click()
-                    tab(R.string.chat_search_all)
-                    field()
+                    text(label(R.string.chat_search_all))
+                    get(By.pkg(app.packageName).clazz("android.widget.EditText").focused(true))
                 }
                 try {
+                    device.awaitChatList(app)
+                    if (!device.hasObject(By.pkg(app.packageName).text(projectTitle))) {
+                        text("Research").click()
+                    }
+                    text(projectTitle).click()
+                    text(finalReply)
+                    button(R.string.back).click()
                     device.awaitChatList(app)
                     text(title).click()
                     text(finalReply)
@@ -222,7 +230,7 @@ class ScreenshotScenario {
                     device.awaitChatList(app)
                     openSearch()
                     text(label(R.string.chat_search_recently_opened))
-                    text(title)
+                    assertTrue(text(title).visibleBounds.top < text(projectTitle).visibleBounds.top)
                     hideKeyboard()
                     capture("search-recent.png")
 
