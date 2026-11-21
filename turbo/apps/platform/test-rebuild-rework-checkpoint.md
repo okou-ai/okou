@@ -2558,3 +2558,11 @@ Historical first acceptances total 1,190/2,681. Current full coverage is 1,173/2
 ### Batch 65 final main synchronization
 
 Main advanced to `28d20b2ff00e817cb96b938189395c02265f3642`. Upstream #49883 raised the API's supported web-client floor to 0.1162.3 and added zero Platform test rows. After the merge, seed 6549883 passed all 30 accepted IDs across their seven complete files. The production version predicate rejected 0.1162.2 and accepted 0.1162.3, 0.1162.3+build.1 and 0.1162.4.
+
+### Batch 65 quality recheck
+
+The previous implementation at `26fd7939c2` did not establish that the Docs click opened a new tab. The Docs clause of sidebar-account-menu-006 returned to pending while the Shortcuts assertion and full BDD stayed in place. On recheck, a real click created a separate happy-dom browser page at exactly `https://www.okou.ai/en/docs`, with the external HTTP request intercepted. Adding only preventDefault left the new-page list empty and failed this assertion.
+
+The org-members-tab-003/018/019/027 callers now scope assertions to the appropriate accessible group named for the member or applicant's email. With an extra span wrapping each email, all 15 People tests passed, including Bob's role and available action in 019. For org-general-tab-005, discard restored Old Name without sending an update. Save showed New Name and confirmation, and a new Router runtime in the same workspace read New Name from the service. A service that acknowledged without persisting failed precisely at readback. The number of saves is unconstrained.
+
+Removing the production quota and invitation refreshes independently broke the corresponding completion checks for org-switcher-actions-001/003. After restoring all controls, all 23 rows in the four files passed in shuffled order (seed 66001). All reviewed IDs retain their original historical acceptance. The restored complete coverage is 1,173/2,681; the historical total is 1,190/2,681. This quality pass adds zero. [Per-ID experiment results](https://app.okou.ai/artifacts/j4g4zhy94v.md).

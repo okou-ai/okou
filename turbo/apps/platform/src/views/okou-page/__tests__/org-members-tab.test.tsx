@@ -261,12 +261,7 @@ function roleChanges() {
   });
 }
 function memberRow(email: string) {
-  const row =
-    screen.getByText(email).parentElement?.parentElement?.parentElement;
-  if (!row) {
-    throw new Error("Missing People row for " + email);
-  }
-  return within(row);
+  return within(screen.getByRole("group", { name: email }));
 }
 test("org-members-tab-019 Promoting Bob updates his row and reverses his available role action", async () => {
   roster();

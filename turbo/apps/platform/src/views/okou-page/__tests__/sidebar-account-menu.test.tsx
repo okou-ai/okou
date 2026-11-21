@@ -1,6 +1,7 @@
-import { screen, within } from "@testing-library/react";
+import { DetachedBrowserContext } from "happy-dom";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { test, expect } from "vitest";
+import { test, expect, vi } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 const context = testContext();
@@ -25,13 +26,19 @@ test("sidebar-account-menu-006 Help offers the public documentation in a separat
     await userEvent.click(within(root).getByText("Help"));
     return screen.findByText("Docs");
   };
-  const docs = (await help()).closest("a");
-  expect(docs).toHaveAttribute("href", "https://www.okou.ai/en/docs");
-  expect(docs).toHaveAttribute("target", "_blank");
-  if (!docs) {
-    throw new Error("Missing documentation link");
-  }
+  const docs = await help();
+  const tabs = vi.spyOn(DetachedBrowserContext.prototype, "newPage");
   await userEvent.click(docs);
+  await waitFor(() => {
+    expect(
+      tabs.mock.results.map(({ value }) => {
+        return value.url;
+      }),
+    ).toContain("https://www.okou.ai/en/docs");
+  });
+  for (const { value: tab } of tabs.mock.results) {
+    await tab.close();
+  }
   await help();
   click(screen.getByText("Shortcuts"));
   const reference = await screen.findByRole("dialog", {

@@ -1077,7 +1077,11 @@ function MemberRow({
     isAdmin && isCurrentUser && member.role === "admin" && !isOnlyAdmin;
 
   return (
-    <div className={cn(memberRowGrid(showUsagePack), "py-3 px-5")}>
+    <div
+      role="group"
+      aria-label={member.email}
+      className={cn(memberRowGrid(showUsagePack), "py-3 px-5")}
+    >
       <div className="flex items-center gap-3 min-w-0">
         <UserAvatar
           imageUrl={member.imageUrl}
@@ -1653,7 +1657,11 @@ function MembershipRequestRow({
   };
 
   return (
-    <div className={cn(memberRowGrid(showUsagePack), "py-3 px-5")}>
+    <div
+      role="group"
+      aria-label={request.email}
+      className={cn(memberRowGrid(showUsagePack), "py-3 px-5")}
+    >
       <div className="flex items-center gap-3 min-w-0">
         <UserAvatar
           imageUrl={request.imageUrl}

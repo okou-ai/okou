@@ -1,10 +1,13 @@
 import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
 import { orgLogoContract } from "@okouai/api-contracts/contracts/org-logo";
-import { screen, within, waitFor } from "@testing-library/react";
+import { cleanup, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { test, expect } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import { action, findAction } from "./workspace-billing-fixtures.ts";
 const context = testContext();
 const workspace = {
@@ -13,10 +16,13 @@ const workspace = {
   role: "admin",
 } as const;
 const logo = "https://images.example.org/foundry.png";
-async function general() {
+function general() {
   context.mocks.data.org(workspace);
+  return visitGeneral(context);
+}
+async function visitGeneral(runtime: typeof context) {
   await setupPage({
-    context,
+    context: runtime,
     path: "/?settings=general",
     auth: {
       user: { id: "manager", fullName: "Marin" },
@@ -36,14 +42,17 @@ function existingLogo() {
 }
 test("org-general-tab-005 A discarded rename leaves the published profile intact until Save", async () => {
   existingLogo();
+  let profile = { ...workspace, name: "Old Name" };
   const edits: string[] = [];
-  context.mocks.api(orgContract.update, ({ body, respond }) => {
-    edits.push(body.name ?? "");
-    const profile = { ...workspace, ...body };
-    context.mocks.data.org(profile);
+  context.mocks.api(orgContract.get, ({ respond }) => {
     return respond(200, profile);
   });
-  const field = await general();
+  context.mocks.api(orgContract.update, ({ body, respond }) => {
+    edits.push(body.name ?? "");
+    profile = { ...profile, name: body.name ?? profile.name };
+    return respond(200, profile);
+  });
+  const field = await visitGeneral(context);
   expect(field).toHaveValue("Old Name");
   await expect(
     within(screen.getByRole("dialog")).findByRole("img", {
@@ -59,8 +68,12 @@ test("org-general-tab-005 A discarded rename leaves the published profile intact
   await expect(
     screen.findByText("Workspace updated"),
   ).resolves.toBeInTheDocument();
-  expect(edits).toStrictEqual(["New Name"]);
   expect(field).toHaveValue("New Name");
+  cleanup();
+  const reloaded = await visitGeneral(createTestRuntime(context));
+  await waitFor(() => {
+    expect(reloaded).toHaveValue("New Name");
+  });
 });
 test("org-general-tab-006 A rejected rename keeps the draft available for retry", async () => {
   context.mocks.api(orgContract.update, ({ respond }) => {
