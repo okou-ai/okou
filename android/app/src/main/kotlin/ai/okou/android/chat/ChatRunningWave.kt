@@ -24,7 +24,6 @@ internal const val STATIC_RUNNING_FRAME = -1L
 private const val WAVE_ROWS = 12
 private const val ROW_DELAY_NANOS = 200_000_000L
 private const val CYCLE_NANOS = WAVE_ROWS * ROW_DELAY_NANOS
-private val centerEasing = CubicBezierEasing(0.33f, 0f, 0.66f, 1f)
 private val rippleEasing = CubicBezierEasing(0f, 0f, 0.58f, 1f)
 
 @Composable
@@ -74,9 +73,9 @@ internal fun DrawScope.drawRunningWave(color: Color, frameNanos: Long, row: Int)
     }
     val phase = runningWavePhase(frameNanos, row)
     val peak = 0.52f
-    val centerAmount =
-        if (phase < peak) centerEasing.transform(phase / peak)
-        else 1f - centerEasing.transform((phase - peak) / (1f - peak))
+    val centerProgress = if (phase < peak) phase / peak else (1f - phase) / (1f - peak)
+    // Smoothstep avoids the cubic Bézier solver's failures near the segment endpoints.
+    val centerAmount = centerProgress * centerProgress * (3f - 2f * centerProgress)
     drawCircle(
         color,
         radius = 4.5.dp.toPx() * (0.64f + 0.24f * centerAmount),
