@@ -6,6 +6,7 @@ import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
 import ai.okou.android.currentWindowSizeDp
 import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -30,8 +31,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -54,6 +53,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
@@ -104,6 +104,8 @@ internal fun ChatListScreen(
     openProvisional: (ProvisionalChat) -> Unit,
     performRowAction: (String, ChatRowAction) -> Unit,
     renameThread: (String, String) -> Unit,
+    renameProject: (String, String) -> Unit,
+    retryProjectRename: (String) -> Unit,
     projectExpansion: ProjectExpansionModel?,
     listState: LazyListState,
     newChat: (String?) -> Unit,
@@ -115,6 +117,31 @@ internal fun ChatListScreen(
     feedback: @Composable () -> Unit,
 ) {
     var renamingId by remember { mutableStateOf<String?>(null) }
+    var renamingProjectId by remember { mutableStateOf<String?>(null) }
+    val projectToRename = state.projects.firstOrNull { it.id == renamingProjectId }
+    val canRenameProject =
+        state.projectsSource == ChatListSource.Network &&
+            !state.offline &&
+            state.renamingProjectId == null
+    if (projectToRename != null) {
+        key(projectToRename.id) {
+            RenameListItemDialog(
+                currentName = projectToRename.name,
+                titleRes = R.string.chat_rename_project,
+                labelRes = R.string.chat_project_name,
+                confirmRes = R.string.chat_project_rename_save,
+                maxLength = 120,
+                enabled = canRenameProject,
+                dismiss = { renamingProjectId = null },
+                save = { name ->
+                    renameProject(projectToRename.id, name)
+                    renamingProjectId = null
+                },
+            )
+        }
+    } else if (renamingProjectId != null && state.projectsPhase == ChatReadPhase.Ready) {
+        LaunchedEffect(renamingProjectId) { renamingProjectId = null }
+    }
     var deletingId by remember { mutableStateOf<String?>(null) }
     deletingId?.let { id ->
         val thread = state.threads.firstOrNull { it.id == id && it.hidden != true }
@@ -166,8 +193,10 @@ internal fun ChatListScreen(
         renamingId?.let { id -> state.threads.firstOrNull { it.id == id && it.hidden != true } }
     if (renaming != null) {
         key(renaming.id) {
-            RenameChatDialog(
-                currentTitle = renaming.title.orEmpty(),
+            RenameListItemDialog(
+                currentName = renaming.title.orEmpty(),
+                titleRes = R.string.chat_rename,
+                labelRes = R.string.chat_title_field,
                 enabled =
                     state.listPhase != ChatReadPhase.Failed &&
                         renaming.id !in state.pendingRowActions,
@@ -407,7 +436,22 @@ internal fun ChatListScreen(
                                     projectExpansion?.setExpanded(project.id, foldedStatus != null)
                                 },
                                 newChat = if (newChatEnabled) ({ newChat(project.id) }) else null,
+                                rename = { renamingProjectId = project.id },
+                                canRename = canRenameProject,
+                                renaming = state.renamingProjectId == project.id,
                             )
+                        }
+                        if (project.id in state.unconfirmedProjectRenames) {
+                            item(key = "project_rename_${project.id}") {
+                                Column(Modifier.projectChildIndent(outline)) {
+                                    ChatNotice(R.string.chat_project_rename_unconfirmed)
+                                    ChatAction(
+                                        R.string.retry,
+                                        { retryProjectRename(project.id) },
+                                        enabled = canRenameProject,
+                                    )
+                                }
+                            }
                         }
                         if (foldedStatus == null && group.threads.isEmpty() && pending.isEmpty()) {
                             item(key = "project_actions_${project.id}") {
@@ -531,24 +575,29 @@ private fun Modifier.projectChildIndent(color: Color): Modifier =
         .padding(start = 24.dp)
 
 @Composable
-private fun RenameChatDialog(
-    currentTitle: String,
+private fun RenameListItemDialog(
+    currentName: String,
+    @StringRes titleRes: Int,
+    @StringRes labelRes: Int,
     enabled: Boolean,
     dismiss: () -> Unit,
     save: (String) -> Unit,
+    maxLength: Int = Int.MAX_VALUE,
+    @StringRes confirmRes: Int = R.string.chat_rename_confirm,
 ) {
-    var input by remember { mutableStateOf(TextFieldValue(currentTitle)) }
-    val title = input.text.trim()
+    var input by remember { mutableStateOf(TextFieldValue(currentName)) }
+    val name = input.text.trim()
+    val canSave = enabled && name.length in 1..maxLength && name != currentName.trim()
     val foreground = MaterialTheme.colorScheme.onSurface
     AlertDialog(
         onDismissRequest = dismiss,
-        title = { Text(stringResource(R.string.chat_rename)) },
+        title = { Text(stringResource(titleRes)) },
         text = {
             OutlinedTextField(
                 value = input,
                 onValueChange = { input = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text(stringResource(R.string.chat_title_field)) },
+                label = { Text(stringResource(labelRes)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 colors =
@@ -559,13 +608,7 @@ private fun RenameChatDialog(
                     ),
             )
         },
-        confirmButton = {
-            ChatAction(
-                R.string.chat_rename_confirm,
-                { save(title) },
-                enabled = enabled && title.isNotEmpty() && title != currentTitle.trim(),
-            )
-        },
+        confirmButton = { ChatAction(confirmRes, { save(name) }, enabled = canSave) },
         dismissButton = { ChatAction(R.string.chat_rename_cancel, dismiss) },
     )
 }
@@ -580,6 +623,9 @@ private fun ProjectRow(
     row: Int,
     toggle: () -> Unit,
     newChat: (() -> Unit)?,
+    rename: () -> Unit,
+    canRename: Boolean,
+    renaming: Boolean,
 ) {
     val collapsed = activity != null
     val status = activity?.status ?: ChatRowStatus.None
@@ -591,16 +637,34 @@ private fun ProjectRow(
         listOfNotNull(
                 activity?.unread?.takeIf { it > 0 }?.let { "$unread ${number.format(it)}" },
                 activity?.running?.takeIf { it > 0 }?.let { "$running ${number.format(it)}" },
+                if (renaming) stringResource(R.string.chat_project_rename_pending) else null,
             )
             .joinToString()
-    var menuOpen by remember(newChat != null) { mutableStateOf(false) }
-    val openMenu: (() -> Unit)? = if (newChat != null) ({ menuOpen = true }) else null
+    var menuOpen by remember { mutableStateOf(false) }
+    val rowFocus = remember { FocusRequester() }
+    var rowFocused by remember { mutableStateOf(false) }
+    var restoreMenuFocus by remember { mutableStateOf(false) }
+    val openMenu: (() -> Unit)? =
+        if (newChat == null && !canRename) null
+        else
+            ({
+                restoreMenuFocus = rowFocused
+                menuOpen = true
+            })
+    LaunchedEffect(menuOpen) {
+        if (!menuOpen && restoreMenuFocus) {
+            restoreMenuFocus = false
+            rowFocus.requestFocus()
+        }
+    }
     Box {
         Row(
             Modifier.fillMaxWidth()
                 .heightIn(min = 52.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .contextMenuInput(openMenu)
+                .focusRequester(rowFocus)
+                .onFocusChanged { rowFocused = it.isFocused }
                 .combinedClickable(
                     role = Role.Button,
                     onClick = toggle,
@@ -659,19 +723,32 @@ private fun ProjectRow(
                 ChatStatusGlyph(status, runningFrame, row)
             }
         }
-        if (newChat != null) {
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.composer_new_project)) },
-                    leadingIcon = {
-                        Icon(painterResource(R.drawable.ic_edit_square), contentDescription = null)
-                    },
-                    onClick = {
+        if (menuOpen && openMenu != null) {
+            val items = buildList {
+                if (newChat != null)
+                    add(
+                        WorkspaceMenuItem(
+                            stringResource(R.string.composer_new_project),
+                            R.drawable.ic_edit_square,
+                        ) {
+                            restoreMenuFocus = false
+                            menuOpen = false
+                            newChat()
+                        }
+                    )
+                add(
+                    WorkspaceMenuItem(
+                        stringResource(R.string.chat_rename_confirm),
+                        R.drawable.ic_edit,
+                        enabled = canRename,
+                    ) {
+                        restoreMenuFocus = false
                         menuOpen = false
-                        newChat()
-                    },
+                        rename()
+                    }
                 )
             }
+            WorkspaceMenu(items, close = { menuOpen = false }, title = name)
         }
     }
 }

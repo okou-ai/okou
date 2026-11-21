@@ -56,4 +56,9 @@
     <string name="chat_delete_title">चैट हटाएं?</string>
     <string name="chat_delete_description">इससे यह चैट स्थायी रूप से हट जाएगी. इस चैट में वर्तमान में चल रहा कोई भी कार्य तुरंत बंद कर दिया जाएगा। इससे जुड़ी सभी ऑटोमेशन रोक दी जाएंगी। इस एक्शन को वापस नहीं किया जा सकता।</string>
     <string name="chat_delete_confirm">हटाएँ</string>
+    <string name="chat_rename_project">प्रोजेक्ट का नाम बदलें</string>
+    <string name="chat_project_name">प्रोजेक्ट का नाम</string>
+    <string name="chat_project_rename_unconfirmed">प्रोजेक्ट के नाम की पुष्टि नहीं हो सकी।</string>
+    <string name="chat_project_rename_save">सहेजें</string>
+    <string name="chat_project_rename_pending">प्रोजेक्ट का नाम बदला जा रहा है…</string>
 </resources>

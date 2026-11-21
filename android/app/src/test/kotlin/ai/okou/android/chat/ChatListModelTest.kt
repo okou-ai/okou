@@ -21,7 +21,11 @@ import ai.okou.android.api.generated.ChatSnapshotVariant1
 import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.IndicatorsThreadsValue
 import ai.okou.android.api.generated.ProjectEvents
+import ai.okou.android.api.generated.ProjectEventsEventsItem
+import ai.okou.android.api.generated.ProjectEventsEventsItemKind
 import ai.okou.android.api.generated.ProjectSnapshot
+import ai.okou.android.api.generated.ProjectSnapshotVariant1
+import ai.okou.android.api.generated.ProjectSnapshotVariant1ProjectsItem
 import ai.okou.android.api.generated.ReadState
 import ai.okou.android.api.generated.SendRequestVariant1
 import ai.okou.android.api.generated.ThreadDetail
@@ -2127,6 +2131,68 @@ class ChatListModelTest {
             store.clear()
             runCurrent()
             Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun observedProjectRenameStaysConfirmedWhenTheResponseIsLostOffline() = runTest {
+        val connected = MutableStateFlow(true)
+        val response = CompletableDeferred<Unit>()
+        var event: ProjectEventsEventsItem? = null
+        val service =
+            object : Service() {
+                override suspend fun projectSnapshot() =
+                    ProjectSnapshotVariant1(
+                        listOf(
+                            ProjectSnapshotVariant1ProjectsItem(
+                                CHAT_PROJECT,
+                                "Before",
+                                CHAT_DATE,
+                                CHAT_DATE,
+                            )
+                        ),
+                        latestEventId = null,
+                        latestSeqId = 0,
+                    )
+
+                override suspend fun renameProject(
+                    projectId: String,
+                    name: String,
+                    eventId: String,
+                ) {
+                    event =
+                        ProjectEventsEventsItem(
+                            id = eventId,
+                            seqId = 1,
+                            projectId = projectId,
+                            kind = ProjectEventsEventsItemKind.RENAMED,
+                            name = name,
+                            createdAt = CHAT_DATE,
+                        )
+                    response.await()
+                }
+
+                override suspend fun projectEvents(since: Long) =
+                    ProjectEvents(listOfNotNull(event?.takeIf { it.seqId > since }), false)
+            }
+        withCatchUpModel(service, connectivity = connected) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.renameProject(CHAT_PROJECT, "After")
+            runCurrent()
+            assertNotNull(event)
+            model.refreshMetadata()
+            advanceUntilIdle()
+            connected.value = false
+            runCurrent()
+            assertTrue(model.uiState.value.offline)
+            response.completeExceptionally(ApiFailure.Network(IOException("Lost Project response")))
+            advanceUntilIdle()
+
+            val state = model.uiState.value
+            assertEquals("After", state.projects.single().name)
+            assertNull(state.renamingProjectId)
+            assertTrue(state.unconfirmedProjectRenames.isEmpty())
         }
     }
 

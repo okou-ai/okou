@@ -55,4 +55,9 @@
     <string name="chat_delete_title">Hapus chat?</string>
     <string name="chat_delete_description">Ini akan menghapus chat ini secara permanen. Setiap tugas yang sedang berjalan di chat ini akan dihentikan segera. Semua automasi yang ditautkan akan dijeda. Tindakan ini tidak dapat dibatalkan.</string>
     <string name="chat_delete_confirm">Hapus</string>
+    <string name="chat_rename_project">Ganti nama proyek</string>
+    <string name="chat_project_name">Nama proyek</string>
+    <string name="chat_project_rename_unconfirmed">Nama proyek tidak dapat dikonfirmasi.</string>
+    <string name="chat_project_rename_save">Simpan</string>
+    <string name="chat_project_rename_pending">Mengganti nama proyek…</string>
 </resources>

@@ -16,6 +16,7 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -31,6 +32,7 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextInputSelection
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.text.TextLayoutResult
@@ -803,6 +805,81 @@ class ChatListRootTest {
         compose
             .onNodeWithText("Running chat")
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Active"))
+    }
+
+    @Test
+    fun projectRenameShowsOptimisticallyAndRetriesTheSameEvent() {
+        val app = compose.activity.application as ChatListApplication
+        val pending = CountDownLatch(1)
+        val writes = CopyOnWriteArrayList<String>()
+        val committed = AtomicReference<String?>()
+        app.fixture.commandResponse = { request ->
+            if (
+                request.method != "PATCH" ||
+                    request.requestUrl?.encodedPath != "/api/projects/$CHAT_PROJECT"
+            ) {
+                null
+            } else {
+                val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
+                check(body.getValue("name").jsonPrimitive.content == "Field notes")
+                val eventId = body.getValue("eventId").jsonPrimitive.content
+                writes.add(eventId)
+                when (writes.size) {
+                    1 -> {
+                        pending.await()
+                        MockResponse().setResponseCode(409)
+                    }
+                    2 ->
+                        jsonResponse(
+                            """{"id":"$CHAT_PROJECT","name":"Field notes","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}"""
+                        )
+                    else -> {
+                        committed.set(eventId)
+                        MockResponse().setResponseCode(503)
+                    }
+                }
+            }
+        }
+        app.fixture.projectEvents = { request ->
+            val event =
+                committed.get()?.takeIf { request.requestUrl?.queryParameter("sinceSeqId") == "0" }
+            val rows =
+                if (event == null) ""
+                else
+                    """{"id":"$event","seqId":1,"projectId":"$CHAT_PROJECT","kind":"renamed","name":"Field notes","createdAt":"$CHAT_DATE"}"""
+            jsonResponse("""{"events":[$rows],"hasMore":false}""")
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        try {
+            compose.onNodeWithText("Research").performTouchInput { longClick() }
+            compose.onNodeWithText("Rename").performClick()
+            compose.onNode(hasSetTextAction()).performTextReplacement("Field notes")
+            val beforeSave = System.currentTimeMillis()
+            compose.onNodeWithText("Save").performClick()
+            compose.waitUntil(10_000) { writes.size == 1 }
+            val operationId = UUID.fromString(writes.first())
+            val issuedAt = operationId.mostSignificantBits ushr 16
+            assertEquals(7, operationId.version())
+            assertEquals(2, operationId.variant())
+            assertTrue(issuedAt in beforeSave..System.currentTimeMillis())
+            compose.onNodeWithText("Field notes").assertIsDisplayed()
+        } finally {
+            pending.countDown()
+        }
+        val unconfirmed = "Could not confirm the Project name."
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText(unconfirmed).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("Research").assertIsDisplayed()
+        compose.onNodeWithText("Try again").performClick()
+        compose.waitUntil(10_000) { writes.size == 2 && currentList()?.renamingProjectId == null }
+        compose.onNodeWithText(unconfirmed).assertIsDisplayed()
+        compose.onNodeWithText("Try again").performClick()
+        compose.waitUntil(10_000) { writes.size == 3 && currentList()?.renamingProjectId == null }
+        assertEquals(List(3) { writes.first() }, writes.toList())
+        compose.onNodeWithText("Field notes").assertIsDisplayed()
+        compose.onNodeWithText(unconfirmed).assertDoesNotExist()
     }
 
     @Test

@@ -57,4 +57,9 @@
     <string name="chat_delete_title">Supprimer la discussion ?</string>
     <string name="chat_delete_description">Cela supprimera définitivement cette discussion. Toute tâche en cours dans cette discussion sera arrêtée immédiatement. Toutes les automatisations liées seront mises en pause. Cette action est irréversible.</string>
     <string name="chat_delete_confirm">Supprimer</string>
+    <string name="chat_rename_project">Renommer le projet</string>
+    <string name="chat_project_name">Nom du projet</string>
+    <string name="chat_project_rename_unconfirmed">Impossible de confirmer le nom du projet.</string>
+    <string name="chat_project_rename_save">Enregistrer</string>
+    <string name="chat_project_rename_pending">Renommage du projet…</string>
 </resources>
