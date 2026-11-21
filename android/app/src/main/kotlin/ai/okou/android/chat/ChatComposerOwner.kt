@@ -200,7 +200,7 @@ internal class ChatComposerOwner(
                                 if (saved.durable) ComposerPersistence.Durable
                                 else ComposerPersistence.Failed,
                         )
-                    if (restored != saved.journal && saved.journal.entries.isNotEmpty())
+                    if (restored != saved.journal && saved.journal != ComposerJournal())
                         replace(restored)
                     val accepted = restored.acceptedNewChats()
                     connections
