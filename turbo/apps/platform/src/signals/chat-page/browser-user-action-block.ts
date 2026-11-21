@@ -713,13 +713,13 @@ function createDraftSignals(): BrowserDraftSignals {
 }
 
 function callbackArgs(
-  descriptor: BrowserUserActionDescriptor,
+  action: Pick<BrowserUserAction, "threadId" | "agentId">,
   callbackPrompt: string,
   callbackIds: ChatActionCallbackIds,
 ) {
   return {
-    threadId: descriptor.threadId,
-    agentId: descriptor.agentId,
+    threadId: action.threadId,
+    agentId: action.agentId,
     callbackPrompt,
     callbackIds,
   };
@@ -740,7 +740,7 @@ interface BrowserUserActionMutationContext {
   readonly clearDraft$: BrowserUserActionSignals["clearDraft$"];
   readonly deliverCallback$: Command<
     Promise<void>,
-    [string, ChatActionCallbackIds, AbortSignal]
+    [BrowserUserAction, string, ChatActionCallbackIds, AbortSignal]
   >;
 }
 
@@ -1373,6 +1373,7 @@ function createSubmitSignal({
       if (result.body.state === "succeeded") {
         await set(
           deliverCallback$,
+          result.body,
           descriptor.callbackPrompt,
           result.body.callbackIds.success,
           signal,
@@ -1408,6 +1409,7 @@ function createCancelSignal({
     ) {
       await set(
         deliverCallback$,
+        result.body,
         BROWSER_INPUT_CANCELLATION_PROMPT,
         result.body.callbackIds.cancellation,
         signal,
@@ -1448,13 +1450,14 @@ function createMutationSignals({
   const deliverCallback$ = command(
     async (
       { set },
+      action: BrowserUserAction,
       callbackPrompt: string,
       callbackIds: ChatActionCallbackIds,
       signal: AbortSignal,
     ): Promise<void> => {
       await set(
         runChatActionCallback$,
-        callbackArgs(descriptor, callbackPrompt, callbackIds),
+        callbackArgs(action, callbackPrompt, callbackIds),
         signal,
       );
       signal.throwIfAborted();

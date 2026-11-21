@@ -1026,14 +1026,14 @@ test("The standalone form accepts input and submission while its background chec
   const checkStarted = createDeferredPromise<void>(context.signal);
   const releaseCheck = createDeferredPromise<void>(context.signal);
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, action(state));
+    return respond(200, { ...action(state), agentId: OTHER_AGENT_ID });
   });
   context.mocks.api(
     browserUserActionsContract.preflight,
     async ({ respond }) => {
       checkStarted.resolve(undefined);
       await releaseCheck.promise;
-      return respond(200, action("pending"));
+      return respond(200, { ...action("pending"), agentId: OTHER_AGENT_ID });
     },
   );
   context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
@@ -1042,9 +1042,10 @@ test("The standalone form accepts input and submission while its background chec
       { key: "email", value: "owner@example.test" },
     ]);
     state = "succeeded";
-    return respond(200, action(state));
+    return respond(200, { ...action(state), agentId: OTHER_AGENT_ID });
   });
-  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    expect(body.agentId).toBe(OTHER_AGENT_ID);
     acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
@@ -2208,9 +2209,12 @@ test("Maps an expired API response to the inert expiry state", async () => {
   ).resolves.toBeInTheDocument();
 });
 
-test("Fails closed for a mismatched response", async () => {
+test("Fails closed for a mismatched thread in the response", async () => {
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, { ...action("pending"), agentId: OTHER_AGENT_ID });
+    return respond(200, {
+      ...action("pending"),
+      threadId: "b0000000-0000-4000-a000-000000001299",
+    });
   });
 
   await setupPage({

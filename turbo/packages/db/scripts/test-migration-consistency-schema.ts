@@ -510,15 +510,15 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
     const event = await client.query<{ id: string; seqId: string }>(
       `
         INSERT INTO "chat_thread_events" (
-          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "agent_id", "title", "selected_model"
+          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "title", "selected_model"
         )
         VALUES (
           'append-only-test-user', 'append-only-test-org', 1,
-          $1, 'created', $2, 'append-only migration test', 'auto'
+          $1, 'created', 'append-only migration test', 'auto'
         )
         RETURNING "id", "seq_id" AS "seqId"
       `,
-      [threadId, agentId],
+      [threadId],
     );
     const eventId = event.rows[0]?.id;
     if (!eventId) {
@@ -548,15 +548,15 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
     const nextEvent = await client.query<{ id: string; seqId: string }>(
       `
         INSERT INTO "chat_thread_events" (
-          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "agent_id", "title"
+          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "title"
         )
         VALUES (
           'append-only-test-user', 'append-only-test-org', 2,
-          $1, 'renamed', $2, 'advanced append-only migration test'
+          $1, 'renamed', 'advanced append-only migration test'
         )
         RETURNING "id", "seq_id" AS "seqId"
       `,
-      [threadId, agentId],
+      [threadId],
     );
     const nextEventId = nextEvent.rows[0]?.id;
     if (!nextEventId) {
