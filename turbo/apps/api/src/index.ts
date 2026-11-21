@@ -22,3 +22,5 @@ const app = (() => {
 })();
 
 export default app;
+
+// Historical startup performance preview.
