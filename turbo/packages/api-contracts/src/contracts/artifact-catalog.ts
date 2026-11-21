@@ -493,8 +493,9 @@ export type ArtifactCatalogContract = {
 
 // Keep runtime validation from the Zod-backed router while exposing compact,
 // explicit request and response slots to downstream API and app typechecks.
-export const artifactCatalogContract: ArtifactCatalogContract =
-  c.router(artifactCatalogRuntimeSpec);
+export const artifactCatalogContract: ArtifactCatalogContract = c.router(
+  artifactCatalogRuntimeSpec,
+);
 export {
   artifactIdPathParamsSchema,
   chatArtifactCatalogChangedEvent,
