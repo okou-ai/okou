@@ -226,19 +226,12 @@ fn run_manifest_with_files_in_runtime(
     };
     let plan_start = Instant::now();
     let mut plan = RunPlan::from_manifest(&manifest);
-    for group in files {
-        let Some(task) = plan
-            .download_tasks
-            .iter_mut()
-            .find(|task| task.mount_path() == group.mount_path)
-        else {
-            log_error!(
-                LOG_TAG,
-                "Decoded storage target missing from execution plan"
-            );
-            return false;
-        };
-        task.set_files(group.files);
+    if !bind_decoded_files(&mut plan.download_tasks, files) {
+        log_error!(
+            LOG_TAG,
+            "Decoded storage target missing from execution plan"
+        );
+        return false;
     }
     let quarantine = match runtime_dir
         .map(|runtime| quarantine::Quarantine::for_manifest(&manifest, runtime))
@@ -360,6 +353,41 @@ fn run_manifest_with_files_in_runtime(
             false
         }
     }
+}
+
+fn bind_decoded_files<'input>(
+    tasks: &mut [download::DownloadTask<'input>],
+    files: Vec<guest_contracts::storage_files::StorageFiles<&'input [u8]>>,
+) -> bool {
+    let mut files = files.into_iter();
+    let mut remaining_tasks = tasks.iter_mut();
+    while let Some(group) = files.next() {
+        let Some(task) = remaining_tasks.find(|task| task.mount_path() == group.mount_path) else {
+            // Split inputs are emitted in manifest order, but the wire also
+            // accepts groups in any order. Index only the unmatched groups.
+            return bind_unordered_files(tasks, std::iter::once(group).chain(files));
+        };
+        task.set_files(group.files);
+    }
+    true
+}
+
+fn bind_unordered_files<'input>(
+    tasks: &mut [download::DownloadTask<'input>],
+    files: impl Iterator<Item = guest_contracts::storage_files::StorageFiles<&'input [u8]>>,
+) -> bool {
+    // Input validation already rejected duplicate exact mount paths.
+    let mut by_mount: std::collections::HashMap<_, _> =
+        files.map(|group| (group.mount_path, group.files)).collect();
+    for task in tasks {
+        if let Some(files) = by_mount.remove(task.mount_path()) {
+            task.set_files(files);
+            if by_mount.is_empty() {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn prepare_empty_artifacts(entries: &[EmptyArtifactPreparation]) -> bool {

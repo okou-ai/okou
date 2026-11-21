@@ -109,6 +109,37 @@ fn writes_fresh_artifact_files_without_opening_its_archive() {
 }
 
 #[test]
+fn reordered_decoded_groups_keep_their_storage_and_artifact_targets() {
+    let root = tempfile::tempdir().unwrap();
+    let storage = root.path().join("storage");
+    let artifact = root.path().join("artifact");
+    let manifest = serde_json::to_vec(&json!({"storageMounts": [
+        {"mountPath": storage, "archiveUrl": "file:///unavailable-storage.tar.gz"},
+        {"mountPath": artifact, "archiveUrl": "file:///unavailable-artifact.tar.gz",
+         "name": "artifact", "storageId": "artifact-id", "versionId": "v1", "writeback": true}
+    ]}))
+    .unwrap();
+    let file = |content: &[u8]| StorageFile {
+        path: "data".into(),
+        mode: 0o644,
+        mtime: 1,
+        content: content.to_vec(),
+    };
+    let input = storage_files::encode_input(
+        &manifest,
+        &[
+            (artifact.to_str().unwrap(), &[file(b"artifact")]),
+            (storage.to_str().unwrap(), &[file(b"storage")]),
+        ],
+    )
+    .unwrap();
+
+    assert!(guest_storage_apply::run_storage_files_bytes(&input));
+    assert_eq!(fs::read(storage.join("data")).unwrap(), b"storage");
+    assert_eq!(fs::read(artifact.join("data")).unwrap(), b"artifact");
+}
+
+#[test]
 fn malformed_bulk_or_invalid_binding_does_not_run_cleanup() {
     let root = tempfile::tempdir().unwrap();
     let target = root.path().join("mount");
