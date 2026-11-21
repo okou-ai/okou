@@ -206,8 +206,8 @@ function projectMutationStatement(
       thread_reserved AS (INSERT INTO chat_thread_event_sequences (user_id,org_id,last_seq_id)
         SELECT ${owner.userId},${owner.orgId},count(*) FROM detached HAVING count(*)>0
         ON CONFLICT (user_id,org_id) DO UPDATE SET last_seq_id=chat_thread_event_sequences.last_seq_id+EXCLUDED.last_seq_id RETURNING last_seq_id),
-      thread_published AS (INSERT INTO chat_thread_events(id,user_id,org_id,seq_id,chat_thread_id,kind,project_id)
-        SELECT ${threadEventId},${owner.userId},${owner.orgId},r.last_seq_id-(SELECT count(*) FROM detached)+row_number() OVER(ORDER BY d.id),d.id,'project_updated',${membership}
+      thread_published AS (INSERT INTO chat_thread_events(id,user_id,org_id,seq_id,chat_thread_id,event_executor_id,kind,project_id)
+        SELECT ${threadEventId},${owner.userId},${owner.orgId},r.last_seq_id-(SELECT count(*) FROM detached)+row_number() OVER(ORDER BY d.id),d.id,d.agent_id,'project_updated',${membership}
         FROM detached d CROSS JOIN thread_reserved r RETURNING id),
       published AS (INSERT INTO project_events(id,user_id,org_id,seq_id,project_id,kind,name,sort_order,from_thread_id,reorder_target_id,reorder_side)
         SELECT CASE WHEN c.id=${input.id}::uuid THEN ${input.eventId}::uuid ELSE gen_random_uuid() END,
@@ -370,8 +370,8 @@ export const setProjectMembership$ = command(
       AND (${input.projectId}::uuid IS NULL OR EXISTS(SELECT 1 FROM projects p WHERE p.id=${input.projectId}::uuid AND ${scopeSql(owner)})) RETURNING t.id,t.agent_id),
       reserved AS (INSERT INTO chat_thread_event_sequences(user_id,org_id,last_seq_id) SELECT ${owner.userId},${owner.orgId},1 FROM changed
         ON CONFLICT(user_id,org_id) DO UPDATE SET last_seq_id=chat_thread_event_sequences.last_seq_id+1 RETURNING last_seq_id),
-      published AS (INSERT INTO chat_thread_events(id,user_id,org_id,seq_id,chat_thread_id,kind,project_id)
-        SELECT ${input.eventId}::uuid,${owner.userId},${owner.orgId},r.last_seq_id,c.id,'project_updated',${input.projectId}::uuid FROM changed c CROSS JOIN reserved r RETURNING chat_thread_id)
+      published AS (INSERT INTO chat_thread_events(id,user_id,org_id,seq_id,chat_thread_id,event_executor_id,kind,project_id)
+        SELECT ${input.eventId}::uuid,${owner.userId},${owner.orgId},r.last_seq_id,c.id,c.agent_id,'project_updated',${input.projectId}::uuid FROM changed c CROSS JOIN reserved r RETURNING chat_thread_id)
       SELECT chat_thread_id AS id FROM published`),
         );
       })(),

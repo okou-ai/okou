@@ -62,14 +62,14 @@ export function metadataCommitWithEventsSql(args: {
     RETURNING last_seq_id
   ), inserted AS (
     INSERT INTO ${chatThreadEvents} (
-      id, user_id, org_id, seq_id, chat_thread_id, kind,
+      id, user_id, org_id, seq_id, chat_thread_id, kind, event_executor_id,
       title, pin_order, muted, selected_model,
       model_settings, model_settings_patch, service_tier, computer_use_host_id,
       cloud_browser_enabled, created_at
     )
     SELECT event.id, ${args.userId}, ${args.orgId},
       reserved.last_seq_id - ${count} + event.ordinal,
-      updated.id, event.kind,
+      updated.id, event.kind, updated.agent_id,
       event.title, NULL, NULL,
       CASE WHEN event.kind = 'model_selection_updated' THEN updated.selected_model ELSE NULL END,
       NULL, event.model_settings_patch,

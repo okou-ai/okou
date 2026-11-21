@@ -50,6 +50,7 @@ import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 import postgres from "postgres";
 import { array, literal, number, object, string } from "zod";
+import { validateWalletIntentUpgrade } from "./test-wallet-intent-upgrade";
 import { applyPendingMigrations } from "./migration-runner";
 import { validatePermanentAgentInstructions } from "./test-agent-instructions-permanent";
 import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-snapshot";
@@ -1459,7 +1460,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "f1162fb0087eae27af46180e5052de60",
+    bodyHash: "6f4a7c7a81b6d4c83619a70db2ad6174",
   },
   {
     schemaName: "public",
@@ -3057,6 +3058,10 @@ async function main(): Promise<void> {
     await validatePiResourceIndexRetirement(
       dbUrl1,
       await migrationTimestamp("1595_drop_legacy_pi_resource_version_indexes"),
+    );
+    await validateWalletIntentUpgrade(
+      dbUrl1,
+      await migrationTimestamp("1603_retire_secondary_agent_columns"),
     );
     await runMigrations(dbUrl1);
     console.log("   ✅ Migrations applied successfully\n");

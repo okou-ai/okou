@@ -55,11 +55,22 @@ WHERE grant_row.id = plan.id AND plan.rank > 1;
 CREATE UNIQUE INDEX "idx_agent_drafts_user_org" ON "agent_drafts" USING btree ("user_id","org_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "idx_banking_agent_enablements_unique" ON "banking_agent_enablements" USING btree ("org_id","user_id","connection_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "idx_link_wallet_connections_owner" ON "link_wallet_connections" USING btree ("org_id","user_id") WHERE "link_wallet_connections"."retired_at" IS NULL;--> statement-breakpoint
-CREATE UNIQUE INDEX "idx_link_wallet_spends_intent" ON "link_wallet_spends" USING btree ("org_id","user_id","intent_id");--> statement-breakpoint
+-- New purchases always reserve ordinal zero. Higher ordinals preserve
+-- historical purchases that shared an intent and flag ambiguous retries.
+ALTER TABLE public.link_wallet_spends ADD COLUMN historical_intent_ordinal integer NOT NULL DEFAULT 0;
+--> statement-breakpoint
+WITH ranked AS (
+  SELECT id, row_number() OVER (PARTITION BY org_id, user_id, intent_id ORDER BY id) - 1 AS ordinal
+  FROM public.link_wallet_spends
+)
+UPDATE public.link_wallet_spends AS spend SET historical_intent_ordinal = ranked.ordinal
+FROM ranked WHERE spend.id = ranked.id AND ranked.ordinal > 0;
+--> statement-breakpoint
+CREATE UNIQUE INDEX "idx_link_wallet_spends_intent" ON "link_wallet_spends" USING btree ("org_id","user_id","intent_id","historical_intent_ordinal");--> statement-breakpoint
 ALTER TABLE "agent_drafts" DROP COLUMN "agent_id";--> statement-breakpoint
 ALTER TABLE "banking_agent_enablements" DROP COLUMN "agent_id";--> statement-breakpoint
 ALTER TABLE "browser_user_action_requests" DROP COLUMN "agent_id";--> statement-breakpoint
-ALTER TABLE "chat_thread_events" DROP COLUMN "agent_id";--> statement-breakpoint
+ALTER TABLE "chat_thread_events" RENAME COLUMN "agent_id" TO "event_executor_id";--> statement-breakpoint
 ALTER TABLE "link_wallet_connections" DROP COLUMN "agent_id";--> statement-breakpoint
 ALTER TABLE "link_wallet_spends" DROP COLUMN "agent_id";
 --> statement-breakpoint
@@ -175,14 +186,14 @@ BEGIN
       RETURNING last_seq_id
     )
     INSERT INTO public.chat_thread_events (
-      id, user_id, org_id, seq_id, chat_thread_id, kind,
+      id, user_id, org_id, seq_id, chat_thread_id, kind, event_executor_id,
       title, pin_order, muted, hidden, selected_model,
       model_settings, model_settings_patch, service_tier, computer_use_host_id,
       cloud_browser_enabled, created_at
     )
     SELECT COALESCE(p_event_id, gen_random_uuid()::text)::uuid,
       p_user_id, p_org_id, reserved.last_seq_id, owned_thread.id,
-      'deleted'::public.chat_thread_event_kind,
+      'deleted'::public.chat_thread_event_kind, owned_thread.agent_id,
       NULL, NULL, NULL, NULL, NULL,
       NULL::jsonb, NULL::jsonb, NULL, NULL::uuid,
       false, timezone('UTC', now())

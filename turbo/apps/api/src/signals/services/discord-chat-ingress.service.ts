@@ -116,10 +116,10 @@ export function discordIngressFailureSql(args: {
       RETURNING user_id, org_id, last_seq_id
     ), failure_sort_inserted AS (
       INSERT INTO ${chatThreadEvents}
-        (id, user_id, org_id, seq_id, chat_thread_id, kind,
+        (id, user_id, org_id, seq_id, chat_thread_id, kind, event_executor_id,
          cloud_browser_enabled, created_at)
       SELECT ${event.id}::uuid, reserved.user_id, reserved.org_id,
-        reserved.last_seq_id, touched.id, 'sort_touched',
+        reserved.last_seq_id, touched.id, 'sort_touched', touched.agent_id,
         false, date_trunc('milliseconds', touched.last_message_at)
       FROM failure_sort_reserved AS reserved CROSS JOIN failure_touched AS touched
       ON CONFLICT (id) DO NOTHING
@@ -324,12 +324,12 @@ function canonicalRouteCreationWrites(): SQL {
     RETURNING last_seq_id
   ), created_event AS (
     INSERT INTO ${e} (
-      user_id, org_id, seq_id, chat_thread_id, kind,
+      user_id, org_id, seq_id, chat_thread_id, kind, agent_id,
       title, pin_order, muted, selected_model, model_settings, model_settings_patch,
       service_tier, computer_use_host_id, cloud_browser_enabled, created_at
     )
     SELECT inserted_thread.user_id, creation_input.org_id, reserved.last_seq_id,
-      inserted_thread.id, 'created'::chat_thread_event_kind,
+      inserted_thread.id, 'created'::chat_thread_event_kind, inserted_thread.agent_id,
       inserted_thread.title, NULL, NULL, inserted_thread.selected_model,
       inserted_thread.model_settings, NULL,
       CASE WHEN ${eq(sql`inserted_thread.codex_service_tier`, sql`'fast'`)} THEN 'priority' ELSE NULL END,

@@ -2811,7 +2811,7 @@ test("paginates owner-isolated recorded spend history and retains it after reaut
         [200],
       )
     ).body.data,
-  ).toEqual([
+  ).toStrictEqual([
     expect.objectContaining({ id: second.body.id, canRefresh: false }),
     expect.objectContaining({ id: first.body.id, canRefresh: false }),
   ]);

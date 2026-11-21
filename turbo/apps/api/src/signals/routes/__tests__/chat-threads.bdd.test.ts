@@ -1217,6 +1217,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         expect.objectContaining({
           kind: "deleted",
           chatThreadId: main.threadId,
+          agentId,
         }),
       ]),
     );

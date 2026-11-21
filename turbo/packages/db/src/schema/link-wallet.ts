@@ -85,6 +85,9 @@ export const linkWalletSpends = pgTable(
       }),
     authorizationId: uuid("authorization_id").notNull(),
     intentId: uuid("intent_id").notNull(),
+    historicalIntentOrdinal: integer("historical_intent_ordinal")
+      .notNull()
+      .default(0),
     // The originating chat guards credential retrieval; legacy rows can be null.
     // Only approvals eligible for automatic continuation have an approval run.
     approvalThreadId: uuid("approval_thread_id").references(
@@ -118,6 +121,7 @@ export const linkWalletSpends = pgTable(
         table.orgId,
         table.userId,
         table.intentId,
+        table.historicalIntentOrdinal,
       ),
       uniqueIndex("idx_link_wallet_spends_provider").on(table.providerSpendId),
       index("idx_link_wallet_spends_approval_deadline")

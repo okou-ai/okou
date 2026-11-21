@@ -316,10 +316,10 @@ function queueRejectionSortCtes(eventId: string): SQL {
     RETURNING user_id, org_id, last_seq_id
   ), sort_inserted AS (
     INSERT INTO ${chatThreadEvents}
-      (id, user_id, org_id, seq_id, chat_thread_id, kind,
+      (id, user_id, org_id, seq_id, chat_thread_id, kind, event_executor_id,
        cloud_browser_enabled, created_at)
     SELECT ${eventId}::uuid, thread_reserved.user_id, thread_reserved.org_id,
-      thread_reserved.last_seq_id, touched.id, 'sort_touched',
+      thread_reserved.last_seq_id, touched.id, 'sort_touched', touched.agent_id,
       false, date_trunc('milliseconds', touched.last_message_at)
     FROM touched CROSS JOIN thread_reserved
     ON CONFLICT (id) DO NOTHING RETURNING id

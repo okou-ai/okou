@@ -99,9 +99,9 @@ function modelReplacementCtes(replacement: ThreadModelReplacement | null) {
     ON CONFLICT(user_id,org_id) DO UPDATE SET last_seq_id=chat_thread_event_sequences.last_seq_id+EXCLUDED.last_seq_id
     RETURNING last_seq_id
   ), replacement_events AS (
-    INSERT INTO chat_thread_events(user_id,org_id,seq_id,chat_thread_id,kind,selected_model,service_tier)
+    INSERT INTO chat_thread_events(user_id,org_id,seq_id,chat_thread_id,kind,event_executor_id,selected_model,service_tier)
     SELECT ${replacement.userId},${replacement.orgId},last_seq_id-${count}+ordinal,${replacement.chatThreadId}::uuid,
-      kind::chat_thread_event_kind,
+      kind::chat_thread_event_kind,${replacement.agentId}::uuid,
       CASE WHEN ordinal=1 THEN ${replacement.selectedModel} ELSE NULL END,
       CASE WHEN ordinal=2 THEN ${chatThreadServiceTierFromCodex(replacement.codexServiceTier)} ELSE NULL END
     FROM replacement_positions CROSS JOIN (VALUES (1,'model_selection_updated'),(2,'service_tier_updated')) AS changes(ordinal,kind)

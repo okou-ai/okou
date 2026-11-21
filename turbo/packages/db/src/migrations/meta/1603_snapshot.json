@@ -8377,6 +8377,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "event_executor_id": {
+          "name": "event_executor_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -20157,6 +20163,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "historical_intent_ordinal": {
+          "name": "historical_intent_ordinal",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         }
       },
       "indexes": {
@@ -20177,6 +20190,12 @@
             },
             {
               "expression": "intent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "historical_intent_ordinal",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

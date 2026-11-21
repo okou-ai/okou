@@ -450,8 +450,9 @@ const browserActionThreadAgentId$ = command(
         ),
       )
       .limit(1);
-    if (!thread?.agentId)
+    if (!thread?.agentId) {
       throw new Error("Browser action thread executor is unavailable");
+    }
     return thread.agentId;
   },
 );

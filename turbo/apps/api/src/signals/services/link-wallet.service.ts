@@ -1060,6 +1060,7 @@ export const createWalletSpend$ = command(
           linkWalletSpends.orgId,
           linkWalletSpends.userId,
           linkWalletSpends.intentId,
+          linkWalletSpends.historicalIntentOrdinal,
         ],
       })
       .returning();
@@ -1078,8 +1079,16 @@ export const createWalletSpend$ = command(
               eq(linkWalletSpends.intentId, input.intentId),
             ),
           )
+          .orderBy(desc(linkWalletSpends.historicalIntentOrdinal))
           .limit(1);
     signal.throwIfAborted();
+    if (existing && existing.historicalIntentOrdinal > 0) {
+      throw new LinkWalletError(
+        409,
+        "WALLET_INTENT_CONFLICT",
+        "Multiple historical purchases share this intent. Inspect each purchase by its spend ID.",
+      );
+    }
     validateSpendIntent(existing, input, owner, access.connection);
     if (existing.providerSpendId) {
       const spend = await set(
@@ -1231,7 +1240,9 @@ export const getWalletSpendCredentials$ = command(
     signal: AbortSignal,
   ): Promise<WalletSpendCredentials> => {
     const { row, access } = await set(walletSpendAccess$, owner, id, signal);
-    if (owner.runId) requireApprovalThread(row, owner);
+    if (owner.runId) {
+      requireApprovalThread(row, owner);
+    }
     if (!row.providerSpendId) {
       throw new LinkWalletError(
         409,
