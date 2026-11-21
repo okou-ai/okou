@@ -5,6 +5,7 @@ Apply the repository-wide instructions and read
 [CCState principles on Android](../docs/android/android-ccstate.md), and
 [Android testing](../docs/android/android-testing.md) for changed surfaces.
 Setup and commands live in [README.md](README.md).
+For persisted state, also read [Android local storage](../docs/android/android-local-storage.md).
 
 - Use Kotlin and Jetpack Compose. Preserve CCState's single source of truth,
   derived values, semantic actions, render purity and explicit resource owners.

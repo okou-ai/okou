@@ -78,6 +78,13 @@ classify = action['runs']['steps'][0]['run']
 gate = android['ci-gate-android']['steps'][0]['run']
 assert android['detect-release']['permissions']['pull-requests'] == 'read'
 assert android['detect']['needs'] == ['detect-release']
+assert android['detect']['outputs']['shallow-discovery'] == '${{ steps.changes.outputs.shallow-discovery }}'
+build_steps = android['build-test']['steps']
+shallow = next(step for step in build_steps if step.get('name') == 'Verify dependency discovery with shallow history')
+history = next(step for step in build_steps if step.get('name') == 'Fetch complete history for versioned builds')
+assert shallow['if'] == "needs.detect.outputs.shallow-discovery == 'true'"
+assert 'if' not in history
+assert build_steps.index(shallow) < build_steps.index(history)
 assert 'detect-release' in android['ci-gate-android']['needs']
 assert android['ci-gate-android']['if'] == 'always()'
 for native in ['build-test', 'instrumentation', 'release-smoke']:

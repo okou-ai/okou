@@ -4,7 +4,7 @@ import ai.okou.android.chat.ChatCacheStore
 import java.io.File
 import kotlinx.coroutines.runBlocking
 
-/** Checkpoint/close SQLite before copying files, and restore only after its consumers stop. */
+/** Close SQLite before copying or restoring files, with its consumers stopped. */
 class ChatCacheSnapshot(private val directory: File, private val cache: ChatCacheStore) {
     init {
         runBlocking { cache.close() }

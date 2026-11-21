@@ -9,6 +9,7 @@ import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.auth.initialLocale
 import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ComposerJournalStore
+import ai.okou.android.chat.ProjectExpansionStore
 import ai.okou.android.chat.RunControlJournalStore
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.preferences.MemberAppearanceCache
@@ -18,6 +19,7 @@ import ai.okou.android.updates.FileUpdateStore
 import android.app.Application
 import android.os.Build
 import androidx.core.app.LocaleManagerCompat
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -53,6 +55,13 @@ open class OkouApplication : Application() {
         )
     }
     val chatCache by lazy { ChatCacheStore(this) }
+    internal val projectExpansionStore by lazy {
+        ProjectExpansionStore(
+            PreferenceDataStoreFactory.create {
+                noBackupFilesDir.resolve("project-expansion.preferences_pb")
+            }
+        )
+    }
     val memberAppearanceCache by lazy {
         MemberAppearanceCache({ noBackupFilesDir.resolve("member-appearance") })
     }

@@ -43,6 +43,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       needed: ${{ steps.changes.outputs.needed }}
+      shallow-discovery: ${{ steps.changes.outputs.shallow-discovery }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -60,9 +61,7 @@ jobs:
           PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}
-        run: |
-          needed=$(bash android/scripts/ci-changed.sh)
-          echo "needed=$needed" >> "$GITHUB_OUTPUT"
+        run: bash android/scripts/ci-changed.sh >> "$GITHUB_OUTPUT"
 
   build-test:
     needs: detect
@@ -90,6 +89,7 @@ jobs:
             ~/.gradle/caches/modules-2/metadata-*
           key: android-instrumentation-gradle-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('android/**/*.gradle', 'android/**/*.gradle.kts', 'android/**/gradle.properties', 'android/gradle/**/*.toml', 'android/gradle/wrapper/gradle-wrapper.properties') }}
       - name: Verify dependency discovery with shallow history
+        if: needs.detect.outputs.shallow-discovery == 'true'
         run: |
           test "$(git rev-parse --is-shallow-repository)" = true
           android/gradlew -p android :app:dependencies --configuration debugCompileClasspath --no-daemon

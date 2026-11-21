@@ -96,6 +96,7 @@ class MainActivity : AppCompatActivity() {
                     app.composerJournal,
                     app.runControlJournal,
                     app.memberAppearanceCache,
+                    app.projectExpansionStore,
                     updatesRequired = app.updates.required,
                     connectivity = app.connectivity,
                 )

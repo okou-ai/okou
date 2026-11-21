@@ -66,14 +66,6 @@ import kotlinx.serialization.json.long
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
-data class WorkspaceIdentity(
-    val apiOrigin: String,
-    val userId: String,
-    val sessionId: String,
-    val workspaceId: String,
-    val authorizationScope: String = "",
-)
-
 interface WorkspaceSession :
     Closeable,
     ChatListService,

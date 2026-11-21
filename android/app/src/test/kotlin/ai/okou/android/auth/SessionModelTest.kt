@@ -17,6 +17,7 @@ import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ChatComposerService
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.ComposerJournalStore
+import ai.okou.android.chat.ProjectExpansionStore
 import ai.okou.android.chat.RunControlJournalStore
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.preferences.MemberAppearance
@@ -24,6 +25,7 @@ import ai.okou.android.preferences.MemberAppearanceCache
 import ai.okou.android.testAuthenticationState
 import ai.okou.android.testOrganization
 import ai.okou.android.testPreferences
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
@@ -127,6 +129,11 @@ class SessionModelTest {
             )
         val appearanceDirectory = temporary.newFolder()
         val appearance = MemberAppearanceCache({ appearanceDirectory }, dispatcher)
+        val expansionFile = temporary.newFolder().resolve("project-expansion.preferences_pb")
+        val expansion =
+            ProjectExpansionStore(
+                PreferenceDataStoreFactory.create(scope = backgroundScope) { expansionFile }
+            )
         try {
             appearance.prepareAppearance()
             val model =
@@ -148,6 +155,7 @@ class SessionModelTest {
                                 journal,
                                 controls,
                                 appearance,
+                                expansion,
                                 dispatcher,
                             )
                         }
@@ -364,7 +372,7 @@ class SessionModelTest {
             runCurrent()
             assertEquals(SessionStage.Ready, model.uiState.value.stage)
             assertEquals(
-                ai.okou.android.chat.chatScopeHash(listOf("org:member", "org:member", "known")),
+                scopeHash(listOf("org:member", "org:member", "known")),
                 resources.single().identity.authorizationScope,
             )
             assertEquals(auth.available, model.uiState.value.memberships)

@@ -170,24 +170,13 @@ internal fun rememberWorkspaceNavigation(): MutableState<WorkspaceNavigation> =
     }
 
 internal class SavedUiIds(private val state: MutableState<List<String>>, private val limit: Int) {
-    val values: List<String>
-        get() = state.value
-
     fun record(id: String): List<String> {
-        val next = (values - id) + id
+        val next = (state.value - id) + id
         val evicted = next.dropLast(limit)
         state.value = next.takeLast(limit)
         return evicted
     }
-
-    fun toggle(id: String) {
-        if (id in values) state.value = values - id else record(id)
-    }
 }
-
-@Composable
-internal fun rememberCollapsedProjects(): SavedUiIds =
-    rememberUiIds(SavedStatePolicy.COLLAPSED_PROJECTS)
 
 @Composable
 private fun rememberUiIds(limit: Int): SavedUiIds {

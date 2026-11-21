@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.auth.workspaceStorageKey
 import android.content.Context
 import android.util.AtomicFile
 import java.io.File
@@ -20,7 +21,6 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.encodeToStream
-import okhttp3.HttpUrl.Companion.toHttpUrl
 
 enum class ComposerCommit {
     Committed,
@@ -51,14 +51,9 @@ class ComposerJournalStore(
         explicitNulls = true
     }
 
-    private fun key(identity: WorkspaceIdentity) =
-        chatScopeHash(
-            listOf(identity.apiOrigin.toHttpUrl().toString(), identity.userId, identity.workspaceId)
-        )
-
     internal fun attach(identity: WorkspaceIdentity, connection: ChatComposerOwner.Connection) =
         editors
-            .getOrPut(key(identity)) { ChatComposerOwner(this, identity) }
+            .getOrPut(identity.workspaceStorageKey()) { ChatComposerOwner(this, identity) }
             .also { it.attach(connection) }
 
     internal fun detach(
@@ -66,14 +61,14 @@ class ComposerJournalStore(
         connection: ChatComposerOwner.Connection,
         editor: ChatComposerOwner,
     ) {
-        if (editor.detach(connection)) editors.remove(key(identity), editor)
+        if (editor.detach(connection)) editors.remove(identity.workspaceStorageKey(), editor)
     }
 
     internal fun persist(
         identity: WorkspaceIdentity,
         journal: ComposerJournal,
     ): Deferred<ComposerCommit> {
-        val key = key(identity)
+        val key = identity.workspaceStorageKey()
         val write = Write(journal)
         synchronized(guard) {
             check(!closed) { "Composer journal is closed" }
@@ -102,7 +97,7 @@ class ComposerJournalStore(
     }
 
     suspend fun load(identity: WorkspaceIdentity): RestoredComposer {
-        val key = key(identity)
+        val key = identity.workspaceStorageKey()
         while (true) {
             val pending = synchronized(guard) { latest[key] }
             if (pending != null) {
