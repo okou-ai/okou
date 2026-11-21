@@ -209,6 +209,7 @@ internal fun ChatListUiState.rowActions(
             source == ChatListSource.Network &&
             canUpdateChat &&
             projectsSource != null &&
+            (group.projectId == null || group.project != null) &&
             pendingRowActions.values.none { it.changesPinOrder }
     ) {
         val pinned = thread.pinnedAt != null
@@ -1073,7 +1074,7 @@ class ChatListModel(
         if (cacheRead) return
         cacheRead = true
         viewModelScope.launch { restoreUnread() }
-        restoreJob =
+        val chatRestore =
             viewModelScope.launch {
                 try {
                     val startup = prepared?.await()?.takeIf { it.identity == identity }
@@ -1106,7 +1107,8 @@ class ChatListModel(
                     if (current()) mutable.value = mutable.value.copy(cacheUnavailable = true)
                 }
             }
-        projectOwner.restore()
+        restoreJob = chatRestore
+        projectOwner.restore(afterChatCache = chatRestore)
     }
 
     private suspend fun restoreUnread() {

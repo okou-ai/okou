@@ -210,31 +210,29 @@ internal fun ChatListScreen(
         LaunchedEffect(renamingId) { renamingId = null }
     }
     val unreadAt = state.displayUnreadAt
+    val pendingByProject =
+        remember(state.threads, state.filter, provisionalChats) {
+            if (state.filter != ChatListFilter.Inbox || provisionalChats.isEmpty()) emptyMap()
+            else {
+                val confirmedIds = state.threads.mapTo(hashSetOf()) { it.id }
+                provisionalChats.filterNot { it.threadId in confirmedIds }.groupBy { it.projectId }
+            }
+        }
     val groups =
         remember(
             state.threads,
             state.projects,
-            state.agents,
             state.filter,
             unreadAt,
             state.readIntents,
+            pendingByProject.keys,
         ) {
-            chatListGroups(state)
+            chatListGroups(state, provisionalProjectIds = pendingByProject.keys)
         }
     val indicators = state.indicators?.threads.orEmpty()
     val unreadChatIds = remember(unreadAt, state.readIntents) { state.unreadChatIds() }
     val knownProjects = remember(state.projects) { state.projects.mapTo(hashSetOf()) { it.id } }
     val renameRejection = state.projectRenameRejection
-    val pendingByProject =
-        remember(state.threads, state.filter, provisionalChats, knownProjects) {
-            if (state.filter != ChatListFilter.Inbox || provisionalChats.isEmpty()) emptyMap()
-            else {
-                val confirmedIds = state.threads.mapTo(hashSetOf()) { it.id }
-                provisionalChats
-                    .filterNot { it.threadId in confirmedIds }
-                    .groupBy { it.projectId?.takeIf(knownProjects::contains) }
-            }
-        }
     val expansion = projectExpansion?.state?.collectAsStateWithLifecycle()?.value
     val expandedProjectIds = expansion?.expandedIds.orEmpty()
     val sections =
@@ -279,7 +277,7 @@ internal fun ChatListScreen(
     val missingDefault =
         state.agentsPhase == ChatReadPhase.Ready &&
             state.agents.none { it.isDefaultAgent } &&
-            state.threads.any { it.hidden != true && it.projectId !in knownProjects }
+            state.threads.any { it.hidden != true && it.projectId == null }
     val listLabel = stringResource(R.string.chat_list_title)
     val widthDp = currentWindowSizeDp().width
     val largeCompact = widthDp >= 600
@@ -313,7 +311,7 @@ internal fun ChatListScreen(
         remember(groups, pendingByProject) {
             groups.asReversed().firstNotNullOfOrNull { group ->
                 group.threads.lastOrNull()?.takeIf { it.pinnedAt == null }?.id
-                    ?: pendingByProject[group.project?.id]?.lastOrNull()?.threadId
+                    ?: pendingByProject[group.projectId]?.lastOrNull()?.threadId
                     ?: group.threads.lastOrNull()?.id
                     ?: group.project?.id?.let(::projectRowKey)
             }
@@ -492,7 +490,7 @@ internal fun ChatListScreen(
                             },
                         ) { index ->
                             Column(
-                                if (project == null) Modifier
+                                if (group.projectId == null) Modifier
                                 else Modifier.projectChildIndent(outline)
                             ) {
                                 val provisional = pending.getOrNull(index - firstPending)
