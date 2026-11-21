@@ -132,6 +132,6 @@
     "typescript-eslint": "^8.72.2",
     "unicode-emoji-json": "^0.9.0",
     "vite": "^8.1.6",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.1"
   }
 }
