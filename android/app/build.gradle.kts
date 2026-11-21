@@ -222,6 +222,7 @@ dependencies {
         exclude(group = "com.google.firebase", module = "firebase-messaging")
     }
     implementation(libs.room.runtime)
+    implementation(libs.datastore.preferences.core)
     implementation(libs.sqlite.bundled)
     ksp(libs.room.compiler)
     testImplementation(libs.junit)

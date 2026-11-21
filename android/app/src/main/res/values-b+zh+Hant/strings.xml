@@ -152,4 +152,6 @@
     <string name="realtime_connecting">正在連線即時更新…</string>
     <string name="realtime_unavailable">即時更新暫時無法使用，你仍可手動重新整理。</string>
     <string name="settings_account">帳戶</string>
+    <string name="chat_project_expansion_read_failed">無法載入此裝置上的專案展開狀態。</string>
+    <string name="chat_project_expansion_save_failed">無法在此裝置上儲存專案展開狀態。</string>
 </resources>

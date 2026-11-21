@@ -164,10 +164,8 @@ class SavedUiStateTest {
     fun recentConversationScrollRestoresAndOldPresentationIsEvicted() {
         val restoration = StateRestorationTester(compose)
         var next = 0
-        lateinit var collapsed: SavedUiIds
         restoration.setContent {
             val histories = rememberConversationUiState()
-            collapsed = rememberCollapsedProjects()
             var navigation by rememberWorkspaceNavigation()
             fun open(id: Int) {
                 val target = "00000000-0000-4000-8000-${id.toString().padStart(12, '0')}"
@@ -176,7 +174,6 @@ class SavedUiStateTest {
             }
             OkouTheme(false) {
                 Column {
-                    Text("${collapsed.values.size} collapsed Projects")
                     Button(onClick = { open(++next) }) { Text("Next conversation") }
                     Button(onClick = { open(1) }) { Text("First conversation") }
                     Button(onClick = { open(SavedStatePolicy.CONVERSATION_STATES) }) {
@@ -198,12 +195,6 @@ class SavedUiStateTest {
                 }
             }
         }
-        // Exercise both retention maxima together with canonical-length target IDs.
-        compose.runOnIdle {
-            for (id in 1..SavedStatePolicy.COLLAPSED_PROJECTS) collapsed.toggle(
-                "00000000-0000-4000-8000-${id.toString().padStart(12, '0')}"
-            )
-        }
         compose.onNodeWithText("Next conversation").performClick()
         compose.onNodeWithTag("retained_history").performScrollToIndex(60)
         for (id in 2..SavedStatePolicy.CONVERSATION_STATES + 1) {
@@ -217,38 +208,7 @@ class SavedUiStateTest {
         compose.onNodeWithText("History row 70").assertIsDisplayed()
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("History row 70").assertIsDisplayed()
-        compose
-            .onNodeWithText("${SavedStatePolicy.COLLAPSED_PROJECTS} collapsed Projects")
-            .assertIsDisplayed()
         compose.runOnIdle {
-            val saved = Bundle()
-            InstrumentationRegistry.getInstrumentation()
-                .callActivityOnSaveInstanceState(compose.activity, saved)
-            SavedStatePolicy.verify(saved)
-        }
-    }
-
-    @Test
-    fun projectPresentationStaysBoundedAcrossManyChoicesAndRestoresRecentOnes() {
-        val restoration = StateRestorationTester(compose)
-        lateinit var collapsed: SavedUiIds
-        restoration.setContent {
-            collapsed = rememberCollapsedProjects()
-            Text(collapsed.values.joinToString())
-        }
-        compose.runOnIdle {
-            for (id in 1..2_000) collapsed.toggle(
-                "00000000-0000-4000-8000-${id.toString().padStart(12, '0')}"
-            )
-        }
-        val recent = compose.runOnIdle { collapsed.values }
-        assertEquals(SavedStatePolicy.COLLAPSED_PROJECTS, recent.size)
-        assertEquals("00000000-0000-4000-8000-000000002000", recent.last())
-        restoration.emulateSavedInstanceStateRestore()
-        assertEquals(recent, compose.runOnIdle { collapsed.values })
-        compose.runOnIdle {
-            collapsed.toggle(recent.last())
-            assertEquals(recent.dropLast(1), collapsed.values)
             val saved = Bundle()
             InstrumentationRegistry.getInstrumentation()
                 .callActivityOnSaveInstanceState(compose.activity, saved)

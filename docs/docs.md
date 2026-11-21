@@ -135,6 +135,8 @@ owning surface.
 
 - [Android development](android/android-development.md): native ownership,
   concurrency, shared design sources, and service/release boundaries.
+- [Android local storage](android/android-local-storage.md): storage selection,
+  workspace identity, backup, and recovery.
 - [CCState principles on Android](android/android-ccstate.md): single-source
   state, native derivation/actions, coroutine ownership and lifecycle collection.
 - [Android testing](android/android-testing.md): public boundaries, causal

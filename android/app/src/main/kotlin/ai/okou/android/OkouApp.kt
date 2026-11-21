@@ -16,6 +16,7 @@ import ai.okou.android.chat.ChatTitleSearch
 import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.ConfirmedChat
 import ai.okou.android.chat.ConversationRoute
+import ai.okou.android.chat.ProjectExpansionModel
 import ai.okou.android.chat.RealtimeNotice
 import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.RunControlsPanel
@@ -23,7 +24,6 @@ import ai.okou.android.state.SearchRoute
 import ai.okou.android.state.SettingsDestination
 import ai.okou.android.state.WorkspaceTarget
 import ai.okou.android.state.rememberChatSearchState
-import ai.okou.android.state.rememberCollapsedProjects
 import ai.okou.android.state.rememberConversationUiState
 import ai.okou.android.state.rememberWorkspaceNavigation
 import ai.okou.android.updates.UpdateToolbarAction
@@ -102,6 +102,7 @@ internal fun OkouApp(
     chats: ChatListModel?,
     composer: ChatComposerModel?,
     controls: RunControlsModel?,
+    projectExpansion: ProjectExpansionModel?,
     settingsContent: @Composable (SettingsDestination, openInstructions: () -> Unit) -> Unit,
     recovery: AssistantRecoveryModel? = null,
     workspaceTitle: @Composable ((ChatListFilter) -> Unit)? = null,
@@ -147,7 +148,6 @@ internal fun OkouApp(
     val listPositions =
         ChatListFilter.entries.map { filter -> key(filter) { rememberLazyListState() } }
     val settingsPosition = rememberScrollState()
-    val collapsed = rememberCollapsedProjects()
     val conversations = rememberConversationUiState()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -580,8 +580,7 @@ internal fun OkouApp(
                                     ::openChat,
                                     { id, action -> chats?.performRowAction(id, action) },
                                     { id, title -> chats?.renameThread(id, title) },
-                                    collapsed.values,
-                                    collapsed::toggle,
+                                    projectExpansion,
                                     listPositions[list.filter.ordinal],
                                     ::startNewChat,
                                     showInbox = { chats?.selectFilter(ChatListFilter.Inbox) },

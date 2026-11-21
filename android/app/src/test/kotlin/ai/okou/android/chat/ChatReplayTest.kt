@@ -355,13 +355,12 @@ class ChatReplayTest {
             )
         val indicators = mapOf(CHAT_IN_PROJECT to IndicatorsThreadsValue.ACTIVE)
 
-        val (open, afterOpen) = chatListSections(groups, emptyList(), indicators, emptySet())
+        val (open, afterOpen) = chatListSections(groups, setOf(project.id), indicators, emptySet())
         assertEquals(0, open.firstRow)
         assertEquals(1, open.firstChatRow)
         assertEquals(3, afterOpen.firstChatRow)
 
-        val (folded, afterFolded) =
-            chatListSections(groups, listOf(project.id), indicators, emptySet())
+        val (folded, afterFolded) = chatListSections(groups, emptySet(), indicators, emptySet())
         assertEquals(ChatRowStatus.Running, folded.foldedStatus)
         assertEquals(1, afterFolded.firstChatRow)
     }
