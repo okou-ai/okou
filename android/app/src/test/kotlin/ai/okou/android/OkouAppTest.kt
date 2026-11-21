@@ -38,6 +38,8 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -49,6 +51,7 @@ import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelectable
+import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -353,12 +356,15 @@ class OkouAppTest {
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Appearance").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
-        compose.onNodeWithText("Filter · Archived").assertIsDisplayed()
+        compose.onNodeWithTag("chat_filter_heading").assertIsDisplayed().assert(hasText("Archived"))
         compose.onNodeWithText("New chat").assertIsDisplayed()
+        compose
+            .onNodeWithContentDescription("Filter")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Archived"))
         compose.onNodeWithContentDescription("Filter").performClick()
-        compose.onNodeWithText("Archived").assertIsSelected()
+        compose.onNode(hasText("Archived").and(isSelected())).assertIsDisplayed()
         compose.onNodeWithText("Inbox").performClick()
-        compose.onNodeWithText("Filter · Archived").assertDoesNotExist()
+        compose.onNodeWithTag("chat_filter_heading").assertDoesNotExist()
     }
 
     @Test
@@ -374,12 +380,15 @@ class OkouAppTest {
         compose.onNodeWithText("Inbox").assertIsSelected()
         compose.onNodeWithText("Mark all as read").assertIsNotEnabled()
         compose.onNodeWithText("Muted").performClick()
-        compose.onNodeWithText("Filter · Muted").assertIsDisplayed()
+        compose.onNodeWithTag("chat_filter_heading").assertIsDisplayed().assert(hasText("Muted"))
+        compose
+            .onNodeWithContentDescription("More actions")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Muted"))
         compose.onNodeWithContentDescription("More actions").performClick()
         compose.onNodeWithText("Filter").performClick()
-        compose.onNodeWithText("Muted").assertIsSelected()
+        compose.onNode(hasText("Muted").and(isSelected())).assertIsDisplayed()
         compose.onNodeWithText("Inbox").performClick()
-        compose.onNodeWithText("Filter · Muted").assertDoesNotExist()
+        compose.onNodeWithTag("chat_filter_heading").assertDoesNotExist()
     }
 
     @Test
@@ -612,6 +621,9 @@ class OkouAppTest {
         }
         compose.onNodeWithContentDescription("Filter").assertIsDisplayed().performClick()
         compose.onNodeWithText("Archiviert").assertIsDisplayed().performClick()
-        compose.onNodeWithText("Filter · Archiviert").assertExists()
+        compose
+            .onNodeWithTag("chat_filter_heading")
+            .assertIsDisplayed()
+            .assert(hasText("Archiviert"))
     }
 }

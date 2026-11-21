@@ -170,7 +170,9 @@ class ApiClient(
 
     suspend fun chatEvents(since: Long?): ChatEvents = execute { reads.chatEvents(it, since) }
 
-    suspend fun indicators(): Indicators = execute { reads.indicators(it) }
+    suspend fun indicators(): Indicators = execute {
+        reads.indicators(it, queryIncludeActiveUnread = "true")
+    }
 
     suspend fun agents(): Agents = execute { reads.agents(it) }
 

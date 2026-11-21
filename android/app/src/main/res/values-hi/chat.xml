@@ -23,7 +23,6 @@
         <item quantity="other">%1$d चैट को पढ़ा हुआ चिह्नित किया गया।</item>
     </plurals>
     <string name="chat_filter">फ़िल्टर</string>
-    <string name="chat_filter_subtitle">फ़िल्टर · %1$s</string>
     <string name="chat_back_to_inbox">इनबॉक्स पर वापस जाएँ</string>
     <string name="chat_more_actions">और कार्रवाइयाँ</string>
     <string name="chat_unread">अपठित</string>

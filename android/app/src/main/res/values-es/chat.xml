@@ -24,7 +24,6 @@
         <item quantity="other">Se marcaron %1$d chats como leídos.</item>
     </plurals>
     <string name="chat_filter">Filtrar</string>
-    <string name="chat_filter_subtitle">Filtro · %1$s</string>
     <string name="chat_back_to_inbox">Volver a la bandeja de entrada</string>
     <string name="chat_more_actions">Más acciones</string>
     <string name="chat_unread">No leídos</string>

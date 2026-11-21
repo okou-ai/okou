@@ -519,7 +519,7 @@ class ChatListRootTest {
         compose.waitUntil(10_000) {
             currentList()?.listPhase == ai.okou.android.chat.ChatReadPhase.Failed
         }
-        compose.onNodeWithText("Filter · Archived").assertExists()
+        compose.onNodeWithTag("chat_filter_heading").assert(hasText("Archived"))
         compose.onNodeWithText("No chats in this view.").assertExists()
         compose.onNodeWithTag("chat_list_bottom_status").assertDoesNotExist()
     }
@@ -552,7 +552,7 @@ class ChatListRootTest {
         val filter = compose.onNodeWithContentDescription("Filter")
         filter.performClick()
         compose.onNodeWithText("Archived").performClick()
-        compose.onNodeWithText("Filter · Archived").assertExists()
+        compose.onNodeWithTag("chat_filter_heading").assert(hasText("Archived"))
         compose.onNodeWithText("No chats in this view.").assertIsDisplayed()
         compose.onNodeWithText("Back to Inbox").performClick()
         row.assertIsDisplayed()
@@ -649,6 +649,7 @@ class ChatListRootTest {
         val personalUnread = AtomicReference<String?>(CHAT_DATE)
         val projectUnread = AtomicBoolean(true)
         val rejectProject = AtomicBoolean(true)
+        val activeUnreadQuery = AtomicReference<String?>()
         val marked = CopyOnWriteArrayList<String>()
         val releaseWrites = CountDownLatch(1)
         val events =
@@ -695,7 +696,10 @@ class ChatListRootTest {
             )
         }
         app.fixture.commandResponse = { request ->
-            val path = request.requestUrl?.pathSegments.orEmpty()
+            val url = request.requestUrl
+            if (url?.encodedPath == "/api/indicators")
+                activeUnreadQuery.set(url.queryParameter("includeActiveUnread"))
+            val path = url?.pathSegments.orEmpty()
             if (request.method != "POST" || path.lastOrNull() != "mark-read") {
                 null
             } else {
@@ -734,6 +738,7 @@ class ChatListRootTest {
                 .fetchSemanticsNodes()
                 .isNotEmpty()
         }
+        assertEquals("true", activeUnreadQuery.get())
         compose.onNodeWithText("Unread").performClick()
         setResearchExpanded(true)
         list.performScrollToNode(hasText("Project chat"))
@@ -781,9 +786,11 @@ class ChatListRootTest {
         val newChat = compose.onNodeWithText("New chat").getUnclippedBoundsInRoot()
         assertEquals(8f, (newChat.top - feedback.bottom).value, 1f)
         assertTrue(feedback.bottom - feedback.top >= 48.dp)
-        compose.onNodeWithText("Filter · Unread").assertExists()
+        compose.onNodeWithTag("chat_filter_heading").assert(hasText("Unread"))
         filter.performClick()
-        compose.onNodeWithText("Unread").assertIsSelected()
+        compose
+            .onNode(hasText("Unread").and(hasAnyAncestor(hasTestTag("workspace_popup"))))
+            .assertIsSelected()
         compose.onNodeWithText("Archived").performClick()
         setResearchExpanded(true)
         list.performScrollToNode(hasText("Project chat"))
@@ -1252,12 +1259,13 @@ class ChatListRootTest {
             compose.waitUntil(10_000) { compose.onAllNodes(target).fetchSemanticsNodes().isEmpty() }
             compose.onNodeWithContentDescription("Filter").performClick()
             compose.onNodeWithText("Archived").performClick()
-            val filterLabel = "Filter · Archived"
+            val filterLabel = "Archived"
             val filterLayouts = mutableListOf<TextLayoutResult>()
-            val subtitle = compose.onNodeWithText(filterLabel, useUnmergedTree = true)
-            subtitle.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { read ->
-                read(filterLayouts)
-            }
+            compose
+                .onNodeWithTag("chat_filter_heading", useUnmergedTree = true)
+                .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { read ->
+                    read(filterLayouts)
+                }
             val filterLayout = filterLayouts.single()
             assertEquals(filterLabel.length, filterLayout.getLineEnd(0, visibleEnd = true))
             compose.onNodeWithTag("chat_list").performScrollToNode(target)

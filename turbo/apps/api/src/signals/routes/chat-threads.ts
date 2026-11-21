@@ -185,10 +185,12 @@ const listChatThreadLifecycleEventsInner$ = computed(async (get) => {
 
 const listChatIndicatorsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
+  const query = get(queryOf(chatThreadsContract.indicators));
   const indicators = await get(
     chatIndicators({
       userId: auth.userId,
       orgId: auth.orgId,
+      includeActiveUnread: query.includeActiveUnread === "true",
     }),
   );
 

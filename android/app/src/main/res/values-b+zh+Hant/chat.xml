@@ -22,7 +22,6 @@
         <item quantity="other">已將 %1$d 則聊天標為已讀</item>
     </plurals>
     <string name="chat_filter">篩選</string>
-    <string name="chat_filter_subtitle">篩選 · %1$s</string>
     <string name="chat_back_to_inbox">返回收件匣</string>
     <string name="chat_more_actions">更多操作</string>
     <string name="chat_unread">未讀</string>
