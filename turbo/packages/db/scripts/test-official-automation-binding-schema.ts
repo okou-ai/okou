@@ -35,12 +35,11 @@ export async function validateOfficialAutomationBindingSchema(
   console.log("=== Validate Official Automation binding schema ===\n");
   const client = new Client({ connectionString: databaseUrl });
   const identity = randomUUID();
-  const agentId = randomUUID();
-  let agentCreated = false;
+  const workflowId = randomUUID();
+  let workflowCreated = false;
 
   try {
     await client.connect();
-    const workflowId = randomUUID();
     const officialAutomationId = randomUUID();
     const ordinaryAutomationId = randomUUID();
     const orgId = `official-binding-org-${identity}`;
@@ -49,22 +48,15 @@ export async function validateOfficialAutomationBindingSchema(
 
     await client.query(
       `
-        INSERT INTO "agents" ("id", "org_id", "owner", "name")
-        VALUES ($1, $2, $3, $4)
-      `,
-      [agentId, orgId, userId, definitionName],
-    );
-    agentCreated = true;
-    await client.query(
-      `
         INSERT INTO "workflows" (
           "id", "org_id", "name", "created_by", "owner_user_id",
-          "agent_id", "updated_by", "official_definition_name",
+          "updated_by", "official_definition_name",
           "official_installation_state"
-        ) VALUES ($1, $2, $3, $4, $4, $5, $4, $3, 'installed')
+        ) VALUES ($1, $2, $3, $4, $4, $4, $3, 'installed')
       `,
-      [workflowId, orgId, definitionName, userId, agentId],
+      [workflowId, orgId, definitionName, userId],
     );
+    workflowCreated = true;
     await client.query(
       `
         INSERT INTO "workflow_automations" (
@@ -127,9 +119,10 @@ export async function validateOfficialAutomationBindingSchema(
     );
   } finally {
     try {
-      if (agentCreated) {
-        // Existing foreign keys cascade to this agent's workflow and automations.
-        await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [agentId]);
+      if (workflowCreated) {
+        await client.query(`DELETE FROM "workflows" WHERE "id" = $1`, [
+          workflowId,
+        ]);
       }
     } finally {
       await client.end();

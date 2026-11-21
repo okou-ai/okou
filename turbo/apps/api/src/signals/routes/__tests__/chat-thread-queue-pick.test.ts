@@ -460,10 +460,7 @@ describe("CHAT-02: queued chat thread picks", () => {
   }, 90_000);
 
   it("leaves a queued automation event for the pick while steering later prompts", async () => {
-    const { actor, defaultAgentId: agentId } = await entitledNativeChatActor(
-      {},
-      "team",
-    );
+    const { actor } = await entitledNativeChatActor({}, "team");
     const automation = await createWebhookAutomation(actor);
     const running = await sendChatRun(actor, {
       threadId: automation.threadId,

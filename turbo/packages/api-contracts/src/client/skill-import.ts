@@ -18,7 +18,6 @@ export const skillImportSessionsContract: ClientDescriptor<
       400: true,
       401: true,
       403: true,
-      404: true,
     },
   },
   listSkills: {

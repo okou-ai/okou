@@ -1,6 +1,6 @@
 # Single Agent migration operators
 
-These historical operators require a database snapshot from before migration 1610. For member-scoped Workflows, deployment and recovery use the release procedure in the Workflow cutover PR.
+These historical operators require a database snapshot from before migration 1610. For member-scoped Workflows, deployment and recovery use the release procedure in [PR #49854](https://github.com/okou-ai/okou/pull/49854).
 
 The online staff copy uses the normal Drizzle migration
 `1548_copy_staff_single_agent.sql`, after the API/Runner readers in

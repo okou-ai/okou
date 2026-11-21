@@ -200,7 +200,7 @@ describe("POST /api/skill-import/sessions", () => {
     );
   });
 
-  it("issues an upload session for the org's default agent", async () => {
+  it("issues an upload session for the workspace member", async () => {
     const { session } = await openSession();
 
     expect(session.uploadUrl).toBe(

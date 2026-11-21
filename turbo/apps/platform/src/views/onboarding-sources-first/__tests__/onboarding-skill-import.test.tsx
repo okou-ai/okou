@@ -568,25 +568,3 @@ test("Back releases the subscription and returning retains the prompt and server
   );
   expect(screen.getByText(SKILL_DISPLAY_NAME)).toBeInTheDocument();
 });
-
-test("A session that cannot be opened leaves the step passable", async () => {
-  mockWorkflows();
-  context.mocks.api(skillImportSessionsContract.create, ({ respond }) => {
-    return respond(404, {
-      error: {
-        message: "This organization has no default agent to import into",
-        code: "NOT_FOUND",
-      },
-    });
-  });
-
-  await openSkillsStep();
-
-  await expect(
-    screen.findByText("The import session could not be opened."),
-  ).resolves.toBeInTheDocument();
-  // Nothing on this step is required, so a failure never holds the run back:
-  // Not now leaves, while Continue waits for a skill that cannot arrive.
-  expect(getButtonByName("Not now")).toBeEnabled();
-  expect(getButtonByName("Continue")).toBeDisabled();
-});
