@@ -317,7 +317,7 @@ class ChatListRootTest {
             setResearchExpanded(true)
             compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Project chat"))
             compose.onNodeWithText("Project chat").performClick()
-            compose.waitUntil(10_000) { historyRequested.count == 0L }
+            compose.waitUntil(10_000) { compose.runOnIdle { historyRequested.count == 0L } }
             compose.onNodeWithTag("conversation").assertExists()
             compose
                 .onNodeWithTag("conversation")
