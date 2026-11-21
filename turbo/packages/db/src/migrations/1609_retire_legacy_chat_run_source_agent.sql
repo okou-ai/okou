@@ -1,1 +1,0 @@
-ALTER TABLE "chat_agent_run_context" DROP COLUMN "source_agent_id";

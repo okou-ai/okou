@@ -140,7 +140,7 @@ class AssistantRecoveryModelTest {
                     owners.put("composer", composer)
                     val thread =
                         Json.decodeFromString<ChatArchive>(
-                                """{"chatThreads":[{"id":"$CHAT_PERSONAL","agentId":"$CHAT_AGENT","projectId":null,"title":"Thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null,"selectedModel":"gpt-recovery","serviceTier":"priority"}]}"""
+                                """{"chatThreads":[{"id":"$CHAT_PERSONAL","projectId":null,"title":"Thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null,"selectedModel":"gpt-recovery","serviceTier":"priority"}]}"""
                             )
                             .chatThreads
                             .single()

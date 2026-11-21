@@ -178,7 +178,7 @@ export function chatSearch(
   input: ChatSearchInput | Computed<ChatSearchInput>,
 ): Computed<
   Promise<{
-    readonly results: readonly (ChatSearchResult &
+    readonly results: readonly (Omit<ChatSearchResult, "agentName"> &
       Pick<ChatSearchMatchRow, "projectId" | "projectName">)[];
   }>
 > {

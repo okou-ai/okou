@@ -47,7 +47,9 @@ Notes:
       if (options.json) {
         const fields = chatThreadMetadataContract.get.responses[200].shape;
         const metadata = Object.fromEntries(
-          Object.entries(thread).filter(([key]) => Object.hasOwn(fields, key)),
+          Object.entries(thread).filter(([key]) => {
+            return Object.hasOwn(fields, key);
+          }),
         );
         console.log(JSON.stringify({ ...metadata, url }));
         return;

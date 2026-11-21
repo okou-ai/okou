@@ -36,6 +36,7 @@ import {
   chatEvents,
 } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { chatThreads as legacyChatThreads } from "@okouai/db/schema/chat-thread";
 import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
 import {
   CANONICAL_ASSET_VERSION,
@@ -327,12 +328,16 @@ type IndicatorScope = {
   readonly userId: string;
   readonly orgId: string;
   readonly includeActiveUnread: boolean;
+  readonly includeLegacyAgents: boolean;
 };
+
 type IndicatorThreadRow = {
   readonly threadId: string;
+  readonly agentId: string | null;
 };
 type UnreadIndicatorRow = IndicatorThreadRow & {
   readonly unreadAt: Date;
+  readonly archived: boolean;
 };
 
 function newestUnreadIndicators(rows: UnreadIndicatorRow[]) {
@@ -347,10 +352,13 @@ function newestUnreadIndicators(rows: UnreadIndicatorRow[]) {
 }
 
 function createIndicatorRows(args: IndicatorScope) {
+  const legacyThreadAgentId = args.includeLegacyAgents
+    ? legacyChatThreads.agentId
+    : sql<null>`NULL`;
   const activeRows$ = computed(
     async (get): Promise<readonly IndicatorThreadRow[]> => {
       return await get(db$)
-        .select({ threadId: chatThreads.id })
+        .select({ threadId: chatThreads.id, agentId: legacyThreadAgentId })
         .from(agentRuns)
         .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
         .where(
@@ -378,7 +386,9 @@ function createIndicatorRows(args: IndicatorScope) {
       const candidates = await db
         .select({
           threadId: chatThreads.id,
+          agentId: legacyThreadAgentId,
           lastReadAt: chatThreads.lastReadAt,
+          archived: chatThreads.archived,
         })
         .from(chatThreads)
         .where(
@@ -460,7 +470,9 @@ function createIndicatorRows(args: IndicatorScope) {
         }
         unreadRows.push({
           threadId: candidate.threadId,
+          agentId: candidate.agentId,
           unreadAt,
+          archived: candidate.archived,
         });
       }
       return newestUnreadIndicators(unreadRows);
@@ -491,10 +503,14 @@ export function chatIndicators(
       get(unreadRows$),
     ]);
 
+    const agentIndicators: Record<string, Indicator> = {};
     const threads: Record<string, Indicator> = {};
     const unreadAt: Record<string, string> = {};
     for (const row of activeRows) {
       threads[row.threadId] = "active";
+      if (row.agentId !== null) {
+        agentIndicators[row.agentId] = "active";
+      }
     }
     for (const row of unreadRows) {
       const active = threads[row.threadId] === "active";
@@ -506,8 +522,13 @@ export function chatIndicators(
         continue;
       }
       threads[row.threadId] = "unread";
+      if (row.agentId !== null && !row.archived) {
+        agentIndicators[row.agentId] = "unread";
+      }
     }
-    return { threads, unreadAt };
+    return args.includeLegacyAgents
+      ? { agents: agentIndicators, threads, unreadAt }
+      : { threads, unreadAt };
   });
 }
 

@@ -1,6 +1,5 @@
 package ai.okou.android.chat
 
-import ai.okou.android.CHAT_AGENT
 import ai.okou.android.CHAT_DATE
 import ai.okou.android.CHAT_EVENT
 import ai.okou.android.CHAT_PERSONAL
@@ -62,7 +61,7 @@ class ChatListSyncTest {
                 }
                 fixture.archive = {
                     jsonResponse(
-                        """{"chatThreads":[{"id":"$CHAT_PERSONAL","agentId":"$CHAT_AGENT","title":"Saved chat","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null,"serviceTier":"ultrafast"}]}"""
+                        """{"chatThreads":[{"id":"$CHAT_PERSONAL","title":"Saved chat","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null,"serviceTier":"ultrafast"}]}"""
                     )
                 }
                 fixture.events = {
@@ -305,7 +304,7 @@ class ChatListSyncTest {
         ChatListApiFixture().use { fixture ->
             val row =
                 Json.decodeFromString<ChatArchive>(
-                        """{"chatThreads":[{"id":"$CHAT_PERSONAL","agentId":"$CHAT_AGENT","title":"Saved","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null}]}"""
+                        """{"chatThreads":[{"id":"$CHAT_PERSONAL","title":"Saved","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null}]}"""
                     )
                     .chatThreads
                     .single()

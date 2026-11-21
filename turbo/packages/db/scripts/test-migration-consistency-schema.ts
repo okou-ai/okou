@@ -1033,6 +1033,14 @@ async function generateFreshMigrations(): Promise<void> {
     path.join(MIGRATIONS_DIR, finalSql),
     `\n--> statement-breakpoint\n${agentMetadata}`,
   );
+  const agentDeletion = await fs.readFile(
+    path.join(PACKAGE_DIR, "src/functions/delete-agent-rows.sql"),
+    "utf-8",
+  );
+  await fs.appendFile(
+    path.join(MIGRATIONS_DIR, finalSql),
+    `\n--> statement-breakpoint\n${agentDeletion}`,
+  );
   const workflowDeletion = await fs.readFile(
     path.join(PACKAGE_DIR, "src/functions/delete-workflow-rows.sql"),
     "utf-8",
@@ -1406,6 +1414,17 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     securityDefiner: false,
     parallel: "u",
     bodyHash: "80d63df57c2cf7e352b6f691c40d30f8",
+  },
+  {
+    schemaName: "public",
+    functionName: "delete_agent_rows",
+    identityArguments:
+      "p_agent_id uuid, p_org_id text, p_member_user_id text, p_is_org_admin boolean",
+    kind: "f",
+    volatility: "i",
+    securityDefiner: false,
+    parallel: "s",
+    bodyHash: "f512f7d0b4a266cfa2e3619179027a0c",
   },
   {
     schemaName: "public",

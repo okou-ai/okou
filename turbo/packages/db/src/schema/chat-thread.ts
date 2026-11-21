@@ -1,5 +1,13 @@
 import { sql } from "drizzle-orm";
-import { check, foreignKey, index, pgTable, unique } from "drizzle-orm/pg-core";
+import {
+  check,
+  foreignKey,
+  index,
+  pgTable,
+  unique,
+  uuid,
+} from "drizzle-orm/pg-core";
+import { agents } from "./agent";
 import { projects } from "./project";
 import { chatThreadColumns } from "../columns/chat-thread";
 
@@ -10,10 +18,24 @@ import { chatThreadColumns } from "../columns/chat-thread";
  */
 export const chatThreads = pgTable(
   "chat_threads",
-  chatThreadColumns(),
+  {
+    ...chatThreadColumns(),
+    // Retained for outgoing API binaries until the rollback window closes.
+    agentId: uuid("agent_id").references(
+      () => {
+        return agents.id;
+      },
+      { onDelete: "cascade" },
+    ),
+  },
   (table) => {
     return [
       unique("uq_chat_threads_id_user").on(table.id, table.userId),
+      foreignKey({
+        columns: [table.agentId, table.orgId],
+        foreignColumns: [agents.id, agents.orgId],
+        name: "chat_threads_agent_org_fk",
+      }),
       foreignKey({
         columns: [table.projectId, table.userId],
         foreignColumns: [projects.id, projects.userId],
@@ -46,6 +68,14 @@ export const chatThreads = pgTable(
       check(
         "chat_threads_computer_access_check",
         sql`NOT (${table.cloudBrowserEnabled} AND ${table.computerUseHostId} IS NOT NULL)`,
+      ),
+      index("idx_chat_threads_user_agent_pinned")
+        .on(table.userId, table.agentId)
+        .where(sql`${table.pinnedAt} IS NOT NULL`),
+      index("idx_chat_threads_user_agent_last_message").on(
+        table.userId,
+        table.agentId,
+        table.lastMessageAt.desc(),
       ),
       index("idx_chat_threads_user_last_message_id").on(
         table.userId,

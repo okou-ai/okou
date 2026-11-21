@@ -470,9 +470,6 @@ final class ThreadListStore {
     actions.dismissError()
   }
 
-  func canUpdate(_ id: String) -> Bool {
-    actions.canUpdate(id)
-  }
 
   @discardableResult
   func setArchived(
@@ -570,6 +567,10 @@ final class ThreadListStore {
 }
 
 extension ThreadListStore {
+  func canUpdate(_ id: String) -> Bool {
+    actions.canUpdate(id)
+  }
+
   func canWrite(_ id: String) -> Bool {
     actions.canWrite(id)
   }

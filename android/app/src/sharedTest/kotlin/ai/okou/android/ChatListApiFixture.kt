@@ -32,7 +32,7 @@ fun chatEventWire(
     kind: String = "created",
     extra: String = "",
     title: String = "Personal chat",
-    agent: String? = CHAT_AGENT,
+    agent: String? = null,
 ): String {
     val legacyAgent = agent?.let { ""","agentId":"$it"""" }.orEmpty()
     return """{"id":"$id","seqId":$seq,"kind":"$kind","chatThreadId":"$thread"$legacyAgent,"title":"$title","selectedModel":null,"serviceTier":null,"computerUseHostId":null,"createdAt":"$CHAT_DATE"$extra}"""

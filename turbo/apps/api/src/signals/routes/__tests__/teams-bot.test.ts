@@ -3558,7 +3558,6 @@ describe("POST /api/webhooks/teams/bot", () => {
         expect.objectContaining({
           id: runId,
           prompt: "continue this private task",
-          agentId: null,
         }),
       );
       await runsApi.heartbeatRunner(runnerGroup);

@@ -20,6 +20,7 @@ describe("chatAgentRunContext schema", () => {
       new Map([
         ["id", true],
         ["source_chat_thread_id", true],
+        ["source_agent_id", false],
         ["source_user_id", true],
         ["source_org_id", true],
         ["created_at", true],

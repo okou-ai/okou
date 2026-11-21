@@ -199,6 +199,22 @@ describe("GET /api/indicators", () => {
       threads: { [unread.threadId]: "unread" },
       unreadAt: { [unread.threadId]: unread.unreadAt },
     });
+    for (const [clientType, version] of [
+      ["iOS", "0.51.7"],
+      ["Android", "0.36.0"],
+    ] as const) {
+      const legacy = await accept(
+        client().indicators({
+          headers,
+          extraHeaders: {
+            "X-Client-Type": clientType,
+            "X-Client-Version": version,
+          },
+        }),
+        [200],
+      );
+      expect(legacy.body).toStrictEqual({ ...indicators.body, agents: {} });
+    }
     await expect(
       chat.readThread(actor, unread.threadId),
     ).resolves.toMatchObject({ lastReadAt: before.unread });

@@ -1,5 +1,6 @@
 import { array, object, string, uuid, type infer as zInfer } from "zod";
 
+import { agentResponseSchema } from "../validators/agents";
 import { initContract } from "./base";
 import { CHAT_SEARCH_RESULT_LIMIT, chatSearchContract } from "./chat-threads";
 import { mcpRunIdSchema, mcpThreadIdSchema } from "./mcp-identifiers";
@@ -10,8 +11,9 @@ const nativeResult = nativeSearch.responses[200].shape.results.element;
 const nativeRange = nativeResult.shape.matchedRanges.element;
 
 const mcpChatSearchResultSchema = nativeResult
-  .omit({ chatThreadId: true })
+  .omit({ agentName: true, chatThreadId: true })
   .extend({
+    ...agentResponseSchema.pick({ agentId: true, displayName: true }).shape,
     threadId: mcpThreadIdSchema,
     matchedRanges: array(
       nativeRange.extend({
@@ -48,7 +50,7 @@ export const mcpChatSearchContract = c.router({
         results: array(mcpChatSearchResultSchema).max(CHAT_SEARCH_RESULT_LIMIT),
       }),
     },
-    summary: "Search chat messages",
+    summary: "Search chat messages with canonical visible Agent metadata",
   },
 });
 
@@ -66,10 +68,12 @@ export const mcpProjectChatSearchContract = c.router({
       ...mcpChatSearchContract.search.responses,
       200: object({
         results: array(
-          mcpChatSearchResultSchema.extend({
-            projectId: uuid().nullable(),
-            projectName: string().nullable(),
-          }),
+          mcpChatSearchResultSchema
+            .omit({ agentId: true, displayName: true })
+            .extend({
+              projectId: uuid().nullable(),
+              projectName: string().nullable(),
+            }),
         ).max(CHAT_SEARCH_RESULT_LIMIT),
       }),
     },
