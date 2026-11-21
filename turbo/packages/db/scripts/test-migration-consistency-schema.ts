@@ -2937,6 +2937,7 @@ async function main(): Promise<void> {
     await validateCustomConnectorSkillCutover(
       dbUrl1,
       await migrationTimestamp("1608_prepare_custom_connector_skill_cutover"),
+      await migrationTimestamp("1609_retire_custom_connector_skill_mirror"),
     );
     await runMigrations(dbUrl1);
     console.log("   ✅ Migrations applied successfully\n");

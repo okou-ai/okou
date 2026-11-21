@@ -4,7 +4,6 @@ import {
   pgTable,
   unique,
   uniqueIndex,
-  varchar,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { orgCustomConnectorColumns } from "../columns/org-custom-connector";
@@ -29,11 +28,7 @@ export type {
  */
 export const orgCustomConnectors = pgTable(
   "org_custom_connectors",
-  {
-    ...orgCustomConnectorColumns(),
-    // Retained for rollback to API 2.100.1, which still writes the mirror.
-    skillStorageVersionId: varchar("skill_storage_version_id", { length: 64 }),
-  },
+  orgCustomConnectorColumns(),
   (table) => {
     return [
       index("idx_org_custom_connectors_org").on(table.orgId),
@@ -42,9 +37,6 @@ export const orgCustomConnectors = pgTable(
         table.slug,
       ),
       unique("idx_org_custom_connectors_id_org").on(table.id, table.orgId),
-      index("idx_org_custom_connectors_skill_storage_version").on(
-        table.skillStorageVersionId,
-      ),
       check(
         "chk_org_custom_connectors_slug",
         sql`left(${table.slug}, 1) = '_'`,
