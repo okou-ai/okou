@@ -135,14 +135,17 @@ class ChatReplayTest {
             ChatListUiState(
                 threads = listOf(projectRow, outside),
                 agents = agents(),
-                projects =
-                    listOf(
-                        ConfirmedProject(
-                            CHAT_PROJECT,
-                            "Research",
-                            "2026-11-13T00:00:00Z",
-                            "2026-11-13T00:00:00Z",
-                        )
+                projectList =
+                    ProjectListUiState(
+                        rows =
+                            listOf(
+                                ConfirmedProject(
+                                    CHAT_PROJECT,
+                                    "Research",
+                                    "2026-11-13T00:00:00Z",
+                                    "2026-11-13T00:00:00Z",
+                                )
+                            )
                     ),
                 indicators =
                     Indicators(
@@ -191,7 +194,7 @@ class ChatReplayTest {
                         event(4, "pinned", thread = CHAT_IN_PROJECT, extra = ",\"pinOrder\":\"a1\""),
                     ),
                 agents = agents(),
-                projects = listOf(project),
+                projectList = ProjectListUiState(rows = listOf(project)),
                 indicators =
                     Indicators(
                         emptyMap(),
@@ -268,8 +271,8 @@ class ChatReplayTest {
                 listPhase = ChatReadPhase.Ready,
                 source = ChatListSource.Network,
                 agents = agents(),
-                projectsSource = ChatListSource.Network,
-                projects = listOf(project),
+                projectList =
+                    ProjectListUiState(rows = listOf(project), source = ChatListSource.Network),
             )
         val (projectGroup, outsideGroup) = chatListGroups(state)
         assertEquals(listOf(member), projectGroup.threads)
@@ -352,7 +355,11 @@ class ChatReplayTest {
             )
         val groups =
             chatListGroups(
-                ChatListUiState(threads = threads, agents = agents(), projects = listOf(project))
+                ChatListUiState(
+                    threads = threads,
+                    agents = agents(),
+                    projectList = ProjectListUiState(rows = listOf(project)),
+                )
             )
         val indicators = mapOf(CHAT_IN_PROJECT to IndicatorsThreadsValue.ACTIVE)
         val provisional =

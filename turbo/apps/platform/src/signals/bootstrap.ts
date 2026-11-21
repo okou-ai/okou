@@ -28,6 +28,7 @@ import {
   setupPageWrapper,
   setupAuthPageWrapper,
   pathParams$,
+  searchParams$,
   pathname$,
   type RouterPathParams,
 } from "./route.ts";
@@ -166,11 +167,16 @@ function redirectTo(target: RoutePath) {
  * Create a redirect setup command for parameterized routes.
  * Reads the `id` param from the source URL and maps it to `targetParam` on the target route.
  */
-function redirectWithId(target: RoutePath, targetParam: string) {
+function redirectWithId(
+  target: RoutePath,
+  targetParam: string,
+  preserveSearch = false,
+) {
   return command(({ get, set }) => {
     const params = get(pathParams$) ?? {};
     set(detachedNavigateTo$, target, {
       pathParams: { [targetParam]: String(params.id) } as RouterPathParams,
+      searchParams: preserveSearch ? get(searchParams$) : undefined,
       replace: true,
     });
   });
@@ -383,6 +389,14 @@ const ROUTE_CONFIG = [
     setup: setupAuthPageWrapper(setupAgentChatPage$),
   },
   {
+    path: ROUTES.connectorPermissions,
+    setup: setupAuthPageWrapper(setupPermissionAllowPage$),
+  },
+  {
+    path: ROUTES.connectorPermissionsBatch,
+    setup: setupAuthPageWrapper(setupPermissionBatchPage$),
+  },
+  {
     path: "/agents/:agentId/permissions/batch",
     setup: setupAuthPageWrapper(setupPermissionBatchPage$),
   },
@@ -577,7 +591,7 @@ const ROUTE_CONFIG = [
   { path: "/team/:id", setup: redirectWithId(ROUTES.agentDetail, "agentId") },
   {
     path: "/firewall-allow/:id",
-    setup: redirectWithId(ROUTES.agentPermissions, "agentId"),
+    setup: redirectWithId(ROUTES.agentPermissions, "agentId", true),
   },
   {
     path: "/activity/:id",

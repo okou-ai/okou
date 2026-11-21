@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.35.0](https://github.com/okou-ai/okou/compare/android-v0.34.2...android-v0.35.0) (2026-11-21)
+
+
+### Features
+
+* **android:** align settings and its destinations with the native design ([#49795](https://github.com/okou-ai/okou/issues/49795)) ([ff5de73](https://github.com/okou-ai/okou/commit/ff5de730df469cabb23a8fc8dbe45820001b3ef8))
+
+
+### Bug Fixes
+
+* **android:** align workspace search and stabilize chat loading ([#49787](https://github.com/okou-ai/okou/issues/49787)) ([2b7974e](https://github.com/okou-ai/okou/commit/2b7974e8f7cc4d1ef51aac89751c0b40db6d7a69))
+* **android:** prevent running wave rendering from crashing ([#49786](https://github.com/okou-ai/okou/issues/49786)) ([c50f99e](https://github.com/okou-ai/okou/commit/c50f99eba8af31b92d2a9fb4f9c6f6878ef12074))
+* **android:** separate project rename rejection from uncertain delivery ([#49800](https://github.com/okou-ai/okou/issues/49800)) ([4d85fd7](https://github.com/okou-ai/okou/commit/4d85fd731287dd7af3c66a414ea09ce86bda7d73))
+
+
+### Performance Improvements
+
+* **android:** enable project rename from authorized cached rows ([#49814](https://github.com/okou-ai/okou/issues/49814)) ([bec9852](https://github.com/okou-ai/okou/commit/bec9852c506227cccf7a80a1aed45f067b90f9c9))
+* **android:** prepare chat cache during workspace authorization ([#49791](https://github.com/okou-ai/okou/issues/49791)) ([acd9ba1](https://github.com/okou-ai/okou/commit/acd9ba151c5d44dc9105697a8298ab9ede6a884a))
+
 ## [0.34.2](https://github.com/okou-ai/okou/compare/android-v0.34.1...android-v0.34.2) (2026-11-21)
 
 

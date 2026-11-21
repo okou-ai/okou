@@ -1007,11 +1007,9 @@
         "twentyFourHours": "24 heures"
       },
       "errors": {
-        "agentNotFound": "Agent introuvable",
         "loadAgent": "Échec du chargement de l'agent",
         "loadGrants": "Échec du chargement des autorisations",
         "loadMetadata": "Échec du chargement des métadonnées des autorisations",
-        "missingAgentId": "ID de l'agent manquant dans les paramètres URL",
         "missingPermission": "Autorisation manquante dans les paramètres URL",
         "unknownAction": "Action d'autorisation inconnue : {{action}}",
         "unknownConnector": "Connecteur inconnu : {{connector}}",
@@ -1069,7 +1067,6 @@
       "pending_many": "{{count}} autorisations à accorder",
       "pending_other": "{{count}} autorisations à accorder",
       "review": "Examiner les autorisations",
-      "sharedScopeNote": "S’applique à ce connecteur dans tous vos chats et agents.",
       "title": "Accorder les autorisations suivantes"
     }
   },

@@ -13,7 +13,7 @@ type Grant = ConnectorPermissions["grants"][number];
 
 export function mockPermissionCatalog(
   context: TestContext,
-  policy: "allow" | "ask" = "ask",
+  policy: "allow" | "ask" | "deny" = "ask",
   missing?: string,
 ) {
   context.mocks.api(
@@ -25,17 +25,36 @@ export function mockPermissionCatalog(
           error: { code: "NOT_FOUND", message: "Connector not found" },
         });
       }
-      const permissions =
-        connectorSlug === "slack"
-          ? [
-              { name: ANALYTICS, description: "Read workspace analytics" },
-              { name: "chat:write", description: "Send Slack messages" },
-            ]
-          : [{ name: "issues:read", description: "Read GitHub issues" }];
+      const catalog: Record<
+        string,
+        { label: string; permissions: { name: string; description: string }[] }
+      > = {
+        slack: {
+          label: "Slack",
+          permissions: [
+            { name: ANALYTICS, description: "Read workspace analytics" },
+            { name: "chat:write", description: "Send Slack messages" },
+          ],
+        },
+        neon: {
+          label: "Neon",
+          permissions: [
+            { name: "branches:create", description: "Create a Neon branch" },
+            { name: "branches:delete", description: "Delete a Neon branch" },
+          ],
+        },
+        github: {
+          label: "GitHub",
+          permissions: [
+            { name: "issues:read", description: "Read GitHub issues" },
+          ],
+        },
+      };
+      const { label, permissions } = catalog[connectorSlug]!;
       return respond(200, {
         permissions: {
           connectorSlug,
-          label: connectorSlug === "slack" ? "Slack" : "GitHub",
+          label,
           icon: {
             url: "https://example.test/icon.svg",
             invertInDarkMode: false,

@@ -1,4 +1,7 @@
-import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
+import {
+  CONNECTOR_PERMISSION_PATHS,
+  INTEGRATION_SETTINGS_PATHS,
+} from "@okouai/core/integration-routes";
 import {
   HOSTED_SITE_AUTHORIZATION_PATH,
   HOSTED_SITE_ACCESS_PATH,
@@ -34,6 +37,8 @@ export const ROUTES = {
   browserAuthorize: "/browser/authorize/:requestToken",
   ideas: "/ideas",
   connectors: "/connectors",
+  connectorPermissions: CONNECTOR_PERMISSION_PATHS.single,
+  connectorPermissionsBatch: CONNECTOR_PERMISSION_PATHS.batch,
   me: "/me",
   computerUseAuthorize: "/computer-use/authorize/:requestToken",
   vncAuthorize: "/vnc/authorize/:vncAuthorizationId",

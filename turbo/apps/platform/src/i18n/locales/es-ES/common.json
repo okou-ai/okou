@@ -1007,11 +1007,9 @@
         "twentyFourHours": "24 horas"
       },
       "errors": {
-        "agentNotFound": "Agente no encontrado",
         "loadAgent": "No se ha conseguido cargar el agente",
         "loadGrants": "No se han cargado las concesiones de permiso",
         "loadMetadata": "No se han cargado los metadatos de permisos",
-        "missingAgentId": "Falta el ID del agente en los parámetros de URL",
         "missingPermission": "Permiso faltante en los parámetros de URL",
         "unknownAction": "Acción de permiso desconocida: {{action}}",
         "unknownConnector": "Conector desconocido: {{connector}}",
@@ -1069,7 +1067,6 @@
       "pending_many": "{{count}} permisos por permitir",
       "pending_other": "{{count}} permisos por permitir",
       "review": "Revisar permisos",
-      "sharedScopeNote": "Se aplica a este conector en todos tus chats y agentes.",
       "title": "Conceder los siguientes permisos"
     }
   },

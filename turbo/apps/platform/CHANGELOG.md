@@ -13,6 +13,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1162.1](https://github.com/okou-ai/okou/compare/app-v0.1162.0...app-v0.1162.1) (2026-11-21)
+
+
+### Bug Fixes
+
+* **app:** support member-scoped connector permission approvals ([#49815](https://github.com/okou-ai/okou/issues/49815)) ([d264a98](https://github.com/okou-ai/okou/commit/d264a981e964c318ca2535b8e0651315c09fcf19))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.858.5
+    * @okouai/ui bumped to 1.21.81
+
 ## [0.1162.0](https://github.com/okou-ai/okou/compare/app-v0.1161.3...app-v0.1162.0) (2026-11-21)
 
 

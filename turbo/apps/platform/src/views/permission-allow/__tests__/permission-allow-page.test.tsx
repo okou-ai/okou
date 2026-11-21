@@ -1,3 +1,6 @@
+import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
+import { agentFixture } from "../../team-page/__tests__/team-page-test-helpers.ts";
+import { mockAuthorizationCallbackThread } from "../../okou-page/__tests__/authorization-callback-test-helpers.ts";
 import {
   getAction,
   queryAction,
@@ -19,13 +22,24 @@ import {
 
 const context = testContext();
 
-function permissionLink(query: Record<string, string>) {
+function permissionLink(query: Record<string, string>, firewall = false) {
   const agentId = context.resourceId;
+  if (query.threadId) {
+    mockAuthorizationCallbackThread(context, query.threadId);
+  }
+  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
+    return params.id === agentId
+      ? respond(200, agentFixture(agentId, "Analytics reviewer"))
+      : respond(404, {
+          error: { code: "NOT_FOUND", message: "Unknown agent" },
+        });
+  });
   context.mocks.data.agents([{ agentId, displayName: "Analytics reviewer" }]);
   return (
-    "/agents/" +
-    agentId +
-    "/permissions?" +
+    (firewall
+      ? "/firewall-allow/" + agentId
+      : "/agents/" + agentId + "/permissions") +
+    "?" +
     new URLSearchParams({ permission: ANALYTICS, ...query })
   );
 }
@@ -77,32 +91,38 @@ test("permission-allow-page-007 a permanent denial needs no confirmation or expi
   expect(screen.queryByText(/expires|expired/i)).toBeNull();
 });
 
-test("permission-allow-page-008 a legacy Slack link replaces its saved allow with a permanent denial", async () => {
-  mockPermissionCatalog(context);
-  const grants = mockPermissionGrants(context, {
-    initial: [{ permission: ANALYTICS, action: "allow", expiresAt: null }],
-  });
-  await setupPage({
-    context,
-    path: permissionLink({ action: "deny", ref: "slack" }),
-  });
-  await expect(screen.findByText(ANALYTICS)).resolves.toBeInTheDocument();
-  click(getAction("button", "Confirm"));
-  await expect(
-    screen.findByText("Permissions denied"),
-  ).resolves.toBeInTheDocument();
-  expect(grants.writes).toStrictEqual([
-    {
-      target: { kind: "builtin", connectorSlug: "slack" },
-      mode: "patch",
-      grants: [{ permission: ANALYTICS, action: "deny" }],
-    },
-  ]);
-  expect(grants.saved.get("slack")).toStrictEqual([
-    { permission: ANALYTICS, action: "deny", expiresAt: null },
-  ]);
-  expect(screen.queryByText(/expires|expired/i)).toBeNull();
-});
+test.each([
+  { label: "permission-allow-page-008", firewall: false },
+  { label: "Firewall alias", firewall: true },
+])(
+  "$label a legacy Slack link replaces its saved allow with a permanent denial",
+  async ({ firewall }) => {
+    mockPermissionCatalog(context);
+    const grants = mockPermissionGrants(context, {
+      initial: [{ permission: ANALYTICS, action: "allow", expiresAt: null }],
+    });
+    await setupPage({
+      context,
+      path: permissionLink({ action: "deny", ref: "slack" }, firewall),
+    });
+    await expect(screen.findByText(ANALYTICS)).resolves.toBeInTheDocument();
+    click(getAction("button", "Confirm"));
+    await expect(
+      screen.findByText("Permissions denied"),
+    ).resolves.toBeInTheDocument();
+    expect(grants.writes).toStrictEqual([
+      {
+        target: { kind: "builtin", connectorSlug: "slack" },
+        mode: "patch",
+        grants: [{ permission: ANALYTICS, action: "deny" }],
+      },
+    ]);
+    expect(grants.saved.get("slack")).toStrictEqual([
+      { permission: ANALYTICS, action: "deny", expiresAt: null },
+    ]);
+    expect(screen.queryByText(/expires|expired/i)).toBeNull();
+  },
+);
 
 test.each([
   ["permission-allow-page-003", "delivered"],
@@ -185,5 +205,55 @@ test.each([
     expect(duration?.hasAttribute("disabled") ?? null).toBe(
       delivered ? null : true,
     );
+  },
+);
+
+function memberRequest(orgId: string, userId: string) {
+  return (
+    "/connectors/permissions?" +
+    new URLSearchParams({
+      orgId,
+      userId,
+      connectorSlug: "neon",
+      permission: "branches:create",
+      action: "allow",
+      expiresIn: "1h",
+    })
+  );
+}
+test("The signed-in member approves one hour of standalone Neon branch creation", async () => {
+  mockNow(new Date(PERMISSION_NOW), context.signal);
+  mockPermissionCatalog(context);
+  const grants = mockPermissionGrants(context);
+  await setupPage({
+    context,
+    path: memberRequest("org_default", "test-user-123"),
+  });
+  await screen.findByText(/updating your permissions for Default Org/);
+  expect(screen.getByText("Create a Neon branch")).toBeVisible();
+  expect(
+    screen.getByRole("combobox", { name: "Permission duration" }),
+  ).toHaveTextContent("1 hour");
+  click(getAction("button", "Confirm"));
+  await expect(screen.findByText("Permissions updated")).resolves.toBeVisible();
+  expect(grants.writes).toContainEqual({
+    target: { kind: "builtin", connectorSlug: "neon" },
+    mode: "patch",
+    grants: [
+      { permission: "branches:create", action: "allow", expiresIn: "1h" },
+    ],
+  });
+});
+test.each([
+  { org: "other-workspace", user: "test-user-123" },
+  { org: "org_default", user: "other-member" },
+])(
+  "A standalone request for $org and $user cannot be approved outside its membership",
+  async ({ org, user }) => {
+    await setupPage({ context, path: memberRequest(org, user) });
+    await expect(
+      screen.findByText("This permission link is invalid or unavailable."),
+    ).resolves.toBeVisible();
+    expect(queryAction("button", "Confirm")).toBeNull();
   },
 );

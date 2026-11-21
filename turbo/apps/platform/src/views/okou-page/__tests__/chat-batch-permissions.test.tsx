@@ -1,3 +1,4 @@
+import { getAction } from "./connector-integrations-test-helpers.ts";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   connectorPermissionsContract,
@@ -201,15 +202,18 @@ async function allow(review: HTMLElement, name: string): Promise<void> {
 test("Review full scopes grouped by connector and apply the selected duration together", async () => {
   const writes = mockSavedGrants();
   mockServiceMetadata();
-  const card = await openBatchCard(
-    batchLink([
-      { connectorSlug: CALENDAR, permission: "events:read" },
-      { connectorSlug: REPORTS, permission: "reports:read" },
-      { connectorSlug: CALENDAR, permission: "events:write" },
-      { connectorSlug: REPORTS, permission: UNKNOWN_PERMISSION_GRANT },
-    ]),
-  );
+  const requestedLink = batchLink([
+    { connectorSlug: CALENDAR, permission: "events:read" },
+    { connectorSlug: REPORTS, permission: "reports:read" },
+    { connectorSlug: CALENDAR, permission: "events:write" },
+    { connectorSlug: REPORTS, permission: UNKNOWN_PERMISSION_GRANT },
+  ]);
+  const card = await openBatchCard(requestedLink);
   const review = await openReview(card);
+  expect(getAction("link", "View permission details", review)).toHaveAttribute(
+    "href",
+    requestedLink,
+  );
 
   const calendar = await serviceGroup(review, "Calendar Service");
   expect(within(calendar).getByText("events:read")).toBeInTheDocument();

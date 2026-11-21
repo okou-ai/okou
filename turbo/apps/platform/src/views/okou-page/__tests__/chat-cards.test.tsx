@@ -433,3 +433,27 @@ test("chat-cards-033 the banking card identifies the requesting agent, purpose a
   ).toBeInTheDocument();
   expect(targets(origin + path)).toStrictEqual([]);
 });
+
+test("A member can review standalone Slack access while a link for another chat is unavailable", async () => {
+  const link = new URL("/connectors/permissions", origin);
+  link.search = new URLSearchParams({
+    orgId: "org_default",
+    userId: "test-user-123",
+    connectorSlug: "slack",
+    permission: "files:read",
+  }).toString();
+  const elsewhere = new URL(link);
+  elsewhere.searchParams.set("threadId", crypto.randomUUID());
+  elsewhere.searchParams.set("callbackPrompt", "Resume the other conversation");
+  await open(
+    "[Review Slack access](" +
+      link.href +
+      ") then [Resume elsewhere](" +
+      elsewhere.href +
+      ").",
+  );
+  await permission();
+  await expect(
+    screen.findByTestId("unavailable-action-card"),
+  ).resolves.toBeVisible();
+});

@@ -990,11 +990,9 @@
         "twentyFourHours": "24 घंटे"
       },
       "errors": {
-        "agentNotFound": "एजेंट नहीं मिला",
         "loadAgent": "एजेंट लोड करने में विफल",
         "loadGrants": "अनुमति अनुदान लोड करने में विफल",
         "loadMetadata": "अनुमति मेटाडेटा लोड करने में विफल",
-        "missingAgentId": "URL पैरामीटर में एजेंट ID गुम है",
         "missingPermission": "URL पैरामीटर्स में अनुपलब्ध अनुमति",
         "unknownAction": "अज्ञात अनुमति क्रिया: {{action}}",
         "unknownConnector": "अज्ञात कनेक्टर: {{connector}}",
@@ -1047,7 +1045,6 @@
       "pending_one": "{{count}} अनुमति देनी है",
       "pending_other": "{{count}} अनुमतियाँ देनी हैं",
       "review": "अनुमतियों की समीक्षा करें",
-      "sharedScopeNote": "इस कनेक्टर की अनुमतियाँ आपकी सभी चैट और एजेंट पर लागू होती हैं।",
       "title": "निम्नलिखित अनुमतियाँ दें"
     }
   },

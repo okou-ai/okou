@@ -73,6 +73,48 @@ async function addOpenAi(actor: ReturnType<typeof bdd.user>) {
 }
 
 describe("Member connector permissions", () => {
+  it("applies the same one-hour deadline to both permissions in a member patch", async () => {
+    const actor = member();
+    mockSlackConnectorOAuth();
+    const start = await connectors.startOauth(actor, "slack", "oauth");
+    const state = new URL(start.authorizationUrl).searchParams.get("state");
+    if (!state) {
+      throw new Error("Expected OAuth state");
+    }
+    await connectors.completeOauthCallback("slack", {
+      state,
+      code: randomUUID(),
+    });
+    session(actor);
+
+    const startedAt = Date.parse("2026-11-05T12:00:00Z");
+    const deadline = startedAt + 60 * 60 * 1000;
+    const permissions = ["chat:write", "conversations:read"];
+    mockNow(startedAt);
+    const result = await save({
+      target: slack,
+      mode: "patch",
+      grants: permissions.map((permission) => {
+        return { permission, action: "allow", expiresIn: "1h" };
+      }),
+    });
+    const expected = permissions.map((permission) => {
+      return {
+        permission,
+        action: "allow",
+        expiresAt: new Date(deadline).toISOString(),
+      };
+    });
+    expect(result.grants).toHaveLength(2);
+    expect(result.grants).toStrictEqual(expect.arrayContaining(expected));
+    mockNow(deadline - 1);
+    expect((await read(slack)).grants).toStrictEqual(
+      expect.arrayContaining(expected),
+    );
+    mockNow(deadline);
+    expect((await read(slack)).grants).toStrictEqual([]);
+  });
+
   it("starts from connector defaults, shares rules across Chats/Agents and preserves deny, expiry and reset", async () => {
     const actor = member();
     bdd.acceptAgentStorageWrites();

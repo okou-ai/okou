@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.36](https://github.com/okou-ai/okou/compare/guest-state-restore-v0.4.35...guest-state-restore-v0.4.36) (2026-11-21)
+
+
+### Refactoring
+
+* **guest-state-restore:** bind timezone values to restore modes ([#49813](https://github.com/okou-ai/okou/issues/49813)) ([31a7b1c](https://github.com/okou-ai/okou/commit/31a7b1c86b55e1a245b915c2c514989c25795ef6))
+
 ## [0.4.35](https://github.com/okou-ai/okou/compare/guest-state-restore-v0.4.34...guest-state-restore-v0.4.35) (2026-11-20)
 
 ## [0.4.34](https://github.com/okou-ai/okou/compare/guest-state-restore-v0.4.33...guest-state-restore-v0.4.34) (2026-11-20)
