@@ -1114,6 +1114,7 @@ function browserUserActionCreationPlan(args: {
         eq(agentRuns.chatThreadId, args.chatThreadId),
         inArray(agentRuns.status, ["pending", "running"]),
         eq(chatThreads.userId, args.userId),
+        eq(chatThreads.orgId, args.orgId),
         isNotNull(chatThreads.agentId),
         eq(chatThreads.cloudBrowserEnabled, true),
       ),
