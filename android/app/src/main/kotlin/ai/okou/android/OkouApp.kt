@@ -257,9 +257,7 @@ internal fun OkouApp(
             }
         }
 
-    fun openChat(chat: ConfirmedChat, fromSearch: Boolean = false) {
-        val activeChats = chats ?: return
-        val pending = composer?.uiState?.value?.pendingNewChat(chat.id)
+    fun openConversation(threadId: String, destination: WorkspaceTarget, fromSearch: Boolean) {
         val search =
             when {
                 fromSearch && listWidth == null -> SearchRoute.ReturnOnBack
@@ -272,15 +270,17 @@ internal fun OkouApp(
             SearchRoute.ReturnOnBack -> searchState.edit(searchState.query.copy(composition = null))
             SearchRoute.Open -> Unit
         }
-        conversations.open(chat.id)
-        navigation =
-            navigation.copy(
-                target =
-                    if (pending == null) WorkspaceTarget.Chat(chat.id)
-                    else WorkspaceTarget.NewChat(pending.projectId),
-                settings = null,
-                search = search,
-            )
+        conversations.open(threadId)
+        navigation = navigation.copy(target = destination, settings = null, search = search)
+    }
+
+    fun openChat(chat: ConfirmedChat, fromSearch: Boolean = false) {
+        val activeChats = chats ?: return
+        val pending = composer?.uiState?.value?.pendingNewChat(chat.id)
+        val destination =
+            if (pending == null) WorkspaceTarget.Chat(chat.id)
+            else WorkspaceTarget.NewChat(pending.projectId)
+        openConversation(chat.id, destination, fromSearch)
         if (pending == null) composer?.acknowledge(chat.id)
         activeChats.history.open(chat)
     }
@@ -296,6 +296,12 @@ internal fun OkouApp(
     }
 
     val composerInput = composer?.uiState?.collectAsStateWithLifecycle()
+    val provisionalChats by
+        remember(composerInput) {
+            derivedStateOf(structuralEqualityPolicy()) {
+                composerInput?.value?.provisionalChats().orEmpty()
+            }
+        }
     val pendingNewChat by
         remember(composerInput, target) {
             derivedStateOf(structuralEqualityPolicy()) {
@@ -578,6 +584,14 @@ internal fun OkouApp(
                                     { chats?.refreshMetadata() },
                                     { chats?.refreshIndicators() },
                                     ::openChat,
+                                    provisionalChats,
+                                    {
+                                        openConversation(
+                                            it.threadId,
+                                            WorkspaceTarget.NewChat(it.projectId),
+                                            fromSearch = false,
+                                        )
+                                    },
                                     { id, action -> chats?.performRowAction(id, action) },
                                     { id, title -> chats?.renameThread(id, title) },
                                     collapsed.values,
@@ -585,7 +599,9 @@ internal fun OkouApp(
                                     listPositions[list.filter.ordinal],
                                     ::startNewChat,
                                     showInbox = { chats?.selectFilter(ChatListFilter.Inbox) },
-                                    selectedChatId = if (listWidth != null) thread?.id else null,
+                                    selectedChatId =
+                                        if (listWidth != null) thread?.id ?: provisionalId
+                                        else null,
                                     wide = listWidth != null,
                                     newChatEnabled = composer != null,
                                     startupRecovery = startupRecovery,

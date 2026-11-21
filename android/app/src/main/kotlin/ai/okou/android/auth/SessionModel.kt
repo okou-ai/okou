@@ -401,6 +401,7 @@ class SessionModel(
                     chats::refreshAfterSend,
                     recovery,
                     chats.history,
+                    chats,
                 )
             }
         mutable.value =

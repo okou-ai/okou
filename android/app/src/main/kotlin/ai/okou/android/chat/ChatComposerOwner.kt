@@ -39,6 +39,7 @@ internal class ChatComposerOwner(
         val accepted: (String) -> Unit,
         val recovery: AssistantRecoveryModel? = null,
         val history: ConversationHistoryModel? = null,
+        val chatList: ChatListModel? = null,
     ) {
         var retired = false
 
@@ -52,6 +53,7 @@ internal class ChatComposerOwner(
     ) {
         var job: Job? = null
         var unsentReset: UnsentReset? = null
+        var inputMayHaveBeenSent = false
     }
 
     private class UnsentReset(val previous: ComposerRecovery?, val prepared: ComposerRecovery)
@@ -775,6 +777,8 @@ internal class ChatComposerOwner(
         generation: Long? = null,
     ) {
         var pending = checkNotNull(mutable.value.journal?.entries?.get(op.key)?.pending)
+        op.inputMayHaveBeenSent = pending.stage == TextStage.Sending
+        op.connection.chatList?.showOutgoingActivity(pending)
         val recoveryAttempt =
             mutable.value.journal?.entries?.get(op.key)?.recovery?.takeIf {
                 it.send.clientEventId == pending.eventId
@@ -821,9 +825,11 @@ internal class ChatComposerOwner(
             checkNotNull(op.connection.recovery)
                 .requireWritable(it.selection, checkNotNull(recoveryGeneration))
         }
+        op.inputMayHaveBeenSent = true
         val result = op.connection.service.sendInput(pending.send)
         requireCurrent(op)
         if (result.threadId != pending.threadId) throw ApiFailure.IncompatibleResponse()
+        op.connection.chatList?.acknowledgeOutgoingActivity(pending)
         settle(op, pending, TextDisposition.Accepted)
     }
 
@@ -944,6 +950,14 @@ internal class ChatComposerOwner(
 
     private fun fail(op: Operation, error: Exception) {
         if (current(op)) {
+            if (!op.checking) {
+                mutable.value.journal?.entries?.get(op.key)?.pending?.let { pending ->
+                    val rejected =
+                        !op.inputMayHaveBeenSent ||
+                            error is ApiFailure.Http && error.status in setOf(400, 403, 404, 422)
+                    op.connection.chatList?.refreshAfterSendFailure(pending, rejected)
+                }
+            }
             if (error is RecoveryUnavailable) {
                 val entry = mutable.value.journal?.entries?.get(op.key)
                 val pending = entry?.pending

@@ -49,9 +49,13 @@ internal fun collapsedProjectActivity(
 }
 
 /** Replay already orders the pins first. Render a boundary only within the visible scope. */
-internal fun ChatListGroup.pinnedTailIndex(): Int {
+internal fun ChatListGroup.pinnedTailIndex(hasProvisional: Boolean = false): Int {
     val firstOrdinary = threads.indexOfFirst { it.pinnedAt == null }
-    return if (firstOrdinary > 0) firstOrdinary - 1 else -1
+    return when {
+        firstOrdinary > 0 -> firstOrdinary - 1
+        firstOrdinary == -1 && hasProvisional -> threads.lastIndex
+        else -> -1
+    }
 }
 
 internal fun ChatListGroup.pinNeighbor(index: Int, step: Int): ConfirmedChat? =

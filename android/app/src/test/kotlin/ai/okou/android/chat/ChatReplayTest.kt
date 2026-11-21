@@ -207,6 +207,7 @@ class ChatReplayTest {
         val unreadProject = chatListGroups(state.copy(filter = ChatListFilter.Unread)).first()
         assertEquals(listOf(CHAT_IN_PROJECT), unreadProject.threads.map { it.id })
         assertEquals(-1, unreadProject.pinnedTailIndex())
+        assertEquals(0, unreadProject.pinnedTailIndex(hasProvisional = true))
     }
 
     @Test

@@ -46,14 +46,22 @@ internal data class ChatRowEdit(
         }
 }
 
-internal fun ReplayedChats.withRowEdits(edits: Collection<ChatRowEdit>): ReplayedChats {
-    if (edits.isEmpty()) return this
+internal fun ReplayedChats.withLocalChanges(
+    edits: Collection<ChatRowEdit>,
+    recentThreads: List<String>,
+): ReplayedChats {
+    if (edits.isEmpty() && recentThreads.isEmpty()) return this
     val byThread = edits.groupBy { it.threadId }
-    val recency =
+    var recency =
         byRecency.map { row ->
             byThread[row.id].orEmpty().fold(row) { current, edit -> edit.apply(current) }
         }
-    if (edits.any { it.field == ChatRowField.Pin })
+    if (recentThreads.isNotEmpty()) {
+        val rows = recency.associateBy { it.id }
+        val touched = recentThreads.toSet()
+        recency = touched.mapNotNull(rows::get) + recency.filterNot { it.id in touched }
+    }
+    if (recentThreads.isNotEmpty() || edits.any { it.field == ChatRowField.Pin })
         return ReplayedChats(orderChatPins(recency), recency)
     val editedRows = recency.filter { it.id in byThread }.associateBy { it.id }
     return ReplayedChats(threads.map { editedRows[it.id] ?: it }, recency)

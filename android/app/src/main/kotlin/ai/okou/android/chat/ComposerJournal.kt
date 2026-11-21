@@ -74,6 +74,8 @@ data class ComposerTarget(
         get() = threadId?.let { "thread:$it" } ?: "new:${projectId.orEmpty()}"
 }
 
+internal data class ProvisionalChat(val threadId: String, val projectId: String?)
+
 enum class ComposerPersistence {
     Loading,
     Pending,
@@ -132,6 +134,13 @@ data class ComposerState(
                 ?.takeIf { it.threadId == threadId }
                 ?.create
                 ?.let { ComposerTarget(projectId = it.projectId) }
+        }
+
+    internal fun provisionalChats(): List<ProvisionalChat> =
+        journal?.entries.orEmpty().entries.toList().asReversed().mapNotNull { (key, entry) ->
+            if (!key.startsWith("new:")) return@mapNotNull null
+            val id = entry.pending?.threadId ?: entry.createdThreadId ?: return@mapNotNull null
+            ProvisionalChat(id, key.removePrefix("new:").ifEmpty { null })
         }
 
     fun canSend(target: ComposerTarget): Boolean =

@@ -74,6 +74,43 @@ Apply [first-display verification](android-testing.md#first-display-with-pending
 when introducing the corresponding API consumers. A standalone benchmark target
 or numerical startup budget is not a prerequisite for applying this contract.
 
+## Cache-First Presentation and Optimistic Actions
+
+Restore usable, last-confirmed data after checking the current authorization.
+Enable each action when its own prerequisites are satisfied. Give each cached
+resource a freshness policy and a canonical refresh path. Keep usable content
+visible during refresh and preserve the distinction between unknown and
+confirmed empty. A display snapshot cannot supply freshness or authorization
+evidence for an action that needs a current server observation.
+
+Derive presentation from a confirmed baseline and local intents in the owning
+state. Show a predictable local change immediately. When the result depends on
+the server, show progress until the owner can confirm the outcome. Keep
+optimistic display out of the [confirmed cache](#local-storage). User-authored
+drafts and commands that must survive process recreation use their own
+durable storage contract.
+
+Choose the confirmation evidence for each operation before sending it. Match
+[event-backed changes](../chat.md#event-sourcing-and-optimistic-events) by
+their original IDs. A complete authoritative response can confirm its own
+resource. A readback must have started late enough to observe the write and
+must preserve newer local intents. Independently committed steps each require
+their own evidence. Derive bulk success from the confirmed subset.
+
+Recover from a definitive rejection according to the affected operation's
+contract. After an uncertain transport outcome, reconcile through the
+authoritative resource and retain recoverable input. Where the API supports
+idempotent retries, reuse the original request and identity. When an owner
+retires, end its presentation and reject publications from its old work.
+
+Coalesce invalidations within a resource so requests for unrelated resources
+can progress independently. Preserve demand received during an in-flight
+read and catch up on reconnect. Verify the visible result while the transport
+is held, then verify convergence under the applicable failure and ownership
+scenarios. Measure time to usable content, time to visible action feedback,
+and time to canonical confirmation separately when quantifying a latency
+change. See [Android testing](android-testing.md#first-display-with-pending-api-requests).
+
 ## Native Presentation
 
 Use Kotlin and Compose for application UI and native APIs for OS interactions.
