@@ -7,7 +7,11 @@ import {
   type ConnectorCatalogArtifactConnector,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import type { ConnectorCatalogPermissionSummary } from "@okouai/connectors/connector-catalog/entry-columns";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
+import {
+  nullableDriverValueDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 
 // Narrow projections share the required column contract with the writer.
 const entry = connectorCatalogEntries;
@@ -39,22 +43,37 @@ const catalogSearchColumns = Object.freeze({
   description: entry.description,
 });
 
+// Both catalog formats expose the logical source. Run readers only need this value.
+export const connectorCatalogSkillSourceVersionId =
+  sql`CASE WHEN ${entry.skill}->>'kind' = 'bundled'
+  THEN ${entry.skill}->>'versionId' END`.mapWith(
+    nullableDriverValueDecoder(pgTextDecoder),
+  );
+const skillSourceVersionId = connectorCatalogSkillSourceVersionId.as(
+  "skill_source_version_id",
+);
+
 export const connectorCatalogRuntimeColumns = Object.freeze({
   ...metadataColumns,
-  skill: entry.skill,
+  skillSourceVersionId,
   firewall: entry.firewall,
 });
 
 export const connectorCatalogExecutionColumns = Object.freeze({
   ...connectorCatalogCompatibilityColumns,
   label: entry.label,
-  skill: entry.skill,
+  skillSourceVersionId,
   firewall: entry.firewall,
 });
 
-export type ConnectorCatalogExecutionConnector = Pick<
+export type ConnectorCatalogResolutionConnector = Omit<
   ConnectorCatalogArtifactConnector,
-  "slug" | "label" | "authMethods" | "mcp" | "skill" | "firewall"
+  "skill"
+> & { readonly skillSourceVersionId: string | null };
+
+export type ConnectorCatalogExecutionConnector = Pick<
+  ConnectorCatalogResolutionConnector,
+  "slug" | "label" | "authMethods" | "mcp" | "skillSourceVersionId" | "firewall"
 >;
 
 // Catalog-wide diagnostics and change detection do not consume display copy or skills.
@@ -141,8 +160,8 @@ export function materializeConnectorCatalogSearchRow(
 }
 
 export function materializeConnectorCatalogRuntimeRow(
-  row: ColumnRow<ConnectorCatalogArtifactConnector>,
-): ConnectorCatalogArtifactConnector {
+  row: ColumnRow<ConnectorCatalogResolutionConnector>,
+): ConnectorCatalogResolutionConnector {
   const { mcp, ...fields } = row;
   return { ...fields, ...(mcp === null ? {} : { mcp }) };
 }

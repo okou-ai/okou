@@ -2,7 +2,6 @@ import { LARK_OFFICIAL_SKILL_MARKDOWN } from "./lark-official-skill";
 import { LARK_OFFICIAL_OAUTH_SCOPES } from "@okouai/api-contracts/validators/lark-official";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
-import { orgCustomConnectorSkillBundles } from "@okouai/db/runtime/org-custom-connector-skill-bundle";
 import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
@@ -50,6 +49,11 @@ import {
   prepareCustomConnectorSkillBundle$,
   type PreparedCustomConnectorSkill,
 } from "./custom-connector-skill-bundle.service";
+import {
+  customConnectorSkillBundleSelection,
+  customConnectorSkillBundleValues,
+  type CustomConnectorSkillBundleRow,
+} from "./custom-connector-skill-bundle-columns";
 import {
   FEISHU_CUSTOM_CONNECTOR_SKILL_METADATA,
   getFeishuCustomConnectorSlug,
@@ -291,10 +295,7 @@ function feishuCustomConnectorIdCondition(
 }
 
 type FeishuCustomConnectorDefinitionRow = CustomConnectorDefinitionRow &
-  Pick<
-    typeof orgCustomConnectorSkillBundles.$inferSelect,
-    "skillContentBundle" | "skillContentBundleSourceVersionId"
-  >;
+  CustomConnectorSkillBundleRow;
 
 interface ExistingFeishuCustomConnector {
   readonly connector: FeishuCustomConnectorDefinitionRow;
@@ -391,9 +392,7 @@ function feishuExistingConnectorPlan(
     columns: {
       connector: {
         ...customConnectorDefinitionSelection(),
-        skillContentBundle: orgCustomConnectorSkillBundles.skillContentBundle,
-        skillContentBundleSourceVersionId:
-          orgCustomConnectorSkillBundles.skillContentBundleSourceVersionId,
+        ...customConnectorSkillBundleSelection(),
       },
       oauthConfig: orgCustomConnectorOauthConfigs,
     },
@@ -416,7 +415,6 @@ function feishuConnectorMutation(
   prepared: PreparedFeishuCustomConnectorSkill,
   existing: ExistingFeishuCustomConnector | undefined,
 ) {
-  const skillStorageVersionId = prepared.skill.sourceVersionId;
   if (!existing) {
     return {
       kind: "create",
@@ -428,9 +426,7 @@ function feishuConnectorMutation(
           installation.platform,
         ),
         ...desiredConnectorDefinition(installation),
-        skillStorageVersionId,
-        skillContentBundle: prepared.skill.contentBundle,
-        skillContentBundleSourceVersionId: skillStorageVersionId,
+        ...customConnectorSkillBundleValues(prepared.skill),
         createdBy: installation.ownerUserId ?? args.userId,
       },
     } as const;
@@ -452,9 +448,7 @@ function feishuConnectorMutation(
     kind: "repair",
     values: {
       ...desiredConnectorDefinition(installation),
-      skillStorageVersionId,
-      skillContentBundle: prepared.skill.contentBundle,
-      skillContentBundleSourceVersionId: skillStorageVersionId,
+      ...customConnectorSkillBundleValues(prepared.skill),
       storageVersion: changed
         ? existing.connector.storageVersion + 1
         : existing.connector.storageVersion,
@@ -496,7 +490,7 @@ function feishuObservedInstallationCondition(
 
 /** Definition writers publish OAuth changes with this existing row version. */
 function feishuObservedDefinitionCondition(
-  connector: CustomConnectorDefinitionRow,
+  connector: FeishuCustomConnectorDefinitionRow,
 ) {
   return and(
     eq(orgCustomConnectors.id, connector.id),

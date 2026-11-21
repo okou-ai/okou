@@ -32,6 +32,7 @@ import {
   connectorCatalogRuntimeColumns,
   materializeConnectorCatalogCompatibilityRow,
   materializeConnectorCatalogRuntimeRow,
+  type ConnectorCatalogResolutionConnector,
 } from "./connector-catalog-columns";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { db$ } from "../external/db";
@@ -62,7 +63,7 @@ type CatalogCompatibilityEntry = Pick<
 >;
 
 interface CatalogSlugRow<
-  Entry extends CatalogCompatibilityEntry = ImmutableConnectorCatalogEntry,
+  Entry extends CatalogCompatibilityEntry = ConnectorCatalogResolutionConnector,
 > {
   readonly current: {
     readonly schemaVersion: number;
@@ -347,7 +348,8 @@ export function connectorRuntimeSlugSelectionReadPlan(args: {
         generation: connectorCatalogRuntimeColumns.generation,
         authMethods: connectorCatalogRuntimeColumns.authMethods,
         mcp: connectorCatalogRuntimeColumns.mcp,
-        skill: connectorCatalogRuntimeColumns.skill,
+        skillSourceVersionId:
+          connectorCatalogRuntimeColumns.skillSourceVersionId,
         firewall: connectorCatalogRuntimeColumns.firewall,
       },
     },

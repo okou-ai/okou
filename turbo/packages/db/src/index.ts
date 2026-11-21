@@ -26,7 +26,6 @@ import * as instructionsSchema from "./schema/instructions";
 import * as agentSchema from "./schema/agent";
 import * as agentRunSchema from "./runtime/agent-run";
 import * as agentRunConnectorDiagnosticRegistrationSchema from "./schema/agent-run-connector-diagnostic-registration";
-import * as storageSchema from "./schema/storage";
 import * as memberMemorySchema from "./schema/member-memory";
 import * as registryResourceArchiveSchema from "./schema/registry-resource-archive";
 import * as systemStoragePresignedUrlCacheSchema from "./runtime/system-storage-presigned-url-cache";
@@ -116,7 +115,6 @@ import * as builtInSkillSchema from "./schema/built-in-skill";
 import * as usagePricingSchema from "./runtime/usage-pricing";
 import * as agentDraftSchema from "./schema/agent-draft";
 import * as chatThreadDraftSchema from "./schema/chat-thread-draft";
-import * as storageVersionLineageSchema from "./schema/storage-version-lineage";
 import * as runUploadedFileSchema from "./schema/run-uploaded-file";
 import * as builtInModelKeySchema from "./schema/built-in-model-key";
 import * as workflowSchema from "./schema/workflow";
@@ -206,7 +204,6 @@ export const schema = {
   ...instructionsSchema,
   ...agentRunSchema,
   ...agentRunConnectorDiagnosticRegistrationSchema,
-  ...storageSchema,
   ...memberMemorySchema,
   ...registryResourceArchiveSchema,
   ...systemStoragePresignedUrlCacheSchema,
@@ -298,7 +295,6 @@ export const schema = {
   ...usagePricingSchema,
   ...agentDraftSchema,
   ...chatThreadDraftSchema,
-  ...storageVersionLineageSchema,
   ...runUploadedFileSchema,
   ...builtInModelKeySchema,
   ...workflowSchema,

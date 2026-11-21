@@ -108,7 +108,8 @@ function capturedEntries(
               authMethods: connectorCatalogExecutionColumns.authMethods,
               mcp: connectorCatalogExecutionColumns.mcp,
               label: connectorCatalogExecutionColumns.label,
-              skill: connectorCatalogExecutionColumns.skill,
+              skillSourceVersionId:
+                connectorCatalogExecutionColumns.skillSourceVersionId,
               firewall: connectorCatalogExecutionColumns.firewall,
             })
             .from(connectorCatalogEntries)
