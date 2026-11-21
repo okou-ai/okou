@@ -10,6 +10,24 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.100.7](https://github.com/okou-ai/okou/compare/api-v2.100.6...api-v2.100.7) (2026-11-21)
+
+
+### Bug Fixes
+
+* **cli:** remove legacy agent ids from cli requests ([#49830](https://github.com/okou-ai/okou/issues/49830)) ([fad4dc9](https://github.com/okou-ai/okou/commit/fad4dc9a841aac86dcdaf62f17d07ff200c287e3))
+* return 404 for unconfigured get started rewards ([#49832](https://github.com/okou-ai/okou/issues/49832)) ([b8b046f](https://github.com/okou-ai/okou/commit/b8b046f5daf43e740a8ed051e59ca7738ed327ad))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.1
+    * @okouai/core bumped to 8.858.6
+    * @okouai/db bumped to 2.57.7
+    * @okouai/pi-agent-runtime bumped to 1.52.25
+
 ## [2.100.6](https://github.com/okou-ai/okou/compare/api-v2.100.5...api-v2.100.6) (2026-11-21)
 
 
