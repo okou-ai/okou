@@ -86,7 +86,7 @@
           "title": "Anbieter vorübergehend nicht erreichbar"
         }
       },
-      "fallbackAgent": "Agent",
+      "fallbackAgent": "Okou",
       "fields": {
         "duration": "Dauer",
         "model": "Modell",
@@ -989,8 +989,8 @@
         "twentyFourHours": "24 Stunden"
       },
       "errors": {
-        "loadMember": "Das Workspace-Mitglied konnte nicht geladen werden.",
         "loadGrants": "Berechtigungserteilungen konnten nicht geladen werden",
+        "loadMember": "Das Workspace-Mitglied konnte nicht geladen werden.",
         "loadMetadata": "Berechtigungsmetadaten konnten nicht geladen werden",
         "missingPermission": "Fehlende Berechtigung in URL-Parametern",
         "unknownAction": "Unbekannte Berechtigungsaktion: {{action}}",
@@ -2312,7 +2312,6 @@
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
-      "memberNotFound": "Workspace-Mitglied nicht verfügbar.",
       "allow": "Erlauben",
       "alreadyAllowed": "Bereits erlaubt",
       "alreadyDenied": "Bereits abgelehnt",
@@ -2327,6 +2326,7 @@
       "expiresInHours_one": "Läuft in {{count}} Stunde ab",
       "expiresInHours_other": "Läuft in {{count}} Stunden ab",
       "loadFailed": "Berechtigungsstatus konnte nicht geladen werden",
+      "memberNotFound": "Workspace-Mitglied nicht verfügbar.",
       "otherEndpoints": "andere Endpunkte",
       "unknown": "Unbekannte Berechtigung",
       "updated": "Berechtigungen aktualisiert",
@@ -3249,7 +3249,7 @@
         "tokenUrl": "Token-URL"
       },
       "delete": {
-        "description": "Dadurch werden die Integration und die dafür gespeicherten Secrets aller Mitglieder entfernt. Agenten, die für diese Integration autorisiert sind, verlieren sofort den Zugriff. Diese Aktion kann nicht rückgängig gemacht werden.",
+        "description": "Beim Löschen verlieren alle Mitglieder des Arbeitsbereichs sofort den Zugriff auf diesen Connector. Ihre gespeicherten Geheimnisse werden ebenfalls gelöscht. Dies lässt sich nicht rückgängig machen.",
         "title": "{{connector}} löschen?"
       },
       "edit": {
@@ -6028,7 +6028,7 @@
       "summary_other": "{{count}} Zugangsdaten-Sätze konfiguriert",
       "unused": "Von keinem Host verwendet"
     },
-    "deleteHelp": "Diesen Host löschen? Seine Zugangsdaten bleiben erhalten. Agents sehen ihn nicht mehr im Inventar.",
+    "deleteHelp": "Diesen Host löschen? Die Zugangsdaten bleiben gespeichert. Okou verliert den Zugriff auf den Host.",
     "description": "Erlaube Okou, Befehle auf entfernten Rechnern auszuführen.",
     "edit": "Host bearbeiten",
     "editHelp": "Andere Zugangsdaten auszuwählen ändert nur diesen Host. Änderungen am direkten Endpunkt löschen den gespeicherten Hostschlüssel; Änderungen mit Cloudflare Access behalten ihn bei.",
@@ -6075,7 +6075,7 @@
     },
     "tailscale": {
       "authenticationFailed": "Die Tailscale-SSH-Authentifizierung ist fehlgeschlagen. Prüfe den Systembenutzernamen, aktiviere Tailscale SSH auf dem getaggten Zielgerät und erlaube diese Anmeldung in der SSH-accept-Richtlinie des Tailnets.",
-      "deleteHelp": "Diesen Host löschen? Agents sehen diesen Host dann nicht mehr im Live-Inventar.",
+      "deleteHelp": "Diesen Host löschen? Okou verliert den Zugriff darauf.",
       "sshDocs": "Tailscale SSH-Dokumentation",
       "sshHelp": "Authentifiziert über die Identität des ausgewählten Tailscale-Netzwerks, ohne SSH-Passwort oder privaten Schlüssel. Aktiviere Tailscale SSH auf einem getaggten Zielgerät und erlaube diesen Systembenutzernamen in einer SSH-accept-Richtlinie.",
       "sshTitle": "Tailscale SSH",
@@ -6923,7 +6923,7 @@
       "metadata": {
         "aria": "Workflow-Metadaten",
         "description": "Beschreibung",
-        "descriptionHelp": "Teilen Sie dem Agenten mit, wann dieser Workflow verwendet werden soll.",
+        "descriptionHelp": "Beschreibe, wann Okou diesen Workflow verwenden soll.",
         "name": "Name",
         "nameHelp": "Wird in Workflow-Listen und bei der Auswahl eines Workflows angezeigt.",
         "namePlaceholder": "Workflowname",
@@ -7135,7 +7135,7 @@
       "uninstallTitle": "Microsoft Teams-Integration deinstallieren?"
     },
     "telegram": {
-      "description": "Leiten Sie Telegram-Nachrichten an Agenten weiter",
+      "description": "Telegram mit Okou verbinden.",
       "title": "Telegram"
     },
     "wechat": {
@@ -7158,7 +7158,7 @@
       "restoreDescription": "WeChat wieder mit dem folgenden Konto und Arbeitsbereich verbinden.",
       "returnToWechat": "Kehre zu WeChat zurück und sende eine Nachricht, um den Chat zu starten.",
       "scanned": "Gescannt. Bestätige auf deinem Smartphone.",
-      "scope": "Nur deine Direktnachrichten an diesen Agenten werden verbunden. Textnachrichten werden unterstützt.",
+      "scope": "Nur Direktnachrichten an Okou werden verbunden. Textnachrichten werden unterstützt.",
       "title": "WeChat verbinden",
       "unavailable": "Die Verbindung ist noch nicht eingerichtet.",
       "verification_blocked": "Zu viele Versuche. Erstelle einen neuen QR-Code.",

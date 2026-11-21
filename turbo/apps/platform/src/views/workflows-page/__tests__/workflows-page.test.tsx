@@ -3981,7 +3981,7 @@ test("An earlier webhook response preserves a reopened creation form", async () 
   });
 });
 
-test("Workspace Workflows ignore stale Agent filters and identify the caller's private override", async () => {
+test("identifies the caller's private override in the workspace", async () => {
   mockChatLifecycle(context);
   const shared = salesResearch();
   const personal: WorkflowDetailResponse = {
@@ -4114,7 +4114,7 @@ test("Make private copy uses the workspace default without a destination or remo
   ).resolves.toBeInTheDocument();
 });
 
-test("creates a workspace Workflow with the default Okou without choosing an Agent", async () => {
+test("creates a workspace Workflow", async () => {
   mockChatLifecycle(context);
   mockWorkflowApis([salesResearch()]);
   await setupPage({

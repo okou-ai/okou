@@ -86,7 +86,7 @@
           "title": "モデルプロバイダーが一時的に利用できません"
         }
       },
-      "fallbackAgent": "エージェント",
+      "fallbackAgent": "Okou",
       "fields": {
         "duration": "期間",
         "model": "モデル",
@@ -988,8 +988,8 @@
         "twentyFourHours": "24時間"
       },
       "errors": {
-        "loadMember": "ワークスペースのメンバーを読み込めませんでした。",
         "loadGrants": "権限付与のロードに失敗しました",
+        "loadMember": "ワークスペースのメンバーを読み込めませんでした。",
         "loadMetadata": "権限メタデータのロードに失敗しました",
         "missingPermission": "URLパラメータに権限がありません",
         "unknownAction": "不明な権限アクション: {{action}}",
@@ -2303,7 +2303,6 @@
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
-      "memberNotFound": "ワークスペースのメンバーが見つかりません。",
       "allow": "許可する",
       "alreadyAllowed": "すでに許可されています",
       "alreadyDenied": "すでに拒否されています",
@@ -2318,6 +2317,7 @@
       "expiresInHours_one": "{{count}} 時間後に期限切れになります",
       "expiresInHours_other": "{{count}} 時間で期限切れになります",
       "loadFailed": "権限ステータスを読み込めませんでした",
+      "memberNotFound": "ワークスペースのメンバーが見つかりません。",
       "otherEndpoints": "その他のエンドポイント",
       "unknown": "不明な権限",
       "updated": "権限が更新されました",
@@ -3231,7 +3231,7 @@
         "tokenUrl": "トークンURL"
       },
       "delete": {
-        "description": "これにより、コネクタと、そのコネクタに対してすべてのメンバーが保存したシークレットが削除されます。このコネクタに対して認可されたエージェントは、すぐにアクセスできなくなります。これを元に戻すことはできません。",
+        "description": "このコネクターを削除すると、ワークスペースのメンバーはすぐにアクセスできなくなり、全員の保存済みシークレットも削除されます。この操作は取り消せません。",
         "title": "{{connector}} を削除しますか?"
       },
       "edit": {
@@ -6002,7 +6002,7 @@
       "summary_other": "{{count}} 件の認証情報を設定済み",
       "unused": "使用中のホストはありません"
     },
-    "deleteHelp": "このホストを削除しますか？認証情報は保持されます。Agent のホスト一覧には表示されなくなります。",
+    "deleteHelp": "このホストを削除しますか？認証情報は保持され、Okou はホストにアクセスできなくなります。",
     "description": "Okou にリモートマシンでのコマンド実行を許可します。",
     "edit": "ホストを編集",
     "editHelp": "別の認証情報を選ぶと、このホストだけが変更されます。直接接続先の変更は保存済みホスト鍵を消去します。Cloudflare Access が関係する変更では保持されます。",
@@ -6049,7 +6049,7 @@
     },
     "tailscale": {
       "authenticationFailed": "Tailscale SSH の認証に失敗しました。システムユーザー名を確認し、タグ付きの接続先で Tailscale SSH を有効にして、tailnet の SSH accept ポリシーでこのログインを許可してください。",
-      "deleteHelp": "このホストを削除しますか？エージェントはリアルタイムのインベントリでこのホストを確認できなくなります。",
+      "deleteHelp": "このホストを削除しますか？Okou はホストにアクセスできなくなります。",
       "sshDocs": "Tailscale SSH の公式ドキュメント",
       "sshHelp": "選択した Tailscale ネットワークのマシン ID で認証するため、SSH パスワードや秘密鍵は不要です。タグ付きの接続先で Tailscale SSH を有効にし、SSH の accept ポリシーでこのシステムユーザー名を許可してください。",
       "sshTitle": "Tailscale SSH",
@@ -6895,7 +6895,7 @@
       "metadata": {
         "aria": "ワークフローメタデータ",
         "description": "説明",
-        "descriptionHelp": "このワークフローをいつ使用するかをエージェントに伝えます。",
+        "descriptionHelp": "Okou がこのワークフローを使う場面を説明してください。",
         "name": "名前",
         "nameHelp": "ワークフロー リストおよびワークフローの選択時に表示されます。",
         "namePlaceholder": "ワークフロー名",
@@ -7107,7 +7107,7 @@
       "uninstallTitle": "Microsoft Teams 統合をアンインストールしますか?"
     },
     "telegram": {
-      "description": "Telegram メッセージをエージェントにルーティングする",
+      "description": "Telegram を Okou に接続します。",
       "title": "Telegram"
     },
     "wechat": {
@@ -7130,7 +7130,7 @@
       "restoreDescription": "以下のアカウントとワークスペースに WeChat を再接続します。",
       "returnToWechat": "WeChat に戻り、メッセージを送信して会話を始めましょう。",
       "scanned": "スキャンしました。スマートフォンで確認してください。",
-      "scope": "このエージェントへのダイレクトメッセージのみが連携されます。テキストメッセージに対応しています。",
+      "scope": "Okou とのダイレクトメッセージだけが接続されます。テキストメッセージに対応しています。",
       "title": "WeChatに接続",
       "unavailable": "接続はまだ設定されていません。",
       "verification_blocked": "試行回数が多すぎます。新しいQRコードを作成してください。",

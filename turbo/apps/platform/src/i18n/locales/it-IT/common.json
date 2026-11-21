@@ -88,7 +88,7 @@
           "title": "Provider temporaneamente non disponibile"
         }
       },
-      "fallbackAgent": "Agente",
+      "fallbackAgent": "Okou",
       "fields": {
         "duration": "Durata",
         "model": "Modello",
@@ -1006,8 +1006,8 @@
         "twentyFourHours": "24 ore"
       },
       "errors": {
-        "loadMember": "Impossibile caricare il membro dello spazio di lavoro.",
         "loadGrants": "Impossibile caricare le concessioni di autorizzazioni",
+        "loadMember": "Impossibile caricare il membro dello spazio di lavoro.",
         "loadMetadata": "Impossibile caricare i metadati delle autorizzazioni",
         "missingPermission": "Autorizzazione mancante nei parametri dell'URL",
         "unknownAction": "Azione di autorizzazione sconosciuta: {{action}}",
@@ -2348,7 +2348,6 @@
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
-      "memberNotFound": "Membro dello spazio di lavoro non disponibile.",
       "allow": "Consenti",
       "alreadyAllowed": "Già consentito",
       "alreadyDenied": "Già negato",
@@ -2365,6 +2364,7 @@
       "expiresInHours_many": "Scade tra {{count}} ore",
       "expiresInHours_other": "Scade tra {{count}} ore",
       "loadFailed": "Impossibile caricare lo stato dell'autorizzazione",
+      "memberNotFound": "Membro dello spazio di lavoro non disponibile.",
       "otherEndpoints": "altri endpoint",
       "unknown": "Autorizzazione sconosciuta",
       "updated": "Autorizzazioni aggiornate",
@@ -3303,7 +3303,7 @@
         "tokenUrl": "Gettone URL"
       },
       "delete": {
-        "description": "Ciò rimuove il connettore e il relativo segreto archiviato di ogni membro. Gli agenti autorizzati per questo connettore perderanno immediatamente l'accesso. L'operazione non può essere annullata.",
+        "description": "Eliminando il connettore, tutti i membri dello spazio di lavoro perdono immediatamente l’accesso e i loro segreti salvati vengono eliminati. L’operazione è irreversibile.",
         "title": "Eliminare {{connector}}?"
       },
       "edit": {
@@ -6101,7 +6101,7 @@
       "summary_other": "{{count}} credenziali configurate",
       "unused": "Non utilizzate da alcun host"
     },
-    "deleteHelp": "Eliminare questo host? Le sue credenziali saranno conservate. Gli Agents non lo vedranno più nell’inventario.",
+    "deleteHelp": "Eliminare questo host? Le credenziali verranno conservate. Okou perderà l’accesso all’host.",
     "description": "Consenti a Okou di eseguire comandi su computer remoti.",
     "edit": "Modifica host",
     "editHelp": "Scegliere credenziali diverse modifica solo questo host. I cambiamenti all’endpoint diretto cancellano la chiave host salvata; quelli che coinvolgono Cloudflare Access la conservano.",
@@ -6148,7 +6148,7 @@
     },
     "tailscale": {
       "authenticationFailed": "Autenticazione Tailscale SSH non riuscita. Controlla il nome utente di sistema, abilita Tailscale SSH sulla destinazione con tag e autorizza questo accesso nella policy SSH accept della tailnet.",
-      "deleteHelp": "Eliminare questo host? Gli agenti non lo vedranno più nell’inventario in tempo reale.",
+      "deleteHelp": "Eliminare questo host? Okou perderà l’accesso.",
       "sshDocs": "Documentazione di Tailscale SSH",
       "sshHelp": "Usa l'identità della rete Tailscale selezionata, senza password SSH né chiave privata. Abilita Tailscale SSH su un dispositivo di destinazione con tag e autorizza questo nome utente di sistema in una policy SSH accept.",
       "sshTitle": "Tailscale SSH",
@@ -7004,7 +7004,7 @@
       "metadata": {
         "aria": "Metadati del flusso di lavoro",
         "description": "Descrizione",
-        "descriptionHelp": "Indica all'agente quando utilizzare questo flusso di lavoro.",
+        "descriptionHelp": "Descrivi quando Okou deve usare questo flusso di lavoro.",
         "name": "Nome",
         "nameHelp": "Visualizzato negli elenchi dei flussi di lavoro e quando si sceglie un flusso di lavoro.",
         "namePlaceholder": "Nome del flusso di lavoro",
@@ -7216,7 +7216,7 @@
       "uninstallTitle": "Disinstallare l'integrazione di Microsoft Teams?"
     },
     "telegram": {
-      "description": "Instrada i messaggi Telegram agli agenti",
+      "description": "Collega Telegram a Okou.",
       "title": "Telegram"
     },
     "wechat": {
@@ -7239,7 +7239,7 @@
       "restoreDescription": "Ricollega WeChat all’account e allo spazio di lavoro qui sotto.",
       "returnToWechat": "Torna su WeChat e invia un messaggio per iniziare la conversazione.",
       "scanned": "Scansionato. Conferma sul telefono.",
-      "scope": "Vengono collegati solo i tuoi messaggi diretti a questo agente. Sono supportati i messaggi di testo.",
+      "scope": "Vengono collegati solo i messaggi diretti a Okou. Sono supportati i messaggi di testo.",
       "title": "Connetti WeChat",
       "unavailable": "La connessione non è ancora configurata.",
       "verification_blocked": "Troppi tentativi. Crea un nuovo codice QR.",

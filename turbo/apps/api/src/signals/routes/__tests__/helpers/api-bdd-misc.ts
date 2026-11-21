@@ -24,7 +24,7 @@ import {
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
-import { type ApiTestUser } from "./api-bdd";
+import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
 
 import { emailUnsubscribeRoutes } from "../../email-unsubscribe";

@@ -166,19 +166,11 @@ function automationsClient() {
   );
 }
 
-function createCaseWorkflowObjects() {
-  const objects = new Map<string, Buffer>();
-  beforeEach(() => {
-    objects.clear();
-  });
-  return () => {
-    return objects;
-  };
-}
-const workflowObjects = createCaseWorkflowObjects();
+beforeEach(() => {
+  installVolumeS3Fixture();
+});
 
 async function createWorkflow(actor: ApiTestUser, body: WorkflowCreateRequest) {
-  installVolumeS3Fixture(workflowObjects());
   const workflow = await accept(
     collectionClient().create({
       headers: authHeaders(actor),

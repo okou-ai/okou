@@ -268,7 +268,8 @@ async function eventsState() {
 
 try {
   await admin.unsafe(`CREATE DATABASE "${database}"`);
-  await applyPendingMigrations(sql);
+  // This offline migration operates on the pre-Workflow-cutover schema.
+  await applyPendingMigrations(sql, { beforeMillis: 1795289901229 });
   const login = object({ value: string() }).parse(
     (await sql`SELECT session_user AS value`)[0],
   ).value;

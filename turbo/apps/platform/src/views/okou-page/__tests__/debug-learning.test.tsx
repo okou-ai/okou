@@ -15,7 +15,6 @@ import {
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const DEFAULT_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const AUTOMATION_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const THREAD_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
@@ -23,9 +22,6 @@ function learningEntry(): WorkflowAutomationsListEntry {
   return {
     workflow: {
       id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-      agentId: DEFAULT_AGENT_ID,
-      agentName: "okou",
-      agentDisplayName: "Okou",
       name: "proactive-learning",
       displayName: "Proactive Learning",
       description: "Review recent activity and maintain personal memory.",

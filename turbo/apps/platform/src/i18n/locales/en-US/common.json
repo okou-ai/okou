@@ -86,7 +86,7 @@
           "title": "Provider temporarily unavailable"
         }
       },
-      "fallbackAgent": "Agent",
+      "fallbackAgent": "Okou",
       "fields": {
         "duration": "Duration",
         "model": "Model",
@@ -989,8 +989,8 @@
         "twentyFourHours": "24 hours"
       },
       "errors": {
-        "loadMember": "Couldn’t load the workspace member.",
         "loadGrants": "Failed to load permission grants",
+        "loadMember": "Couldn’t load the workspace member.",
         "loadMetadata": "Failed to load permission metadata",
         "missingPermission": "Missing permission in URL parameters",
         "unknownAction": "Unknown permission action: {{action}}",
@@ -2312,7 +2312,6 @@
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
-      "memberNotFound": "Workspace member unavailable.",
       "allow": "Allow",
       "alreadyAllowed": "Already allowed",
       "alreadyDenied": "Already denied",
@@ -2327,6 +2326,7 @@
       "expiresInHours_one": "Expires in {{count}} hour",
       "expiresInHours_other": "Expires in {{count}} hours",
       "loadFailed": "Couldn't load permission status",
+      "memberNotFound": "Workspace member unavailable.",
       "otherEndpoints": "other endpoints",
       "unknown": "Unknown permission",
       "updated": "Permissions updated",
@@ -3247,7 +3247,7 @@
         "tokenUrl": "Token URL"
       },
       "delete": {
-        "description": "This removes the connector and every member's stored secret for it. Agents authorized for this connector will lose access immediately. This can't be undone.",
+        "description": "Deleting this connector immediately removes access and the secrets saved by all workspace members. This cannot be undone.",
         "title": "Delete {{connector}}?"
       },
       "edit": {
@@ -6026,7 +6026,7 @@
       "summary_other": "{{count}} credentials configured",
       "unused": "Not used by any hosts"
     },
-    "deleteHelp": "Delete this host? Its credential will be kept. Agents will no longer see this host in the live inventory.",
+    "deleteHelp": "Delete this host? Its credential will be kept. Okou will lose access to the host.",
     "description": "Let Okou run commands on remote machines.",
     "edit": "Edit host",
     "editHelp": "Selecting a different credential changes only this host. Direct endpoint changes clear its learned host key; changes involving Cloudflare Access keep it.",
@@ -6073,7 +6073,7 @@
     },
     "tailscale": {
       "authenticationFailed": "Tailscale SSH authentication failed. Check the system username, enable Tailscale SSH on the tagged destination and allow this login in the tailnet's SSH accept policy.",
-      "deleteHelp": "Delete this host? Agents will no longer see this host in the live inventory.",
+      "deleteHelp": "Delete this host? Okou will lose access to it.",
       "sshDocs": "Tailscale SSH documentation",
       "sshHelp": "Uses your selected Tailscale network identity without an SSH password or private key. Enable Tailscale SSH on a tagged destination and allow this system username in an SSH accept policy.",
       "sshTitle": "Tailscale SSH",
@@ -6921,7 +6921,7 @@
       "metadata": {
         "aria": "Workflow metadata",
         "description": "Description",
-        "descriptionHelp": "Tell the agent when to use this workflow.",
+        "descriptionHelp": "Describe when Okou should use this workflow.",
         "name": "Name",
         "nameHelp": "Shown in workflow lists and when choosing a workflow.",
         "namePlaceholder": "Workflow name",
@@ -7133,7 +7133,7 @@
       "uninstallTitle": "Uninstall Microsoft Teams integration?"
     },
     "telegram": {
-      "description": "Route Telegram messages to agents",
+      "description": "Connect Telegram to Okou.",
       "title": "Telegram"
     },
     "wechat": {
@@ -7156,7 +7156,7 @@
       "restoreDescription": "Restore this WeChat connection to the account and workspace below.",
       "returnToWechat": "Return to WeChat and send a message to start chatting.",
       "scanned": "Scanned. Confirm on your phone.",
-      "scope": "Only your direct messages to this agent are connected. Text messages are supported.",
+      "scope": "Only direct messages to Okou are connected. Text messages are supported.",
       "title": "Connect WeChat",
       "unavailable": "Connection is not configured yet.",
       "verification_blocked": "Too many verification attempts. Create a new QR code.",

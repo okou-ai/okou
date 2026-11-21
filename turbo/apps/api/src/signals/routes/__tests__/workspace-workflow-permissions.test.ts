@@ -43,7 +43,7 @@ function automations() {
   );
 }
 async function fixture() {
-  const { actor: admin, defaultAgentId } = await workflowBdd.setupWorkflowOrg({
+  const { actor: admin } = await workflowBdd.setupWorkflowOrg({
     tier: "team",
   });
   const alice = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
@@ -61,7 +61,7 @@ async function fixture() {
     }),
     [201],
   );
-  return { admin, alice, bob, defaultAgentId, source: source.body, s3 };
+  return { admin, alice, bob, source: source.body, s3 };
 }
 
 test("ordinary members create and copy private Workflows without gaining public rights", async () => {

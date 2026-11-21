@@ -302,7 +302,7 @@ interface PreparedWorkflowCreation
 /** Statement data only; execution and every write belong to the creation owner. */
 function workflowCreationAdmissionPlan(args: PreparedWorkflowCreation) {
   const query = new QueryBuilder();
-  const { body } = args;
+  const { body, member } = args;
   const slug = query.$with("creation_slug").as(
     query
       .select({ id: workflows.id })

@@ -94,9 +94,6 @@ function installSearchResources() {
   });
   const workflow: WorkflowSummary = {
     id: "f7000000-0000-4000-a000-000000000001",
-    agentId: CHAT_LIST_AGENT_ID,
-    agentName: "Support Agent",
-    agentDisplayName: "Support Agent",
     name: "budget-review",
     displayName: "Budget review",
     description: null,

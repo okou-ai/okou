@@ -218,7 +218,7 @@ final class ComposerWorkflowResourceTests: XCTestCase {
     let gate = WorkflowGate()
     let started = expectation(description: "Initial Workflow request")
     let attempts = WorkflowCounter()
-    let fixture = AttachmentFlowFixture(workflows: { request in
+    let fixture = AttachmentFlowFixture(workflows: { _ in
       let count = attempts.value.withLock {
         $0 += 1
         return $0
@@ -394,7 +394,7 @@ final class ComposerWorkflowResourceTests: XCTestCase {
     let pendingCount = WorkflowCounter()
     let cancelled = expectation(description: "Original HTTP observed cancellation")
     cancelled.expectedFulfillmentCount = 2
-    let fixture = AttachmentFlowFixture(workflows: { request in
+    let fixture = AttachmentFlowFixture(workflows: { _ in
       let attempt = pendingCount.value.withLock {
         $0 += 1
         return $0

@@ -86,7 +86,7 @@
           "title": "Provider sementara tidak tersedia"
         }
       },
-      "fallbackAgent": "Agen",
+      "fallbackAgent": "Okou",
       "fields": {
         "duration": "Durasi",
         "model": "Model",
@@ -988,8 +988,8 @@
         "twentyFourHours": "24 jam"
       },
       "errors": {
-        "loadMember": "Gagal memuat anggota ruang kerja.",
         "loadGrants": "Gagal memuat pemberian izin",
+        "loadMember": "Gagal memuat anggota ruang kerja.",
         "loadMetadata": "Gagal memuat metadata izin",
         "missingPermission": "Izin tidak ada di parameter URL",
         "unknownAction": "Tindakan izin tidak dikenal: {{action}}",
@@ -2303,7 +2303,6 @@
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
-      "memberNotFound": "Anggota ruang kerja tidak tersedia.",
       "allow": "Izinkan",
       "alreadyAllowed": "Sudah diizinkan",
       "alreadyDenied": "Sudah ditolak",
@@ -2318,6 +2317,7 @@
       "expiresInHours_one": "Kedaluwarsa dalam {{count}} jam",
       "expiresInHours_other": "Kedaluwarsa dalam {{count}} jam",
       "loadFailed": "Tidak dapat memuat status izin",
+      "memberNotFound": "Anggota ruang kerja tidak tersedia.",
       "otherEndpoints": "endpoint lainnya",
       "unknown": "Izin tidak dikenal",
       "updated": "Izin diperbarui",
@@ -3231,7 +3231,7 @@
         "tokenUrl": "URL token"
       },
       "delete": {
-        "description": "Ini akan menghapus konektor dan secret tersimpan milik setiap anggota untuk konektor ini. Agen yang berwenang untuk konektor ini akan langsung kehilangan akses. Tindakan ini tidak dapat dibatalkan.",
+        "description": "Menghapus konektor ini langsung mencabut akses dan menghapus rahasia yang disimpan oleh semua anggota ruang kerja. Tindakan ini tidak dapat dibatalkan.",
         "title": "Hapus {{connector}}?"
       },
       "edit": {
@@ -6002,7 +6002,7 @@
       "summary_other": "{{count}} kredensial dikonfigurasi",
       "unused": "Tidak digunakan oleh host mana pun"
     },
-    "deleteHelp": "Hapus host ini? Kredensialnya akan tetap disimpan. Agent tidak lagi melihat host ini dalam inventaris.",
+    "deleteHelp": "Hapus host ini? Kredensialnya akan disimpan. Okou akan kehilangan akses ke host ini.",
     "description": "Izinkan Okou menjalankan perintah di komputer jarak jauh.",
     "edit": "Edit host",
     "editHelp": "Memilih kredensial lain hanya mengubah host ini. Perubahan tujuan langsung menghapus kunci host tersimpan; perubahan yang melibatkan Cloudflare Access mempertahankannya.",
@@ -6049,7 +6049,7 @@
     },
     "tailscale": {
       "authenticationFailed": "Autentikasi Tailscale SSH gagal. Periksa nama pengguna sistem, aktifkan Tailscale SSH pada tujuan yang memiliki tag, dan izinkan login ini dalam kebijakan SSH accept tailnet.",
-      "deleteHelp": "Hapus host ini? Agen tidak akan lagi melihat host ini di inventaris langsung.",
+      "deleteHelp": "Hapus host ini? Okou akan kehilangan akses.",
       "sshDocs": "Dokumentasi Tailscale SSH",
       "sshHelp": "Menggunakan identitas jaringan Tailscale yang dipilih, tanpa kata sandi SSH atau kunci privat. Aktifkan Tailscale SSH pada perangkat tujuan yang memiliki tag dan izinkan nama pengguna sistem ini dalam kebijakan SSH accept.",
       "sshTitle": "Tailscale SSH",
@@ -6895,7 +6895,7 @@
       "metadata": {
         "aria": "Metadata alur kerja",
         "description": "Deskripsi",
-        "descriptionHelp": "Beri tahu agen kapan harus menggunakan alur kerja ini.",
+        "descriptionHelp": "Jelaskan kapan Okou perlu menggunakan alur kerja ini.",
         "name": "Nama",
         "nameHelp": "Ditampilkan di daftar alur kerja dan saat memilih alur kerja.",
         "namePlaceholder": "Nama alur kerja",
@@ -7107,7 +7107,7 @@
       "uninstallTitle": "Copot pemasangan integrasi Microsoft Teams?"
     },
     "telegram": {
-      "description": "Rutekan pesan Telegram ke agen",
+      "description": "Hubungkan Telegram ke Okou.",
       "title": "Telegram"
     },
     "wechat": {
@@ -7130,7 +7130,7 @@
       "restoreDescription": "Hubungkan kembali WeChat ke akun dan ruang kerja di bawah ini.",
       "returnToWechat": "Kembali ke WeChat dan kirim pesan untuk mulai mengobrol.",
       "scanned": "Berhasil dipindai. Konfirmasi di ponsel Anda.",
-      "scope": "Hanya pesan langsung Anda ke agen ini yang terhubung. Pesan teks didukung.",
+      "scope": "Hanya pesan langsung Anda ke Okou yang terhubung. Pesan teks didukung.",
       "title": "Hubungkan WeChat",
       "unavailable": "Koneksi belum dikonfigurasi.",
       "verification_blocked": "Terlalu banyak percobaan. Buat kode QR baru.",

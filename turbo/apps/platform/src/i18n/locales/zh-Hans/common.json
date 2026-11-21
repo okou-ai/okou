@@ -86,7 +86,7 @@
           "title": "提供方暂时不可用"
         }
       },
-      "fallbackAgent": "智能体",
+      "fallbackAgent": "Okou",
       "fields": {
         "duration": "时长",
         "model": "模型",
@@ -988,8 +988,8 @@
         "twentyFourHours": "24 小时"
       },
       "errors": {
-        "loadMember": "无法加载工作区成员信息。",
         "loadGrants": "加载权限授予失败",
+        "loadMember": "无法加载工作区成员信息。",
         "loadMetadata": "加载权限信息失败",
         "missingPermission": "URL 参数中缺少权限",
         "unknownAction": "未知的权限操作：{{action}}",
@@ -2303,7 +2303,6 @@
     },
     "permissions": {
       "actionDescription": "{{action}}{{permissionName}}",
-      "memberNotFound": "工作区成员不可用。",
       "allow": "允许",
       "alreadyAllowed": "已允许",
       "alreadyDenied": "已拒绝",
@@ -2318,6 +2317,7 @@
       "expiresInHours_one": "{{count}} 小时后过期",
       "expiresInHours_other": "{{count}} 小时后过期",
       "loadFailed": "无法加载权限状态",
+      "memberNotFound": "工作区成员不可用。",
       "otherEndpoints": "其他接口",
       "unknown": "未知权限",
       "updated": "权限已更新",
@@ -3231,7 +3231,7 @@
         "tokenUrl": "令牌 URL"
       },
       "delete": {
-        "description": "此操作会删除该连接器，以及每位成员为它存储的密钥。已授权使用该连接器的智能体将立即失去访问权限。此操作无法撤销。",
+        "description": "删除后，工作区成员将立即失去对此连接器的访问权限，所有成员保存的密钥也会被移除。此操作无法撤销。",
         "title": "删除{{connector}}？"
       },
       "edit": {
@@ -6002,7 +6002,7 @@
       "summary_other": "已配置 {{count}} 个凭据",
       "unused": "未被任何主机使用"
     },
-    "deleteHelp": "确定删除该主机？它的凭据会保留。智能体将不再在可用主机列表中看到它。",
+    "deleteHelp": "删除这台主机？凭据会保留，Okou 将无法再访问这台主机。",
     "description": "允许 Okou 在远程主机上运行命令。",
     "edit": "编辑主机",
     "editHelp": "选择其他凭据只会影响该主机。修改直连地址会清除已记录的主机密钥；涉及 Cloudflare Access 的修改则会保留它。",
@@ -6049,7 +6049,7 @@
     },
     "tailscale": {
       "authenticationFailed": "Tailscale SSH 身份认证失败。请检查系统用户名，在带标签的目标设备上启用 Tailscale SSH，并在 tailnet 的 SSH accept 策略中允许此登录。",
-      "deleteHelp": "确定删除该主机？智能体将不再在可用主机列表中看到它。",
+      "deleteHelp": "删除这台主机？Okou 将无法再访问它。",
       "sshDocs": "Tailscale SSH 官方文档",
       "sshHelp": "使用所选 Tailscale 网络的身份认证，无需 SSH 密码或私钥。请在带标签的目标设备上启用 Tailscale SSH，并通过 SSH accept 策略允许此系统用户名。",
       "sshTitle": "Tailscale SSH",
@@ -6895,7 +6895,7 @@
       "metadata": {
         "aria": "工作流信息",
         "description": "描述",
-        "descriptionHelp": "告诉智能体什么时候该用这个工作流。",
+        "descriptionHelp": "说明 Okou 应在什么情况下使用此 Workflow。",
         "name": "名称",
         "nameHelp": "会显示在工作流列表中，以及选择工作流时。",
         "namePlaceholder": "工作流名称",
@@ -7107,7 +7107,7 @@
       "uninstallTitle": "卸载 Microsoft Teams 集成？"
     },
     "telegram": {
-      "description": "把 Telegram 消息转给智能体",
+      "description": "连接 Telegram 与 Okou。",
       "title": "Telegram"
     },
     "wechat": {
@@ -7130,7 +7130,7 @@
       "restoreDescription": "将微信恢复连接到以下账号和工作区。",
       "returnToWechat": "返回微信，发送消息即可开始对话。",
       "scanned": "已扫码，请在手机上确认。",
-      "scope": "只连接你与此智能体的单聊，目前支持文字消息。",
+      "scope": "仅连接你与 Okou 的私聊，支持文本消息。",
       "title": "连接微信",
       "unavailable": "连接服务尚未配置。",
       "verification_blocked": "验证码尝试次数过多，请重新生成二维码。",

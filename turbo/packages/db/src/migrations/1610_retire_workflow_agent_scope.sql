@@ -7,8 +7,10 @@ DROP INDEX "idx_workflows_official_owner_agent_definition_unique";--> statement-
 DROP INDEX "idx_workflows_morning_brief_owner_agent_unique";--> statement-breakpoint
 -- Keep workflows that were hidden by private hosts private at cutover.
 UPDATE workflows AS w SET visibility = 'private'
-FROM agents AS a WHERE a.id = w.agent_id AND a.org_id = w.org_id
-  AND a.visibility = 'private' AND w.visibility = 'public';--> statement-breakpoint
+WHERE w.visibility = 'public' AND NOT EXISTS (
+  SELECT 1 FROM agents AS a
+  WHERE a.id = w.agent_id AND a.org_id = w.org_id AND a.visibility = 'public'
+);--> statement-breakpoint
 CREATE UNIQUE INDEX "idx_workflows_public_name_unique" ON "workflows" USING btree ("org_id","name") WHERE visibility = 'public';--> statement-breakpoint
 CREATE UNIQUE INDEX "idx_workflows_private_owner_name_unique" ON "workflows" USING btree ("org_id","owner_user_id","name") WHERE visibility = 'private' AND official_definition_name IS NULL;--> statement-breakpoint
 ALTER TABLE "workflows" DROP COLUMN "agent_id";

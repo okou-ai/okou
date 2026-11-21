@@ -88,7 +88,7 @@
           "title": "Fournisseur temporairement indisponible"
         }
       },
-      "fallbackAgent": "Agent",
+      "fallbackAgent": "Okou",
       "fields": {
         "duration": "Durée",
         "model": "Modèle",
@@ -1006,8 +1006,8 @@
         "twentyFourHours": "24 heures"
       },
       "errors": {
-        "loadMember": "Impossible de charger le membre de l’espace de travail.",
         "loadGrants": "Échec du chargement des autorisations",
+        "loadMember": "Impossible de charger le membre de l’espace de travail.",
         "loadMetadata": "Échec du chargement des métadonnées des autorisations",
         "missingPermission": "Autorisation manquante dans les paramètres URL",
         "unknownAction": "Action d'autorisation inconnue : {{action}}",
@@ -2348,7 +2348,6 @@
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
-      "memberNotFound": "Membre de l’espace de travail indisponible.",
       "allow": "Autoriser",
       "alreadyAllowed": "Déjà autorisé",
       "alreadyDenied": "Déjà refusé",
@@ -2365,6 +2364,7 @@
       "expiresInHours_many": "Expire dans {{count}} heures",
       "expiresInHours_other": "Expire dans {{count}} heures",
       "loadFailed": "Impossible de charger le statut de la permission",
+      "memberNotFound": "Membre de l’espace de travail indisponible.",
       "otherEndpoints": "autres points de terminaison",
       "unknown": "Permission inconnue",
       "updated": "Permissions mises à jour",
@@ -3303,7 +3303,7 @@
         "tokenUrl": "URL du jeton"
       },
       "delete": {
-        "description": "Ceci supprime le connecteur et tous les secrets stockés des membres pour celui-ci. Les agents autorisés pour ce connecteur perdront immédiatement l'accès. Cela ne peut pas être annulé.",
+        "description": "La suppression retire immédiatement l’accès au connecteur et efface les secrets enregistrés par tous les membres de l’espace de travail. Cette action est irréversible.",
         "title": "Supprimer {{connector}} ?"
       },
       "edit": {
@@ -6101,7 +6101,7 @@
       "summary_other": "{{count}} identifiants configurés",
       "unused": "Aucun hôte ne les utilise"
     },
-    "deleteHelp": "Supprimer cet hôte ? Ses identifiants seront conservés. Les Agents ne le verront plus dans l’inventaire.",
+    "deleteHelp": "Supprimer cet hôte ? Ses identifiants seront conservés. Okou perdra l’accès à cet hôte.",
     "description": "Autorisez Okou à exécuter des commandes sur des machines distantes.",
     "edit": "Modifier l’hôte",
     "editHelp": "Changer les identifiants ne modifie que cet hôte. Modifier une destination directe efface sa clé d’hôte enregistrée ; les changements impliquant Cloudflare Access la conservent.",
@@ -6148,7 +6148,7 @@
     },
     "tailscale": {
       "authenticationFailed": "L’authentification Tailscale SSH a échoué. Vérifiez le nom d’utilisateur système, activez Tailscale SSH sur la cible avec un tag et autorisez cette connexion dans la règle SSH accept du tailnet.",
-      "deleteHelp": "Supprimer cet hôte ? Les agents ne le verront plus dans l’inventaire en temps réel.",
+      "deleteHelp": "Supprimer cet hôte ? Okou perdra l’accès à cet hôte.",
       "sshDocs": "Documentation Tailscale SSH",
       "sshHelp": "Utilise l’identité du réseau Tailscale sélectionné, sans mot de passe SSH ni clé privée. Activez Tailscale SSH sur une machine cible avec un tag et autorisez ce nom d’utilisateur système dans une règle SSH accept.",
       "sshTitle": "Tailscale SSH",
@@ -7004,7 +7004,7 @@
       "metadata": {
         "aria": "Métadonnées du workflow",
         "description": "Description",
-        "descriptionHelp": "Indiquez à l'agent quand utiliser ce workflow.",
+        "descriptionHelp": "Décrivez quand Okou doit utiliser ce workflow.",
         "name": "Nom",
         "nameHelp": "Affiché dans les listes de workflow et lors du choix d'un workflow.",
         "namePlaceholder": "Nom du workflow",
@@ -7216,7 +7216,7 @@
       "uninstallTitle": "Désinstaller l’intégration de Microsoft Teams ?"
     },
     "telegram": {
-      "description": "Acheminer les messages Telegram vers les agents",
+      "description": "Connectez Telegram à Okou.",
       "title": "Telegram"
     },
     "wechat": {
@@ -7239,7 +7239,7 @@
       "restoreDescription": "Reconnectez WeChat au compte et à l’espace de travail ci-dessous.",
       "returnToWechat": "Revenez sur WeChat et envoyez un message pour commencer la conversation.",
       "scanned": "Code scanné. Confirmez sur votre téléphone.",
-      "scope": "Seuls vos messages directs à cet agent sont connectés. Les messages texte sont pris en charge.",
+      "scope": "Seuls vos messages directs à Okou sont connectés. Les messages texte sont pris en charge.",
       "title": "Connecter WeChat",
       "unavailable": "La connexion n’est pas encore configurée.",
       "verification_blocked": "Trop de tentatives. Créez un nouveau code QR.",

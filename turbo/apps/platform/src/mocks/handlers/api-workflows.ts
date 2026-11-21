@@ -18,8 +18,6 @@ import {
   setMockWorkflowAutomations,
 } from "./workflow-automations-store.ts";
 
-const MOCK_DEFAULT_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
-
 const DEFAULT_WORKFLOWS: WorkflowDetailResponse[] = [];
 
 let mockWorkflows: WorkflowDetailResponse[] = [...DEFAULT_WORKFLOWS];
@@ -221,7 +219,7 @@ export const apiWorkflowsHandlers = [
     return respond(204);
   }),
 
-  mockApi(workflowsDetailContract.copy, ({ body, params, respond }) => {
+  mockApi(workflowsDetailContract.copy, ({ params, respond }) => {
     const source = mockWorkflows.find((item) => {
       return item.id === params.workflowId;
     });

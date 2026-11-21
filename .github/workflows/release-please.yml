@@ -1626,6 +1626,7 @@ jobs:
           branch-name: release-smoke/migrate-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Check Workflow maintenance window
+        id: workflow-maintenance
         if: ${{ needs.release-please.outputs.api_release_created == 'true' }}
         working-directory: turbo/packages/db
         env:
@@ -1634,6 +1635,7 @@ jobs:
           QUIESCED_RELEASE: ${{ vars.WORKFLOW_MEMBER_SCOPE_QUIESCED_RELEASE }}
         run: |
           node --input-type=module <<'JS'
+          import { appendFileSync } from "node:fs";
           import postgres from "postgres";
           const db = postgres(process.env.DATABASE_URL, { max: 1 });
           try {
@@ -1643,10 +1645,12 @@ jobs:
                 WHERE table_schema = 'public' AND table_name = 'workflows' AND column_name = 'agent_id'
               ) AS pending
             `;
-            if (state.pending && (!/^[a-f0-9]{40}$/.test(process.env.RELEASE_TARGET) ||
-                process.env.QUIESCED_RELEASE !== process.env.RELEASE_TARGET)) {
+            const confirmed = /^[a-f0-9]{40}$/.test(process.env.RELEASE_TARGET) &&
+              process.env.QUIESCED_RELEASE === process.env.RELEASE_TARGET;
+            if (state.pending && !confirmed) {
               throw new Error("Drain the outgoing API and scheduling workers together, then confirm this release SHA in WORKFLOW_MEMBER_SCOPE_QUIESCED_RELEASE.");
             }
+            appendFileSync(process.env.GITHUB_OUTPUT, `required=${confirmed}\n`);
           } finally {
             await db.end();
           }
@@ -1917,6 +1921,12 @@ jobs:
             echo "Checks: $WORKER_CHECKS_OUTCOME; deployment: $WORKER_DEPLOY_OUTCOME; verification: $WORKER_VERIFY_OUTCOME."
             echo "See the Worker steps above. Production traffic remains on the canonical API."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require both runtimes before completing the Workflow cutover
+        if: always() && steps.workflow-maintenance.outputs.required == 'true' && steps.api-worker-verify.outcome != 'success'
+        run: |
+          echo "::error::Keep API traffic and scheduling paused until the API Worker passes health and release SHA verification."
+          exit 1
 
       - name: Remove temporary API production environment
         if: always()
