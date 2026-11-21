@@ -20,23 +20,20 @@ class StreamCapture:
     buffer: bytearray = field(default_factory=bytearray)
     truncated: bool = False
 
-    def append(self, chunk: bytes, *, limit: int) -> None:
-        if not self.truncated and append_captured_chunk(self.buffer, chunk, limit=limit):
-            self.truncated = True
+    def append(self, chunk: bytes, *, limit: int) -> bool:
+        """Append the fitting prefix and return true only on first truncation.
 
-
-def append_captured_chunk(buffer: bytearray, chunk: bytes, *, limit: int) -> bool:
-    """Append the fitting raw prefix and return whether this chunk overflowed.
-
-    Callers own capture admission and skip writes once their buffer is truncated.
-    Filling the buffer exactly, including an empty chunk at capacity, is complete.
-    """
-    remaining = limit - len(buffer)
-    if len(chunk) <= remaining:
-        buffer.extend(chunk)
-        return False
-    buffer.extend(chunk[:remaining])
-    return True
+        Filling the buffer exactly, including an empty chunk at capacity, is complete.
+        """
+        if self.truncated:
+            return False
+        remaining = limit - len(self.buffer)
+        if len(chunk) <= remaining:
+            self.buffer.extend(chunk)
+            return False
+        self.buffer.extend(chunk[:remaining])
+        self.truncated = True
+        return True
 
 
 def captured_stream_body(
