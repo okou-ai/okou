@@ -307,21 +307,23 @@ class ConversationRouteTest {
     @Config(qualifiers = "en-rUS-w400dp-h320dp")
     fun newReplyPreservesAnOlderAnchorAndDefersReadUntilJumpingToLatest() {
         val received = AtomicInteger(12)
+        fun eventId(sequence: Int) =
+            "aaaaaaaa-aaaa-4aaa-8aaa-${sequence.toString().padStart(12, '0')}"
         fixture.historyRows = { request ->
             val after = request.requestUrl?.queryParameter("sinceSeqId")?.toInt() ?: 0
             val last = received.get()
             val rows =
                 ((after + 1)..last).joinToString(",") { sequence ->
                     historyEventWire(
-                        id = "message-$sequence",
+                        id = eventId(sequence),
                         seq = sequence.toLong(),
                         thread = CHAT_IN_PROJECT,
                         payload = """{"content":"Reply number $sequence"}""",
-                        run = "task-$sequence",
+                        run = "bbbbbbbb-bbbb-4bbb-8bbb-${sequence.toString().padStart(12, '0')}",
                     )
                 }
             jsonResponse(
-                """{"rows":[$rows],"cursor":{"lastEventId":"message-$last","lastSeqId":$last},"hasMore":false}"""
+                """{"rows":[$rows],"cursor":{"lastEventId":"${eventId(last)}","lastSeqId":$last},"hasMore":false}"""
             )
         }
         val model = createListModel()
@@ -335,10 +337,17 @@ class ConversationRouteTest {
         compose.runOnIdle {
             model.history.open(model.uiState.value.threads.single { it.id == CHAT_IN_PROJECT })
         }
-        compose.waitUntil(10_000) { fixture.readRequests.get() == 1 }
+        compose.waitUntil("the first confirmed history is ready", 10_000) {
+            compose.runOnIdle { model.history.uiState.value.phase != HistoryPhase.Loading }
+        }
+        assertEquals(HistoryPhase.Ready, model.history.uiState.value.phase)
         compose.onNodeWithText("Reply number 12").assertIsDisplayed()
+        compose.waitUntil("the visible latest history is acknowledged", 10_000) {
+            compose.runOnIdle { fixture.readRequests.get() > 0 }
+        }
+        val readCount = fixture.readRequests.get()
         compose.onNodeWithTag("conversation").performScrollToIndex(7)
-        val anchor = compose.onNodeWithTag("message_message-6").assertIsDisplayed()
+        val anchor = compose.onNodeWithTag("message_${eventId(6)}").assertIsDisplayed()
         val bounds = anchor.getUnclippedBoundsInRoot()
         received.incrementAndGet()
         compose.runOnIdle { model.history.refresh() }
@@ -348,10 +357,12 @@ class ConversationRouteTest {
             10_000,
         )
         assertEquals(bounds, anchor.getUnclippedBoundsInRoot())
-        assertEquals(1, fixture.readRequests.get())
+        assertEquals(readCount, fixture.readRequests.get())
         compose.onNodeWithTag("conversation_jump").performClick()
         compose.onNodeWithText("Reply number 13").assertIsDisplayed()
-        compose.waitUntil(10_000) { fixture.readRequests.get() == 2 }
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { fixture.readRequests.get() == readCount + 1 }
+        }
         compose.onNodeWithTag("conversation_jump").assertDoesNotExist()
     }
 
