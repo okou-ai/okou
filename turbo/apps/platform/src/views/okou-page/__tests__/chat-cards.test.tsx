@@ -46,9 +46,9 @@ async function open(text: string) {
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
 }
 function follows(earlier: Element, later: Element) {
-  expect(
-    earlier.compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
+  expect(earlier.compareDocumentPosition(later)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
 }
 async function permission() {
   const card = await screen.findByTestId("permission-action-card");
@@ -82,7 +82,7 @@ test("chat-cards-002 a reference sentence remains readable above its actionable 
   expect(sentence).toHaveTextContent(
     "Consult the release manual before sharing.",
   );
-  follows(link, card);
+  follows(sentence!, card);
   await waitFor(() => {
     expect(queryButton("Confirm", card)).toBeEnabled();
   });
@@ -117,7 +117,7 @@ test("chat-cards-007 Chinese punctuation and a reference preceding a relative pe
   const card = await permission();
   const link = await findLink("发布说明");
   expect(link).toHaveAttribute("href", ref);
-  expect(link.closest("p")).toHaveTextContent("，详见发布说明。");
+  expect(link.closest("p")).toHaveTextContent("审批：，详见发布说明。");
   follows(link, card);
 });
 test("chat-cards-009 embedded permission paths stay literal and an external redirect remains navigable", async () => {

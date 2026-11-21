@@ -3,6 +3,8 @@
 Baseline [b0a10287edf4](https://github.com/okou-ai/okou/tree/b0a10287edf4242383c28e39c6f7675053febb32).
 Source [chat-cards.test.tsx](chat-cards.test.tsx).
 
+Batch 40 accepted 002, 003, 007, 009, 010, 011, 012, 013, 014, 017, 022, 025 and 033. Work GitHub currently offers OAuth. The manual token actions in 018, 019 and 023 await review. The switch-off configuration for 030 was retired by #48841. All four keep their original GWT. See the [batch evidence](../../../../test-rebuild-rework-checkpoint.md#batch-40-evidence).
+
 ## chat-cards-001
 
 Original test `A connector link becomes an action without losing surrounding prose`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/chat-cards.test.tsx#L247).

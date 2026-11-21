@@ -3,6 +3,8 @@
 Baseline [b0a10287edf4](https://github.com/okou-ai/okou/tree/b0a10287edf4242383c28e39c6f7675053febb32).
 Source [chat-capability-automations.test.tsx](chat-capability-automations.test.tsx).
 
+Batch 40 accepted 001. Frozen selections 004 and 005 remain pending. See the [batch evidence](../../../../test-rebuild-rework-checkpoint.md#batch-40-evidence).
+
 ## chat-capability-automations-001
 
 Original test `Browse an active scheduled workflow and its available controls`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-automations.test.tsx#L197).

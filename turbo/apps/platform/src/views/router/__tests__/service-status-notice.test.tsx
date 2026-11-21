@@ -31,6 +31,7 @@ test("service-status-notice-001 the investigating incident links to its update a
   const incident = within(region).getByRole("status", {
     name: "Investigating: " + title,
   });
+  expect(within(incident).getByText(title)).toBeInTheDocument();
   expect(within(incident).getByText("Investigating")).toBeInTheDocument();
   expect(
     queryAllByRoleFast("link", incident).find((link) => {

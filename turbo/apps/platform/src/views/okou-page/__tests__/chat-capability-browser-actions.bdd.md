@@ -3,7 +3,7 @@
 Baseline [b0a10287edf4](https://github.com/okou-ai/okou/tree/b0a10287edf4242383c28e39c6f7675053febb32).
 Source [chat-capability-browser-actions.test.tsx](chat-capability-browser-actions.test.tsx).
 
-Batch 39 accepted 012 and 025 from the withdrawn selection. The other eleven selected executions remain pending. See the [batch evidence](../../../../test-rebuild-rework-checkpoint.md#batch-39-evidence).
+Batch 39 accepted 012 and 025. Batch 40 accepted 001, 002, 003, 005, 010, 013, 016 and 022. For 008 and 009, the card remains on the page with its terminal receipt. For 011, a modal prevents a user from opening the other trigger at the same time. Those three frozen GWTs await review. See the [batch evidence](../../../../test-rebuild-rework-checkpoint.md#batch-40-evidence).
 
 ## chat-capability-browser-actions-001
 

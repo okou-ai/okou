@@ -510,7 +510,8 @@ test("chat-capability-browser-actions-005 the example page follows its live, sto
       /^https:\/\/cdn\.okou\.io\/cdn-cgi\/image\/[^/]+\/invoices\/research-first\.png\?sig=first$/u,
     ),
   );
-  firstFrame.release("QUJD");
+  // The viewer requests a WebP screencast. Deliver a complete first image.
+  firstFrame.release("UklGRhwAAABXRUJQVlA4TA8AAAAvD8ADAAcQ0f/+ByKi/wEA");
   await waitFor(() => {
     expect(panel.getByLabelText("Address")).toHaveValue("https://example.com");
     expect(panel.getByLabelText("Remote browser input")).toBeEnabled();
