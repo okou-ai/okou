@@ -5,7 +5,7 @@ import type {
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-types";
 import { connectorPermissionGrants } from "@okouai/db/schema/connector-permission-grant";
 import { connectors } from "@okouai/db/schema/connector";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import {
   connectorCatalog,

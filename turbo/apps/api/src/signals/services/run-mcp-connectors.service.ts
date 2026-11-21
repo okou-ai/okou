@@ -5,7 +5,7 @@ import {
   type ConnectorAccountConnection,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
 import { connectors } from "@okouai/db/schema/connector";
 import { and, eq, inArray } from "drizzle-orm";
 

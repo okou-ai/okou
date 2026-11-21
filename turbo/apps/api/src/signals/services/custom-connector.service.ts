@@ -29,7 +29,7 @@ import {
 import { connectors } from "@okouai/db/schema/connector";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { orgCustomConnectorCloudflareBindings } from "@okouai/db/schema/org-custom-connector-cloudflare-binding";
 import {
@@ -1927,10 +1927,6 @@ export function customConnectorCreateSource(
       sql`${sql.param(args.definition.skillMarkdown, orgCustomConnectors.skillMarkdown)}`
         .mapWith(orgCustomConnectors.skillMarkdown)
         .as("skill_markdown"),
-    skillStorageVersionId:
-      sql`${sql.param(skill.skillStorageVersionId, orgCustomConnectors.skillStorageVersionId)}`
-        .mapWith(orgCustomConnectors.skillStorageVersionId)
-        .as("skill_storage_version_id"),
     skillContentBundle:
       sql`${sql.param(skill.skillContentBundle, orgCustomConnectors.skillContentBundle)}`
         .mapWith(zodDriverValueDecoder(contentBundleSchema.nullable()))

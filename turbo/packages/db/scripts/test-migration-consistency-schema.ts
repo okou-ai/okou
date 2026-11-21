@@ -58,6 +58,7 @@ import { validateOfficialWorkflowStorageRetirement } from "./test-official-workf
 import { validateWorkflowPublicationContraction } from "./test-workflow-publication-contraction";
 import { validateStaffWorkflowAttachmentDeletion } from "./test-staff-workflow-attachment-deletion";
 import { validateInactiveWorkflowAttachmentDeletion } from "./test-inactive-workflow-attachment-deletion";
+import { validateCustomConnectorSkillCutover } from "./test-custom-connector-skill-cutover";
 import { validateConnectorSkillBundleSchema } from "./test-connector-skill-bundle-schema";
 import { validateChatConnectorAccessSchema } from "./test-chat-connector-access-schema";
 import { validatePermanentArtifactThreadCatalog } from "./test-artifact-thread-catalog-permanent";
@@ -2347,131 +2348,6 @@ async function validateConnectorAutomaticOAuthConstraints(
   );
 }
 
-async function validateCustomConnectorSkillVersionPair(
-  dbUrl: string,
-): Promise<void> {
-  console.log(
-    "=== Phase 2.8: Validate custom connector skill version pair ===\n",
-  );
-  const fixture = {
-    connectorId: "73000000-0000-4000-8000-000000000001",
-    orgId: "migration-custom-connector-skill-org",
-    storageId: "73000000-0000-4000-8000-000000000002",
-    userId: "migration-custom-connector-skill-user",
-    versionId: "7".repeat(64),
-  } as const;
-  const client = new Client({ connectionString: dbUrl });
-  await client.connect();
-
-  try {
-    await client.query(
-      `
-        INSERT INTO "storages" (
-          "id", "user_id", "name", "org_id", "s3_prefix"
-        ) VALUES ($1, '__org__', '_migration_skill_storage', $2, $3)
-      `,
-      [
-        fixture.storageId,
-        fixture.orgId,
-        `${fixture.orgId}/volume/_migration_skill_storage`,
-      ],
-    );
-    await client.query(
-      `
-        INSERT INTO "storage_versions" (
-          "id", "storage_id", "s3_key", "archive_size", "created_by"
-        ) VALUES ($1, $2, $3, 1, $4)
-      `,
-      [
-        fixture.versionId,
-        fixture.storageId,
-        `${fixture.orgId}/volume/_migration_skill_storage/${fixture.versionId}`,
-        fixture.userId,
-      ],
-    );
-    await client.query(
-      `
-        INSERT INTO "org_custom_connectors" (
-          "id",
-          "org_id",
-          "slug",
-          "display_name",
-          "prefix_templates",
-          "fields",
-          "header_injections",
-          "query_injections",
-          "auth_mode",
-          "created_by"
-        ) VALUES (
-          $1,
-          $2,
-          '_migration_skill_pair',
-          'Migration Skill Pair',
-          '["https://api.example.test/"]'::jsonb,
-          '[{"key":"secret","label":"Secret","kind":"secret","required":true}]'::jsonb,
-          '[{"name":"Authorization","valueTemplate":"Bearer {{secrets.secret}}"}]'::jsonb,
-          '[]'::jsonb,
-          'manual',
-          $3
-        )
-      `,
-      [fixture.connectorId, fixture.orgId, fixture.userId],
-    );
-    await client.query(
-      `
-        UPDATE "org_custom_connectors"
-        SET
-          "skill_markdown" = 'Use the migration skill.',
-          "skill_storage_version_id" = $2
-        WHERE "id" = $1
-      `,
-      [fixture.connectorId, fixture.versionId],
-    );
-
-    await expectDatabaseError(client, {
-      code: "23514",
-      messageIncludes: "chk_org_custom_connectors_skill_version_pair",
-      query: `
-        UPDATE "org_custom_connectors"
-        SET "skill_markdown" = NULL
-        WHERE "id" = $1
-      `,
-      values: [fixture.connectorId],
-    });
-    await expectDatabaseError(client, {
-      code: "23514",
-      messageIncludes: "chk_org_custom_connectors_skill_version_pair",
-      query: `
-        UPDATE "org_custom_connectors"
-        SET "skill_storage_version_id" = NULL
-        WHERE "id" = $1
-      `,
-      values: [fixture.connectorId],
-    });
-
-    await client.query(
-      `
-        UPDATE "org_custom_connectors"
-        SET "skill_markdown" = NULL, "skill_storage_version_id" = NULL
-        WHERE "id" = $1
-      `,
-      [fixture.connectorId],
-    );
-    await client.query(`DELETE FROM "org_custom_connectors" WHERE "id" = $1`, [
-      fixture.connectorId,
-    ]);
-    await client.query(`DELETE FROM "storages" WHERE "id" = $1`, [
-      fixture.storageId,
-    ]);
-  } finally {
-    await client.end();
-  }
-
-  console.log(
-    "   ✅ Custom connector skill columns accept complete pairs and reject mixed state\n",
-  );
-}
-
 interface ExtractedSchema {
   tables: Set<string>;
   columns: Map<string, Set<string>>;
@@ -3058,6 +2934,12 @@ async function main(): Promise<void> {
       dbUrl1,
       await migrationTimestamp("1595_drop_legacy_pi_resource_version_indexes"),
     );
+    await validateCustomConnectorSkillCutover(
+      dbUrl1,
+      await migrationTimestamp(
+        "1608_stop_custom_connector_skill_storage_writes",
+      ),
+    );
     await runMigrations(dbUrl1);
     console.log("   ✅ Migrations applied successfully\n");
 
@@ -3132,7 +3014,6 @@ async function main(): Promise<void> {
     await validateChatEventContextPointerConstraints(dbUrl1);
     await validateCustomConnectorOauthModeConstraints(dbUrl1);
     await validateConnectorAutomaticOAuthConstraints(dbUrl1);
-    await validateCustomConnectorSkillVersionPair(dbUrl1);
 
     // Step 2: Backup and regenerate migrations
     console.log("=== Phase 3: Test regenerated migrations ===\n");
