@@ -62,9 +62,31 @@ fn owned_item_notifications_preserve_canonical_jsonl() -> io::Result<()> {
         json!({"z-field":"你好\"\\\n\0", "a-field":[true, 7, null]}),
         json!({"body":"x".repeat(4_096)}),
     ] {
-        for (method, timestamp_key, timestamp) in [
-            ("item/started", "startedAtMs", 0),
-            ("item/completed", "completedAtMs", i64::MAX),
+        for (lifecycle, method, timestamp_key, timestamp) in [
+            (
+                ItemLifecycle::Started(0),
+                "item/started",
+                "startedAtMs",
+                json!(0),
+            ),
+            (
+                ItemLifecycle::Started(u64::MAX),
+                "item/started",
+                "startedAtMs",
+                json!(u64::MAX),
+            ),
+            (
+                ItemLifecycle::Completed(i64::MIN),
+                "item/completed",
+                "completedAtMs",
+                json!(i64::MIN),
+            ),
+            (
+                ItemLifecycle::Completed(i64::MAX),
+                "item/completed",
+                "completedAtMs",
+                json!(i64::MAX),
+            ),
         ] {
             let expected = json!({
                 "method": method,
@@ -80,14 +102,8 @@ fn owned_item_notifications_preserve_canonical_jsonl() -> io::Result<()> {
                 .get("body")
                 .and_then(Value::as_str)
                 .map(str::as_ptr);
-            let notification = item_notification(
-                method,
-                "thread-你好\"\\\n",
-                "turn-\0",
-                timestamp_key,
-                timestamp,
-                owned_item,
-            );
+            let notification =
+                item_notification("thread-你好\"\\\n", "turn-\0", lifecycle, owned_item);
             assert_eq!(
                 notification
                     .pointer("/params/item/body")
