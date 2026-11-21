@@ -16,9 +16,9 @@ export const syncMissingPrimaryThread$ = command(({ set }): void => {
   set(resetDocumentTitle$);
 });
 
-/** Keep the document title and global agent context aligned with the thread. */
+/** Keep the document title aligned with the thread. */
 export const syncPrimaryThread$ = command(
-  async ({ set }, meta: ThreadMeta, signal: AbortSignal): Promise<void> => {
+  ({ set }, meta: ThreadMeta, signal: AbortSignal): void => {
     signal.throwIfAborted();
 
     set(

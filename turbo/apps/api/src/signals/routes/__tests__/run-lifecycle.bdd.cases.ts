@@ -1470,11 +1470,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           NATIVE_RUNNER_ROUTE,
         );
         const prompt = "storage manifest dimensions should not leak prompt";
-        // An Agent Workflow is distributed as an immutable read-only bundle.
+        const { defaultAgentId } =
+          await createBddApi(context).readOnboardingStatus(actor);
+        if (!defaultAgentId)
+          throw new Error("Expected a workspace workflow namespace");
+        // A member Workflow is distributed as an immutable read-only bundle.
         const workflowName = `manifest-shape-${randomUUID().slice(0, 8)}`;
         const workflow = await createMiscRoutesApi(context).createWorkflow(
           actor,
-          agentId,
+          defaultAgentId,
           workflowName,
           { content: "# Manifest shape\nUse for manifest tests." },
           [201],
@@ -2223,34 +2227,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         if (!actor.orgId) {
           throw new Error("Expected session owner to have an organization");
         }
-        const otherAgent = await bdd.createAgent(actor, {
-          displayName: "Mismatched continuation Agent",
-          description: "Must not continue a Session owned by another Agent.",
-          visibility: "private",
-        });
-        const mismatchPrompt = `reject mismatched Agent Session ${randomUUID()}`;
-        const mismatch = await chat.requestSendEvent(
-          actor,
-          {
-            agentId: otherAgent.agentId,
-            threadId: first.threadId,
-            prompt: mismatchPrompt,
-          },
-          [404],
-        );
-        expectApiError(mismatch.body);
-        expect(mismatch.body.error.message).toBe("Chat thread not found");
-        const ownedRuns = await createRunReadsApi(context).requestListLogs(
-          actor,
-          { limit: 100 },
-          [200],
-        );
-        expect(
-          ownedRuns.body.data.filter((run) => {
-            return run.prompt === mismatchPrompt;
-          }),
-        ).toHaveLength(0);
-
         const sameOrgUser = bdd.user({ orgId: actor.orgId });
         const crossUser = await chat.requestSendEvent(
           sameOrgUser,
@@ -9111,7 +9087,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         }
         const s3 = installWorkflowVolumeS3Fixture(context);
 
-        const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+        const { defaultAgentId } =
+          await createBddApi(context).readOnboardingStatus(actor);
         if (!defaultAgentId) {
           throw new Error("Expected a member workflow namespace");
         }
@@ -9208,7 +9185,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const workflowName = "bdd-claude-kit";
-        const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+        const { defaultAgentId } =
+          await createBddApi(context).readOnboardingStatus(actor);
         if (!defaultAgentId) {
           throw new Error("Expected a member workflow namespace");
         }

@@ -111,8 +111,8 @@ final class ChatSidebarStore {
   let presentation: Computed<ChatSidebarPresentation>
 
   init(
-    store: CCState.Store, threads: Signal<[ChatThread]>, agents: Signal<[AgentRecord]>,
-    projects: Signal<[ChatProject]>, selectedThread: Signal<String?>
+    store: CCState.Store, threads: Signal<[ChatThread]>,
+    projects: Signal<[ChatProject]>
   ) {
     stateStore = store
     let selection = selection
@@ -128,15 +128,8 @@ final class ChatSidebarStore {
     let contents = Computed<ChatListContents> { get in
       guard try get(lifetime) else { throw CancellationError() }
       let threads = try get(threads)
-      let selected = try get(selectedThread)
-      let agentID: String?
-      if let selectedAgent = threads.first(where: { $0.id == selected })?.agentID {
-        agentID = selectedAgent
-      } else {
-        agentID = try get(agents).first(where: \.isDefaultAgent)?.agentId
-      }
       return try ChatListContents(
-        projects: get(projects), threads: threads, agentID: agentID, filter: get(selection))
+        projects: get(projects), threads: threads, filter: get(selection))
     }
     self.contents = contents
     presentation = Computed { get in

@@ -155,8 +155,8 @@ final class WorkspaceStore {
     didChangeMembership: { [weak self] in await self?.list.refresh(waitForCurrent: true) },
     lifecycleTasks: lifecycleTasks)
   @ObservationIgnored lazy var sidebar = ChatSidebarStore(
-    store: resources.store, threads: list.threadsValue, agents: list.agentsValue,
-    projects: projects.confirmedValue, selectedThread: selectedThread)
+    store: resources.store, threads: list.threadsValue,
+    projects: projects.confirmedValue)
   private var realtime: RealtimeService? { synchronization.realtime }
 
   private var refreshGeneration: UUID { synchronization.refreshGeneration }

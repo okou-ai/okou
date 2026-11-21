@@ -35,7 +35,6 @@
   int composer_send;
   int composer_sync_loading;
   int composer_sync_saving;
-  int composer_target_loading;
   int composer_unconfirmed;
   int controls_stop;
   int controls_unknown;

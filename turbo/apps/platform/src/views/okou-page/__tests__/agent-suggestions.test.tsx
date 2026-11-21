@@ -1000,8 +1000,8 @@ test("Suggestion options start a member chat after visiting a legacy Agent", asy
   mockChatLifecycle(context);
   const sender = context.mocks.deferred<string>();
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    expect(body).not.toHaveProperty("agentId");
     if (!sender.settled()) {
-      expect(body).not.toHaveProperty("agentId");
       sender.resolve(body.threadId ?? threadId);
     }
     return respond(201, {

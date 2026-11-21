@@ -239,10 +239,8 @@ export const setupLeftThread$ = command(
     initialEventId: string | null,
     parentSignal: AbortSignal,
   ): Promise<void> => {
-    await Promise.all([
-      set(syncPrimaryThread$, meta, parentSignal),
-      set(setupPaneThread$, leftPane, meta, initialEventId, parentSignal),
-    ]);
+    set(syncPrimaryThread$, meta, parentSignal);
+    await set(setupPaneThread$, leftPane, meta, initialEventId, parentSignal);
   },
 );
 

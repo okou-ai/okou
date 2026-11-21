@@ -102,7 +102,6 @@ class NativeTextSendTest {
             }
             device.awaitChatList(app)
             click(R.string.composer_new)
-            text(app.getString(R.string.composer_target_loading))
             scenario.onActivity {
                 val ready =
                     checkNotNull(
@@ -158,8 +157,7 @@ class NativeTextSendTest {
             ime(false)
             readyToSend(
                 ComposerTarget(
-                    checkNotNull(fixture.created.single()["clientThreadId"]).jsonPrimitive.content,
-                    CHAT_AGENT,
+                    checkNotNull(fixture.created.single()["clientThreadId"]).jsonPrimitive.content
                 )
             )
             fixture.beforeSendReturn = { followup.await() }

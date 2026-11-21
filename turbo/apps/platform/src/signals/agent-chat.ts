@@ -296,18 +296,15 @@ function createChatThreadListSignals(
   });
 }
 
-// Resolve the agent and filter once for the list projection.
-// Thread events can update the returned signals without replacing this Promise.
-const currentChatThreadListSignals$ = computed(
-  async (get): Promise<ChatThreadListSignals> => {
-    const onlyArchived = get(chatThreadOnlyArchived$);
+// Thread events update the current list projection.
+const currentChatThreadListSignals$ = computed((get): ChatThreadListSignals => {
+  const onlyArchived = get(chatThreadOnlyArchived$);
 
-    return createChatThreadListSignals({
-      onlyArchived,
-      onlyMuted: get(chatThreadOnlyMuted$),
-    });
-  },
-);
+  return createChatThreadListSignals({
+    onlyArchived,
+    onlyMuted: get(chatThreadOnlyMuted$),
+  });
+});
 
 // The unread list hides Projects without unread chats and offers every chat
 // instead of explaining what it leaves out.
@@ -365,7 +362,7 @@ export const currentChatThreadList$ = computed(
     if (get(chatThreadOnlyUnread$)) {
       return await get(unreadChatThreadListSignals$);
     }
-    return await get(currentChatThreadListSignals$);
+    return get(currentChatThreadListSignals$);
   },
 );
 

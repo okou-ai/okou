@@ -1,7 +1,7 @@
 import ChatData
 import ChatDomain
 
-/// Projects span Agents; only chats outside known Projects use the current Agent's scope.
+/// Groups a member's chats by Project and keeps ungrouped chats in the inbox.
 struct ChatListContents {
   struct ProjectGroup: Identifiable {
     let project: ChatProject
@@ -17,7 +17,7 @@ struct ChatListContents {
   let hasHiddenArchivedThreads: Bool
 
   init(
-    projects: [ChatProject], threads: [ChatThread], agentID: String?,
+    projects: [ChatProject], threads: [ChatThread],
     filter: ChatListFilter
   ) {
     let knownIDs = Set(projects.map(\.id))
