@@ -41,6 +41,12 @@ data class CachedChats(
 
 data class CachedProjects(val checkpoint: ProjectCheckpoint, val confirmedAt: Long)
 
+internal data class PreparedChatList(
+    val identity: WorkspaceIdentity,
+    val saved: CachedChats,
+    val rows: ReplayedChats,
+)
+
 internal class HistoryCacheRevision
 
 internal data class CachedHistory(
@@ -108,6 +114,56 @@ internal constructor(
                 }
             }
         }
+
+    // Called only under the store mutex. A read never changes the active lease.
+    private suspend fun readChats(key: String, authorization: String): CachedChats? =
+        database().useReaderConnection { connection ->
+            connection.deferredTransaction {
+                val dao = database().chats()
+                val scope = dao.scope(key) ?: return@deferredTransaction null
+                if (scope.authorization != authorization)
+                    throw IOException("Chat cache authorization changed")
+                val archive =
+                    ChatArchive(
+                        dao.snapshot(key).map { json.decodeFromString<ConfirmedChat>(it.payload) }
+                    )
+                val events =
+                    dao.events(key).map { json.decodeFromString<ChatEventsEventsItem>(it.payload) }
+                val snapshot = ChatCursor(scope.snapshotEventId, scope.snapshotSeqId)
+                val checkpoint =
+                    ChatCheckpoint(
+                        archive,
+                        snapshot,
+                        events,
+                        events.lastOrNull()?.cursor() ?: snapshot,
+                    )
+                val navigation =
+                    CachedChatNavigation(
+                        agents =
+                            if (scope.hasAgents)
+                                dao.agents(key).map { json.decodeFromString(it.payload) }
+                            else null
+                    )
+                checkpoint.validate()
+                navigation.validate()
+                CachedChats(checkpoint, scope.confirmedAt, navigation)
+            }
+        }
+
+    internal suspend fun prepareChatList(
+        identity: WorkspaceIdentity,
+        projectionDispatcher: CoroutineDispatcher,
+    ): PreparedChatList? {
+        val saved =
+            withContext(dispatcher) {
+                lock.withLock {
+                    if (database == null && !file.exists()) null
+                    else readChats(identity.workspaceStorageKey(), identity.authorizationScope)
+                }
+            } ?: return null
+        val rows = withContext(projectionDispatcher) { replayChatList(saved.checkpoint) }
+        return PreparedChatList(identity, saved, rows)
+    }
 
     /** Close the application resource after its consumers stop (also used by test teardown). */
     suspend fun close() =
@@ -451,47 +507,10 @@ internal constructor(
                     checkCurrent()
                     if (database == null && !file.exists()) return@withLock null
                     try {
-                        database().useReaderConnection { connection ->
-                            connection.deferredTransaction {
-                                val dao = database().chats()
-                                val scope = dao.scope(key) ?: return@deferredTransaction null
-                                if (scope.authorization != authorization)
-                                    throw IOException("Chat cache authorization changed")
-                                val archive =
-                                    ChatArchive(
-                                        dao.snapshot(key).map {
-                                            json.decodeFromString<ConfirmedChat>(it.payload)
-                                        }
-                                    )
-                                val events =
-                                    dao.events(key).map {
-                                        json.decodeFromString<ChatEventsEventsItem>(it.payload)
-                                    }
-                                val snapshot =
-                                    ChatCursor(scope.snapshotEventId, scope.snapshotSeqId)
-                                val checkpoint =
-                                    ChatCheckpoint(
-                                        archive,
-                                        snapshot,
-                                        events,
-                                        events.lastOrNull()?.cursor() ?: snapshot,
-                                    )
-                                val navigation =
-                                    CachedChatNavigation(
-                                        agents =
-                                            if (scope.hasAgents)
-                                                dao.agents(key).map {
-                                                    json.decodeFromString(it.payload)
-                                                }
-                                            else null
-                                    )
-                                checkpoint.validate()
-                                navigation.validate()
-                                currentCoroutineContext().ensureActive()
-                                checkCurrent()
-                                CachedChats(checkpoint, scope.confirmedAt, navigation)
-                            }
-                        }
+                        val saved = readChats(key, authorization)
+                        currentCoroutineContext().ensureActive()
+                        checkCurrent()
+                        saved
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (error: Exception) {
