@@ -4,6 +4,7 @@ import ai.okou.android.R
 import ai.okou.android.chat.ConfirmedChat
 import ai.okou.android.chat.HistoryMarkdown
 import ai.okou.android.chat.rememberChatWaitIndicator
+import ai.okou.android.state.rememberArtifactWebScroll
 import android.annotation.SuppressLint
 import android.content.Context
 import android.webkit.RenderProcessGoneDetail
@@ -22,6 +23,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -49,10 +51,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -253,12 +253,12 @@ internal fun ArtifactAction(
 @Composable
 private fun PreviewContent(preview: ArtifactPreviewState?, offline: Boolean) {
     val content = preview?.content
-    var siteScroll by rememberSaveable { mutableIntStateOf(0) }
+    var siteScroll by rememberArtifactWebScroll()
     val problem = preview?.problem
     val web =
         preview?.item?.kind in setOf(ArtifactKind.Website, ArtifactKind.Presentation) &&
             preview?.info?.resource !is ArtifactResource.File
-    val networkMedia = content is ArtifactContent.Media
+    val media = content as? ArtifactContent.Media
     val waiting = content == null && problem == null && !offline
     val showLoading = rememberChatWaitIndicator(waiting)
     if (waiting && !showLoading) return
@@ -269,52 +269,68 @@ private fun PreviewContent(preview: ArtifactPreviewState?, offline: Boolean) {
         color = if (web) colors.surfaceVariant else colors.surface,
         border = BorderStroke(1.dp, colors.outline),
     ) {
-        when {
-            offline && (web || networkMedia) ->
-                PreviewStatus(R.string.artifact_online_preview, ratio = true)
-            content is ArtifactContent.Text ->
-                SelectionContainer(Modifier.padding(16.dp)) {
-                    ProvideTextStyle(
-                        MaterialTheme.typography.bodyLarge.copy(
-                            lineHeight = if (content.markdown) 28.sp else 24.sp
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val inset =
+                when {
+                    !web -> 0.dp
+                    maxWidth >= 600.dp -> 32.dp
+                    else -> 16.dp
+                }
+            Box(Modifier.fillMaxWidth().padding(inset)) {
+                when {
+                    offline && (web || media != null) ->
+                        PreviewStatus(
+                            R.string.artifact_online_preview,
+                            ratio = web || media?.video == true,
                         )
-                    ) {
-                        if (content.markdown) HistoryMarkdown(content.source)
-                        else Text(content.source)
-                    }
+                    content is ArtifactContent.Text ->
+                        SelectionContainer(Modifier.padding(16.dp)) {
+                            ProvideTextStyle(
+                                MaterialTheme.typography.bodyLarge.copy(
+                                    lineHeight = if (content.markdown) 28.sp else 24.sp
+                                )
+                            ) {
+                                if (content.markdown) HistoryMarkdown(content.source)
+                                else Text(content.source)
+                            }
+                        }
+                    content is ArtifactContent.Image ->
+                        Box(
+                            Modifier.fillMaxWidth().padding(16.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            val bitmap = remember(content) { content.bitmap.asImageBitmap() }
+                            Image(
+                                bitmap,
+                                preview.item?.title,
+                                Modifier.sizeIn(maxWidth = 440.dp, maxHeight = 440.dp),
+                                contentScale = ContentScale.Fit,
+                            )
+                        }
+                    content is ArtifactContent.Website ->
+                        key(content.url) {
+                            HostedArtifactPreview(content.url, siteScroll) { siteScroll = it }
+                        }
+                    media != null -> key(media.url) { MediaArtifactPreview(media) }
+                    offline -> PreviewStatus(R.string.artifact_online_preview, ratio = false)
+                    problem != null -> PreviewStatus(problem.label(), ratio = web)
+                    content == ArtifactContent.Unsupported ->
+                        PreviewStatus(R.string.artifact_preview_unsupported, ratio = web)
+                    else ->
+                        Box(
+                            Modifier.fillMaxWidth()
+                                .then(
+                                    if (web) Modifier.aspectRatio(16f / 9f)
+                                    else Modifier.heightIn(min = 96.dp)
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator(
+                                Modifier.size(24.dp).testTag("artifact_preview_loading")
+                            )
+                        }
                 }
-            content is ArtifactContent.Image ->
-                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                    val bitmap = remember(content) { content.bitmap.asImageBitmap() }
-                    Image(
-                        bitmap,
-                        preview.item?.title,
-                        Modifier.sizeIn(maxWidth = 440.dp, maxHeight = 440.dp),
-                        contentScale = ContentScale.Fit,
-                    )
-                }
-            content is ArtifactContent.Website ->
-                key(content.url) {
-                    HostedArtifactPreview(content.url, siteScroll) { siteScroll = it }
-                }
-            content is ArtifactContent.Media -> key(content.url) { MediaArtifactPreview(content) }
-            offline -> PreviewStatus(R.string.artifact_online_preview, ratio = false)
-            problem != null -> PreviewStatus(problem.label(), ratio = web)
-            content == ArtifactContent.Unsupported ->
-                PreviewStatus(R.string.artifact_preview_unsupported, ratio = web)
-            else ->
-                Box(
-                    Modifier.fillMaxWidth()
-                        .then(
-                            if (web) Modifier.aspectRatio(16f / 9f)
-                            else Modifier.heightIn(min = 96.dp)
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator(
-                        Modifier.size(24.dp).testTag("artifact_preview_loading")
-                    )
-                }
+            }
         }
     }
 }

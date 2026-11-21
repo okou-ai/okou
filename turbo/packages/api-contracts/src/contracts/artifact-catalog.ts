@@ -9,6 +9,7 @@ import {
   string,
   uuid,
   enum as zEnum,
+  type ZodType,
 } from "zod";
 
 import { artifactIdPathParamsSchema } from "../validators/artifact-catalog";
@@ -438,36 +439,41 @@ const artifactCatalogRuntimeSpec = {
   },
 } as const satisfies Record<"list" | "get" | "delete", AppRouteSpec>;
 
-export const artifactCatalogRuntimeContract = c.router(
-  artifactCatalogRuntimeSpec,
-);
+type ArtifactCatalogReadResponses<T> = Readonly<Record<number, ZodType>> & {
+  readonly 200: ZodType<T>;
+};
 
 export type ArtifactCatalogListRoute =
   AppRoute<ArtifactCatalogListRouteTypes> & {
     readonly method: "GET";
     readonly path: "/api/artifacts/catalog";
+    readonly body?: never;
+    readonly pathParams?: never;
     readonly headers: ZodSchema<
       ArtifactCatalogAuthHeaders,
       ArtifactCatalogAuthHeaders
     >;
-    readonly query: ZodSchema<
+    readonly query: ZodType<
       ArtifactCatalogListQuery,
       ArtifactCatalogListClientQuery
     >;
+    readonly responses: ArtifactCatalogReadResponses<ArtifactCatalogListResponse>;
   };
 
 export type ArtifactCatalogGetRoute = AppRoute<ArtifactCatalogGetRouteTypes> & {
   readonly method: "GET";
   readonly path: "/api/artifacts/catalog/:artifactId";
+  readonly body?: never;
   readonly headers: ZodSchema<
     ArtifactCatalogAuthHeaders,
     ArtifactCatalogAuthHeaders
   >;
-  readonly pathParams: ZodSchema<ArtifactIdPathParams, ArtifactIdPathParams>;
-  readonly query: ZodSchema<
+  readonly pathParams: ZodType<ArtifactIdPathParams, ArtifactIdPathParams>;
+  readonly query: ZodType<
     ArtifactCatalogGetQuery,
     ArtifactCatalogGetClientQuery
   >;
+  readonly responses: ArtifactCatalogReadResponses<ArtifactDetail>;
 };
 
 export type ArtifactCatalogContract = {
@@ -488,7 +494,7 @@ export type ArtifactCatalogContract = {
 // Keep runtime validation from the Zod-backed router while exposing compact,
 // explicit request and response slots to downstream API and app typechecks.
 export const artifactCatalogContract: ArtifactCatalogContract =
-  artifactCatalogRuntimeContract;
+  c.router(artifactCatalogRuntimeSpec);
 export {
   artifactIdPathParamsSchema,
   chatArtifactCatalogChangedEvent,

@@ -39,6 +39,19 @@ function nullableSchema(
   return undefined;
 }
 
+function isUnrestrictedStringUnion(value: unknown): boolean {
+  if (!Array.isArray(value)) return false;
+  // A URI or a hostless reference still has one wire representation.
+  return (
+    value.every((branch) => {
+      return schemaObject(branch) && branch.type === "string";
+    }) &&
+    value.some((branch) => {
+      return schemaObject(branch) && Object.keys(branch).length === 1;
+    })
+  );
+}
+
 function stringValues(value: unknown): string[] | undefined {
   if (!schemaObject(value)) return undefined;
   if (Array.isArray(value.anyOf)) {
@@ -654,6 +667,18 @@ object ${name}Serializer : KSerializer<${name}> {
     }
   }
 
+  const renderLiteral = (value: JsonObject, name: string): string => {
+    if (value.type === "boolean" && typeof value.const === "boolean")
+      return literalBoolean(value.const);
+    if (
+      ["number", "integer"].includes(String(value.type)) &&
+      typeof value.const === "number" &&
+      Number.isSafeInteger(value.const)
+    )
+      return literalInteger(value.const);
+    throw new Error(`${name}: unsupported literal`);
+  };
+
   const render = (value: unknown, name: string, parent?: string): string => {
     if (!schemaObject(value))
       throw new Error(`${name}: expected a JSON schema`);
@@ -672,31 +697,10 @@ object ${name}Serializer : KSerializer<${name}> {
       return name;
     }
     if (value.enum) throw new Error(`${name}: unsupported enum`);
-    if (value.const !== undefined) {
-      if (value.type === "boolean" && typeof value.const === "boolean")
-        return literalBoolean(value.const);
-      if (
-        ["number", "integer"].includes(String(value.type)) &&
-        typeof value.const === "number" &&
-        Number.isSafeInteger(value.const)
-      )
-        return literalInteger(value.const);
-      throw new Error(`${name}: unsupported literal`);
-    }
+    if (value.const !== undefined) return renderLiteral(value, name);
     const union = value.anyOf ?? value.oneOf;
     if (Array.isArray(union)) {
-      // A URI or a hostless reference still has one wire representation.
-      if (
-        Array.isArray(value.anyOf) &&
-        union.some(
-          (item) =>
-            schemaObject(item) &&
-            item.type === "string" &&
-            Object.keys(item).length === 1,
-        ) &&
-        union.every((item) => schemaObject(item) && item.type === "string")
-      )
-        return "String";
+      if (isUnrestrictedStringUnion(value.anyOf)) return "String";
       const variants = objectUnionVariants(union);
       if (variants.length < 2) throw new Error(`${name}: unsupported union`);
       const selectors = unionSelectors(variants, name);

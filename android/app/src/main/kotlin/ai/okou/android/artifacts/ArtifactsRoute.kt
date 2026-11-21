@@ -2,6 +2,7 @@ package ai.okou.android.artifacts
 
 import ai.okou.android.R
 import ai.okou.android.chat.ConfirmedChat
+import ai.okou.android.state.rememberArtifactPageState
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -29,7 +30,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -57,18 +58,15 @@ internal fun ArtifactsRoute(
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val input = rememberTextFieldState()
-    var filter by rememberSaveable { mutableStateOf(ArtifactFilter.All) }
-    var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
-    var restoreRow by rememberSaveable { mutableStateOf<String?>(null) }
-    var restoreSource by rememberSaveable { mutableStateOf(false) }
-    var pendingSaveId by rememberSaveable { mutableStateOf<String?>(null) }
-    var pickerFailed by rememberSaveable { mutableStateOf(false) }
+    val page = rememberArtifactPageState()
+    val selectedId = page.selectedId
+    var pickerFailed by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val picker =
         rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result
             ->
-            val id = pendingSaveId
-            pendingSaveId = null
+            val id = page.pickerArtifactId
+            page.pickerArtifactId = null
             val destination = result.data?.data
             if (
                 id != null &&
@@ -83,7 +81,7 @@ internal fun ArtifactsRoute(
         }
 
     LifecycleStartEffect(model) {
-        model.setActive(true, ArtifactQuery(filter, input.text.toString().trim()))
+        model.setActive(true, ArtifactQuery(page.filter, input.text.toString().trim()))
         onStopOrDispose { model.setActive(false) }
     }
     LaunchedEffect(model, selectedId) { model.select(selectedId) }
@@ -91,9 +89,12 @@ internal fun ArtifactsRoute(
         snapshotFlow { input.text.toString().trim() }
             .collect { keyword ->
                 if (keyword != model.state.value.query.keyword) {
-                    restoreRow = null
+                    page.restoreRow = null
                     position.requestScrollToItem(0)
-                    model.query(ArtifactQuery(filter, keyword), debounce = keyword.isNotEmpty())
+                    model.query(
+                        ArtifactQuery(page.filter, keyword),
+                        debounce = keyword.isNotEmpty(),
+                    )
                 }
             }
     }
@@ -101,12 +102,12 @@ internal fun ArtifactsRoute(
     fun back() {
         focus.clearFocus()
         keyboard?.hide()
-        val current = selectedId
+        val current = page.selectedId
         if (current == null) {
             onClose()
         } else {
-            restoreRow = current
-            selectedId = null
+            page.restoreRow = current
+            page.selectedId = null
             model.select(null)
         }
     }
@@ -119,27 +120,27 @@ internal fun ArtifactsRoute(
                 model,
                 state,
                 input,
-                filter,
+                page.filter,
                 onFilter = { next ->
-                    if (filter != next) {
-                        filter = next
-                        restoreRow = null
+                    if (page.filter != next) {
+                        page.filter = next
+                        page.restoreRow = null
                         position.requestScrollToItem(0)
                         model.query(
-                            ArtifactQuery(filter, input.text.toString().trim()),
+                            ArtifactQuery(next, input.text.toString().trim()),
                             debounce = false,
                         )
                     }
                 },
                 position = position,
                 selectedId = selectedId,
-                restoreRow = restoreRow,
-                onFocusRestored = { restoreRow = null },
+                restoreRow = page.restoreRow,
+                onFocusRestored = { page.restoreRow = null },
                 onSelect = { item ->
                     focus.clearFocus()
                     keyboard?.hide()
                     pickerFailed = false
-                    selectedId = item.id
+                    page.selectedId = item.id
                     model.select(item.id, item)
                 },
                 onClose = {
@@ -158,7 +159,7 @@ internal fun ArtifactsRoute(
                 if (!wide)
                     ArtifactToolbar(R.string.artifact_title, R.string.artifact_return_list, ::back)
                 key(selectedId) {
-                    val id = checkNotNull(selectedId)
+                    val id = selectedId
                     val preview = state.preview?.takeIf { it.id == id }
                     val source =
                         preview?.info?.sourceChatId?.let { sourceId ->
@@ -170,15 +171,15 @@ internal fun ArtifactsRoute(
                         wide,
                         state.offline,
                         source,
-                        restoreSourceFocus = restoreSource,
-                        onSourceFocusRestored = { restoreSource = false },
+                        restoreSourceFocus = page.restoreSource,
+                        onSourceFocusRestored = { page.restoreSource = false },
                         onSource = {
-                            restoreSource = true
+                            page.restoreSource = true
                             onSource(it)
                         },
                         onSave = { file ->
-                            if (pendingSaveId == null) {
-                                pendingSaveId = id
+                            if (page.pickerArtifactId == null) {
+                                page.pickerArtifactId = id
                                 pickerFailed = false
                                 try {
                                     picker.launch(
@@ -192,7 +193,7 @@ internal fun ArtifactsRoute(
                                         }
                                     )
                                 } catch (_: ActivityNotFoundException) {
-                                    pendingSaveId = null
+                                    page.pickerArtifactId = null
                                     pickerFailed = true
                                 }
                             }

@@ -34,7 +34,7 @@ import { modelCatalogContract } from "../contracts/model-catalog";
 import { runModelsMainContract } from "../contracts/run-models";
 import { thirdPartySubscriptionsMainContract } from "../contracts/third-party-subscriptions";
 import { billingStatusContract } from "../contracts/billing";
-import { artifactCatalogRuntimeContract } from "../contracts/artifact-catalog";
+import { artifactCatalogContract } from "../contracts/artifact-catalog";
 import { artifactDownloadsContract } from "../contracts/artifact-downloads";
 import { artifactReferencesContract } from "../contracts/artifact-references";
 import { hostContract } from "../contracts/host";
@@ -117,12 +117,12 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
   {
     name: "artifactCatalog",
     response: "ArtifactCatalog",
-    route: artifactCatalogRuntimeContract.list,
+    route: artifactCatalogContract.list,
   },
   {
     name: "artifactDetail",
     response: "ArtifactDetail",
-    route: artifactCatalogRuntimeContract.get,
+    route: artifactCatalogContract.get,
   },
   {
     name: "resolveArtifactReference",
@@ -325,12 +325,12 @@ export interface KotlinTypeBinding {
 export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   {
     name: "ArtifactCatalog",
-    schema: artifactCatalogRuntimeContract.list.responses[200],
+    schema: artifactCatalogContract.list.responses[200],
     direction: "output",
   },
   {
     name: "ArtifactDetail",
-    schema: artifactCatalogRuntimeContract.get.responses[200],
+    schema: artifactCatalogContract.get.responses[200],
     direction: "output",
   },
   {

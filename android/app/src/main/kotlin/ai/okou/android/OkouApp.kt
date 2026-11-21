@@ -22,9 +22,11 @@ import ai.okou.android.chat.ProvisionalChat
 import ai.okou.android.chat.RealtimeNotice
 import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.RunControlsPanel
+import ai.okou.android.state.ArtifactsDestination
 import ai.okou.android.state.SearchRoute
 import ai.okou.android.state.SettingsDestination
 import ai.okou.android.state.WorkspaceTarget
+import ai.okou.android.state.rememberArtifactPageHolder
 import ai.okou.android.state.rememberChatSearchState
 import ai.okou.android.state.rememberConversationUiState
 import ai.okou.android.state.rememberWorkspaceNavigation
@@ -73,8 +75,6 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
@@ -120,12 +120,11 @@ internal fun OkouApp(
                     if (startupRecovery == null) ChatReadPhase.Loading else ChatReadPhase.Idle
             )
     var navigation by rememberWorkspaceNavigation()
-    var artifactsOpen by rememberSaveable { mutableStateOf(false) }
-    var artifactSourceId by rememberSaveable { mutableStateOf<String?>(null) }
-    val artifactPageState = rememberSaveableStateHolder()
+    val artifactPageState = rememberArtifactPageHolder()
     val artifactEntryFocus = remember { FocusRequester() }
     var restoreArtifactEntryFocus by remember { mutableStateOf(false) }
-    val artifactSource = artifactSourceId.takeIf { artifactsOpen && artifacts != null }
+    val artifactsOpen = navigation.artifacts != null
+    val artifactSource = navigation.artifacts?.sourceId.takeIf { artifacts != null }
     val showArtifacts = artifactsOpen && artifacts != null && artifactSource == null
     val composerInput = composer?.uiState?.collectAsStateWithLifecycle()
     val settings = navigation.settings.takeIf { workspaceReady }
@@ -186,8 +185,7 @@ internal fun OkouApp(
 
     fun closeArtifacts(restoreFocus: Boolean) {
         restoreArtifactEntryFocus = restoreFocus
-        artifactSourceId = null
-        artifactsOpen = false
+        navigation = navigation.copy(artifacts = null)
         artifacts?.select(null)
         artifactPageState.removeState("artifacts")
     }
@@ -195,8 +193,7 @@ internal fun OkouApp(
     fun openArtifacts() {
         focus.clearFocus()
         keyboard?.hide()
-        artifactSourceId = null
-        artifactsOpen = true
+        navigation = navigation.copy(artifacts = ArtifactsDestination())
     }
 
     fun releaseSearchFocus() {
@@ -377,7 +374,9 @@ internal fun OkouApp(
             val pending = pendingNewChat
             if (artifactSource != null) {
                 if (thread != null) chats?.history?.open(thread)
-                else if (list.listPhase == ChatReadPhase.Ready) artifactSourceId = null
+                else if (list.listPhase == ChatReadPhase.Ready) {
+                    navigation = navigation.copy(artifacts = ArtifactsDestination())
+                }
             } else if (pending != null && navigation.target == target) {
                 navigation = navigation.copy(target = WorkspaceTarget.NewChat(pending.projectId))
             } else if (thread != null) chats?.history?.open(thread)
@@ -434,7 +433,8 @@ internal fun OkouApp(
             SettingsDestination.Overview -> navigation = navigation.copy(settings = null)
             null ->
                 when {
-                    artifactSource != null -> artifactSourceId = null
+                    artifactSource != null ->
+                        navigation = navigation.copy(artifacts = ArtifactsDestination())
                     navigation.search == SearchRoute.Open -> closeSearch()
                     else -> returnToList()
                 }
@@ -455,7 +455,7 @@ internal fun OkouApp(
                 onClose = { closeArtifacts(restoreFocus = true) },
                 onSource = { source ->
                     conversations.open(source.id)
-                    artifactSourceId = source.id
+                    navigation = navigation.copy(artifacts = ArtifactsDestination(source.id))
                 },
             )
         }
