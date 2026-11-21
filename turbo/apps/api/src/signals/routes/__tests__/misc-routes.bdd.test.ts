@@ -193,7 +193,6 @@ describe("MISC-03: workflows lifecycle through public API", () => {
 
     const memberCreated = await api.createWorkflow(
       member,
-      defaultAgentId,
       memberWorkflowName,
       { content: "# Member private workflow" },
       [201],
@@ -211,16 +210,11 @@ describe("MISC-03: workflows lifecycle through public API", () => {
       }),
     ).toBeFalsy();
 
-    const invalidCreate = await api.requestCreateInvalidWorkflow(
-      admin,
-      defaultAgentId,
-      [400],
-    );
+    const invalidCreate = await api.requestCreateInvalidWorkflow(admin, [400]);
     expectApiError(invalidCreate.body);
 
     const created = await api.createWorkflow(
       admin,
-      defaultAgentId,
       workflowName,
       { content: "# BDD Workflow\n\nCreated through API." },
       [201],

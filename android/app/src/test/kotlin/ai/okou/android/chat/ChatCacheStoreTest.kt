@@ -119,6 +119,10 @@ class ChatCacheStoreTest {
             it.execSQL(
                 "ALTER TABLE chat_scopes ADD COLUMN projectsEnabled INTEGER NOT NULL DEFAULT 0"
             )
+            it.execSQL("ALTER TABLE chat_scopes ADD COLUMN hasAgents INTEGER NOT NULL DEFAULT 0")
+            it.execSQL(
+                "CREATE TABLE chat_agents (scope TEXT NOT NULL, id TEXT NOT NULL, position INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (scope, id), FOREIGN KEY (scope) REFERENCES chat_scopes(scope) ON DELETE CASCADE)"
+            )
             it.execSQL("PRAGMA user_version = 2")
         }
 
@@ -134,13 +138,6 @@ class ChatCacheStoreTest {
                 assertEquals(2345L, savedProjects.confirmedAt)
             }
         upgraded.close()
-        driver.open(database.path).use { connection ->
-            connection
-                .prepare(
-                    "SELECT name FROM pragma_table_info('chat_scopes') WHERE name = 'projectsEnabled'"
-                )
-                .use { assertFalse(it.step()) }
-        }
     }
 
     @Test

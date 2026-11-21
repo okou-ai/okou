@@ -256,7 +256,7 @@ function permissionAllowLoadErrorMessage({
       });
     }
     return i18n.t(($) => {
-      return $.authorization.permission.errors.loadAgent;
+      return $.authorization.permission.errors.loadMember;
     });
   }
   if (grantsState === "hasError") {

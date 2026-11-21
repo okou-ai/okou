@@ -44,7 +44,7 @@ import { chatThreadOrganizationPredicate } from "./chat-thread-organization.serv
 import { publishAgentSuggestionsChangedSafely } from "../external/realtime";
 import { isMorningBriefDefinitionName } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-suggestions";
-import { loadProactiveWorkflowsEligibility$ } from "./proactive-workflows-eligibility.service";
+import { loadProactivePreferences$ } from "./proactive-workflows-eligibility.service";
 import {
   storedSuggestion$,
   storedSuggestions$,
@@ -119,7 +119,6 @@ export const suggestionAccess$ = command(
       const [run] = await get(db$)
         .select({
           id: agentRuns.id,
-          agentId: agentRuns.agentId,
           triggerSource: agentRuns.triggerSource,
           provenance: agentRuns.officialWorkflowProvenance,
         })
@@ -168,15 +167,8 @@ export const suggestionAccess$ = command(
           );
         })
       ) {
-        const preference = await set(
-          loadProactiveWorkflowsEligibility$,
-          auth,
-          signal,
-        );
-        if (
-          !preference.suggestions.active ||
-          (run.agentId !== null && preference.agentId !== run.agentId)
-        ) {
+        const preference = await set(loadProactivePreferences$, auth, signal);
+        if (!preference.suggestions.active) {
           return resourceUnavailable(
             "Automatic suggestion curation is disabled or no longer available. Continue without changing suggestions.",
           );

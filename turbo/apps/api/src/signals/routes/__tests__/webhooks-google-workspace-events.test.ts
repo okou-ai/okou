@@ -472,7 +472,6 @@ async function setupFixture(
   const orgActor: OrgActor = { ...actor, orgId: actor.orgId };
   const { objects: volumeObjects } = installWorkflowVolumeS3Fixture(context);
   const workflowId = await workflows.createWorkflow(orgActor, {
-    agentId,
     name: `google-meet-transcript-${randomUUID()}`,
   });
   const connectorId = await connectGoogleMeet(orgActor, provider);
@@ -711,7 +710,6 @@ describe("Google Workspace Events subscription lifecycle", () => {
       { intent: "add", displayName: "Secondary Google Meet" },
     );
     const secondaryWorkflowId = await workflows.createWorkflow(fixture.actor, {
-      agentId: fixture.agentId,
       name: `google-meet-secondary-${randomUUID()}`,
     });
     const secondary = await createMeetAutomation(
@@ -895,7 +893,7 @@ describe("Google Workspace Events subscription lifecycle", () => {
       workflowDetailClient().copy({
         headers: authHeaders(fixture.actor),
         params: { workflowId: fixture.workflowId },
-        body: { toAgentId: fixture.agentId },
+        body: {},
       }),
       [201],
     );

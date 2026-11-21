@@ -466,7 +466,6 @@ const loadGithubWebhookAutomations$ = command(
     const rows = await db
       .select({
         automation: workflowAutomationColumns(),
-        agentId: workflows.agentId,
         workflowName: workflows.name,
         workflowDisplayName: workflows.displayName,
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
@@ -512,7 +511,6 @@ const loadGithubWebhookAutomations$ = command(
         workflowAutomationCanFire$,
         {
           automation: row.automation,
-          agentId: row.agentId,
         },
         signal,
       );

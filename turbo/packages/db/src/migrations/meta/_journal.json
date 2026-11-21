@@ -3718,6 +3718,13 @@
       "when": 1795288157872,
       "tag": "1609_scope_official_workflow_installations_to_members",
       "breakpoints": true
+    },
+    {
+      "idx": 1610,
+      "version": "7",
+      "when": 1795289901229,
+      "tag": "1610_retire_workflow_agent_scope",
+      "breakpoints": true
     }
   ]
 }

@@ -64,7 +64,10 @@ function installAgents(agents: readonly AgentResponse[]): void {
     });
     if (!match) {
       return respond(404, {
-        error: { code: "AGENT_NOT_FOUND", message: "Agent not found" },
+        error: {
+          code: "AGENT_NOT_FOUND",
+          message: "Workspace member unavailable.",
+        },
       });
     }
     return respond(200, match);

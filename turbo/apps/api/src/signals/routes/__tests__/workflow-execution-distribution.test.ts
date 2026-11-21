@@ -1,6 +1,5 @@
 import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
 import { instructionsRoutes } from "../instructions";
-import { retainedWorkflowCaller } from "./helpers/retained-workflow-caller";
 import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import { randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -33,7 +32,6 @@ const bdd = createBddApi(context);
 const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const mocks = createRouteMocks(context);
-const retainedHeaders = retainedWorkflowCaller(context);
 const chatFixture = createChatEventsFixture(context);
 
 function headers(actor: ApiTestUser) {
@@ -89,7 +87,6 @@ function saveInstructions(actor: ApiTestUser, content: string) {
 
 async function createWorkflow(
   actor: ApiTestUser,
-  agentId: string,
   body: {
     readonly instruction?: string;
     readonly files?: { path: string; content: string }[];
@@ -97,17 +94,13 @@ async function createWorkflow(
     readonly visibility?: "private" | "public";
   } = {},
 ) {
-  const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
-  const caller =
-    agentId === defaultAgentId ? headers(actor) : await retainedHeaders(actor);
   return (
     await accept(
       setupApp({ context, routes: workflowsRoutes })(
         workflowsCollectionContract,
       ).create({
-        headers: caller,
+        headers: headers(actor),
         body: {
-          agentId,
           name: `execution-${randomUUID().slice(0, 8)}`,
           instruction: "original body",
           ...body,
@@ -135,7 +128,7 @@ test.each([
   async ({ framework, root }) => {
     const { actor, agent, group, s3 } = await fixture(framework);
     await saveInstructions(actor, "Dispatch-time personal Instructions");
-    const workflow = await createWorkflow(actor, agent.agentId, {
+    const workflow = await createWorkflow(actor, {
       files: [{ path: "reference.md", content: "old attachment" }],
     });
     const queued = await chatFixture.queueChatRun(actor, {
@@ -155,7 +148,7 @@ test.each([
       }),
       [200],
     );
-    const second = await createWorkflow(actor, agent.agentId, {
+    const second = await createWorkflow(actor, {
       instruction: "newly available",
     });
     context.mocks.s3.send.mockClear();
@@ -233,7 +226,7 @@ test.each([
 );
 
 test("shares a complete package hash across distinct Workflow owners", async () => {
-  const { actor, agent, group, s3 } = await fixture();
+  const { actor, group, s3 } = await fixture();
   const other = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
   await bdd.completeOnboarding(other);
   await runs.ensurePersonalSubscriptionModel(other, {
@@ -245,8 +238,8 @@ test("shares a complete package hash across distinct Workflow owners", async () 
     instruction: "Identical runtime content",
     files: [{ path: "notes.md", content: "Identical attachment" }],
   };
-  await createWorkflow(actor, agent.agentId, body);
-  await createWorkflow(other, agent.agentId, body);
+  await createWorkflow(actor, body);
+  await createWorkflow(other, body);
   await runs.heartbeatRunner(group);
   const references = [];
   for (const member of [actor, other]) {
@@ -266,21 +259,21 @@ test("shares a complete package hash across distinct Workflow owners", async () 
 });
 
 test("re-evaluates private/public precedence without exposing another member's private Workflow", async () => {
-  const { actor, agent, group, s3 } = await fixture();
+  const { actor, group, s3 } = await fixture();
   const name = `precedence-${randomUUID().slice(0, 8)}`;
-  await createWorkflow(actor, agent.agentId, {
+  await createWorkflow(actor, {
     name,
     visibility: "public",
     instruction: "public body",
   });
   const other = bdd.user({ orgId: actor.orgId });
-  await createWorkflow(other, agent.agentId, {
+  await createWorkflow(other, {
     instruction: "foreign private body",
   });
   const queued = await chatFixture.queueChatRun(actor, {
     prompt: "Use the available workflows",
   });
-  const privateWorkflow = await createWorkflow(actor, agent.agentId, {
+  const privateWorkflow = await createWorkflow(actor, {
     name,
     instruction: "private body",
   });
@@ -310,7 +303,7 @@ test.each(["sharing withdrawal", "rename", "deletion"] as const)(
         await saveInstructions(actor, "Accepted personal Instructions");
       }
       const author = bdd.user({ orgId: actor.orgId });
-      const workflow = await createWorkflow(author, agent.agentId, {
+      const workflow = await createWorkflow(author, {
         visibility: "public",
         instruction: `Content whose sharing can be withdrawn by its author.\n${randomUUID()}`,
       });
@@ -438,16 +431,16 @@ test.each(["sharing withdrawal", "rename", "deletion"] as const)(
 test("invokes the caller's Private Workflow when Public and foreign Private Workflows share its slug", async () => {
   const { actor, agent, group, s3 } = await fixture();
   const name = `invoked-${randomUUID().slice(0, 8)}`;
-  await createWorkflow(actor, agent.agentId, {
+  await createWorkflow(actor, {
     name,
     visibility: "public",
     instruction: "public body",
   });
-  await createWorkflow(bdd.user({ orgId: actor.orgId }), agent.agentId, {
+  await createWorkflow(bdd.user({ orgId: actor.orgId }), {
     name,
     instruction: "foreign private body",
   });
-  await createWorkflow(actor, agent.agentId, {
+  await createWorkflow(actor, {
     name,
     instruction: "private body",
   });
@@ -468,15 +461,15 @@ test("invokes the caller's Private Workflow when Public and foreign Private Work
 });
 
 test("an ordinary Automation invokes the name of its bound Workflow package", async () => {
-  const { actor, agent, s3 } = await fixture();
+  const { actor, s3 } = await fixture();
   const owner = publicRunOwner(context, actor);
   await owner.run(async () => {
     const author = bdd.user({ orgId: actor.orgId });
-    const shared = await createWorkflow(author, agent.agentId, {
+    const shared = await createWorkflow(author, {
       visibility: "public",
       instruction: "Shared Automation workflow",
     });
-    const shadow = await createWorkflow(actor, agent.agentId, {
+    const shadow = await createWorkflow(actor, {
       visibility: "private",
       name: shared.name,
       instruction: "Caller's private Workflow with the same name",
@@ -576,8 +569,8 @@ test("an ordinary Automation invokes the name of its bound Workflow package", as
 });
 
 test("runs a queued explicit invocation without its deleted Workflow", async () => {
-  const { actor, agent, group } = await fixture();
-  const workflow = await createWorkflow(actor, agent.agentId);
+  const { actor, group } = await fixture();
+  const workflow = await createWorkflow(actor);
   const queued = await chatFixture.queueChatRun(actor, {
     prompt: `/${workflow.name}`,
   });
@@ -600,8 +593,8 @@ test("runs a queued explicit invocation without its deleted Workflow", async () 
 });
 
 test("mounts the current winner for a queued invocation whose slug is reused", async () => {
-  const { actor, agent, group, s3 } = await fixture();
-  const workflow = await createWorkflow(actor, agent.agentId);
+  const { actor, group, s3 } = await fixture();
+  const workflow = await createWorkflow(actor);
   const queued = await chatFixture.queueChatRun(actor, {
     prompt: `/${workflow.name}`,
   });
@@ -614,7 +607,7 @@ test("mounts the current winner for a queued invocation whose slug is reused", a
     }),
     [200],
   );
-  await createWorkflow(actor, agent.agentId, {
+  await createWorkflow(actor, {
     name: workflow.name,
     instruction: "different invocation target",
   });
@@ -640,7 +633,7 @@ test("mounts the current winner for a queued invocation whose slug is reused", a
 test("keeps a large non-ASCII Workflow in its complete package without truncation", async () => {
   const { actor, agent, group, s3 } = await fixture();
   const instruction = "指令\n".repeat(800_000);
-  const workflow = await createWorkflow(actor, agent.agentId, { instruction });
+  const workflow = await createWorkflow(actor, { instruction });
   const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "Use workflows",
@@ -661,13 +654,9 @@ test("keeps a large non-ASCII Workflow in its complete package without truncatio
 
 test("preserves a running Agent after rejected completion and accepts cancellation acknowledgement", async () => {
   const { actor, agent, group } = await fixture("claude-code", true);
-  const workflow = await createWorkflow(
-    actor,
-    (await bdd.readOnboardingStatus(actor)).defaultAgentId!,
-    {
-      files: [{ path: "keep.md", content: "execution attachment" }],
-    },
-  );
+  const workflow = await createWorkflow(actor, {
+    files: [{ path: "keep.md", content: "execution attachment" }],
+  });
   const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "Use workflows",
@@ -713,24 +702,4 @@ test("preserves a running Agent after rejected completion and accepts cancellati
   await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
     status: "cancelled",
   });
-});
-
-test("preserves member Workflow files after deleting a legacy Agent", async () => {
-  const { actor, agent, s3 } = await fixture("claude-code", true);
-  const memberAgent = (await bdd.readOnboardingStatus(actor)).defaultAgentId!;
-  installWorkflowVolumeS3Fixture(context, s3.objects);
-  const survivor = await createWorkflow(actor, memberAgent, {
-    files: [{ path: "keep.md", content: "keep" }],
-  });
-  await bdd.deleteAgent(actor, agent.agentId);
-  const read = await accept(
-    detailClient().get({
-      headers: headers(actor),
-      params: { workflowId: survivor.id },
-    }),
-    [200],
-  );
-  expect(read.body.fileContents).toStrictEqual([
-    { path: "keep.md", content: "keep" },
-  ]);
 });

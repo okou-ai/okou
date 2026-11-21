@@ -17,7 +17,6 @@ import {
   officialWorkflowCatalogState,
   officialWorkflowCatalogReleases,
 } from "@okouai/db/schema/official-workflow-catalog";
-import { agents } from "@okouai/db/schema/agent";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
@@ -59,12 +58,6 @@ type OfficialWorkflowFailure =
 export type OfficialWorkflowInstallResult =
   | { readonly kind: "ok"; readonly workflowId: string }
   | OfficialWorkflowFailure;
-
-interface ConfigurableAgent {
-  readonly id: string;
-  readonly owner: string;
-  readonly visibility: "public" | "private";
-}
 
 export interface ResolvedBlueprint {
   readonly blueprint: OfficialWorkflowAcceptedBlueprint;
@@ -462,46 +455,6 @@ function resolveAllBlueprints(
   return { ok: true, blueprints: resolved };
 }
 
-const loadConfigurableAgent$ = command(
-  async (
-    { get },
-    args: {
-      readonly orgId: string;
-      readonly agentId: string;
-      readonly member: WorkflowMember;
-    },
-    signal: AbortSignal,
-  ): Promise<ConfigurableAgent | OfficialWorkflowFailure> => {
-    const [agent] = await get(db$)
-      .select({
-        id: agents.id,
-        owner: agents.owner,
-        visibility: agents.visibility,
-      })
-      .from(agents)
-      .where(and(eq(agents.orgId, args.orgId), eq(agents.id, args.agentId)))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!agent) {
-      return { kind: "not-found", message: `Agent not found: ${args.agentId}` };
-    }
-    if (agent.visibility === "private" && agent.owner !== args.member.userId) {
-      return {
-        kind: "forbidden",
-        message:
-          "Only the private agent owner can install Official Workflows for this member",
-      };
-    }
-    return agent;
-  },
-);
-
-function isFailure(
-  value: ConfigurableAgent | OfficialWorkflowFailure,
-): value is OfficialWorkflowFailure {
-  return "kind" in value;
-}
-
 export const loadOfficialWorkflowUserTimezone$ = command(
   async (
     { get },
@@ -614,7 +567,6 @@ function sameAcceptedDefinition(
 interface InstallOfficialWorkflowArgs {
   readonly orgId: string;
   readonly member: WorkflowMember;
-  readonly agentId: string;
   readonly definitionName: string;
   readonly blueprints: readonly OfficialWorkflowBlueprintBindings[];
 }
@@ -700,7 +652,6 @@ const insertInstallingWorkflow$ = command(
     { set },
     args: {
       readonly installation: InstallOfficialWorkflowArgs;
-      readonly agentId: string;
       readonly definition: OfficialWorkflowAcceptedDefinition;
       readonly currentTime: Date;
     },
@@ -714,7 +665,6 @@ const insertInstallingWorkflow$ = command(
         .insert(workflows)
         .values({
           orgId: args.installation.orgId,
-          agentId: args.agentId,
           name: args.definition.name,
           visibility: "private",
           instruction: null,
@@ -737,34 +687,12 @@ const insertInstallingWorkflow$ = command(
           inserted.error,
           "idx_workflows_official_member_definition",
         ) ||
-        isUniqueViolation(
-          inserted.error,
-          "idx_workflows_morning_brief_member",
-        ) ||
-        isUniqueViolation(
-          inserted.error,
-          "idx_workflows_official_owner_agent_definition_unique",
-        ) ||
-        isUniqueViolation(
-          inserted.error,
-          "idx_workflows_morning_brief_owner_agent_unique",
-        )
+        isUniqueViolation(inserted.error, "idx_workflows_morning_brief_member")
       ) {
         return {
           kind: "conflict",
           message:
             "Official Workflow installation is in progress or already installed for this member",
-        };
-      }
-      if (
-        isUniqueViolation(
-          inserted.error,
-          "idx_workflows_private_owner_agent_name_unique",
-        )
-      ) {
-        return {
-          kind: "conflict",
-          message: `A private workflow named "${args.definition.name}" already exists for this member`,
         };
       }
       throw inserted.error;
@@ -971,11 +899,6 @@ export const installOfficialWorkflow$ = command(
     args: InstallOfficialWorkflowArgs,
     signal: AbortSignal,
   ): Promise<OfficialWorkflowInstallResult> => {
-    const agent = await set(loadConfigurableAgent$, args, signal);
-    signal.throwIfAborted();
-    if (isFailure(agent)) {
-      return agent;
-    }
     const resolved = await set(resolveInstallation$, args, signal);
     if ("kind" in resolved) {
       return resolved;
@@ -999,7 +922,6 @@ export const installOfficialWorkflow$ = command(
       insertInstallingWorkflow$,
       {
         installation: args,
-        agentId: agent.id,
         definition: resolved.definition,
         currentTime,
       },

@@ -1,10 +1,8 @@
 import { command } from "ccstate";
-import { loadProactiveWorkflowsEligibility$ } from "./proactive-workflows-eligibility.service";
+import { loadProactivePreferences$ } from "./proactive-workflows-eligibility.service";
 import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
 import { nowDate } from "../../lib/time";
 import {
-  canUseAgent,
-  loadAgent$,
   loadAutomationOwnerTimezone$,
   loadAutomationWorkflowRunTarget$,
   loadOwnedAutomation$,
@@ -62,6 +60,7 @@ export const runOwnedWorkflowAutomationNow$ = command(
       {
         orgId: args.orgId,
         workflowId: automation.workflowId,
+        member: args.member,
       },
       signal,
     );
@@ -78,45 +77,20 @@ export const runOwnedWorkflowAutomationNow$ = command(
         };
       }
       const eligibility = await set(
-        loadProactiveWorkflowsEligibility$,
+        loadProactivePreferences$,
         {
           orgId: automation.orgId,
           userId: automation.ownerUserId,
         },
         signal,
       );
-      if (
-        !eligibility[kind].available ||
-        eligibility.agentId !== target.agentId
-      ) {
+      if (!eligibility[kind].available) {
         return {
           kind: "forbidden",
           message: "Proactive Learning is not available.",
         };
       }
     }
-    const agent = await set(
-      loadAgent$,
-      {
-        orgId: args.orgId,
-        agentId: target.agentId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!agent) {
-      return {
-        kind: "conflict",
-        message: "Cannot run: the workflow's agent no longer exists.",
-      };
-    }
-    if (!canUseAgent(agent, args.member)) {
-      return {
-        kind: "forbidden",
-        message: "You do not have access to the workflow's agent",
-      };
-    }
-
     const currentTime = nowDate();
     const ownerTimezone = await set(
       loadAutomationOwnerTimezone$,
@@ -149,7 +123,6 @@ export const runOwnedWorkflowAutomationNow$ = command(
       runWorkflowAutomationNow$,
       {
         automation,
-        proactiveAgentId: target.agentId,
         chatThreadId,
         automationContext: manualContext,
         apiStartTime: currentTime.getTime(),

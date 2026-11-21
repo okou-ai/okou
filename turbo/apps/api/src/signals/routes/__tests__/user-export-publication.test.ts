@@ -310,7 +310,6 @@ test("publishes an owned ZIP, deduplicates concurrent requests and excludes peer
     fixture.app(workflowsCollectionContract).create({
       headers,
       body: {
-        agentId: defaultAgentId,
         name: "exported-workflow",
         instruction: "Use the exported instruction",
         visibility: "private",

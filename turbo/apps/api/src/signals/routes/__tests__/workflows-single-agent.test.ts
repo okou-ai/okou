@@ -5,19 +5,14 @@ import {
   workflowVisibilityContract,
   workflowAutomationsContract,
 } from "@okouai/api-contracts/contracts/workflows";
-import { onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createDeferredPromise } from "../../utils";
 import { workflowsRoutes } from "../workflows";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
-import { publicChatActor } from "./helpers/public-chat-actor";
-import { publicRunOwner } from "./helpers/public-run-owner";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -58,7 +53,6 @@ async function fixture() {
     collection().create({
       headers: headers(admin),
       body: {
-        agentId: defaultAgentId,
         name: `shared-${randomUUID().slice(0, 8)}`,
         visibility: "public",
         instruction: "Public version one",
@@ -71,12 +65,11 @@ async function fixture() {
 }
 
 test("ordinary members create and copy private Workflows without gaining public rights", async () => {
-  const { admin, alice, bob, defaultAgentId, source } = await fixture();
+  const { admin, alice, bob, source } = await fixture();
   const personal = await accept(
     collection().create({
       headers: headers(alice),
       body: {
-        agentId: defaultAgentId,
         name: `personal-${randomUUID().slice(0, 8)}`,
         instruction: "My steps",
       },
@@ -93,7 +86,7 @@ test("ordinary members create and copy private Workflows without gaining public 
     detail().copy({
       headers: headers(alice),
       params: { workflowId: source.id },
-      body: { toAgentId: defaultAgentId },
+      body: {},
     }),
     [201],
   );
@@ -126,7 +119,7 @@ test("ordinary members create and copy private Workflows without gaining public 
     detail().copy({
       headers: headers(alice),
       params: { workflowId: source.id },
-      body: { toAgentId: defaultAgentId },
+      body: {},
     }),
     [409],
   );
@@ -134,7 +127,6 @@ test("ordinary members create and copy private Workflows without gaining public 
     collection().create({
       headers: headers(alice),
       body: {
-        agentId: defaultAgentId,
         name: `denied-${randomUUID().slice(0, 8)}`,
         visibility: "public",
       },
@@ -181,7 +173,7 @@ test("ordinary members create and copy private Workflows without gaining public 
   const aliceCommands = await accept(
     collection().composer({
       headers: headers(alice),
-      query: { agentId: defaultAgentId },
+      query: {},
     }),
     [200],
   );
@@ -193,7 +185,7 @@ test("ordinary members create and copy private Workflows without gaining public 
   const bobCommands = await accept(
     collection().composer({
       headers: headers(bob),
-      query: { agentId: defaultAgentId },
+      query: {},
     }),
     [200],
   );
@@ -251,7 +243,7 @@ test("ordinary members create and copy private Workflows without gaining public 
 });
 
 test("copies only the caller's Automations and preserves the existing private copy", async () => {
-  const { admin, alice, defaultAgentId, source } = await fixture();
+  const { admin, alice, source } = await fixture();
   for (const actor of [admin, alice]) {
     await accept(
       automations().create({
@@ -272,7 +264,7 @@ test("copies only the caller's Automations and preserves the existing private co
     detail().copy({
       headers: headers(alice),
       params: { workflowId: source.id },
-      body: { toAgentId: defaultAgentId },
+      body: {},
     }),
     [201],
   );
@@ -288,184 +280,5 @@ test("copies only the caller's Automations and preserves the existing private co
     ownerUserId: alice.userId,
     kind: "schedule",
     schedule: { type: "loop", intervalSeconds: 900 },
-  });
-});
-
-test("lists workspace Workflows and restricts member writes to the default executor", async () => {
-  const { admin, alice, defaultAgentId, source } = await fixture();
-  const other = await bdd.createAgent(admin, { visibility: "public" });
-  await accept(
-    collection().create({
-      headers: headers(admin),
-      body: { agentId: other.agentId, name: "outside-workspace" },
-    }),
-    [403],
-  );
-  const listed = await accept(
-    collection().list({
-      headers: headers(alice),
-      query: { agentId: other.agentId },
-    }),
-    [200],
-  );
-  expect(
-    listed.body.map((workflow) => {
-      return workflow.id;
-    }),
-  ).toContain(source.id);
-  expect(
-    listed.body.every((workflow) => {
-      return workflow.agentId === defaultAgentId;
-    }),
-  ).toBeTruthy();
-  await accept(
-    detail().copy({
-      headers: headers(alice),
-      params: { workflowId: source.id },
-      body: { toAgentId: other.agentId },
-    }),
-    [403],
-  );
-});
-
-test("rejects a member copy if its default target changes during publication", async () => {
-  const { admin, alice, defaultAgentId, source, s3 } = await fixture();
-  const entered = createDeferredPromise<void>(context.signal);
-  const released = createDeferredPromise<void>(context.signal);
-  s3.beforeNextArchiveWrite(async () => {
-    entered.resolve();
-    await released.promise;
-  });
-  const copying = detail().copy({
-    headers: headers(alice),
-    params: { workflowId: source.id },
-    body: { toAgentId: defaultAgentId },
-  });
-  onTestFinished(async () => {
-    if (!released.settled()) {
-      released.resolve();
-    }
-    await copying;
-  });
-  await entered.promise;
-  await bdd.updateAgent(admin, defaultAgentId, {
-    description: "Updated default executor",
-  });
-  released.resolve();
-  await accept(copying, [409]);
-  const visible = await accept(
-    collection().list({ headers: headers(alice) }),
-    [200],
-  );
-  expect(
-    visible.body.filter((row) => {
-      return row.name === source.name && row.visibility === "private";
-    }),
-  ).toStrictEqual([]);
-});
-
-test("applies the same member Workflow permissions when a send includes a legacy Agent ID", async () => {
-  const owned = await publicChatActor(context, { tier: "team" });
-  const runs = createRunsApi(context);
-  await owned.run(async () => {
-    installWorkflowVolumeS3Fixture(context);
-    const { defaultAgentId } = await bdd.readOnboardingStatus(owned.actor);
-    if (!defaultAgentId) {
-      throw new Error("Expected workspace executor");
-    }
-    const source = await accept(
-      collection().create({
-        headers: headers(owned.actor),
-        body: {
-          agentId: defaultAgentId,
-          name: `runtime-copy-${randomUUID().slice(0, 8)}`,
-          visibility: "public",
-          instruction: "Shared runtime procedure",
-        },
-      }),
-      [201],
-    );
-    const other = await bdd.createAgent(owned.actor, {
-      displayName: "Retained legacy executor",
-      visibility: "public",
-    });
-    const member = bdd.user({
-      orgId: owned.actor.orgId,
-      orgRole: "org:member",
-    });
-    const owner = publicRunOwner(context, member, {
-      continueAcceptedOperations: true,
-    });
-    await owner.run(async () => {
-      await bdd.completeOnboarding(member);
-      await runs.ensurePersonalSubscriptionModel(member);
-      const queued = await runs.createThreadRun(member, {
-        agentId: defaultAgentId,
-        prompt: "Make my private Workflow copy",
-        model: "auto",
-      });
-      const execution = await runs.executionInput(queued.runId);
-      owner.rememberExecution(queued.runId, execution.sandboxToken);
-      const runHeaders = {
-        authorization: `Bearer ${execution.platformEnvironment.OKOU_TOKEN!}`,
-      };
-      const copied = await accept(
-        detail().copy({
-          headers: runHeaders,
-          params: { workflowId: source.body.id },
-          body: { toAgentId: defaultAgentId },
-        }),
-        [201],
-      );
-      expect(copied.body).toMatchObject({
-        ownerUserId: member.userId,
-        visibility: "private",
-        canPublish: false,
-      });
-      const listed = await accept(
-        collection().list({ headers: runHeaders }),
-        [200],
-      );
-      const listedIds = listed.body.map((row) => {
-        return row.id;
-      });
-      expect(listedIds).toContain(copied.body.id);
-      expect(listedIds).toContain(source.body.id);
-      await accept(
-        visibility().publish({
-          headers: runHeaders,
-          params: { workflowId: copied.body.id },
-        }),
-        [403],
-      );
-      await accept(
-        collection().create({
-          headers: runHeaders,
-          body: {
-            agentId: other.agentId,
-            name: `wrong-namespace-${randomUUID().slice(0, 8)}`,
-          },
-        }),
-        [403],
-      );
-      await runs.requestCancelRun(member, queued.runId, [200]);
-      const retained = await runs.createThreadRun(member, {
-        agentId: other.agentId,
-        prompt: "Reuse member Workflow scope",
-        model: "auto",
-      });
-      const retainedExecution = await runs.executionInput(retained.runId);
-      owner.rememberExecution(retained.runId, retainedExecution.sandboxToken);
-      await accept(
-        detail().copy({
-          headers: {
-            authorization: `Bearer ${retainedExecution.platformEnvironment.OKOU_TOKEN!}`,
-          },
-          params: { workflowId: source.body.id },
-          body: { toAgentId: defaultAgentId },
-        }),
-        [409],
-      );
-    });
   });
 });

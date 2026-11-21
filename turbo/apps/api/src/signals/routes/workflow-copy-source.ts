@@ -2,8 +2,6 @@ import type {
   OfficialWorkflowAcceptedRevision,
   OfficialWorkflowAcceptedDefinition,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { agents } from "@okouai/db/schema/agent";
 import {
   officialWorkflowCatalogState,
   officialWorkflowCatalogReleases,
@@ -17,11 +15,7 @@ import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, asc, eq, inArray, getTableColumns, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { isDeepStrictEqual } from "node:util";
-import { requireAgentPermission } from "../../lib/require-agent-permission";
-import {
-  pgTextDecoder,
-  pgBooleanDecoder,
-} from "../../lib/db-structured-result";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { workflowAutomationColumns } from "../services/autonomy-budget-schema.service";
 import {
   acceptedCatalogFromRow,
@@ -38,7 +32,6 @@ import {
 
 interface WorkflowCopyObservation {
   readonly workflowXmin: string;
-  readonly parents: readonly { readonly id: string; readonly xmin: string }[];
   readonly automations: readonly {
     readonly id: string;
     readonly xmin: string;
@@ -69,8 +62,6 @@ export interface WorkflowCopyInput {
   readonly userId: string;
   readonly member: WorkflowMember;
   readonly sourceWorkflow: WorkflowRow;
-  readonly targetAgentId: string;
-  readonly personalCopy?: boolean;
   readonly sourceFiles: WorkflowCopySource["files"];
 }
 
@@ -158,28 +149,6 @@ export function copySourcePlans(args: WorkflowCopyInput) {
       .where(catalog.condition)
       .limit(1)
       .as("copy_catalog"),
-    parents: new QueryBuilder()
-      .select({
-        id: agents.id,
-        owner: agents.owner,
-        visibility: agents.visibility,
-        personalCopyAllowed:
-          sql`${args.personalCopy === true} AND ${agents.visibility} = 'public'
-          AND EXISTS (SELECT 1 FROM ${orgMetadata} WHERE ${orgMetadata.orgId} = ${args.orgId}
-            AND ${orgMetadata.defaultAgentId} = ${agents.id})`
-            .mapWith(pgBooleanDecoder)
-            .as("personal_copy_allowed"),
-        xmin: sql`${agents}.xmin::text`.mapWith(pgTextDecoder).as("xmin"),
-      })
-      .from(agents)
-      .where(
-        and(
-          eq(agents.orgId, args.orgId),
-          inArray(agents.id, [args.sourceWorkflow.agentId, args.targetAgentId]),
-        ),
-      )
-      .orderBy(asc(agents.id))
-      .as("copy_parents"),
     source: source.limit(1).as("copy_source"),
     visible: workflowCopyVisibleQuery({
       orgId: args.orgId,
@@ -207,21 +176,6 @@ export function copyRevisionQuery(identity: {
     .as("copy_revision");
 }
 
-export function workflowCopyAgentQuery(orgId: string, agentId: string) {
-  return new QueryBuilder()
-    .select({
-      id: agents.id,
-      owner: agents.owner,
-      visibility: agents.visibility,
-      name: agents.name,
-      displayName: agents.displayName,
-    })
-    .from(agents)
-    .where(and(eq(agents.orgId, orgId), eq(agents.id, agentId)))
-    .limit(1)
-    .as("copy_target");
-}
-
 export function workflowCopyVisibleQuery(args: {
   readonly orgId: string;
   readonly member: WorkflowMember;
@@ -230,7 +184,7 @@ export function workflowCopyVisibleQuery(args: {
   return new QueryBuilder()
     .select(getTableColumns(workflows))
     .from(workflows)
-    .innerJoin(agents, eq(workflows.agentId, agents.id))
+
     .where(
       and(
         eq(workflows.orgId, args.orgId),
@@ -262,30 +216,6 @@ export function copyWebhooksQuery(
     )
     .orderBy(asc(workflowWebhookAutomations.automationId));
   return query.as("copy_webhooks");
-}
-
-export function requireCopyTarget(
-  target:
-    | {
-        readonly owner: string;
-        readonly visibility: "public" | "private";
-        readonly personalCopyAllowed: boolean;
-      }
-    | undefined,
-  member: WorkflowMember,
-): void {
-  if (
-    !target ||
-    (!target.personalCopyAllowed &&
-      requireAgentPermission(
-        target.owner,
-        member,
-        "copy workflows onto this agent",
-        { visibility: target.visibility },
-      ))
-  ) {
-    throw new CopyPreparationConflict();
-  }
 }
 
 export function officialCopyMaterialization(

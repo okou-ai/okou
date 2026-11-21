@@ -17,7 +17,6 @@ import {
   type MorningBriefMemberIdentity,
 } from "./morning-brief-enrollment-data.service";
 import {
-  loadMorningBriefDefaultAgentId$,
   loadMorningBriefState$,
   loadMorningBriefOwnership$,
   type MorningBriefState,
@@ -252,15 +251,6 @@ const createMorningBriefFromPreference$ = command(
     if (unavailableReason !== null) {
       return await set(loadInstalledPreference$, args, signal);
     }
-    const agentId = await set(
-      loadMorningBriefDefaultAgentId$,
-      identity,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (agentId === null) {
-      return await set(loadInstalledPreference$, args, signal);
-    }
     const definitionName = await set(
       selectedMorningBriefDefinition$,
       identity,
@@ -271,7 +261,6 @@ const createMorningBriefFromPreference$ = command(
       {
         orgId: args.orgId,
         member: args.member,
-        agentId,
         definitionName,
         blueprints: [
           {

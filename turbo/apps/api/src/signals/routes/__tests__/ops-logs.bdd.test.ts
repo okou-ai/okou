@@ -131,7 +131,6 @@ describe("OPS-01: user data export", () => {
       );
       const workflow = await misc.createWorkflow(
         actor,
-        defaultAgentId,
         "bdd-export-workflow",
         { content: "Use the exported workflow instructions." },
         [201],

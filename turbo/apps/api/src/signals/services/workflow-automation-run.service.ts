@@ -358,9 +358,8 @@ const commitProactiveWorkflowInput$ = command(
     signal: AbortSignal,
   ): Promise<ChatInputEnqueueCommit | null> => {
     const { args, plan, source, model } = input;
-    const { automation, chatThreadId, proactiveAgentId } = args;
+    const { automation, chatThreadId } = args;
     if (
-      proactiveAgentId === undefined ||
       source.steps.length !== 0 ||
       automation.officialBlueprintKey === null ||
       model.threadModelReplacement !== null ||
@@ -400,7 +399,7 @@ const commitProactiveWorkflowInput$ = command(
             ? isNull(workflowAutomations.nextRunAt)
             : eq(workflowAutomations.nextRunAt, automation.nextRunAt),
           sql`${workflowAutomations.lastRunAt} IS NOT DISTINCT FROM ${automation.lastRunAt}::timestamp`,
-          proactiveWorkflowOwnerEnabledSql(owner, proactiveAgentId),
+          proactiveWorkflowOwnerEnabledSql(owner),
           sql`EXISTS (SELECT 1 FROM org_members_metadata AS preference
                 WHERE preference.org_id = ${owner.orgId} AND preference.user_id = ${owner.userId}
                   AND preference.timezone = ${automation.timezone})`,

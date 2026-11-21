@@ -988,7 +988,7 @@
         "twentyFourHours": "24시간"
       },
       "errors": {
-        "loadAgent": "에이전트 로드 실패",
+        "loadMember": "워크스페이스 멤버를 불러올 수 없습니다.",
         "loadGrants": "권한 부여 로드 실패",
         "loadMetadata": "권한 메타데이터 로드 실패",
         "missingPermission": "URL 매개변수에 권한 누락",
@@ -2303,7 +2303,7 @@
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
-      "agentNotFound": "에이전트를 찾을 수 없습니다",
+      "memberNotFound": "워크스페이스 멤버를 찾을 수 없습니다.",
       "allow": "허용",
       "alreadyAllowed": "이미 허용됨",
       "alreadyDenied": "이미 거부됨",
@@ -3339,13 +3339,13 @@
       },
       "github": {
         "accountFallback": "이 GitHub 계정",
-        "alreadyDescription": "{{account}}로 이미 연결되어 있습니다. GitHub 이슈나 풀 리퀘스트에서 에이전트를 언급하여 대화를 시작하세요.",
+        "alreadyDescription": "{{account}} 계정으로 연결했습니다. GitHub 이슈나 풀 리퀘스트에서 Okou를 멘션해 채팅을 시작하세요.",
         "alreadyTitle": "GitHub에 이미 연결됨",
         "back": "워크플로로 돌아가기",
         "checkingConnectionDescription": "GitHub 연결을 확인하는 중입니다. 잠시만 기다려 주세요.",
         "checkingConnectionTitle": "연결 확인 중...",
         "checkingSession": "{{brandName}} 세션을 확인하는 중입니다. 잠시만 기다려 주세요.",
-        "connectDescription": "{{brandName}} 계정을 {{account}}에 연결하면 GitHub 이슈 및 풀 리퀘스트에서 에이전트를 실행할 수 있습니다.",
+        "connectDescription": "{{brandName}} 계정을 {{account}}에 연결해 GitHub 이슈와 풀 리퀘스트에서 채팅을 시작하세요.",
         "connectTitle": "GitHub에 연결하기",
         "errorFallback": "GitHub에 연결할 수 없습니다. GitHub에서 다시 시도하세요.",
         "invalidInstallation": "이 링크의 GitHub 설치가 유효하지 않습니다.",
@@ -3363,7 +3363,7 @@
         "signInCheckFailed": "로그인 확인 실패",
         "signInDescription": "이 GitHub 사용자를 연결하기 전에 {{brandName}} 계정을 사용하세요.",
         "signInTitle": "계속하려면 로그인하세요",
-        "successDescription": "{{account}}로 연결되었습니다. GitHub 이슈나 풀 리퀘스트에서 에이전트를 언급하여 대화를 시작하세요.",
+        "successDescription": "{{account}} 계정으로 연결했습니다. GitHub 이슈나 풀 리퀘스트에서 Okou를 멘션해 채팅을 시작하세요.",
         "successTitle": "GitHub에 연결되었습니다!",
         "wrongOrganizationDescription": "활성 조직이 이 GitHub 설치와 일치하지 않습니다. 올바른 조직으로 전환한 후 링크를 다시 여세요.",
         "wrongOrganizationTitle": "조직 전환"
@@ -3378,7 +3378,7 @@
         "accountMismatchDescriptionWorkspace": "현재 Okou 계정은 {{workspace}}에서 Slack 계정 {{currentAccount}}을(를) 사용합니다. 이 링크를 연 계정 {{requestedAccount}}(으)로 전환할까요?",
         "accountMismatchTitle": "Slack 계정을 전환할까요?",
         "authorizationFailed": "Slack 인증이 완료되지 않았습니다. 현재 연결 상태가 아래에 표시됩니다. 다시 시도할 수 있습니다.",
-        "connectDescription": "이 Slack 워크스페이스에 계정을 연결하여 Slack에서 직접 에이전트와 상호작용하세요.",
+        "connectDescription": "계정을 연결해 Slack에서 Okou와 채팅하세요.",
         "connectTitle": "Slack에 연결하기",
         "currentConnection": "Slack에 연결됨",
         "errorFallback": "Slack 연결을 확인하거나 시작할 수 없습니다.",
@@ -3396,7 +3396,7 @@
       },
       "teams": {
         "authorize": "Microsoft Teams 승인",
-        "connectDescription": "Teams 계정을 연결하여 Microsoft Teams에서 직접 에이전트와 상호작용하세요.",
+        "connectDescription": "계정을 연결해 Microsoft Teams에서 Okou와 채팅하세요.",
         "connectedDescription": "Teams 계정이 연결되었습니다.",
         "connectTitle": "Microsoft Teams 연결하기",
         "identityMismatch": "요청한 Teams 계정 또는 작업 공간이 현재 연결과 일치하지 않습니다.",
@@ -3417,7 +3417,7 @@
         "checkingConnectionTitle": "연결 확인 중...",
         "conflictDescription": "현재 {{current}} 계정으로 연결되어 있지만 이 링크는 {{requested}} 계정을 요청합니다. 현재 연결을 유지하거나 연결을 직접 관리한 후 다시 시도하세요.",
         "conflictTitle": "다른 Telegram 계정이 연결되어 있습니다",
-        "connectDescription": "이 Telegram 봇에 계정을 연결하여 Telegram에서 직접 에이전트와 상호작용하세요.",
+        "connectDescription": "계정을 연결해 Telegram에서 Okou와 채팅하세요.",
         "connectionCheckFailed": "연결을 확인하기 위해 Telegram에 접속할 수 없습니다.",
         "connectTitle": "Telegram에 연결하기",
         "continue": "Telegram으로 계속하기",
@@ -4793,7 +4793,7 @@
     "deleteThreadsTitle": "Delete project and threads?",
     "deleteTitle": "Delete Project?",
     "deletingThreads": "Deleting…",
-    "description": "Keep related chats together across Agents",
+    "description": "관련 채팅을 한곳에 모으세요.",
     "empty": "No chats here yet",
     "expand": "펼치기",
     "fromChat": "Create a Project from this chat",
@@ -4854,7 +4854,7 @@
       "pro": "프로",
       "team": "팀"
     },
-    "title": "에이전트가 대기 중입니다",
+    "title": "요청이 대기 중입니다",
     "upgrade": {
       "action": "{{plan}}으로 업그레이드",
       "features": {
@@ -5686,7 +5686,7 @@
       },
       "timezone": {
         "description": "표시되는 시간과 자동화 실행에 사용되는 시간입니다.",
-        "rowDescription": "에이전트가 실행 시 이 시간대를 사용합니다",
+        "rowDescription": "Okou는 작업을 실행할 때 이 시간대를 사용합니다.",
         "rowTitle": "시간대",
         "sectionTitle": "시간대",
         "zones": {
@@ -5740,7 +5740,7 @@
         "title": "Link의 내 카드"
       },
       "connect": "연결",
-      "description": "에이전트가 구매를 요청하고 Link 거래를 확인할 수 있습니다. 모든 구매는 직접 승인합니다.",
+      "description": "Okou가 구매를 요청하고 Link 거래 내역을 조회하도록 허용하세요. 모든 구매는 직접 승인합니다.",
       "disconnect": "연결 해제",
       "loadError": "지갑을 불러오지 못했습니다.",
       "scope": "Okou가 대신 구매하고 Link 거래를 확인하도록 허용하세요.",
@@ -6003,7 +6003,7 @@
       "unused": "사용 중인 호스트 없음"
     },
     "deleteHelp": "이 호스트를 삭제할까요? 자격 증명은 유지됩니다. Agent의 호스트 목록에서 사라집니다.",
-    "description": "에이전트가 원격 명령을 실행할 SSH 호스트를 구성하세요.",
+    "description": "Okou가 원격 컴퓨터에서 명령을 실행하도록 허용하세요.",
     "edit": "호스트 편집",
     "editHelp": "다른 자격 증명을 선택하면 이 호스트만 변경됩니다. 직접 연결 대상 변경 시 저장된 호스트 키가 지워지며, Cloudflare Access 관련 변경 시에는 유지됩니다.",
     "errors": {
@@ -6247,7 +6247,7 @@
       "usernamePasswordMethod": "사용자 이름 및 비밀번호"
     },
     "deleteHelp": "이 호스트를 삭제할까요? 재사용 가능한 자격 증명은 유지됩니다.",
-    "description": "Agent가 원격 데스크톱을 보고 제어하도록 허용하세요.",
+    "description": "Okou가 원격 데스크톱을 보고 제어하도록 허용하세요.",
     "edit": "호스트 편집",
     "editHelp": "변경 사항은 이 호스트에 적용되며 현재 연결 설정을 무효화합니다.",
     "errors": {
@@ -6921,8 +6921,8 @@
     },
     "editor": {
       "aria": "지침 편집기",
-      "footer": "에이전트 동작을 맞춤 설정하려면 지침을 직접 편집하세요.",
-      "placeholder": "에이전트를 위한 지침을 작성하세요...",
+      "footer": "이 워크플로의 지침을 편집하세요.",
+      "placeholder": "이 워크플로의 지침을 입력하세요…",
       "toolbar": {
         "blockquote": "인용문 블록",
         "bold": "굵게",
@@ -7029,7 +7029,7 @@
       "authorizationError": "Discord 인증을 완료할 수 없습니다.",
       "cancelled": "Discord 인증이 취소되었습니다.",
       "chooseWorkspace": "워크스페이스 선택",
-      "connectDescription": "Discord 계정을 연결하여 에이전트와 대화하세요.",
+      "connectDescription": "계정을 연결해 Discord에서 Okou와 채팅하세요.",
       "connectedTitle": "Discord에 연결됨",
       "connectTitle": "Discord 연결",
       "defaultWorkspace": "Discord 기본 워크스페이스",
@@ -7116,7 +7116,7 @@
       "connect": "연결",
       "connected": "연결됨",
       "creating": "QR 코드 생성 중…",
-      "description": "WeChat에서 에이전트와 대화하세요.",
+      "description": "WeChat에서 Okou와 채팅하세요.",
       "disconnect": "연결 해제",
       "expired": "이 QR 코드는 만료되었습니다. 새로 만드세요.",
       "failed": "WeChat에 연결하지 못했습니다.",
@@ -7142,7 +7142,7 @@
     "whatsapp": {
       "codeError": "연결 코드를 생성하지 못했습니다. 다시 시도하세요.",
       "connect": "WhatsApp 연결",
-      "connectDescription": "WhatsApp 계정을 {{brandName}}에 연결하여 에이전트와 채팅하세요.",
+      "connectDescription": "WhatsApp 계정을 {{brandName}}에 연결해 Okou와 채팅하세요.",
       "connected": "WhatsApp 연결됨",
       "description": "WhatsApp에서 Okou와 바로 대화하세요",
       "disconnected": "WhatsApp 연결 해제됨",

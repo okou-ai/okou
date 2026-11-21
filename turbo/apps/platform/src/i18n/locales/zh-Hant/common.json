@@ -988,7 +988,7 @@
         "twentyFourHours": "24 小時"
       },
       "errors": {
-        "loadAgent": "載入智能體失敗",
+        "loadMember": "無法載入工作區成員資料。",
         "loadGrants": "載入權限授予失敗",
         "loadMetadata": "載入權限資訊失敗",
         "missingPermission": "URL 參數中缺少權限",
@@ -2303,7 +2303,7 @@
     },
     "permissions": {
       "actionDescription": "{{action}}{{permissionName}}",
-      "agentNotFound": "未找到智能體",
+      "memberNotFound": "工作區成員無法使用。",
       "allow": "允許",
       "alreadyAllowed": "已允許",
       "alreadyDenied": "已拒絕",
@@ -3339,13 +3339,13 @@
       },
       "github": {
         "accountFallback": "此 GitHub 帳號",
-        "alreadyDescription": "你已以{{account}}身份連線。在 GitHub issue 或 pull request 中@你的智能體，即可開始對話。",
+        "alreadyDescription": "已以 {{account}} 身分連線。在 GitHub 議題或提取要求中提及 Okou 即可聊天。",
         "alreadyTitle": "已連線到 GitHub",
         "back": "返回工作流",
         "checkingConnectionDescription": "我們正在檢查你的 GitHub 連線，請稍候。",
         "checkingConnectionTitle": "正在檢查連線…",
         "checkingSession": "我們正在驗證你的 {{brandName}} 登入狀態，請稍候。",
-        "connectDescription": "把你的 {{brandName}} 帳號關聯到{{account}}，就可以在 issue 和 pull request 中透過@提及執行你的智能體。",
+        "connectDescription": "將 {{brandName}} 帳號連結至 {{account}}，即可從 GitHub 議題或提取要求開始聊天。",
         "connectTitle": "連線到 GitHub",
         "errorFallback": "我們無法連線 GitHub。請從 GitHub 重試。",
         "invalidInstallation": "此連結中的 GitHub 安裝資訊無效。",
@@ -3363,7 +3363,7 @@
         "signInCheckFailed": "無法檢查登入狀態",
         "signInDescription": "連線此 GitHub 使用者前，請先登入你的 {{brandName}} 帳號。",
         "signInTitle": "登入後繼續",
-        "successDescription": "你已以{{account}}身份連線。在 GitHub issue 或 pull request 中@你的智能體，即可開始對話。",
+        "successDescription": "已以 {{account}} 身分連線。在 GitHub 議題或提取要求中提及 Okou 即可聊天。",
         "successTitle": "已連線到 GitHub！",
         "wrongOrganizationDescription": "你當前所在的組織與此 GitHub 安裝不匹配。請切換到正確的組織，然後重新開啟連結。",
         "wrongOrganizationTitle": "切換組織"
@@ -3378,7 +3378,7 @@
         "accountMismatchDescriptionWorkspace": "你的 Okou 帳號目前在{{workspace}}使用 Slack 帳號{{currentAccount}}。要切換到開啟此連結的{{requestedAccount}}嗎？",
         "accountMismatchTitle": "切換 Slack 帳號？",
         "authorizationFailed": "Slack 授權未完成。下方顯示目前連線狀態，你可以重試。",
-        "connectDescription": "把你的帳號關聯到這個 Slack 工作區，就可以直接在 Slack 裡與你的智能體交流。",
+        "connectDescription": "連結帳號後，即可在 Slack 中與 Okou 聊天。",
         "connectTitle": "連線到 Slack",
         "currentConnection": "Slack 已連線",
         "errorFallback": "無法檢查或開始 Slack 連線。",
@@ -3396,7 +3396,7 @@
       },
       "teams": {
         "authorize": "授權 Microsoft Teams",
-        "connectDescription": "關聯你的 Teams 帳號，就可以直接在 Microsoft Teams 裡與你的智能體交流。",
+        "connectDescription": "連結帳號後，即可在 Microsoft Teams 中與 Okou 聊天。",
         "connectedDescription": "你的 Teams 帳號已連線。",
         "connectTitle": "連線 Microsoft Teams",
         "identityMismatch": "此連結指定的 Teams 帳號或工作區與目前連線不一致。",
@@ -3417,7 +3417,7 @@
         "checkingConnectionTitle": "正在檢查連線…",
         "conflictDescription": "目前連接的是 {{current}}，但此連結要求連接 {{requested}}。你可以保留目前連接，或先手動管理連接再重試。",
         "conflictTitle": "已連接其他 Telegram 帳號",
-        "connectDescription": "把你的帳號關聯到這個 Telegram 機器人，就可以直接在 Telegram 裡與你的智能體交流。",
+        "connectDescription": "連結帳號後，即可在 Telegram 中與 Okou 聊天。",
         "connectionCheckFailed": "暫時無法存取 Telegram 以檢查連線。",
         "connectTitle": "連線到 Telegram",
         "continue": "使用 Telegram 繼續",
@@ -4793,7 +4793,7 @@
     "deleteThreadsTitle": "刪除 Project 及其中的聊天？",
     "deleteTitle": "删除 Project？",
     "deletingThreads": "正在刪除…",
-    "description": "将不同 Agent 的相关聊天归到一起",
+    "description": "將相關的聊天集中在同一個專案。",
     "empty": "暂无聊天",
     "expand": "展開",
     "fromChat": "从此聊天创建 Project",
@@ -4854,7 +4854,7 @@
       "pro": "Pro",
       "team": "Team"
     },
-    "title": "你的智能體正在排隊",
+    "title": "你的請求正在排隊",
     "upgrade": {
       "action": "升級到{{plan}}",
       "features": {
@@ -5686,7 +5686,7 @@
       },
       "timezone": {
         "description": "用於介面顯示時間和自動化執行時間。",
-        "rowDescription": "你的智能體在執行時會使用該時區",
+        "rowDescription": "Okou 執行時會使用這個時區。",
         "rowTitle": "時區",
         "sectionTitle": "時區",
         "zones": {
@@ -5740,7 +5740,7 @@
         "title": "你的 Link 卡片"
       },
       "connect": "連線",
-      "description": "讓代理程式提出購買請求並查看 Link 交易。每筆購買均由你核准。",
+      "description": "允許 Okou 提出購買請求並查看 Link 交易。每筆購買都由你核准。",
       "disconnect": "中斷連線",
       "loadError": "無法載入錢包。",
       "scope": "讓 Okou 代你購買並查看 Link 交易。",
@@ -6003,7 +6003,7 @@
       "unused": "未被任何主機使用"
     },
     "deleteHelp": "確定刪除該主機？它的憑據會保留。智能體將不再在可用主機列表中看到它。",
-    "description": "讓你的智能體在遠端機器上執行命令。",
+    "description": "允許 Okou 在遠端主機上執行命令。",
     "edit": "編輯主機",
     "editHelp": "選擇其他憑據只會影響該主機。修改直連地址會清除已記錄的主機金鑰；涉及 Cloudflare Access 的修改則會保留它。",
     "errors": {
@@ -6247,7 +6247,7 @@
       "usernamePasswordMethod": "使用者名稱和密碼"
     },
     "deleteHelp": "刪除這臺已儲存的主機？它使用的可複用憑據會保留。",
-    "description": "讓你的智能體檢視和控制遠端桌面。",
+    "description": "允許 Okou 檢視及控制遠端桌面。",
     "edit": "編輯主機",
     "editHelp": "更改會應用到這臺已儲存的主機，並使其當前的連線配置失效。",
     "errors": {
@@ -6921,8 +6921,8 @@
     },
     "editor": {
       "aria": "指令編輯器",
-      "footer": "直接編輯指令，就能定製智能體的行為。",
-      "placeholder": "為你的智能體寫下指令…",
+      "footer": "編輯這個工作流程的指令。",
+      "placeholder": "為這個工作流程撰寫指令…",
       "toolbar": {
         "blockquote": "引用",
         "bold": "加粗",
@@ -7029,7 +7029,7 @@
       "authorizationError": "未能完成 Discord 授權。",
       "cancelled": "Discord 授權已取消。",
       "chooseWorkspace": "選擇工作區",
-      "connectDescription": "連接 Discord 帳號，與智慧代理聊天。",
+      "connectDescription": "連結帳號後，即可在 Discord 中與 Okou 聊天。",
       "connectedTitle": "已連接 Discord",
       "connectTitle": "連接 Discord",
       "defaultWorkspace": "Discord 預設工作區",
@@ -7116,7 +7116,7 @@
       "connect": "連接",
       "connected": "已連接",
       "creating": "正在產生 QR code…",
-      "description": "在微信中與智能體對話。",
+      "description": "在微信中與 Okou 聊天。",
       "disconnect": "中斷連接",
       "expired": "QR code 已過期，請重新產生。",
       "failed": "連接微信失敗。",
@@ -7142,7 +7142,7 @@
     "whatsapp": {
       "codeError": "無法產生連接碼，請重試。",
       "connect": "連接 WhatsApp",
-      "connectDescription": "將你的 WhatsApp 帳號連接到 {{brandName}}，即可與你的智慧代理聊天。",
+      "connectDescription": "將 WhatsApp 帳號連結至 {{brandName}}，即可與 Okou 聊天。",
       "connected": "WhatsApp 已連接",
       "description": "在 WhatsApp 中直接與 Okou 對話",
       "disconnected": "WhatsApp 已斷開",

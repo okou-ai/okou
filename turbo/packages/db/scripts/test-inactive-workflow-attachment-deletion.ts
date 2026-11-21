@@ -9,8 +9,6 @@ export async function validateInactiveWorkflowAttachmentDeletion(
 ): Promise<void> {
   const sql = postgres(databaseUrl, { max: 1 });
   const orgId = `inactive-attachments-${randomUUID()}`;
-  const sourceAgentId = randomUUID();
-  const targetAgentId = randomUUID();
   const sourceId = "81234567-49ab-4ef0-b234-56789abcdef0";
   // Stable ID assigned by the inactive batch migration for this source.
   const copyId = "1cf8de92-33c5-5a65-841e-5abfa45c3b6d";
@@ -36,17 +34,12 @@ export async function validateInactiveWorkflowAttachmentDeletion(
 
   try {
     await sql`
-      INSERT INTO agents (id, org_id, owner, name, visibility) VALUES
-      (${sourceAgentId}, ${orgId}, 'owner', 'legacy', 'private'),
-      (${targetAgentId}, ${orgId}, 'owner', 'current', 'public')
-    `;
-    await sql`
-      INSERT INTO workflows (id, org_id, agent_id, name, owner_user_id,
+      INSERT INTO workflows (id, org_id, name, owner_user_id,
         created_by, updated_by, attachments)
       VALUES
-        (${sourceId}, ${orgId}, ${sourceAgentId}, 'original', 'owner',
+        (${sourceId}, ${orgId}, 'original', 'owner',
           'owner', 'owner', ${sql.json(descriptor)}),
-        (${copyId}, ${orgId}, ${targetAgentId}, 'legacy--wf-original', 'owner',
+        (${copyId}, ${orgId}, 'legacy--wf-original', 'owner',
           'owner', 'owner', ${sql.json(foreignDescriptor)})
     `;
     await assert.rejects(deleteWorkflow(copyId), {
@@ -88,7 +81,6 @@ export async function validateInactiveWorkflowAttachmentDeletion(
   } finally {
     try {
       await sql`DELETE FROM background_jobs WHERE org_id = ${orgId}`;
-      await sql`DELETE FROM agents WHERE org_id = ${orgId}`;
     } finally {
       await sql.end();
     }

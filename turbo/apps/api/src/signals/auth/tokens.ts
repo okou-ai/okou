@@ -146,7 +146,6 @@ const composeJobTokenPayloadSchema = jwtBaseSchema.extend({
 const skillImportTokenPayloadSchema = jwtBaseSchema.extend({
   scope: literal("skill-import"),
   orgId: string().min(1),
-  agentId: string().min(1),
   provider: workflowImportSourceSchema,
   sessionId: uuid(),
 });
@@ -527,7 +526,6 @@ export function verifySkillImportToken(token: string): SkillImportAuth | null {
   return {
     userId: parsed.data.userId,
     orgId: parsed.data.orgId,
-    agentId: parsed.data.agentId,
     provider: parsed.data.provider,
     sessionId: parsed.data.sessionId,
   };
@@ -536,7 +534,6 @@ export function verifySkillImportToken(token: string): SkillImportAuth | null {
 export function generateSkillImportToken(
   userId: string,
   orgId: string,
-  agentId: string,
   provider: WorkflowImportSource,
   sessionId: string,
 ): { readonly token: string; readonly expiresAt: Date } {
@@ -546,7 +543,6 @@ export function generateSkillImportToken(
     scope: "skill-import",
     userId,
     orgId,
-    agentId,
     provider,
     sessionId,
     iat: nowSeconds,

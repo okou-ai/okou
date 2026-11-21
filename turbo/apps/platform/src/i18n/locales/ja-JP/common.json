@@ -988,7 +988,7 @@
         "twentyFourHours": "24時間"
       },
       "errors": {
-        "loadAgent": "エージェントの読み込みに失敗しました",
+        "loadMember": "ワークスペースのメンバーを読み込めませんでした。",
         "loadGrants": "権限付与のロードに失敗しました",
         "loadMetadata": "権限メタデータのロードに失敗しました",
         "missingPermission": "URLパラメータに権限がありません",
@@ -2303,7 +2303,7 @@
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
-      "agentNotFound": "エージェントが見つかりません",
+      "memberNotFound": "ワークスペースのメンバーが見つかりません。",
       "allow": "許可する",
       "alreadyAllowed": "すでに許可されています",
       "alreadyDenied": "すでに拒否されています",
@@ -3339,13 +3339,13 @@
       },
       "github": {
         "accountFallback": "この GitHub アカウント",
-        "alreadyDescription": "すでに {{account}} として接続されています。チャットを開始するには、GitHub のIssueまたはプル リクエストでエージェントに言及してください。",
+        "alreadyDescription": "{{account}} として接続しました。GitHub の Issue やプルリクエストで Okou にメンションするとチャットを開始できます。",
         "alreadyTitle": "すでに GitHub に接続されています",
         "back": "ワークフローに戻る",
         "checkingConnectionDescription": "GitHub 接続を確認するまでお待ちください。",
         "checkingConnectionTitle": "接続を確認しています...",
         "checkingSession": "{{brandName}} セッションを確認するまでお待ちください。",
-        "connectDescription": "{{brandName}} アカウントを {{account}} にリンクすると、GitHub メンションで問題やプル リクエストからエージェントを実行できるようになります。",
+        "connectDescription": "{{brandName}} のアカウントを {{account}} に連携して、GitHub の Issue やプルリクエストからチャットを開始できます。",
         "connectTitle": "GitHub に接続します",
         "errorFallback": "GitHub に接続できませんでした。 GitHub から再試行してください。",
         "invalidInstallation": "このリンク上の GitHub インストールは無効です。",
@@ -3363,7 +3363,7 @@
         "signInCheckFailed": "サインインを確認できませんでした",
         "signInDescription": "この GitHub ユーザーに接続する前に、{{brandName}} アカウントを使用してください。",
         "signInTitle": "続行するにはサインインしてください",
-        "successDescription": "{{account}} として接続されています。チャットを開始するには、GitHub のIssueまたはプル リクエストでエージェントに言及してください。",
+        "successDescription": "{{account}} として接続しました。GitHub の Issue やプルリクエストで Okou にメンションするとチャットを開始できます。",
         "successTitle": "GitHub に接続しました!",
         "wrongOrganizationDescription": "アクティブな組織は、この GitHub インストールと一致しません。正しい組織に切り替えて、リンクを再度開きます。",
         "wrongOrganizationTitle": "組織を切り替える"
@@ -3378,7 +3378,7 @@
         "accountMismatchDescriptionWorkspace": "現在、このOkouアカウントでは{{workspace}}でSlackアカウント{{currentAccount}}を使用しています。このリンクを開いた{{requestedAccount}}に切り替えますか？",
         "accountMismatchTitle": "Slackアカウントを切り替えますか？",
         "authorizationFailed": "Slack の認証は完了していません。現在の接続状態を以下に表示しています。もう一度お試しください。",
-        "connectDescription": "アカウントをこの Slack ワークスペースにリンクすると、Slack からエージェントと直接対話できるようになります。",
+        "connectDescription": "アカウントを連携して、Slack で Okou とチャットできます。",
         "connectTitle": "Slack に接続します",
         "currentConnection": "Slack に接続済み",
         "errorFallback": "Slack接続を確認または開始できませんでした。",
@@ -3396,7 +3396,7 @@
       },
       "teams": {
         "authorize": "Microsoft Teams を承認",
-        "connectDescription": "Teams アカウントをリンクすると、Microsoft Teams からエージェントと直接対話できるようになります。",
+        "connectDescription": "アカウントを連携して、Microsoft Teams で Okou とチャットできます。",
         "connectedDescription": "Teams アカウントは接続されています。",
         "connectTitle": "Microsoft Teams を接続します",
         "identityMismatch": "指定された Teams アカウントまたはワークスペースは現在の接続と一致しません。",
@@ -3417,7 +3417,7 @@
         "checkingConnectionTitle": "接続を確認しています...",
         "conflictDescription": "現在は {{current}} として接続していますが、このリンクは {{requested}} を指定しています。現在の接続を維持するか、接続を管理してから再試行してください。",
         "conflictTitle": "別の Telegram アカウントが接続されています",
-        "connectDescription": "アカウントをこの Telegram ボットにリンクすると、Telegram からエージェントと直接対話できるようになります。",
+        "connectDescription": "アカウントを連携して、Telegram で Okou とチャットできます。",
         "connectionCheckFailed": "接続を確認するために Telegram にアクセスできませんでした。",
         "connectTitle": "Telegram に接続します",
         "continue": "Telegram に進みます",
@@ -4793,7 +4793,7 @@
     "deleteThreadsTitle": "Delete project and threads?",
     "deleteTitle": "Delete Project?",
     "deletingThreads": "Deleting…",
-    "description": "Keep related chats together across Agents",
+    "description": "関連するチャットをまとめます。",
     "empty": "No chats here yet",
     "expand": "展開",
     "fromChat": "Create a Project from this chat",
@@ -4854,7 +4854,7 @@
       "pro": "プロ",
       "team": "チーム"
     },
-    "title": "あなたのエージェントが列に並んで待っています",
+    "title": "リクエストは順番待ちです",
     "upgrade": {
       "action": "{{plan}} にアップグレードする",
       "features": {
@@ -5686,7 +5686,7 @@
       },
       "timezone": {
         "description": "表示され、オートメーションの実行に使用される時間。",
-        "rowDescription": "エージェントは実行中にこのタイムゾーンを使用します",
+        "rowDescription": "Okou は実行時にこのタイムゾーンを使用します。",
         "rowTitle": "タイムゾーン",
         "sectionTitle": "タイムゾーン",
         "zones": {
@@ -5740,7 +5740,7 @@
         "title": "Link のカード"
       },
       "connect": "接続",
-      "description": "エージェントが購入をリクエストし、Link の取引を確認できます。購入ごとにあなたの承認が必要です。",
+      "description": "Okou に購入のリクエストと Link の取引履歴の閲覧を許可します。購入は毎回ご自身で承認します。",
       "disconnect": "接続を解除",
       "loadError": "ウォレットを読み込めませんでした。",
       "scope": "Okou が購入を代行し、Link の取引を確認します。",
@@ -6003,7 +6003,7 @@
       "unused": "使用中のホストはありません"
     },
     "deleteHelp": "このホストを削除しますか？認証情報は保持されます。Agent のホスト一覧には表示されなくなります。",
-    "description": "エージェントがリモートコマンドを実行できる SSH ホストを設定します。",
+    "description": "Okou にリモートマシンでのコマンド実行を許可します。",
     "edit": "ホストを編集",
     "editHelp": "別の認証情報を選ぶと、このホストだけが変更されます。直接接続先の変更は保存済みホスト鍵を消去します。Cloudflare Access が関係する変更では保持されます。",
     "errors": {
@@ -6247,7 +6247,7 @@
       "usernamePasswordMethod": "ユーザー名とパスワード"
     },
     "deleteHelp": "このホストを削除しますか？再利用可能な認証情報は保持されます。",
-    "description": "Agent がリモートデスクトップを表示・操作できるようにします。",
+    "description": "Okou にリモートデスクトップの表示と操作を許可します。",
     "edit": "ホストを編集",
     "editHelp": "変更はこのホストに適用され、現在の接続設定は無効になります。",
     "errors": {
@@ -6921,8 +6921,8 @@
     },
     "editor": {
       "aria": "指示エディター",
-      "footer": "指示を直接編集して、エージェントの動作をカスタマイズします。",
-      "placeholder": "エージェントへの指示を書きます...",
+      "footer": "このワークフローの指示を編集します。",
+      "placeholder": "このワークフローの指示を入力…",
       "toolbar": {
         "blockquote": "ブロッククォート",
         "bold": "太字",
@@ -7029,7 +7029,7 @@
       "authorizationError": "Discord の認証を完了できませんでした。",
       "cancelled": "Discord の認証はキャンセルされました。",
       "chooseWorkspace": "ワークスペースを選択",
-      "connectDescription": "Discord アカウントを接続して、エージェントとチャットしましょう。",
+      "connectDescription": "アカウントを連携して、Discord で Okou とチャットできます。",
       "connectedTitle": "Discord に接続済み",
       "connectTitle": "Discord に接続",
       "defaultWorkspace": "Discord の既定のワークスペース",
@@ -7116,7 +7116,7 @@
       "connect": "接続",
       "connected": "接続済み",
       "creating": "QRコードを作成中…",
-      "description": "WeChatでエージェントとチャットできます。",
+      "description": "WeChat で Okou とチャットできます。",
       "disconnect": "接続解除",
       "expired": "このQRコードは期限切れです。新しく作成してください。",
       "failed": "WeChatに接続できませんでした。",
@@ -7142,7 +7142,7 @@
     "whatsapp": {
       "codeError": "接続コードを作成できませんでした。もう一度お試しください。",
       "connect": "WhatsAppを接続",
-      "connectDescription": "WhatsApp アカウントを {{brandName}} に接続して、エージェントとチャットできます。",
+      "connectDescription": "WhatsApp アカウントを {{brandName}} に連携して Okou とチャットできます。",
       "connected": "WhatsAppに接続しました",
       "description": "WhatsAppから直接Okouとチャット",
       "disconnected": "WhatsAppの接続を解除しました",

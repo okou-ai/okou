@@ -989,7 +989,7 @@
         "twentyFourHours": "24 घंटे"
       },
       "errors": {
-        "loadAgent": "एजेंट लोड करने में विफल",
+        "loadMember": "वर्कस्पेस सदस्य की जानकारी लोड नहीं हो सकी।",
         "loadGrants": "अनुमति अनुदान लोड करने में विफल",
         "loadMetadata": "अनुमति मेटाडेटा लोड करने में विफल",
         "missingPermission": "URL पैरामीटर्स में अनुपलब्ध अनुमति",
@@ -2312,7 +2312,7 @@
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
-      "agentNotFound": "एजेंट नहीं मिला",
+      "memberNotFound": "वर्कस्पेस सदस्य उपलब्ध नहीं है।",
       "allow": "अनुमति दें",
       "alreadyAllowed": "पहले से ही अनुमति है",
       "alreadyDenied": "मना किया हुआ",
@@ -3357,13 +3357,13 @@
       },
       "github": {
         "accountFallback": "यह GitHub खाता",
-        "alreadyDescription": "आप पहले से ही {{account}} के रूप में कनेक्ट हैं। GitHub इश्यू में अपने एजेंट का उल्लेख करें या चैटिंग शुरू करने के लिए पुल रिक्वेस्ट करें।",
+        "alreadyDescription": "आप {{account}} के रूप में कनेक्ट हैं। चैट शुरू करने के लिए GitHub के किसी इश्यू या पुल रिक्वेस्ट में Okou को मेंशन करें।",
         "alreadyTitle": "पहले से ही GitHub से कनेक्ट है",
         "back": "वर्कफ़्लोज़ पर वापस जाएँ",
         "checkingConnectionDescription": "कृपया प्रतीक्षा करें जब तक हम आपके GitHub कनेक्शन की जाँच कर रहे हैं।",
         "checkingConnectionTitle": "कनेक्शन की जाँच की जा रही है...",
         "checkingSession": "कृपया तब तक प्रतीक्षा करें जब तक हम आपके {{brandName}} सत्र का सत्यापन नहीं कर लेते।",
-        "connectDescription": "अपने {{brandName}} खाते को {{account}} से लिंक करें ताकि GitHub उल्लेख आपके एजेंटों को इश्यू और पुल रिक्वेस्ट से चला सके।",
+        "connectDescription": "GitHub से चैट शुरू करने के लिए अपने {{brandName}} खाते को {{account}} से लिंक करें।",
         "connectTitle": "GitHub से कनेक्ट करें",
         "errorFallback": "हम GitHub कनेक्ट नहीं कर सके. GitHub से पुनः प्रयास करें।",
         "invalidInstallation": "इस लिंक पर GitHub इंस्टालेशन मान्य नहीं है.",
@@ -3381,7 +3381,7 @@
         "signInCheckFailed": "साइन-इन की जाँच नहीं की जा सकी",
         "signInDescription": "इस GitHub उपयोगकर्ता को जोड़ने से पहले अपने {{brandName}} खाते का उपयोग करें।",
         "signInTitle": "जारी रखने के लिए साइन इन करें",
-        "successDescription": "आप {{account}} के रूप में जुड़े हुए हैं। GitHub इश्यू में अपने एजेंट का उल्लेख करें या चैटिंग शुरू करने के लिए पुल रिक्वेस्ट करें।",
+        "successDescription": "आप {{account}} के रूप में कनेक्ट हैं। चैट शुरू करने के लिए GitHub के किसी इश्यू या पुल रिक्वेस्ट में Okou को मेंशन करें।",
         "successTitle": "GitHub से जुड़ा!",
         "wrongOrganizationDescription": "आपका सक्रिय संगठन इस GitHub इंस्टॉलेशन से मेल नहीं खाता है। सही संगठन पर जाएँ और लिंक को दोबारा खोलें।",
         "wrongOrganizationTitle": "संगठन बदलें"
@@ -3396,7 +3396,7 @@
         "accountMismatchDescriptionWorkspace": "आपका Okou खाता अभी {{workspace}} में Slack खाते {{currentAccount}} का उपयोग करता है। क्या इस लिंक को खोलने वाले खाते {{requestedAccount}} पर स्विच करें?",
         "accountMismatchTitle": "Slack खाता बदलें?",
         "authorizationFailed": "Slack प्राधिकरण पूरा नहीं हुआ। आपका वर्तमान कनेक्शन नीचे दिखाया गया है। आप फिर कोशिश कर सकते हैं।",
-        "connectDescription": "अपने खाते को इस Slack वर्कस्पेस से लिंक करें ताकि आप Slack से सीधे अपने एजेंट से बातचीत कर सकें।",
+        "connectDescription": "Slack में Okou से चैट करने के लिए अपना खाता लिंक करें।",
         "connectTitle": "Slack से कनेक्ट करें",
         "currentConnection": "Slack कनेक्ट है",
         "errorFallback": "Slack कनेक्शन की जांच या शुरुआत नहीं हो सकी।",
@@ -3414,7 +3414,7 @@
       },
       "teams": {
         "authorize": "Microsoft Teams को अधिकृत करें",
-        "connectDescription": "अपने टीम खाते को लिंक करें ताकि आप Microsoft Teams से सीधे अपने एजेंट से बातचीत कर सकें।",
+        "connectDescription": "Microsoft Teams में Okou से चैट करने के लिए अपना खाता लिंक करें।",
         "connectedDescription": "आपका Teams खाता कनेक्ट है।",
         "connectTitle": "Microsoft Teams कनेक्ट करें",
         "identityMismatch": "अनुरोधित Teams खाता या कार्यक्षेत्र वर्तमान कनेक्शन से मेल नहीं खाता।",
@@ -3435,7 +3435,7 @@
         "checkingConnectionTitle": "कनेक्शन की जाँच की जा रही है...",
         "conflictDescription": "आप {{current}} के रूप में जुड़े हैं, लेकिन यह लिंक {{requested}} का अनुरोध करता है। मौजूदा कनेक्शन बनाए रखें या दोबारा कोशिश करने से पहले उसे स्वयं प्रबंधित करें।",
         "conflictTitle": "कोई दूसरा Telegram खाता जुड़ा है",
-        "connectDescription": "अपने खाते को इस Telegram बॉट से लिंक करें ताकि आप Telegram से सीधे अपने एजेंट से बातचीत कर सकें।",
+        "connectDescription": "Telegram में Okou से चैट करने के लिए अपना खाता लिंक करें।",
         "connectionCheckFailed": "कनेक्शन की जाँच करने के लिए Telegram से संपर्क नहीं हो सका।",
         "connectTitle": "Telegram से कनेक्ट करें",
         "continue": "Telegram के साथ जारी रखें",
@@ -4816,7 +4816,7 @@
     "deleteThreadsTitle": "Delete project and threads?",
     "deleteTitle": "Delete Project?",
     "deletingThreads": "Deleting…",
-    "description": "Keep related chats together across Agents",
+    "description": "संबंधित चैट को एक साथ रखें।",
     "empty": "No chats here yet",
     "expand": "विस्तृत करें",
     "fromChat": "Create a Project from this chat",
@@ -4877,7 +4877,7 @@
       "pro": "प्रो",
       "team": "टीम"
     },
-    "title": "आपका एजेंट लाइन में इंतज़ार कर रहा है",
+    "title": "आपका अनुरोध कतार में है",
     "upgrade": {
       "action": "{{plan}} में अपग्रेड करें",
       "features": {
@@ -5710,7 +5710,7 @@
       },
       "timezone": {
         "description": "समय आपको दिखाया गया है और ऑटोमेशन चलाने के लिए उपयोग किया जाता है।",
-        "rowDescription": "आपके एजेंट रन के दौरान इस समय क्षेत्र का उपयोग करेंगे",
+        "rowDescription": "Okou काम करते समय इस समय क्षेत्र का इस्तेमाल करता है।",
         "rowTitle": "समय क्षेत्र",
         "sectionTitle": "समय क्षेत्र",
         "zones": {
@@ -5764,7 +5764,7 @@
         "title": "Link में आपके कार्ड"
       },
       "connect": "कनेक्ट करें",
-      "description": "आपके एजेंट खरीदारी का अनुरोध कर सकते हैं और Link लेनदेन देख सकते हैं। आप हर खरीदारी को मंज़ूरी देते हैं।",
+      "description": "Okou को खरीदारी का अनुरोध करने और Link के लेनदेन देखने दें। हर खरीदारी को आप स्वीकृति देते हैं।",
       "disconnect": "डिस्कनेक्ट करें",
       "loadError": "आपका वॉलेट लोड नहीं हो सका।",
       "scope": "Okou को आपके लिए खरीदारी करने और Link गतिविधि देखने दें।",
@@ -6029,7 +6029,7 @@
       "unused": "किसी होस्ट द्वारा उपयोग नहीं किया जा रहा"
     },
     "deleteHelp": "यह होस्ट हटाएं? इसका क्रेडेंशियल बना रहेगा। Agents को यह होस्ट सूची में नहीं दिखेगा।",
-    "description": "अपने एजेंटों के लिए दूरस्थ कमांड चलाने हेतु SSH होस्ट कॉन्फ़िगर करें।",
+    "description": "Okou को रिमोट कंप्यूटर पर कमांड चलाने दें।",
     "edit": "होस्ट संपादित करें",
     "editHelp": "दूसरे क्रेडेंशियल चुनने से केवल यह होस्ट बदलता है। सीधे कनेक्शन के गंतव्य में बदलाव सहेजी गई होस्ट कुंजी हटाते हैं; Cloudflare Access से जुड़े बदलाव उसे बनाए रखते हैं।",
     "errors": {
@@ -6274,7 +6274,7 @@
       "usernamePasswordMethod": "उपयोगकर्ता नाम और पासवर्ड"
     },
     "deleteHelp": "इस सहेजे गए होस्ट को हटाएँ? इसके पुन: उपयोग योग्य क्रेडेंशियल सुरक्षित रखे जाएँगे।",
-    "description": "अपने एजेंटों को आपके रिमोट डेस्कटॉप देखने और नियंत्रित करने दें।",
+    "description": "Okou को रिमोट डेस्कटॉप देखने और नियंत्रित करने दें।",
     "edit": "होस्ट संपादित करें",
     "editHelp": "बदलाव इस सहेजे गए होस्ट पर लागू होते हैं और उसके मौजूदा कनेक्शन कॉन्फ़िगरेशन को अमान्य कर देते हैं।",
     "errors": {
@@ -6949,8 +6949,8 @@
     },
     "editor": {
       "aria": "अनुदेश संपादक",
-      "footer": "अपने एजेंट के व्यवहार को अनुकूलित करने के लिए निर्देशों को सीधे संपादित करें।",
-      "placeholder": "अपने एजेंट के लिए निर्देश लिखें...",
+      "footer": "इस वर्कफ़्लो के निर्देश संपादित करें।",
+      "placeholder": "इस वर्कफ़्लो के लिए निर्देश लिखें…",
       "toolbar": {
         "blockquote": "ब्लॉककोट",
         "bold": "बोल्ड",
@@ -7057,7 +7057,7 @@
       "authorizationError": "Discord प्राधिकरण पूरा नहीं किया जा सका।",
       "cancelled": "Discord प्राधिकरण रद्द कर दिया गया।",
       "chooseWorkspace": "वर्कस्पेस चुनें",
-      "connectDescription": "अपने एजेंट से चैट करने के लिए अपना Discord खाता कनेक्ट करें।",
+      "connectDescription": "Discord में Okou से चैट करने के लिए अपना खाता लिंक करें।",
       "connectedTitle": "Discord से कनेक्ट है",
       "connectTitle": "Discord से कनेक्ट करें",
       "defaultWorkspace": "Discord के लिए डिफ़ॉल्ट वर्कस्पेस",
@@ -7144,7 +7144,7 @@
       "connect": "कनेक्ट करें",
       "connected": "कनेक्टेड",
       "creating": "QR कोड बनाया जा रहा है…",
-      "description": "WeChat पर अपने एजेंट से चैट करें।",
+      "description": "WeChat में Okou से चैट करें।",
       "disconnect": "डिस्कनेक्ट करें",
       "expired": "इस QR कोड की समय सीमा समाप्त हो गई है। नया बनाएँ।",
       "failed": "WeChat से कनेक्ट नहीं हो सका।",
@@ -7170,7 +7170,7 @@
     "whatsapp": {
       "codeError": "कनेक्शन कोड नहीं बनाया जा सका। फिर से कोशिश करें।",
       "connect": "WhatsApp कनेक्ट करें",
-      "connectDescription": "अपने एजेंट से चैट करने के लिए अपना WhatsApp खाता {{brandName}} से जोड़ें।",
+      "connectDescription": "Okou से चैट करने के लिए अपना WhatsApp खाता {{brandName}} से लिंक करें।",
       "connected": "WhatsApp कनेक्ट हो गया",
       "description": "WhatsApp से सीधे Okou के साथ चैट करें",
       "disconnected": "WhatsApp डिस्कनेक्ट हो गया",

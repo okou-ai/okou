@@ -176,7 +176,6 @@ const loadWebhookAutomationForToken$ = command(
       .select({
         automation: workflowAutomationColumns(),
         webhook: workflowWebhookAutomations,
-        agentId: workflows.agentId,
         workflowName: workflows.name,
         workflowDisplayName: workflows.displayName,
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
@@ -230,7 +229,6 @@ const loadWebhookAutomationForToken$ = command(
       workflowAutomationCanFire$,
       {
         automation: row.automation,
-        agentId: row.agentId,
       },
       signal,
     );

@@ -1479,7 +1479,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const workflowName = `manifest-shape-${randomUUID().slice(0, 8)}`;
         const workflow = await createMiscRoutesApi(context).createWorkflow(
           actor,
-          defaultAgentId,
           workflowName,
           { content: "# Manifest shape\nUse for manifest tests." },
           [201],
@@ -2964,7 +2963,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         for (const workflowName of workflowNames) {
           await misc.createWorkflow(
             actor,
-            defaultAgentId,
             workflowName,
             { content: `# ${workflowName}\nUse this workflow for codex runs.` },
             [201],
@@ -8301,7 +8299,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const workflowName = "bdd-context-workflow";
         await misc.createWorkflow(
           actor,
-          (await bdd.readOnboardingStatus(actor)).defaultAgentId!,
           workflowName,
           { content: "# BDD context workflow\nUse the combined run context." },
           [201],
@@ -9083,7 +9080,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         }
         const workflowName = `bdd-priority-${randomUUID().slice(0, 8)}`;
         await workflows.createWorkflow(actor, {
-          agentId: defaultAgentId,
           name: workflowName,
           visibility: "public",
           instruction: "Visible public Workflow body.",
@@ -9091,7 +9087,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const privateInstruction =
           "Selected caller-owned private Workflow body.";
         await workflows.createWorkflow(actor, {
-          agentId: defaultAgentId,
           name: workflowName,
           visibility: "private",
           instruction: privateInstruction,
@@ -9101,7 +9096,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           orgRole: "org:member",
         });
         await workflows.createWorkflow(otherActor, {
-          agentId: (await bdd.readOnboardingStatus(otherActor)).defaultAgentId!,
           name: workflowName,
           visibility: "private",
           instruction: "Another caller's private Workflow body.",
@@ -9180,7 +9174,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         }
         await misc.createWorkflow(
           actor,
-          defaultAgentId,
           workflowName,
           { content: "# BDD claude kit\nUse this workflow in claude runs." },
           [201],

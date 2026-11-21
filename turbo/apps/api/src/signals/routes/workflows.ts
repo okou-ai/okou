@@ -5,7 +5,6 @@ import {
   commitWorkflowCopy$,
 } from "./workflow-copy-publication";
 import {
-  workflowCopyAgentQuery,
   workflowCopyVisibleQuery,
   type WorkflowCopySource,
 } from "./workflow-copy-source";
@@ -15,10 +14,6 @@ import {
   type PreparedCopiedWebhook,
   type CopyWorkflowDatabaseResult,
 } from "./workflow-copy-publication-plans";
-import {
-  workflowNamespace$,
-  workspaceWorkflowNamespace$,
-} from "../services/workflow-namespace.service";
 import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
@@ -31,7 +26,6 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 import {
   workflowUserAutomationThreads,
   workflows,
@@ -42,7 +36,6 @@ import {
   isNull,
   isNotNull,
   ne,
-  or,
   exists,
   notExists,
   sql,
@@ -58,7 +51,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
-import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
+import { bodyResultOf, pathParamsOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
 import { publishChatThreadWorkflowsChangedSafely } from "../external/realtime";
 import { publishSkillImportAfterCommit } from "../services/skill-import-telemetry";
@@ -71,7 +64,6 @@ import {
 } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
 import { isOrdinaryWorkflowNameConflict } from "./workflow-name-conflicts";
-import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { deleteWorkflow$ } from "../services/workflow-delete.service";
 import { clerkRateLimit, clerkReadUnavailable } from "../external/clerk";
 import { loadWorkflowOwnerProfile$ } from "../services/workflow-owner-profile.service";
@@ -114,7 +106,6 @@ import {
   requireWorkflowPermission,
   workflowSummary,
   workflowList,
-  type WorkflowAgentInfo,
   type WorkflowMember,
   type WorkflowRow,
 } from "../services/workflow-data.service";
@@ -155,36 +146,8 @@ function workflowNotFound(workflowId: string) {
   return notFound(`Workflow not found: ${workflowId}`);
 }
 
-function requireAgentWritePermission(
-  agent: {
-    readonly owner: string;
-    readonly visibility: "public" | "private";
-  },
-  member: WorkflowMember,
-  action: string,
-) {
-  return requireAgentPermission(agent.owner, member, action, {
-    visibility: agent.visibility,
-  });
-}
-function requireVisibleAgentForPrivateWorkflowCreate(
-  agent: {
-    readonly owner: string;
-    readonly visibility: "public" | "private";
-  },
-  member: WorkflowMember,
-) {
-  if (agent.visibility === "public" || agent.owner === member.userId) {
-    return null;
-  }
-  return forbidden(
-    "Only the private agent owner can create private workflows on this agent",
-  );
-}
-
 interface WorkflowSlugScope {
   readonly orgId: string;
-  readonly agentId: string;
   readonly ownerUserId: string;
   readonly name: string;
   readonly visibility: "public" | "private";
@@ -194,7 +157,6 @@ interface WorkflowSlugScope {
 function workflowSlugCondition(args: WorkflowSlugScope) {
   return and(
     eq(workflows.orgId, args.orgId),
-    eq(workflows.agentId, args.agentId),
     args.visibility === "private"
       ? eq(workflows.ownerUserId, args.ownerUserId)
       : undefined,
@@ -210,8 +172,8 @@ function workflowSlugCondition(args: WorkflowSlugScope) {
 function workflowSlugConflict(visibility: "public" | "private", name: string) {
   return conflict(
     visibility === "public"
-      ? `A public workflow named "/${name}" already exists on this agent. Rename this workflow or keep it private.`
-      : `You already have a private workflow named "/${name}" on this agent. Rename the existing workflow or choose a different name.`,
+      ? `A public workflow named "/${name}" already exists in this workspace. Rename this workflow or keep it private.`
+      : `You already have a private workflow named "/${name}" in this workspace. Rename the existing workflow or choose a different name.`,
   );
 }
 
@@ -244,15 +206,10 @@ const copyWorkflowBody$ = bodyResultOf(workflowsDetailContract.copy);
 
 const listWorkflowsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  const query = get(queryOf(workflowsCollectionContract.list));
   const workflows = await get(
     workflowList({
       orgId: auth.orgId,
       member: memberFromAuth(auth),
-      agentId:
-        query.scope === "workspace"
-          ? await get(workspaceWorkflowNamespace$)
-          : ((await get(workflowNamespace$)) ?? query.agentId),
     }),
   );
   return { status: 200 as const, body: [...workflows] };
@@ -260,16 +217,10 @@ const listWorkflowsInner$ = computed(async (get) => {
 
 const listComposerWorkflowsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  const query = get(queryOf(workflowsCollectionContract.composer));
-  const agentId = query.agentId ?? (await get(workflowNamespace$));
-  if (!agentId) {
-    return forbidden("A workspace Workflow namespace is required");
-  }
   const workflows = await get(
     workflowList({
       orgId: auth.orgId,
       member: memberFromAuth(auth),
-      agentId,
     }),
   );
   return {
@@ -294,7 +245,7 @@ const listComposerWorkflowsInner$ = computed(async (get) => {
 export interface WorkflowCreationInput {
   readonly orgId: string;
   readonly member: WorkflowMember;
-  readonly body: WorkflowCreateRequest & { readonly agentId: string };
+  readonly body: WorkflowCreateRequest;
   readonly visibility: "public" | "private";
   /** Set only by the skill import, for the tool the skill came from. */
   readonly importSource?: WorkflowImportSource | null;
@@ -309,7 +260,6 @@ function workflowCreationRowValues(
   return {
     id: args.workflowId,
     orgId: args.orgId,
-    agentId: body.agentId,
     name: body.name,
     visibility,
     instruction: body.instruction ?? null,
@@ -326,40 +276,14 @@ function workflowCreationRowValues(
 }
 
 const validateWorkflowCreation$ = command(
-  async ({ get, set }, args: WorkflowCreationInput, signal: AbortSignal) => {
-    const [agent] = await get(db$)
-      .select({
-        id: agents.id,
-        owner: agents.owner,
-        visibility: agents.visibility,
-        name: agents.name,
-        displayName: agents.displayName,
-      })
-      .from(agents)
-      .where(
-        and(eq(agents.orgId, args.orgId), eq(agents.id, args.body.agentId)),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!agent) {
-      return notFound(`Agent not found: ${args.body.agentId}`);
-    }
-    const permissionError =
-      args.visibility === "public"
-        ? requireAgentWritePermission(
-            agent,
-            args.member,
-            "create workflows on this agent",
-          )
-        : requireVisibleAgentForPrivateWorkflowCreate(agent, args.member);
-    if (permissionError) {
-      return permissionError;
+  async ({ set }, args: WorkflowCreationInput, signal: AbortSignal) => {
+    if (args.visibility === "public" && args.member.role !== "admin") {
+      return forbidden("Only workspace admins can create public workflows");
     }
     return await set(
       requireWorkflowSlugAvailable$,
       {
         orgId: args.orgId,
-        agentId: agent.id,
         ownerUserId: args.member.userId,
         name: args.body.name,
         visibility: args.visibility,
@@ -378,40 +302,14 @@ interface PreparedWorkflowCreation
 /** Statement data only; execution and every write belong to the creation owner. */
 function workflowCreationAdmissionPlan(args: PreparedWorkflowCreation) {
   const query = new QueryBuilder();
-  const { body, member } = args;
-  const agent = query.$with("creation_agent").as(
-    query
-      .select({
-        id: agents.id,
-        owner: agents.owner,
-        visibility: agents.visibility,
-      })
-      .from(agents)
-      .where(and(eq(agents.orgId, args.orgId), eq(agents.id, body.agentId)))
-      .limit(1)
-      .for("share"),
-  );
-  // Use the returned locked Agent, including changes committed while waiting.
-  // These are the same owner/admin and private-visibility rules as preflight.
-  const permitted =
-    args.visibility === "public"
-      ? or(
-          eq(agent.owner, member.userId),
-          and(eq(agent.visibility, "public"), sql`${member.role === "admin"}`),
-        )
-      : or(eq(agent.visibility, "public"), eq(agent.owner, member.userId));
-  const admitted = query
-    .$with("creation_admitted")
-    .as(query.select({ id: agent.id }).from(agent).where(permitted));
+  const { body } = args;
   const slug = query.$with("creation_slug").as(
     query
       .select({ id: workflows.id })
       .from(workflows)
-      .innerJoin(admitted, eq(workflows.agentId, admitted.id))
       .where(
         workflowSlugCondition({
           orgId: args.orgId,
-          agentId: body.agentId,
           ownerUserId: member.userId,
           name: body.name,
           visibility: args.visibility,
@@ -423,7 +321,6 @@ function workflowCreationAdmissionPlan(args: PreparedWorkflowCreation) {
     query
       .select({ id: chatThreads.id })
       .from(chatThreads)
-      .crossJoin(admitted)
       .where(
         and(
           body.chatThreadId
@@ -436,12 +333,10 @@ function workflowCreationAdmissionPlan(args: PreparedWorkflowCreation) {
       .limit(1)
       .for("update", { of: chatThreads }),
   );
-  return { agent, admitted, slug, thread };
+  return { slug, thread };
 }
 
 interface WorkflowCreationOutcomeRow {
-  readonly agentOwner: string | null;
-  readonly agentVisibility: "public" | "private" | null;
   readonly slugExists: boolean;
   readonly workflowId: string | null;
   readonly chatThreadId: string | null;
@@ -451,30 +346,9 @@ function workflowCreationOutcome(
   args: PreparedWorkflowCreation,
   result: WorkflowCreationOutcomeRow | undefined,
 ) {
-  const { body, member } = args;
+  const { body } = args;
   if (!result) {
     throw new Error("Expected one workflow creation outcome");
-  }
-  if (result.agentOwner === null || result.agentVisibility === null) {
-    return {
-      kind: "error" as const,
-      response: notFound(`Agent not found: ${body.agentId}`),
-    };
-  }
-  const lockedAgent = {
-    owner: result.agentOwner,
-    visibility: result.agentVisibility,
-  };
-  const permissionError =
-    args.visibility === "public"
-      ? requireAgentWritePermission(
-          lockedAgent,
-          member,
-          "create workflows on this agent",
-        )
-      : requireVisibleAgentForPrivateWorkflowCreate(lockedAgent, member);
-  if (permissionError) {
-    return { kind: "error" as const, response: permissionError };
   }
   if (result.slugExists) {
     return {
@@ -509,9 +383,6 @@ function workflowCreationSource(
       orgId: sql`${sql.param(v.orgId, workflows.orgId)}`
         .mapWith(workflows.orgId)
         .as("org_id"),
-      agentId: sql`${sql.param(v.agentId, workflows.agentId)}`
-        .mapWith(workflows.agentId)
-        .as("agent_id"),
       name: sql`${sql.param(v.name, workflows.name)}`
         .mapWith(workflows.name)
         .as("name"),
@@ -572,8 +443,7 @@ const commitPreparedWorkflow$ = command(
   async ({ set }, args: PreparedWorkflowCreation, signal: AbortSignal) => {
     const db = set(writeDb$);
     const { member } = args;
-    const { agent, admitted, slug, thread } =
-      workflowCreationAdmissionPlan(args);
+    const { slug, thread } = workflowCreationAdmissionPlan(args);
     const currentTime = nowDate();
     const candidate = db
       .$with("consumed_attachment_candidate", {})
@@ -582,11 +452,9 @@ const commitPreparedWorkflow$ = command(
       db
         .insert(workflows)
         .select(
-          workflowCreationSource(
-            args,
-            currentTime,
-            sql`${admitted}, ${candidate}`,
-          ).where(notExists(db.select({ id: slug.id }).from(slug))),
+          workflowCreationSource(args, currentTime, sql`${candidate}`).where(
+            notExists(db.select({ id: slug.id }).from(slug)),
+          ),
         )
         .returning({ id: workflows.id }),
     );
@@ -635,10 +503,8 @@ const commitPreparedWorkflow$ = command(
       );
     signal.throwIfAborted();
     const [result] = await db
-      .with(agent, admitted, slug, thread, candidate, created, restored, linked)
+      .with(slug, thread, candidate, created, restored, linked)
       .select({
-        agentOwner: agent.owner,
-        agentVisibility: agent.visibility,
         slugExists: exists(db.select({ id: slug.id }).from(slug)).mapWith(
           pgBooleanDecoder,
         ),
@@ -646,7 +512,6 @@ const commitPreparedWorkflow$ = command(
         chatThreadId: linked.chatThreadId,
       })
       .from(sql`(SELECT true) AS result`)
-      .leftJoin(agent, sql`true`)
       .leftJoin(created, sql`true`)
       .leftJoin(linked, sql`true`);
     signal.throwIfAborted();
@@ -720,7 +585,6 @@ const prepareAndCreateWorkflow$ = command(
     return publication.value;
   },
 );
-/** Agent visibility, agent existence, and slug conflicts, in that order. */
 export interface WorkflowCreationFailure {
   readonly status: 403 | 404 | 409;
   readonly body: {
@@ -743,7 +607,7 @@ type WorkflowCreationOutcome =
 
 /**
  * Shared creation path for a validated workflow body: the built-in name guard,
- * agent and slug validation, volume preparation, and the publication
+ * workspace slug validation, volume preparation, and the publication
  * statement. Callers own request parsing, their own admission rules, and how
  * they render the created workflow.
  */
@@ -789,24 +653,13 @@ const createWorkflowInner$ = command(
     if (!bodyResult.ok) {
       return bodyResult.response;
     }
-    const namespace = await get(workflowNamespace$);
-    signal.throwIfAborted();
-    const agentId =
-      bodyResult.data.agentId ??
-      namespace ??
-      (await get(workspaceWorkflowNamespace$));
-    signal.throwIfAborted();
-    const body = { ...bodyResult.data, agentId };
-    if (namespace && agentId !== namespace) {
-      return forbidden("Create workflows in the current workspace");
-    }
     const inserted = await set(
       createWorkflowRecord$,
       {
         orgId: auth.orgId,
         member,
-        body,
-        visibility: body.visibility ?? "private",
+        body: bodyResult.data,
+        visibility: bodyResult.data.visibility ?? "private",
       },
       signal,
     );
@@ -828,7 +681,6 @@ const createWorkflowInner$ = command(
     }
     const summary = workflowSummary({
       workflow: visible.workflow,
-      agent: visible.agent,
       member,
     });
     await publishCreatedWorkflow(auth.userId, inserted.chatThreadId, signal);
@@ -941,7 +793,6 @@ const updateWorkflowInner$ = command(
 
     const permissionError = requireWorkflowPermission(
       visible.workflow,
-      visible.agent,
       member,
       "update workflow",
     );
@@ -963,7 +814,6 @@ const updateWorkflowInner$ = command(
         requireWorkflowSlugAvailable$,
         {
           orgId: auth.orgId,
-          agentId: visible.workflow.agentId,
           ownerUserId: visible.workflow.ownerUserId,
           name: bodyResult.data.name,
           visibility: visible.workflow.visibility,
@@ -1055,7 +905,6 @@ const deleteWorkflowInner$ = command(
 
     const permissionError = requireWorkflowPermission(
       visible.workflow,
-      visible.agent,
       member,
       "delete workflow",
     );
@@ -1231,7 +1080,6 @@ function copiedWorkflowResponse(
     status: 201 as const,
     body: workflowSummary({
       workflow: visible.workflow,
-      agent: visible.agent,
       member,
     }),
   };
@@ -1248,8 +1096,6 @@ interface CopiedWorkflowPublicationInput {
         readonly content: string;
       }[]
     | null;
-  readonly targetAgentId: string;
-  readonly personalCopy?: boolean;
   readonly inheritedAutonomyBudget: number | undefined;
   readonly currentTime: Date;
 }
@@ -1308,8 +1154,6 @@ const publishCopiedWorkflow$ = command(
             member: args.member,
             sourceWorkflow: args.sourceWorkflow,
             sourceFiles: args.sourceFiles,
-            targetAgentId: args.targetAgentId,
-            personalCopy: args.personalCopy,
             targetWorkflowId,
             threadPreparation,
             currentTime: args.currentTime,
@@ -1348,17 +1192,9 @@ const publishCopiedWorkflow$ = command(
       const [visible] = await get(db$)
         .select({
           workflow: workflows,
-          agent: {
-            id: agents.id,
-            orgId: agents.orgId,
-            owner: agents.owner,
-            visibility: agents.visibility,
-            name: agents.name,
-            displayName: agents.displayName,
-          },
         })
         .from(workflows)
-        .innerJoin(agents, eq(workflows.agentId, agents.id))
+
         .where(
           and(
             eq(workflows.orgId, args.orgId),
@@ -1423,40 +1259,10 @@ const copyWorkflowInner$ = command(
     if (!sourceWorkflow) {
       return workflowNotFound(params.workflowId);
     }
-    const namespace = await get(workflowNamespace$);
-    signal.throwIfAborted();
-    const targetId =
-      bodyResult.data.toAgentId ??
-      namespace ??
-      (await get(workspaceWorkflowNamespace$));
-    signal.throwIfAborted();
-    const [targetAgent] = await db
-      .select()
-      .from(workflowCopyAgentQuery(auth.orgId, targetId));
-    signal.throwIfAborted();
-    if (!targetAgent) {
-      return notFound(`Agent not found: ${targetId}`);
-    }
-    if (namespace && targetAgent.id !== namespace) {
-      return forbidden("Make a private copy in the current workspace");
-    }
-    const personalCopy =
-      namespace === targetAgent.id && targetAgent.visibility === "public";
-    const permissionError = personalCopy
-      ? null
-      : requireAgentWritePermission(
-          targetAgent,
-          member,
-          "copy workflows onto this agent",
-        );
-    if (permissionError) {
-      return permissionError;
-    }
     const [slug] = await db.select().from(
       workflowCopySlugQuery({
         orgId: auth.orgId,
         userId: auth.userId,
-        targetAgentId: targetAgent.id,
         sourceWorkflow,
       }),
     );
@@ -1480,7 +1286,7 @@ const copyWorkflowInner$ = command(
         : null;
     signal.throwIfAborted();
     // A copy is a fork owned by the caller: a new private workflow under the
-    // target agent. User-scoped runtime configuration is cloned only for the
+    // target workspace. User-scoped runtime configuration is cloned only for the
     // caller so copies do not leak another user's automations.
     return await set(
       publishCopiedWorkflow$,
@@ -1488,10 +1294,8 @@ const copyWorkflowInner$ = command(
         orgId: auth.orgId,
         userId: auth.userId,
         member,
-        sourceWorkflow: sourceWorkflow,
+        sourceWorkflow,
         sourceFiles,
-        targetAgentId: targetAgent.id,
-        personalCopy,
         inheritedAutonomyBudget,
         currentTime: nowDate(),
       },
@@ -1502,10 +1306,6 @@ const copyWorkflowInner$ = command(
 
 function workflowSlashPrompt(workflow: Pick<WorkflowRow, "name">): string {
   return `/${workflow.name}`;
-}
-
-function workflowRefinePrompt(workflow: Pick<WorkflowRow, "name">): string {
-  return `help me refine the workflow ${workflowSlashPrompt(workflow)}`;
 }
 
 const prepareWorkflowChatThreadInner$ = command(
@@ -1527,13 +1327,9 @@ const prepareWorkflowChatThreadInner$ = command(
     if (!visible) {
       return workflowNotFound(params.workflowId);
     }
-    const { workflow, agent } = visible;
+    const { workflow } = visible;
     if (workflow.officialDefinitionName !== null) {
       return conflict(OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE);
-    }
-
-    if (agent.visibility === "private" && agent.owner !== auth.userId) {
-      return forbidden("Only the private agent owner can chat with this agent");
     }
 
     const currentTime = nowDate();
@@ -1554,9 +1350,7 @@ const prepareWorkflowChatThreadInner$ = command(
       status: 200 as const,
       body: {
         chatThreadId,
-        prompt: (await get(workflowNamespace$))
-          ? `Help me refine workflow ID ${workflow.id}. Use this exact ID when viewing or editing its definition.`
-          : workflowRefinePrompt(workflow),
+        prompt: `Help me refine workflow ID ${workflow.id}. Use this exact ID when viewing or editing its definition.`,
       },
     };
   },
@@ -1580,13 +1374,7 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!visible) {
     return workflowNotFound(params.workflowId);
   }
-  const { workflow, agent } = visible;
-  // The workflow is run on its owning agent; the caller must be able to run
-  // that agent (public agents are runnable by any member, private ones only by
-  // their owner).
-  if (agent.visibility !== "public" && agent.owner !== auth.userId) {
-    return forbidden("Only the private agent owner can run this agent");
-  }
+  const { workflow } = visible;
   if (workflow.officialDefinitionName !== null) {
     return conflict(OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE);
   }
@@ -1682,7 +1470,6 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 interface VisibilityTransition {
   readonly workflow: WorkflowRow;
-  readonly agent: WorkflowAgentInfo;
   readonly member: WorkflowMember;
 }
 
@@ -1694,7 +1481,6 @@ const applyWorkflowVisibility$ = command(
         WorkflowRow,
         | "id"
         | "orgId"
-        | "agentId"
         | "ownerUserId"
         | "name"
         | "officialDefinitionName"
@@ -1718,21 +1504,9 @@ const applyWorkflowVisibility$ = command(
           and(
             eq(workflows.id, args.workflow.id),
             eq(workflows.orgId, args.workflow.orgId),
-            eq(workflows.agentId, args.workflow.agentId),
             eq(workflows.ownerUserId, args.workflow.ownerUserId),
             eq(workflows.visibility, args.workflow.visibility),
             isNull(workflows.officialDefinitionName),
-            exists(
-              db
-                .select({ id: agents.id })
-                .from(agents)
-                .where(
-                  and(
-                    eq(agents.id, args.workflow.agentId),
-                    eq(agents.orgId, args.workflow.orgId),
-                  ),
-                ),
-            ),
           ),
         )
         .returning({ id: workflows.id }),
@@ -1766,7 +1540,6 @@ function summaryFrom(
   };
   return workflowSummary({
     workflow: updatedWorkflow,
-    agent: args.agent,
     member: args.member,
   });
 }
@@ -1786,17 +1559,9 @@ const loadVisibilityTransition$ = command(
     const [visible] = await get(db$)
       .select({
         workflow: workflows,
-        agent: {
-          id: agents.id,
-          orgId: agents.orgId,
-          owner: agents.owner,
-          visibility: agents.visibility,
-          name: agents.name,
-          displayName: agents.displayName,
-        },
       })
       .from(workflows)
-      .innerJoin(agents, eq(workflows.agentId, agents.id))
+
       .where(
         and(
           eq(workflows.orgId, args.orgId),
@@ -1831,7 +1596,7 @@ const publishInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if ("status" in loaded) {
     return loaded;
   }
-  const { workflow, agent } = loaded;
+  const { workflow } = loaded;
   if (workflow.officialDefinitionName !== null) {
     return conflict(OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE);
   }
@@ -1843,16 +1608,14 @@ const publishInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return { status: 200 as const, body: summaryFrom(loaded, {}) };
   }
 
-  const publishError = requireAgentWritePermission(agent, member, "publish");
-  if (publishError) {
-    return publishError;
+  if (member.role !== "admin") {
+    return forbidden("Only workspace admins can publish workflows");
   }
 
   const slugError = await set(
     requireWorkflowSlugAvailable$,
     {
       orgId: auth.orgId,
-      agentId: workflow.agentId,
       ownerUserId: workflow.ownerUserId,
       visibility: "public",
       name: workflow.name,
@@ -1912,7 +1675,6 @@ const demoteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const reviewError = requireWorkflowPermission(
     loaded.workflow,
-    loaded.agent,
     member,
     "demote public workflows",
   );
@@ -1924,7 +1686,6 @@ const demoteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     requireWorkflowSlugAvailable$,
     {
       orgId: auth.orgId,
-      agentId: loaded.workflow.agentId,
       ownerUserId: loaded.workflow.ownerUserId,
       visibility: "private",
       name: loaded.workflow.name,

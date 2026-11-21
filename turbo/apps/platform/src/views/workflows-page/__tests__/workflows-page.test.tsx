@@ -29,10 +29,6 @@ import {
   type WorkflowAutomationSummary,
   type GoogleCalendarAutomationEventConfig,
 } from "@okouai/api-contracts/contracts/workflows";
-import {
-  agentsByIdContract,
-  type AgentResponse,
-} from "@okouai/api-contracts/contracts/agents";
 import { integrationsGithubContract } from "@okouai/api-contracts/contracts/integrations-github";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -56,11 +52,8 @@ import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts"
 const context = testContext();
 const CURRENT_USER_ID = "test-user-123";
 const UPDATED_USER_ID = "test-user-456";
-const AGENT_ID = "c0000000-0000-4000-a000-000000000101";
-const OTHER_AGENT_ID = "c0000000-0000-4000-a000-000000000102";
 const SALES_WORKFLOW_ID = "d0000000-0000-4000-a000-000000000201";
 const OPS_WORKFLOW_ID = "d0000000-0000-4000-a000-000000000202";
-const OTHER_WORKFLOW_ID = "d0000000-0000-4000-a000-000000000203";
 const CHECKLIST_WORKFLOW_ID = "d0000000-0000-4000-a000-000000000204";
 const COPIED_WORKFLOW_ID = "d0000000-0000-4000-a000-000000000205";
 const MORNING_BRIEF_WORKFLOW_ID = "d0000000-0000-4000-a000-000000000206";
@@ -575,9 +568,6 @@ function publicWorkflowDetail(
 function salesResearch(): WorkflowDetailResponse {
   return {
     id: SALES_WORKFLOW_ID,
-    agentId: AGENT_ID,
-    agentName: "research-bot",
-    agentDisplayName: "Research Bot",
     name: "sales-research",
     displayName: "Sales Research",
     description: "Collects account context before outreach.",
@@ -677,9 +667,6 @@ function morningBriefWorkflow(): WorkflowDetailResponse {
 function opsPlaybook(): WorkflowDetailResponse {
   return {
     id: OPS_WORKFLOW_ID,
-    agentId: AGENT_ID,
-    agentName: "research-bot",
-    agentDisplayName: "Research Bot",
     name: "ops-playbook",
     displayName: "Ops Playbook",
     description: null,
@@ -703,9 +690,6 @@ function opsPlaybook(): WorkflowDetailResponse {
 function launchChecklistWorkflow(): WorkflowDetailResponse {
   return {
     id: CHECKLIST_WORKFLOW_ID,
-    agentId: AGENT_ID,
-    agentName: "research-bot",
-    agentDisplayName: "Research Bot",
     name: "launch-checklist",
     displayName: "Launch Checklist",
     description: "Prepares release approvals.",
@@ -726,51 +710,9 @@ function launchChecklistWorkflow(): WorkflowDetailResponse {
   };
 }
 
-function otherAgentWorkflow(): WorkflowDetailResponse {
-  return {
-    id: OTHER_WORKFLOW_ID,
-    agentId: OTHER_AGENT_ID,
-    agentName: "support-bot",
-    agentDisplayName: "Support Bot",
-    name: "support-intake",
-    displayName: "Support Intake",
-    description: "Sorts incoming support requests.",
-    visibility: "public",
-    official: null,
-    ownerUserId: CURRENT_USER_ID,
-    canManage: true,
-    canPublish: false,
-    importSource: null,
-    createdByUserId: CURRENT_USER_ID,
-    updatedByUserId: CURRENT_USER_ID,
-    createdAt: "2026-06-16T12:00:00.000Z",
-    updatedAt: "2026-06-16T12:00:00.000Z",
-    instruction: null,
-    files: [],
-    fileContents: [],
-    automations: [],
-  };
-}
-
-function agent(id: string, displayName: string): AgentResponse {
-  return {
-    isDefaultAgent: id === AGENT_ID,
-    agentId: id,
-    ownerId: CURRENT_USER_ID,
-    displayName,
-    description: "Finds and summarizes information",
-    sound: null,
-    avatarUrl: null,
-    visibility: "public",
-  };
-}
-
 function summary(workflow: WorkflowDetailResponse): WorkflowSummary {
   return {
     id: workflow.id,
-    agentId: workflow.agentId,
-    agentName: workflow.agentName,
-    agentDisplayName: workflow.agentDisplayName,
     name: workflow.name,
     displayName: workflow.displayName,
     description: workflow.description,
@@ -783,27 +725,6 @@ function summary(workflow: WorkflowDetailResponse): WorkflowSummary {
     official: workflow.official,
     importSource: workflow.importSource,
   };
-}
-
-function mockAgentPageApis(): void {
-  context.mocks.data.agents([
-    agent(AGENT_ID, "Research Bot"),
-    agent(OTHER_AGENT_ID, "Support Bot"),
-  ]);
-  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-    const displayName =
-      params.id === OTHER_AGENT_ID ? "Support Bot" : "Research Bot";
-    return respond(200, {
-      isDefaultAgent: params.id === AGENT_ID,
-      agentId: params.id,
-      ownerId: CURRENT_USER_ID,
-      description: "Finds and summarizes information",
-      displayName,
-      sound: null,
-      avatarUrl: null,
-      visibility: "public",
-    });
-  });
 }
 
 function applyWorkflowUpdate(
@@ -864,11 +785,8 @@ function mockWorkflowApis(
   context.mocks.api(workflowsDetailContract.ownerProfile, ({ respond }) => {
     return respond(200, { displayName: "Test User", imageUrl: null });
   });
-  context.mocks.api(workflowsCollectionContract.list, ({ query, respond }) => {
-    const visible = workflows.filter((workflow) => {
-      return workflow.agentId === (query.agentId ?? AGENT_ID);
-    });
-    return respond(200, visible.map(summary));
+  context.mocks.api(workflowsCollectionContract.list, ({ respond }) => {
+    return respond(200, workflows.map(summary));
   });
   context.mocks.api(workflowsDetailContract.get, ({ params, respond }) => {
     const detail = workflows.find((workflow) => {
@@ -1505,7 +1423,6 @@ test("Redirect a cold Morning Brief detail to its preference", async () => {
     });
   });
 
-  mockAgentPageApis();
   await setupWorkflowDetailPage(
     `/workflows/${MORNING_BRIEF_WORKFLOW_ID}/automations`,
   );
@@ -1554,14 +1471,8 @@ test("Redirect a hidden Official Workflow and exclude Official Workflows from th
 test("Filter workflows by automation and visibility", async () => {
   const user = userEvent.setup();
   context.mocks.data.userPreferences({ timezone: "UTC" });
-  mockAgentPageApis();
   mockChatLifecycle(context);
-  mockWorkflowApis([
-    salesResearch(),
-    opsPlaybook(),
-    launchChecklistWorkflow(),
-    otherAgentWorkflow(),
-  ]);
+  mockWorkflowApis([salesResearch(), opsPlaybook(), launchChecklistWorkflow()]);
 
   await setupPage({
     context,
@@ -1586,7 +1497,6 @@ test("Filter workflows by automation and visibility", async () => {
   // The default "All" view lists every workspace workflow.
   expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
   expect(linkByAriaLabel("Open Launch Checklist")).toBeInTheDocument();
-  expect(screen.queryByText("Support Intake")).not.toBeInTheDocument();
 
   // The automated workflow surfaces its connector pill on the row.
   const salesCard = articleByText("Sales Research");
@@ -1601,7 +1511,6 @@ test("Filter workflows by automation and visibility", async () => {
   expect(linkByAriaLabel("Open Sales Research")).toBeInTheDocument();
   expect(screen.queryByText("Ops Playbook")).not.toBeInTheDocument();
   expect(screen.queryByText("Launch Checklist")).not.toBeInTheDocument();
-  expect(screen.queryByText("Support Intake")).not.toBeInTheDocument();
 
   // Space selects "Manual" using the native button contract.
   buttonByText("Manual", filterGroup).focus();
@@ -1625,7 +1534,6 @@ test("Filter workflows by automation and visibility", async () => {
   expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
   expect(linkByAriaLabel("Open Launch Checklist")).toBeInTheDocument();
   expect(screen.queryByText("Sales Research")).not.toBeInTheDocument();
-  expect(screen.queryByText("Support Intake")).not.toBeInTheDocument();
 
   // "Public" keeps only the public workflows.
   click(buttonByText("Public", filterGroup));
@@ -1634,7 +1542,6 @@ test("Filter workflows by automation and visibility", async () => {
   });
   expectSelectedFilter("Public");
   expect(linkByAriaLabel("Open Sales Research")).toBeInTheDocument();
-  expect(screen.queryByText("Support Intake")).not.toBeInTheDocument();
   expect(screen.queryByText("Ops Playbook")).not.toBeInTheDocument();
   expect(screen.queryByText("Launch Checklist")).not.toBeInTheDocument();
 
@@ -4075,7 +3982,6 @@ test("An earlier webhook response preserves a reopened creation form", async () 
 });
 
 test("Workspace Workflows ignore stale Agent filters and identify the caller's private override", async () => {
-  mockAgentPageApis();
   mockChatLifecycle(context);
   const shared = salesResearch();
   const personal: WorkflowDetailResponse = {
@@ -4094,10 +4000,10 @@ test("Workspace Workflows ignore stale Agent filters and identify the caller's p
       displayName: personal.displayName,
     },
   };
-  mockWorkflowApis([visibleShared, personal, otherAgentWorkflow()]);
+  mockWorkflowApis([visibleShared, personal]);
   await setupPage({
     context,
-    path: `/workflows?agent=${OTHER_AGENT_ID}`,
+    path: "/workflows",
   });
   await expect(
     screen.findByText("Overridden for you"),
@@ -4113,7 +4019,6 @@ test("Workspace Workflows ignore stale Agent filters and identify the caller's p
 });
 
 test("Make private copy opens the existing private definition without overwriting it", async () => {
-  mockAgentPageApis();
   mockChatLifecycle(context);
   const shared = salesResearch();
   const personal: WorkflowDetailResponse = {
@@ -4169,7 +4074,6 @@ test("Make private copy opens the existing private definition without overwritin
 });
 
 test("Make private copy uses the workspace default without a destination or removal step", async () => {
-  mockAgentPageApis();
   mockChatLifecycle(context);
   const shared = { ...salesResearch(), canManage: false };
   const workflows = [shared];
@@ -4211,7 +4115,6 @@ test("Make private copy uses the workspace default without a destination or remo
 });
 
 test("creates a workspace Workflow with the default Okou without choosing an Agent", async () => {
-  mockAgentPageApis();
   mockChatLifecycle(context);
   mockWorkflowApis([salesResearch()]);
   await setupPage({

@@ -1,4 +1,3 @@
-import { retainedWorkflowCaller } from "./retained-workflow-caller";
 import { installWorkflowVolumeS3Fixture } from "./workflow-volume-s3";
 import { createHash } from "node:crypto";
 
@@ -25,7 +24,7 @@ import {
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
-import { createBddApi, type ApiTestUser } from "./api-bdd";
+import { type ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
 
 import { emailUnsubscribeRoutes } from "../../email-unsubscribe";
@@ -176,8 +175,6 @@ async function requestLogsList<TStatus extends 200 | 400 | 401 | 403>(
 }
 
 export function createMiscRoutesApi(context: TestContext) {
-  const bdd = createBddApi(context);
-  const retainedHeaders = retainedWorkflowCaller(context);
   const s3Objects = new Map<string, Buffer>();
   installWorkflowVolumeS3Fixture(context, s3Objects);
   const multipartTransport = context.mocks.s3.send.getMockImplementation();
@@ -389,7 +386,6 @@ export function createMiscRoutesApi(context: TestContext) {
 
     async createWorkflow(
       actor: ApiTestUser,
-      agentId: string,
       name: string,
       input: {
         readonly content: string;
@@ -398,18 +394,12 @@ export function createMiscRoutesApi(context: TestContext) {
       },
       statuses: readonly (201 | 400 | 401 | 403 | 409)[],
     ) {
-      const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
-      const headers =
-        agentId === defaultAgentId
-          ? authenticate(context, actor)
-          : await retainedHeaders(actor);
       return await accept(
         setupApp({ context, routes: workflowsRoutes })(
           workflowsCollectionContract,
         ).create({
-          headers,
+          headers: authenticate(context, actor),
           body: {
-            agentId,
             name,
             displayName: "BDD Workflow",
             description: "Created through public workflow API",
@@ -426,7 +416,6 @@ export function createMiscRoutesApi(context: TestContext) {
 
     async requestCreateInvalidWorkflow(
       actor: ApiTestUser,
-      agentId: string,
       statuses: readonly (400 | 401 | 403 | 409)[],
     ) {
       return await accept(
@@ -435,7 +424,6 @@ export function createMiscRoutesApi(context: TestContext) {
         ).create({
           headers: authenticate(context, actor),
           body: {
-            agentId,
             name: "bdd-invalid-workflow",
             // SKILL.md is reserved and synthesized server-side; supplying it as
             // a supplementary file is rejected with 400.

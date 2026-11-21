@@ -1,5 +1,4 @@
 import type { WorkflowAttachments } from "@okouai/db/jsonb-contracts/workflow";
-import { agents } from "@okouai/db/schema/agent";
 import { workflows } from "@okouai/db/schema/workflow";
 import { and, eq } from "drizzle-orm";
 import { command } from "ccstate";
@@ -62,16 +61,9 @@ export const workflowDetail$ = command(
     const [visible] = await db
       .select({
         workflow: workflows,
-        agent: {
-          id: agents.id,
-          owner: agents.owner,
-          visibility: agents.visibility,
-          name: agents.name,
-          displayName: agents.displayName,
-        },
       })
       .from(workflows)
-      .innerJoin(agents, eq(workflows.agentId, agents.id))
+
       .where(
         and(
           eq(workflows.orgId, args.orgId),
@@ -85,7 +77,7 @@ export const workflowDetail$ = command(
     if (!visible) {
       return null;
     }
-    const { workflow, agent } = visible;
+    const { workflow } = visible;
 
     const shadowedBy = await set(
       readWorkflowShadowWinner$,
@@ -116,7 +108,6 @@ export const workflowDetail$ = command(
 
     const baseSummary = workflowSummary({
       workflow,
-      agent,
       member: args.member,
       shadowedBy,
       officialDefinitionLifecycle: officialDefinition?.lifecycle,

@@ -643,7 +643,6 @@ const loadGmailEventAutomations$ = command(
     const automationRows = await db
       .select({
         automation: workflowAutomationColumns(),
-        agentId: workflows.agentId,
         workflowName: workflows.name,
         workflowDisplayName: workflows.displayName,
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
@@ -697,7 +696,6 @@ const loadGmailEventAutomations$ = command(
         workflowAutomationCanFire$,
         {
           automation: row.automation,
-          agentId: row.agentId,
         },
         signal,
       );

@@ -13,8 +13,6 @@ SECURITY INVOKER
 PARALLEL UNSAFE
 AS $workflow_deletion$
 DECLARE
-  observed_agent_id uuid;
-  locked_agent_id uuid;
   locked_workflow record;
   observed_automations jsonb;
   removed_automations jsonb;
@@ -22,24 +20,8 @@ DECLARE
   attachment_prefix text;
   inherited_attachment boolean;
 BEGIN
-  SELECT workflow.agent_id INTO observed_agent_id
-  FROM public.workflows AS workflow
-  WHERE workflow.org_id = p_org_id AND workflow.id = p_workflow_id
-  LIMIT 1;
-  IF NOT FOUND THEN
-    RETURN jsonb_build_object('deleted', false);
-  END IF;
-
-  SELECT agent.id INTO locked_agent_id
-  FROM public.agents AS agent
-  WHERE agent.id = observed_agent_id AND agent.org_id = p_org_id
-  LIMIT 1 FOR KEY SHARE;
-  IF NOT FOUND THEN
-    RETURN jsonb_build_object('deleted', false);
-  END IF;
-
   SELECT workflow.id, workflow.org_id, workflow.attachments,
-    workflow.agent_id, workflow.name, workflow.owner_user_id,
+    workflow.name, workflow.owner_user_id,
     workflow.official_definition_name, workflow.official_installation_state
   INTO locked_workflow
   FROM public.workflows AS workflow

@@ -82,7 +82,6 @@ async function setupFixture(): Promise<{
     throw new Error("Expected an org-scoped workflow actor");
   }
   const workflowId = await wf.createWorkflow(actor, {
-    agentId,
     name: WORKFLOW_NAME,
   });
   const fixture = { orgId: actor.orgId, userId: actor.userId };

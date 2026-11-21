@@ -6,7 +6,6 @@ import {
   exists,
   gt,
   inArray,
-  ne,
   notInArray,
   or,
   sql,
@@ -25,7 +24,7 @@ import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { loadCurrentMembershipId } from "./morning-brief-membership.service";
 import {
-  loadProactiveWorkflowsEligibility$,
+  loadProactivePreferences$,
   type ProactiveWorkflowOwner,
 } from "./proactive-workflows-eligibility.service";
 import {
@@ -114,13 +113,12 @@ const disableInactiveProactiveWorkflows$ = command(
     { set },
     owner: ProactiveWorkflowOwner,
     context: {
-      agentId: string | null;
       kinds: ProactiveWorkflowKind[];
       eligible: boolean;
     },
     signal: AbortSignal,
   ) => {
-    const { agentId, kinds, eligible } = context;
+    const { kinds, eligible } = context;
     const database = set(writeDb$);
     const ownedWorkflows = database
       .select({ id: workflows.id })
@@ -135,15 +133,10 @@ const disableInactiveProactiveWorkflows$ = command(
             }),
             ...RETIRED_PROACTIVE_DEFINITION_NAMES,
           ]),
-          eligible && agentId !== null
-            ? or(
-                ne(workflows.agentId, agentId),
-                notInArray(
-                  workflows.officialDefinitionName,
-                  kinds.map((kind) => {
-                    return PROACTIVE_WORKFLOW_DEFINITIONS[kind].name;
-                  }),
-                ),
+          eligible
+            ? notInArray(
+                workflows.officialDefinitionName,
+                kinds.map((kind) => PROACTIVE_WORKFLOW_DEFINITIONS[kind].name),
               )
             : undefined,
         ),
@@ -174,7 +167,6 @@ const synchronizeProactiveSchedule$ = command(
     { set },
     args: {
       readonly owner: ProactiveWorkflowOwner;
-      readonly agentId: string;
       readonly workflowId: string;
       readonly blueprintKey: string;
       readonly kind: ProactiveWorkflowKind;
@@ -199,7 +191,7 @@ const synchronizeProactiveSchedule$ = command(
           eq(workflowAutomations.workflowId, args.workflowId),
           eq(workflowAutomations.officialBlueprintKey, args.blueprintKey),
           eq(workflowAutomations.officialIntendedEnabled, false),
-          proactiveWorkflowOwnerEnabledSql(args.owner, args.agentId),
+          proactiveWorkflowOwnerEnabledSql(args.owner),
         ),
       );
     signal.throwIfAborted();
@@ -220,7 +212,7 @@ const synchronizeProactiveSchedule$ = command(
               sql`${workflowAutomations.timezone} IS DISTINCT FROM ${args.timezone}`,
               sql`${workflowAutomations.cronExpression} IS DISTINCT FROM ${args.cron}`,
             ),
-            proactiveWorkflowOwnerEnabledSql(args.owner, args.agentId),
+            proactiveWorkflowOwnerEnabledSql(args.owner),
           ),
         );
       signal.throwIfAborted();
@@ -231,30 +223,25 @@ const synchronizeProactiveSchedule$ = command(
 /** Materialize this fixed Official schedule atomically, without legacy installer transactions. */
 export const ensureProactiveWorkflows$ = command(
   async ({ get, set }, owner: ProactiveWorkflowOwner, signal: AbortSignal) => {
-    const eligibility = await set(
-      loadProactiveWorkflowsEligibility$,
-      owner,
-      signal,
-    );
+    const eligibility = await set(loadProactivePreferences$, owner, signal);
     const kinds = (
       Object.keys(PROACTIVE_WORKFLOW_DEFINITIONS) as ProactiveWorkflowKind[]
     ).filter((kind) => {
       return eligibility[kind].active;
     });
     const member =
-      kinds.length > 0 && eligibility.agentId !== null
+      kinds.length > 0
         ? await loadCurrentMembershipId(get(clerk$), owner, signal)
         : null;
-    const eligible =
-      kinds.length > 0 && member !== null && eligibility.agentId !== null;
+    const eligible = kinds.length > 0 && member !== null;
     await set(
       disableInactiveProactiveWorkflows$,
       owner,
-      { agentId: eligibility.agentId, kinds, eligible },
+      { kinds, eligible },
       signal,
     );
     const database = set(writeDb$);
-    if (!eligible || eligibility.agentId === null) {
+    if (!eligible) {
       return;
     }
     for (const kind of kinds) {
@@ -280,15 +267,14 @@ export const ensureProactiveWorkflows$ = command(
         installedSchema,
         await database.execute(sql`
       WITH installed AS (
-        INSERT INTO workflows (org_id, agent_id, owner_user_id, name, visibility, instruction, display_name, description,
+        INSERT INTO workflows (org_id, owner_user_id, name, visibility, instruction, display_name, description,
           official_definition_name, official_installation_state, created_by, updated_by, created_at, updated_at)
-        SELECT ${owner.orgId}, ${eligibility.agentId}::uuid, ${owner.userId}, ${definition.name}, 'private', NULL, NULL, NULL,
+        SELECT ${owner.orgId}, ${owner.userId}, ${definition.name}, 'private', NULL, NULL, NULL,
           ${definition.name}, 'installed', ${owner.userId}, ${owner.userId}, ${at}, ${at}
-        WHERE ${proactiveWorkflowOwnerEnabledSql(owner, eligibility.agentId)}
+        WHERE ${proactiveWorkflowOwnerEnabledSql(owner)}
           AND EXISTS (SELECT 1 FROM official_workflow_catalog_state WHERE accepted_release_id = ${catalog.releaseId})
         ON CONFLICT (org_id, owner_user_id, official_definition_name) WHERE official_definition_name IS NOT NULL
         DO UPDATE SET updated_at = EXCLUDED.updated_at
-        WHERE workflows.agent_id = EXCLUDED.agent_id
         RETURNING id
       ), scheduled AS (
         INSERT INTO workflow_automations (org_id, workflow_id, owner_user_id, kind, schedule_type, cron_expression, interval_seconds,
@@ -314,7 +300,6 @@ export const ensureProactiveWorkflows$ = command(
         synchronizeProactiveSchedule$,
         {
           owner,
-          agentId: eligibility.agentId,
           workflowId: installed.id,
           blueprintKey: blueprint.key,
           kind,

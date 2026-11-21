@@ -17,16 +17,14 @@ import {
   workflowAttachmentPath,
   type WorkflowAttachmentFile,
 } from "@okouai/core/workflow-attachment-bundle";
-import { agents } from "@okouai/db/schema/agent";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
 import { randomUUID } from "node:crypto";
 import { win32 } from "node:path";
 import { command, computed } from "ccstate";
-import { and, asc, count, eq, isNull, or } from "drizzle-orm";
+import { and, asc, count, eq, isNull } from "drizzle-orm";
 
 import { apiBackendUrl } from "../../lib/api-backend-url";
-import { badRequestMessage, notFound } from "../../lib/error";
+import { badRequestMessage } from "../../lib/error";
 import { webUrl } from "../../lib/web-url";
 import type { SkillImportAuth } from "../../types/auth";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -105,34 +103,10 @@ const createSessionInner$ = command(
       return bodyResult.response;
     }
 
-    const [selectedAgent] = await get(db$)
-      .select({ agentId: agents.id })
-      .from(orgMetadata)
-      .innerJoin(
-        agents,
-        and(
-          eq(agents.id, orgMetadata.defaultAgentId),
-          eq(agents.orgId, orgMetadata.orgId),
-        ),
-      )
-      .where(
-        and(
-          eq(orgMetadata.orgId, auth.orgId),
-          or(eq(agents.visibility, "public"), eq(agents.owner, auth.userId)),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    const agentId = selectedAgent?.agentId ?? null;
-    if (!agentId) {
-      return notFound("This organization has no default agent to import into");
-    }
-
     const sessionId = randomUUID();
     const session = generateSkillImportToken(
       auth.userId,
       auth.orgId,
-      agentId,
       bodyResult.data.provider,
       sessionId,
     );
@@ -171,7 +145,6 @@ const listSessionSkillsInner$ = computed(async (get) => {
     .select({
       workflow: {
         id: workflows.id,
-        agentId: workflows.agentId,
         name: workflows.name,
         visibility: workflows.visibility,
         ownerUserId: workflows.ownerUserId,
@@ -182,19 +155,8 @@ const listSessionSkillsInner$ = computed(async (get) => {
         importSource: workflows.importSource,
         createdAt: workflows.createdAt,
       },
-      agent: {
-        id: agents.id,
-        owner: agents.owner,
-        visibility: agents.visibility,
-        name: agents.name,
-        displayName: agents.displayName,
-      },
     })
     .from(workflows)
-    .innerJoin(
-      agents,
-      and(eq(agents.id, workflows.agentId), eq(agents.orgId, workflows.orgId)),
-    )
     .where(
       and(
         eq(workflows.importSessionId, sessionId),
@@ -202,16 +164,14 @@ const listSessionSkillsInner$ = computed(async (get) => {
         eq(workflows.ownerUserId, auth.userId),
         eq(workflows.createdBy, auth.userId),
         isNull(workflows.officialDefinitionName),
-        or(eq(agents.visibility, "public"), eq(agents.owner, auth.userId)),
       ),
     )
     .orderBy(asc(workflows.createdAt), asc(workflows.id));
   return {
     status: 200 as const,
-    body: rows.map(({ workflow, agent }) => {
+    body: rows.map(({ workflow }) => {
       return workflowSummary({
         workflow,
-        agent,
         member: { userId: auth.userId, role: auth.orgRole ?? "member" },
       });
     }),
@@ -438,7 +398,6 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     .from(workflows)
     .where(
       and(
-        eq(workflows.agentId, session.agentId),
         eq(workflows.createdBy, session.userId),
         eq(workflows.importSessionId, session.sessionId),
         isNull(workflows.officialDefinitionName),
@@ -460,7 +419,6 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     .where(
       and(
         eq(workflows.orgId, session.orgId),
-        eq(workflows.agentId, session.agentId),
         eq(workflows.ownerUserId, session.userId),
         eq(workflows.name, name),
         eq(workflows.visibility, "private"),
@@ -490,7 +448,6 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       member: { userId: session.userId, role: "member" },
       body: {
         ...body,
-        agentId: session.agentId,
         name,
         files,
       },
@@ -505,8 +462,6 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     if (created.response.status === 409) {
       return skillNameTaken(created.response.body.error.message);
     }
-    // The agent this session targets is gone or no longer visible, so the
-    // session itself can no longer be completed.
     return sessionInvalid(
       "Skill import session is no longer valid; request a new import link",
     );

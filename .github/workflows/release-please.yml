@@ -1625,6 +1625,33 @@ jobs:
           neon-project-id: ${{ vars.NEON_PROJECT_ID }}
           branch-name: release-smoke/migrate-${{ github.run_id }}-${{ github.run_attempt }}
 
+      - name: Check Workflow maintenance window
+        if: ${{ needs.release-please.outputs.api_release_created == 'true' }}
+        working-directory: turbo/packages/db
+        env:
+          DATABASE_URL: ${{ steps.get-db-url.outputs.database-url }}
+          RELEASE_TARGET: ${{ needs.release-please.outputs.release_target }}
+          QUIESCED_RELEASE: ${{ vars.WORKFLOW_MEMBER_SCOPE_QUIESCED_RELEASE }}
+        run: |
+          node --input-type=module <<'JS'
+          import postgres from "postgres";
+          const db = postgres(process.env.DATABASE_URL, { max: 1 });
+          try {
+            const [state] = await db`
+              SELECT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'workflows' AND column_name = 'agent_id'
+              ) AS pending
+            `;
+            if (state.pending && (!/^[a-f0-9]{40}$/.test(process.env.RELEASE_TARGET) ||
+                process.env.QUIESCED_RELEASE !== process.env.RELEASE_TARGET)) {
+              throw new Error("Drain the outgoing API and scheduling workers together, then confirm this release SHA in WORKFLOW_MEMBER_SCOPE_QUIESCED_RELEASE.");
+            }
+          } finally {
+            await db.end();
+          }
+          JS
+
       - name: Run Production Migrations
         id: production-migrations
         if: ${{ needs.release-please.outputs.api_release_created == 'true' }}

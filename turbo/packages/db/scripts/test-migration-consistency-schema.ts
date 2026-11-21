@@ -1438,7 +1438,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "e1afcce07ecfa041ebf00a63550f2a19",
+    bodyHash: "c0fd2ff6fd597110773e76582cd1d17e",
   },
   {
     schemaName: "public",
@@ -1449,7 +1449,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "276d29ce4338e19f10fae30624787723",
+    bodyHash: "92c17b395a82669b0ed147c68a59ae5e",
   },
   {
     schemaName: "public",

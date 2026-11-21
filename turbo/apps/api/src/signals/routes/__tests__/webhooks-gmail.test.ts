@@ -581,7 +581,6 @@ async function setupFixture(
   const { defaultAgentId: agentId } = await runsApi.grantProEntitlement(actor);
   const workflow = await miscApi.createWorkflow(
     actor,
-    agentId,
     WORKFLOW_NAME,
     { content: "Handle Gmail webhook events." },
     [201],

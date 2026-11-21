@@ -988,7 +988,7 @@
         "twentyFourHours": "24 jam"
       },
       "errors": {
-        "loadAgent": "Gagal memuat agen",
+        "loadMember": "Gagal memuat anggota ruang kerja.",
         "loadGrants": "Gagal memuat pemberian izin",
         "loadMetadata": "Gagal memuat metadata izin",
         "missingPermission": "Izin tidak ada di parameter URL",
@@ -2303,7 +2303,7 @@
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
-      "agentNotFound": "Agen tidak ditemukan",
+      "memberNotFound": "Anggota ruang kerja tidak tersedia.",
       "allow": "Izinkan",
       "alreadyAllowed": "Sudah diizinkan",
       "alreadyDenied": "Sudah ditolak",
@@ -3339,13 +3339,13 @@
       },
       "github": {
         "accountFallback": "akun GitHub ini",
-        "alreadyDescription": "Anda sudah tersambung sebagai {{account}}. Sebut agen Anda di issue atau pull request GitHub untuk mulai mengobrol.",
+        "alreadyDescription": "Anda terhubung sebagai {{account}}. Sebut Okou dalam issue atau pull request GitHub untuk memulai percakapan.",
         "alreadyTitle": "Sudah tersambung ke GitHub",
         "back": "Kembali ke alur kerja",
         "checkingConnectionDescription": "Harap tunggu saat kami memeriksa koneksi GitHub Anda.",
         "checkingConnectionTitle": "Memeriksa koneksi...",
         "checkingSession": "Harap tunggu saat kami memverifikasi sesi {{brandName}} Anda.",
-        "connectDescription": "Tautkan akun {{brandName}} Anda ke {{account}} agar mention GitHub dapat menjalankan agen Anda dari issue dan pull request.",
+        "connectDescription": "Tautkan akun {{brandName}} Anda ke {{account}} untuk memulai percakapan dari GitHub.",
         "connectTitle": "Hubungkan ke GitHub",
         "errorFallback": "Kami tidak dapat menghubungkan GitHub. Coba lagi dari GitHub.",
         "invalidInstallation": "Instalasi GitHub pada tautan ini tidak valid.",
@@ -3363,7 +3363,7 @@
         "signInCheckFailed": "Tidak dapat memeriksa status masuk",
         "signInDescription": "Gunakan akun {{brandName}} Anda sebelum menghubungkan pengguna GitHub ini.",
         "signInTitle": "Masuk untuk melanjutkan",
-        "successDescription": "Anda tersambung sebagai {{account}}. Sebut agen Anda di issue atau pull request GitHub untuk mulai mengobrol.",
+        "successDescription": "Anda terhubung sebagai {{account}}. Sebut Okou dalam issue atau pull request GitHub untuk memulai percakapan.",
         "successTitle": "Berhasil tersambung ke GitHub!",
         "wrongOrganizationDescription": "Organisasi aktif Anda tidak cocok dengan instalasi GitHub ini. Pindah ke organisasi yang benar dan buka tautannya lagi.",
         "wrongOrganizationTitle": "Pindah organisasi"
@@ -3378,7 +3378,7 @@
         "accountMismatchDescriptionWorkspace": "Akun Okou Anda saat ini menggunakan akun Slack {{currentAccount}} di {{workspace}}. Beralih ke {{requestedAccount}}, akun yang membuka tautan ini?",
         "accountMismatchTitle": "Beralih akun Slack?",
         "authorizationFailed": "Otorisasi Slack belum selesai. Koneksi Anda saat ini ditampilkan di bawah. Anda dapat mencoba lagi.",
-        "connectDescription": "Tautkan akun Anda ke workspace Slack ini agar Anda dapat berinteraksi dengan agen Anda langsung dari Slack.",
+        "connectDescription": "Tautkan akun Anda untuk mengobrol dengan Okou di Slack.",
         "connectTitle": "Hubungkan ke Slack",
         "currentConnection": "Slack terhubung",
         "errorFallback": "Tidak dapat memeriksa atau memulai koneksi Slack.",
@@ -3396,7 +3396,7 @@
       },
       "teams": {
         "authorize": "Otorisasi Microsoft Teams",
-        "connectDescription": "Tautkan akun Teams Anda agar Anda dapat berinteraksi dengan agen Anda langsung dari Microsoft Teams.",
+        "connectDescription": "Tautkan akun Anda untuk mengobrol dengan Okou di Microsoft Teams.",
         "connectedDescription": "Akun Teams Anda terhubung.",
         "connectTitle": "Hubungkan Microsoft Teams",
         "identityMismatch": "Akun atau ruang kerja Teams yang diminta tidak cocok dengan koneksi saat ini.",
@@ -3417,7 +3417,7 @@
         "checkingConnectionTitle": "Memeriksa koneksi...",
         "conflictDescription": "Anda terhubung sebagai {{current}}, tetapi tautan ini meminta {{requested}}. Pertahankan koneksi Anda atau kelola koneksi secara manual sebelum mencoba lagi.",
         "conflictTitle": "Akun Telegram lain sedang terhubung",
-        "connectDescription": "Tautkan akun Anda ke bot Telegram ini agar Anda dapat berinteraksi dengan agen Anda langsung dari Telegram.",
+        "connectDescription": "Tautkan akun Anda untuk mengobrol dengan Okou di Telegram.",
         "connectionCheckFailed": "Telegram tidak dapat dijangkau untuk memeriksa koneksi.",
         "connectTitle": "Hubungkan ke Telegram",
         "continue": "Lanjutkan dengan Telegram",
@@ -4793,7 +4793,7 @@
     "deleteThreadsTitle": "Delete project and threads?",
     "deleteTitle": "Delete Project?",
     "deletingThreads": "Deleting…",
-    "description": "Keep related chats together across Agents",
+    "description": "Kelompokkan percakapan yang berkaitan.",
     "empty": "No chats here yet",
     "expand": "Luaskan",
     "fromChat": "Create a Project from this chat",
@@ -4854,7 +4854,7 @@
       "pro": "Pro",
       "team": "Tim"
     },
-    "title": "Agen Anda sedang menunggu giliran",
+    "title": "Permintaan Anda sedang mengantre",
     "upgrade": {
       "action": "Upgrade ke {{plan}}",
       "features": {
@@ -5686,7 +5686,7 @@
       },
       "timezone": {
         "description": "Waktu ditampilkan kepada Anda dan digunakan untuk eksekusi otomatis.",
-        "rowDescription": "Agen Anda akan menggunakan zona waktu ini saat eksekusi",
+        "rowDescription": "Okou menggunakan zona waktu ini saat menjalankan tugas.",
         "rowTitle": "Zona waktu",
         "sectionTitle": "Zona Waktu",
         "zones": {
@@ -5740,7 +5740,7 @@
         "title": "Kartu Anda di Link"
       },
       "connect": "Hubungkan",
-      "description": "Agen Anda dapat meminta pembelian dan melihat transaksi Link. Anda menyetujui setiap pembelian.",
+      "description": "Izinkan Okou mengajukan pembelian dan melihat transaksi Link. Anda menyetujui setiap pembelian.",
       "disconnect": "Putuskan",
       "loadError": "Dompet Anda tidak dapat dimuat.",
       "scope": "Izinkan Okou berbelanja dan melihat aktivitas Link Anda.",
@@ -6003,7 +6003,7 @@
       "unused": "Tidak digunakan oleh host mana pun"
     },
     "deleteHelp": "Hapus host ini? Kredensialnya akan tetap disimpan. Agent tidak lagi melihat host ini dalam inventaris.",
-    "description": "Konfigurasikan host SSH agar Agen Anda dapat menjalankan perintah jarak jauh.",
+    "description": "Izinkan Okou menjalankan perintah di komputer jarak jauh.",
     "edit": "Edit host",
     "editHelp": "Memilih kredensial lain hanya mengubah host ini. Perubahan tujuan langsung menghapus kunci host tersimpan; perubahan yang melibatkan Cloudflare Access mempertahankannya.",
     "errors": {
@@ -6247,7 +6247,7 @@
       "usernamePasswordMethod": "Nama pengguna dan kata sandi"
     },
     "deleteHelp": "Hapus host tersimpan ini? Kredensialnya yang dapat digunakan kembali akan tetap disimpan.",
-    "description": "Izinkan agen Anda melihat dan mengendalikan desktop jarak jauh Anda.",
+    "description": "Izinkan Okou melihat dan mengontrol desktop jarak jauh.",
     "edit": "Edit host",
     "editHelp": "Perubahan berlaku pada host tersimpan ini dan membatalkan konfigurasi koneksinya saat ini.",
     "errors": {
@@ -6921,8 +6921,8 @@
     },
     "editor": {
       "aria": "Editor instruksi",
-      "footer": "Edit instruksi secara langsung untuk menyesuaikan perilaku agen Anda.",
-      "placeholder": "Tulis instruksi untuk agen Anda...",
+      "footer": "Edit instruksi untuk alur kerja ini.",
+      "placeholder": "Tulis instruksi untuk alur kerja ini…",
       "toolbar": {
         "blockquote": "Blok kutip",
         "bold": "Tebal",
@@ -7029,7 +7029,7 @@
       "authorizationError": "Otorisasi Discord tidak dapat diselesaikan.",
       "cancelled": "Otorisasi Discord dibatalkan.",
       "chooseWorkspace": "Pilih ruang kerja",
-      "connectDescription": "Hubungkan akun Discord untuk mengobrol dengan agen Anda.",
+      "connectDescription": "Tautkan akun Anda untuk mengobrol dengan Okou di Discord.",
       "connectedTitle": "Terhubung ke Discord",
       "connectTitle": "Hubungkan ke Discord",
       "defaultWorkspace": "Ruang kerja default untuk Discord",
@@ -7116,7 +7116,7 @@
       "connect": "Hubungkan",
       "connected": "Terhubung",
       "creating": "Membuat kode QR…",
-      "description": "Mengobrol dengan agen Anda di WeChat.",
+      "description": "Mengobrol dengan Okou di WeChat.",
       "disconnect": "Putuskan koneksi",
       "expired": "Kode QR ini telah kedaluwarsa. Buat yang baru.",
       "failed": "Tidak dapat terhubung ke WeChat.",
@@ -7142,7 +7142,7 @@
     "whatsapp": {
       "codeError": "Tidak dapat membuat kode koneksi. Coba lagi.",
       "connect": "Hubungkan WhatsApp",
-      "connectDescription": "Hubungkan akun WhatsApp Anda ke {{brandName}} untuk mengobrol dengan agen Anda.",
+      "connectDescription": "Tautkan akun WhatsApp Anda ke {{brandName}} untuk mengobrol dengan Okou.",
       "connected": "WhatsApp terhubung",
       "description": "Mengobrol dengan Okou langsung dari WhatsApp",
       "disconnected": "WhatsApp terputus",

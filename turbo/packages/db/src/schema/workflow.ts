@@ -14,7 +14,6 @@ import {
   jsonb,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { agents } from "./agent";
 import { chatThreads } from "./chat-thread";
 import { connectors } from "./connector";
 import { workflowAutomationColumns } from "../columns/workflow-automation";
@@ -43,8 +42,6 @@ export const workflows = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     orgId: text("org_id").notNull(),
-    // Deleting the owning agent cascades to its Workflow rows.
-    agentId: uuid("agent_id").notNull(),
     name: varchar("name", { length: 64 }).notNull(),
     visibility: varchar("visibility", { length: 16 })
       .$type<WorkflowVisibility>()
@@ -77,27 +74,17 @@ export const workflows = pgTable(
   },
   (table) => {
     return {
-      canonicalAgentFk: foreignKey({
-        name: "workflows_agent_id_agents_id_fk",
-        columns: [table.agentId],
-        foreignColumns: [agents.id],
-      }).onDelete("cascade"),
-      agentIdx: index("idx_workflows_agent").on(table.agentId, table.name),
       importSessionIdx: index("idx_workflows_import_session").on(
         table.importSessionId,
       ),
-      // Public workflow slugs are the shared namespace for an agent. Private
-      // workflows may duplicate public slugs as user-specific forks/overrides,
-      // but one owner cannot have two ordinary private workflows with the same
-      // slug on the same agent.
-      publicAgentNameIdx: uniqueIndex("idx_workflows_public_agent_name_unique")
-        .on(table.orgId, table.agentId, table.name)
+      publicNameIdx: uniqueIndex("idx_workflows_public_name_unique")
+        .on(table.orgId, table.name)
         .where(sql`visibility = 'public'`),
       // Ordinary names and Official definitions have independent identities.
-      ordinaryPrivateOwnerAgentNameIdx: uniqueIndex(
-        "idx_workflows_ordinary_private_owner_agent_name_unique",
+      ordinaryPrivateOwnerNameIdx: uniqueIndex(
+        "idx_workflows_private_owner_name_unique",
       )
-        .on(table.orgId, table.agentId, table.ownerUserId, table.name)
+        .on(table.orgId, table.ownerUserId, table.name)
         .where(
           sql`visibility = 'private' AND official_definition_name IS NULL`,
         ),
@@ -108,27 +95,6 @@ export const workflows = pgTable(
         .where(sql`official_definition_name IS NOT NULL`),
       morningBriefMemberIdx: uniqueIndex("idx_workflows_morning_brief_member")
         .on(table.orgId, table.ownerUserId)
-        .where(
-          sql`official_definition_name IN ('morning-brief', 'internal-test-morning-brief')`,
-        ),
-      // Outgoing API and worker binaries still use this index as an upsert target.
-      officialOwnerAgentDefinitionIdx: uniqueIndex(
-        "idx_workflows_official_owner_agent_definition_unique",
-      )
-        .on(
-          table.orgId,
-          table.agentId,
-          table.ownerUserId,
-          table.officialDefinitionName,
-        )
-        .where(sql`official_definition_name IS NOT NULL`),
-      // Both rollout definitions are one Morning Brief installation identity.
-      // At GA (#39591), remove this index after installations converge to
-      // morning-brief; the canonical Official definition index then suffices.
-      morningBriefOwnerAgentIdx: uniqueIndex(
-        "idx_workflows_morning_brief_owner_agent_unique",
-      )
-        .on(table.orgId, table.agentId, table.ownerUserId)
         .where(
           sql`official_definition_name IN ('morning-brief', 'internal-test-morning-brief')`,
         ),

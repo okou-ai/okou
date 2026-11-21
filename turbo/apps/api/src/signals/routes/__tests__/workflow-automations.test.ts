@@ -600,7 +600,6 @@ describe("okou workflow automations", () => {
       throw new Error("Expected an org-scoped workflow actor");
     }
     const workflowId = await wf.createWorkflow(actor, {
-      agentId,
       name: WORKFLOW_NAME,
     });
     const fixture = { orgId: actor.orgId, userId: actor.userId };
@@ -636,7 +635,6 @@ describe("okou workflow automations", () => {
       throw new Error("Expected the member workflow namespace");
     }
     const workflowId = await wf.createWorkflow(owner, {
-      agentId: defaultAgentId,
       name: options.workflowName ?? WORKFLOW_NAME,
       visibility: options.visibility,
     });
@@ -1175,10 +1173,9 @@ describe("okou workflow automations", () => {
 
   it("lists owned workflow automations across visible workflows", async () => {
     const scenario = await setupFixture();
-    const { agentId, workflowId } = scenario;
+    const { workflowId } = scenario;
     const secondWorkflowName = "second-workspace-automation";
     const secondWorkflowId = await wf.createWorkflow(scenario.actor, {
-      agentId,
       name: secondWorkflowName,
     });
 
@@ -1216,7 +1213,6 @@ describe("okou workflow automations", () => {
           automationId: entry.automation.id,
           workflowId: entry.workflow.id,
           workflowName: entry.workflow.name,
-          agentId: entry.workflow.agentId,
         };
       }),
     ).toStrictEqual(
@@ -1225,13 +1221,11 @@ describe("okou workflow automations", () => {
           automationId: first.body.id,
           workflowId,
           workflowName: WORKFLOW_NAME,
-          agentId,
         },
         {
           automationId: second.body.id,
           workflowId: secondWorkflowId,
           workflowName: secondWorkflowName,
-          agentId,
         },
       ]),
     );
@@ -1370,11 +1364,10 @@ describe("okou workflow automations", () => {
       tier: "team",
       useDefaultAgent: true,
     });
-    const { actor, agentId } = owned;
+    const { actor } = owned;
     await owned.run(async () => {
       await runs.updateUserModelPreference(actor, "claude-fable-5-1");
       const workflowId = await wf.createWorkflow(actor, {
-        agentId,
         name: WORKFLOW_NAME,
       });
       const created = await accept(
@@ -4359,7 +4352,6 @@ describe("okou workflow automations", () => {
     });
     await owned.run(async () => {
       const workflowId = await wf.createWorkflow(owned.actor, {
-        agentId: owned.agentId,
         name: WORKFLOW_NAME,
         displayName: "Lazy workflow destination",
       });
@@ -4440,7 +4432,6 @@ describe("okou workflow automations", () => {
     const owned = await publicChatActor(context, { useDefaultAgent: true });
     await owned.run(async () => {
       const workflowId = await wf.createWorkflow(owned.actor, {
-        agentId: owned.agentId,
         name: WORKFLOW_NAME,
       });
       const created = await accept(
@@ -4525,11 +4516,9 @@ describe("okou workflow automations", () => {
     });
     await owned.run(async () => {
       const workflowId = await wf.createWorkflow(owned.actor, {
-        agentId: owned.agentId,
         name: WORKFLOW_NAME,
       });
       const secondWorkflowId = await wf.createWorkflow(owned.actor, {
-        agentId: owned.agentId,
         name: "second-lazy-workflow",
       });
       const createAndRun = async (id: string) => {
@@ -4616,7 +4605,7 @@ describe("okou workflow automations", () => {
     // 2, each agent-created Automation spends exactly one hop, and the third
     // derivation is refused.
     const runnerGroup = await runs.configureRunnerGroup();
-    const { actor, agentId, workflowId } = await setupFixture("pro", {
+    const { actor, workflowId } = await setupFixture("pro", {
       maxAutonomyBudget: 2,
     });
 
@@ -4726,7 +4715,7 @@ describe("okou workflow automations", () => {
       detailClient().copy({
         headers: { authorization: exhausted },
         params: { workflowId },
-        body: { toAgentId: agentId },
+        body: {},
       }),
       [409],
     );

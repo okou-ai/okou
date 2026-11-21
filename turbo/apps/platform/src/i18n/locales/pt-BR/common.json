@@ -1006,7 +1006,7 @@
         "twentyFourHours": "24 horas"
       },
       "errors": {
-        "loadAgent": "Não foi possível carregar o agente",
+        "loadMember": "Não foi possível carregar o membro do espaço de trabalho.",
         "loadGrants": "Não foi possível carregar as concessões de permissão",
         "loadMetadata": "Não foi possível carregar os metadados de permissão",
         "missingPermission": "A permissão não está nos parâmetros da URL",
@@ -2348,7 +2348,7 @@
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
-      "agentNotFound": "Agente não encontrado",
+      "memberNotFound": "Membro do espaço de trabalho indisponível.",
       "allow": "Permitir",
       "alreadyAllowed": "Já permitido",
       "alreadyDenied": "Já negado",
@@ -3414,13 +3414,13 @@
       },
       "github": {
         "accountFallback": "esta conta do GitHub",
-        "alreadyDescription": "Você já está conectado como {{account}}. Mencione seu agente em issues ou pull requests do GitHub para começar a conversar.",
+        "alreadyDescription": "Você está conectado como {{account}}. Mencione o Okou em uma issue ou pull request do GitHub para conversar.",
         "alreadyTitle": "Já conectado ao GitHub",
         "back": "Voltar para fluxos de trabalho",
         "checkingConnectionDescription": "Aguarde enquanto verificamos sua conexão com o GitHub.",
         "checkingConnectionTitle": "Verificando a conexão...",
         "checkingSession": "Aguarde enquanto verificamos sua sessão do {{brandName}}.",
-        "connectDescription": "Vincule sua conta do {{brandName}} a {{account}} para que menções no GitHub possam executar seus agentes em issues e pull requests.",
+        "connectDescription": "Vincule sua conta do {{brandName}} a {{account}} para iniciar conversas pelo GitHub.",
         "connectTitle": "Conectar ao GitHub",
         "errorFallback": "Não foi possível conectar o GitHub. Tente novamente pelo GitHub.",
         "invalidInstallation": "A instalação do GitHub neste link não é válida.",
@@ -3438,7 +3438,7 @@
         "signInCheckFailed": "Não foi possível verificar o login",
         "signInDescription": "Entre com sua conta do {{brandName}} antes de conectar este usuário do GitHub.",
         "signInTitle": "Entre para continuar",
-        "successDescription": "Você está conectado como {{account}}. Mencione seu agente em issues ou pull requests do GitHub para começar a conversar.",
+        "successDescription": "Você está conectado como {{account}}. Mencione o Okou em uma issue ou pull request do GitHub para conversar.",
         "successTitle": "Conectado ao GitHub!",
         "wrongOrganizationDescription": "Sua organização ativa não corresponde a esta instalação do GitHub. Mude para a organização correta e abra o link novamente.",
         "wrongOrganizationTitle": "Mudar de organização"
@@ -3453,7 +3453,7 @@
         "accountMismatchDescriptionWorkspace": "Sua conta do Okou usa atualmente a conta do Slack {{currentAccount}} em {{workspace}}. Deseja mudar para {{requestedAccount}}, a conta que abriu este link?",
         "accountMismatchTitle": "Trocar conta do Slack?",
         "authorizationFailed": "A autorização do Slack não foi concluída. Sua conexão atual aparece abaixo. Você pode tentar novamente.",
-        "connectDescription": "Vincule sua conta a este workspace do Slack para interagir com seu agente diretamente pelo Slack.",
+        "connectDescription": "Vincule sua conta para conversar com o Okou no Slack.",
         "connectTitle": "Conectar ao Slack",
         "currentConnection": "Slack está conectado",
         "errorFallback": "Não foi possível verificar ou iniciar a conexão com o Slack.",
@@ -3471,7 +3471,7 @@
       },
       "teams": {
         "authorize": "Autorizar Microsoft Teams",
-        "connectDescription": "Vincule sua conta do Teams para interagir com seu agente diretamente pelo Microsoft Teams.",
+        "connectDescription": "Vincule sua conta para conversar com o Okou no Microsoft Teams.",
         "connectedDescription": "Sua conta do Teams está conectada.",
         "connectTitle": "Conectar o Microsoft Teams",
         "identityMismatch": "A conta ou o espaço de trabalho do Teams solicitado não corresponde à conexão atual.",
@@ -3492,7 +3492,7 @@
         "checkingConnectionTitle": "Verificando a conexão...",
         "conflictDescription": "Você está conectado como {{current}}, mas este link solicita {{requested}}. Mantenha sua conexão ou gerencie-a explicitamente antes de tentar novamente.",
         "conflictTitle": "Outra conta do Telegram está conectada",
-        "connectDescription": "Vincule sua conta a este bot do Telegram para interagir com seu agente diretamente pelo Telegram.",
+        "connectDescription": "Vincule sua conta para conversar com o Okou no Telegram.",
         "connectionCheckFailed": "Não foi possível acessar o Telegram para verificar a conexão.",
         "connectTitle": "Conectar ao Telegram",
         "continue": "Continuar com o Telegram",
@@ -4879,7 +4879,7 @@
     "deleteThreadsTitle": "Delete project and threads?",
     "deleteTitle": "Delete Project?",
     "deletingThreads": "Deleting…",
-    "description": "Keep related chats together across Agents",
+    "description": "Agrupe conversas relacionadas.",
     "empty": "No chats here yet",
     "expand": "Expandir",
     "fromChat": "Create a Project from this chat",
@@ -4943,7 +4943,7 @@
       "pro": "Pro",
       "team": "Team"
     },
-    "title": "Fila e simultaneidade",
+    "title": "Sua solicitação está na fila",
     "upgrade": {
       "action": "Fazer upgrade para {{plan}}",
       "features": {
@@ -5781,7 +5781,7 @@
       },
       "timezone": {
         "description": "Horários exibidos para você e usados nas execuções de automações.",
-        "rowDescription": "Seus agentes usarão este fuso horário durante as execuções",
+        "rowDescription": "O Okou usa este fuso horário durante as execuções.",
         "rowTitle": "Fuso horário",
         "sectionTitle": "Fuso horário",
         "zones": {
@@ -5835,7 +5835,7 @@
         "title": "Seus cartões no Link"
       },
       "connect": "Conectar",
-      "description": "Seus agentes podem solicitar compras e consultar transações do Link. Você aprova cada compra.",
+      "description": "Permita que o Okou solicite compras e consulte transações do Link. Você aprova cada compra.",
       "disconnect": "Desconectar",
       "loadError": "Não foi possível carregar sua carteira.",
       "scope": "Permita que o Okou faça compras e consulte sua atividade no Link.",
@@ -6102,7 +6102,7 @@
       "unused": "Nenhum host utiliza esta credencial"
     },
     "deleteHelp": "Excluir este host? A credencial será mantida. Os Agents não o verão mais no inventário.",
-    "description": "Configure hosts SSH para seus agentes executarem comandos remotos.",
+    "description": "Permita que o Okou execute comandos em computadores remotos.",
     "edit": "Editar host",
     "editHelp": "Selecionar outra credencial altera apenas este host. Alterações no destino direto apagam a chave de host aprendida; alterações envolvendo Cloudflare Access a preservam.",
     "errors": {
@@ -6351,7 +6351,7 @@
       "usernamePasswordMethod": "Nome de usuário e senha"
     },
     "deleteHelp": "Excluir este host salvo? Sua credencial reutilizável será mantida.",
-    "description": "Permita que seus agentes vejam e controlem seus desktops remotos.",
+    "description": "Permita que o Okou visualize e controle áreas de trabalho remotas.",
     "edit": "Editar host",
     "editHelp": "As alterações se aplicam a este host e invalidam sua configuração de conexão atual.",
     "errors": {
@@ -7030,8 +7030,8 @@
     },
     "editor": {
       "aria": "Editor de instruções",
-      "footer": "Edite as instruções diretamente para personalizar o comportamento do seu agente.",
-      "placeholder": "Escreva instruções para seu agente...",
+      "footer": "Edite as instruções deste fluxo de trabalho.",
+      "placeholder": "Escreva instruções para este fluxo de trabalho…",
       "toolbar": {
         "blockquote": "Citação",
         "bold": "Negrito",
@@ -7138,7 +7138,7 @@
       "authorizationError": "Não foi possível concluir a autorização do Discord.",
       "cancelled": "A autorização do Discord foi cancelada.",
       "chooseWorkspace": "Escolha um espaço de trabalho",
-      "connectDescription": "Conecte sua conta do Discord para conversar com seu agente.",
+      "connectDescription": "Vincule sua conta para conversar com o Okou no Discord.",
       "connectedTitle": "Conectado ao Discord",
       "connectTitle": "Conectar ao Discord",
       "defaultWorkspace": "Espaço de trabalho padrão para o Discord",
@@ -7225,7 +7225,7 @@
       "connect": "Conectar",
       "connected": "Conectado",
       "creating": "Criando código QR…",
-      "description": "Converse com seu agente no WeChat.",
+      "description": "Converse com o Okou no WeChat.",
       "disconnect": "Desconectar",
       "expired": "Este código QR expirou. Crie um novo.",
       "failed": "Não foi possível conectar ao WeChat.",
@@ -7251,7 +7251,7 @@
     "whatsapp": {
       "codeError": "Não foi possível criar um código de conexão. Tente novamente.",
       "connect": "Conectar WhatsApp",
-      "connectDescription": "Conecte sua conta do WhatsApp ao {{brandName}} para conversar com seu agente.",
+      "connectDescription": "Vincule sua conta do WhatsApp ao {{brandName}} para conversar com o Okou.",
       "connected": "WhatsApp conectado",
       "description": "Converse com o Okou diretamente pelo WhatsApp",
       "disconnected": "WhatsApp desconectado",

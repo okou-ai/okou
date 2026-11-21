@@ -19,11 +19,6 @@ DECLARE
   foreign_run boolean;
   active_run boolean;
   deleted_runs jsonb;
-  automations jsonb;
-  removed_automations jsonb;
-  removed_workflows jsonb;
-  retired jsonb;
-  object_key text;
   references_to_release jsonb;
   batch jsonb;
   locked_hashes text[];
@@ -91,16 +86,6 @@ BEGIN
   INNER JOIN public.chat_threads t ON t.id = s.chat_thread_id
   WHERE t.agent_id = p_agent_id ORDER BY s.chat_thread_id FOR UPDATE OF s;
 
-  SELECT COALESCE(jsonb_agg(jsonb_build_object(
-    'orgId', a.org_id, 'ownerUserId', a.owner_user_id,
-    'eventType', a.event_type, 'eventConfig', a.event_config,
-    'eventConnectorId', a.event_connector_id
-  )), '[]'::jsonb) INTO automations
-  FROM public.workflow_automations a WHERE EXISTS (
-    SELECT 1 FROM public.workflows w WHERE w.id = a.workflow_id
-      AND w.agent_id = p_agent_id AND w.org_id = p_org_id
-  );
-
   -- The actual winning DELETE rows own their historical blob references.
   WITH deleted_callbacks AS (
     DELETE FROM public.agent_run_callbacks WHERE run_id = ANY(run_ids) RETURNING id
@@ -120,50 +105,7 @@ BEGIN
       USING CONSTRAINT = 'agent_deletion_lost_run';
   END IF;
 
-  -- Retire Official identities before Automation deletion can SET NULL its FK.
-  DELETE FROM public.official_workflow_automation_identities i WHERE EXISTS (
-    SELECT 1 FROM public.workflows w WHERE w.id = i.workflow_id
-      AND w.agent_id = p_agent_id AND w.org_id = p_org_id
-  );
-  WITH removed AS (
-    DELETE FROM public.workflow_automations a WHERE EXISTS (
-      SELECT 1 FROM public.workflows w WHERE w.id = a.workflow_id
-        AND w.agent_id = p_agent_id AND w.org_id = p_org_id
-    ) RETURNING a.org_id, a.owner_user_id, a.event_type, a.event_config, a.event_connector_id
-  )
-  SELECT COALESCE(jsonb_agg(jsonb_build_object(
-    'orgId', org_id, 'ownerUserId', owner_user_id,
-    'eventType', event_type, 'eventConfig', event_config,
-    'eventConnectorId', event_connector_id
-  )), '[]'::jsonb) INTO removed_automations FROM removed;
 
-  -- Consume every DELETE RETURNING row before inserting cleanup work. This
-  -- descriptor includes a concurrent edit that won before the parent DELETE.
-  WITH removed AS (
-    DELETE FROM public.workflows WHERE agent_id = p_agent_id AND org_id = p_org_id
-    RETURNING id, owner_user_id, attachments
-  )
-  SELECT COALESCE(jsonb_agg(jsonb_build_object(
-    'id', id, 'ownerUserId', owner_user_id, 'attachments', attachments
-  )), '[]'::jsonb) INTO removed_workflows FROM removed;
-  FOR retired IN SELECT value FROM jsonb_array_elements(removed_workflows) LOOP
-    IF retired->'attachments'->>'kind' = 'bundle' THEN
-      object_key := retired->'attachments'->>'objectKey';
-      IF (jsonb_typeof(retired->'attachments'->'objectKey') = 'string'
-        AND starts_with(object_key, 'workflow-attachments/' || p_org_id || '/' ||
-          (retired->>'id') || '/')
-        AND object_key ~ '^workflow-attachments/[^/]+/[a-f0-9-]{36}/[a-f0-9-]{36}/archive\.tar\.gz$'
-      ) IS NOT TRUE THEN
-        RAISE EXCEPTION 'Workflow attachment package has a foreign owner'
-          USING CONSTRAINT = 'agent_deletion_attachment_owner';
-      END IF;
-      INSERT INTO public.background_jobs
-        (id, kind, handler_version, org_id, user_id, input)
-      VALUES (gen_random_uuid(), 'workflow-attachment-cleanup', 1, p_org_id,
-        retired->>'ownerUserId', jsonb_build_object(
-          'workflowId', retired->>'id', 'objectKey', object_key));
-    END IF;
-  END LOOP;
 
   WITH detached_runs AS (
     UPDATE public.agent_runs SET chat_thread_id = NULL WHERE chat_thread_id IN (
@@ -216,7 +158,7 @@ BEGIN
     batch_offset := batch_offset + 500;
   END LOOP;
   RETURN jsonb_build_object('kind', 'deleted',
-    'automations', automations || removed_automations,
+    'automations', '[]'::jsonb,
     'conversationDeletion', jsonb_build_object('deletedRuns', deleted_run_count,
       'releasedReferences', released_reference_count,
       'releasedHashes', jsonb_array_length(references_to_release)));

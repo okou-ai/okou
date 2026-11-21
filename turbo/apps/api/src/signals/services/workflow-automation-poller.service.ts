@@ -67,7 +67,6 @@ interface ExecuteResult {
 
 interface DueWorkflowAutomationRow {
   readonly automation: AutomationRow;
-  readonly agentId: string;
   readonly workflowName: string;
   readonly workflowDisplayName: string | null;
   readonly chatThreadId: string | null;
@@ -94,7 +93,6 @@ const startDueWorkflowAutomation$ = command(
       runWorkflowAutomationNow$,
       {
         automation,
-        proactiveAgentId: args.row.agentId,
         chatThreadId: args.chatThreadId,
         automationContext: args.scheduleContext,
         apiStartTime: now(),
@@ -239,7 +237,6 @@ const dueWorkflowAutomationRows$ = command(
     const rows = await db
       .select({
         automation: workflowAutomationColumns(),
-        agentId: workflows.agentId,
         workflowName: workflows.name,
         workflowDisplayName: workflows.displayName,
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
@@ -343,7 +340,7 @@ const dueWorkflowAutomationIsFireable$ = command(
     }
     const canFire = await set(
       workflowAutomationCanFire$,
-      { automation: row.automation, agentId: row.agentId },
+      { automation: row.automation },
       signal,
     );
     signal.throwIfAborted();
@@ -353,7 +350,6 @@ const dueWorkflowAutomationIsFireable$ = command(
         workflowId: row.automation.workflowId,
         orgId: row.automation.orgId,
         userId: row.automation.ownerUserId,
-        agentId: row.agentId,
       });
       return false;
     }

@@ -71,7 +71,6 @@ async function setupChatAutomationFixture(): Promise<ChatAutomationFixture> {
     model: "claude-fable-5-1",
   });
   const workflowId = await wf.createWorkflow(actor, {
-    agentId,
     name: "chat-run-finished-workflow",
   });
   context.mocks.s3.send.mockResolvedValue({});
@@ -118,7 +117,6 @@ async function createChatRunFinishedAutomation(
   options: { readonly workflowChatThreadId?: string } = {},
 ): Promise<string> {
   const workflowId = await wf.createWorkflow(fixture.actor, {
-    agentId: fixture.agentId,
     name: `crf-${randomUUID().slice(0, 8)}`,
     ...(options.workflowChatThreadId
       ? { chatThreadId: options.workflowChatThreadId }
@@ -466,7 +464,6 @@ describe("chat-run-finished workflow automations", () => {
       model: null,
     });
     const workflowId = await wf.createWorkflow(fixture.actor, {
-      agentId: fixture.agentId,
       name: `self-watching-${randomUUID().slice(0, 8)}`,
       chatThreadId: workflowThread.id,
     });

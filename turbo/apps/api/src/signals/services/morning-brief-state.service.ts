@@ -2,9 +2,7 @@ import {
   MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import { agents } from "@okouai/db/schema/agent";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import {
   workflows,
   workflowUserAutomationThreads,
@@ -100,43 +98,6 @@ export type MorningBriefState =
         readonly reason: MorningBriefInconsistency;
       });
 
-/** Resolve the workflow storage scope accessible to this member for installation or adoption. */
-export const loadMorningBriefDefaultAgentId$ = command(
-  async (
-    { get },
-    owner: MorningBriefMemberIdentity,
-    signal: AbortSignal,
-  ): Promise<string | null> => {
-    const db = get(db$);
-    const [defaultAgent] = await db
-      .select({
-        id: agents.id,
-        owner: agents.owner,
-        visibility: agents.visibility,
-      })
-      .from(orgMetadata)
-      .leftJoin(
-        agents,
-        and(
-          eq(agents.id, orgMetadata.defaultAgentId),
-          eq(agents.orgId, orgMetadata.orgId),
-        ),
-      )
-      .where(eq(orgMetadata.orgId, owner.orgId))
-      .limit(1);
-    signal.throwIfAborted();
-    if (
-      !defaultAgent?.id ||
-      (defaultAgent.visibility === "private" &&
-        defaultAgent.owner !== owner.userId)
-    ) {
-      return null;
-    }
-    return defaultAgent.id;
-  },
-);
-
-/** Oldest first, so the adoption tie-break reads the head of this list. */
 const loadMorningBriefInstallations$ = command(
   async (
     { get },
