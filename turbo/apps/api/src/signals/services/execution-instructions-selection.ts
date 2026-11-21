@@ -5,7 +5,6 @@ import { SINGLE_AGENT_SEED_INSTRUCTIONS_BUNDLE } from "@okouai/core/seed-instruc
 export interface ExecutionPackageScope {
   readonly orgId: string;
   readonly userId: string;
-  readonly agentId: string;
 }
 
 export function memberInstructionsSelectionSql(

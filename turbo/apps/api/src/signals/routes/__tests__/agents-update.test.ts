@@ -122,13 +122,9 @@ async function createAgentAs(
   return { agentId: response.body.agentId };
 }
 
-/** Binds a workflow to the agent through POST /api/workflows. */
-async function createWorkflowFor(
-  user: OrgUser,
-  agentId: string,
-  name: string,
-): Promise<void> {
-  await workflows.createWorkflow(workflows.user(user), { agentId, name });
+/** Create a member-owned workflow alongside the legacy profile. */
+async function createWorkflowFor(user: OrgUser, name: string): Promise<void> {
+  await workflows.createWorkflow(workflows.user(user), { name });
   mocks.clerk.session(user.userId, user.orgId);
 }
 
@@ -188,10 +184,10 @@ describe("PUT /api/agents/:id", () => {
     expect(fetched.body.displayName).toBe("Updated Agent");
   });
 
-  it("updates an agent that has workflow bindings", async () => {
+  it("updates a legacy profile in a workspace with workflows", async () => {
     const user = newOrgUser();
     const agent = await createAgentAs(user);
-    await createWorkflowFor(user, agent.agentId, "existing-skill");
+    await createWorkflowFor(user, "existing-skill");
 
     const response = await accept(
       agentsClient().update({
@@ -536,7 +532,7 @@ describe("PATCH /api/agents/:id", () => {
       sound: "calm",
       avatarUrl: "preset:4",
     });
-    await createWorkflowFor(user, agent.agentId, "existing-skill");
+    await createWorkflowFor(user, "existing-skill");
 
     const response = await accept(
       agentsClient().updateMetadata({
@@ -942,12 +938,12 @@ describe("PUT /api/agents/:id/instructions", () => {
     });
   });
 
-  it("updates instructions and preserves Agent metadata with workflow bindings", async () => {
+  it("updates instructions and preserves Agent metadata in a workspace with workflows", async () => {
     const user = newOrgUser();
     const agent = await createAgentAs(user, {
       displayName: "Instructions Agent",
     });
-    await createWorkflowFor(user, agent.agentId, "existing-skill");
+    await createWorkflowFor(user, "existing-skill");
     const response = await accept(
       instructionsClient().update({
         params: { id: agent.agentId },

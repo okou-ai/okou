@@ -245,10 +245,12 @@ final class ChatConnectorTests: XCTestCase {
       }
     }
   }
-  func testThreadReassignmentRejectsAnOldActionBeforeConnectorReads() async throws {
+  func testMismatchedThreadRejectsAnOldActionBeforeConnectorReads() async throws {
     let fixture = ChatHTTPFixture { request in
       XCTAssertTrue(request.url!.path.hasSuffix("/metadata"))
-      return ChatHTTPResponse(body: "{\"agentId\":\"\(FixtureData.siblingID)\"}")
+      return ChatHTTPResponse(
+        body: FixtureData.metadata.replacingOccurrences(
+          of: FixtureData.threadID, with: FixtureData.siblingID))
     }
     let status = try await ChatConnectorService(client: fixture.client).status(action())
     XCTAssertNil(status)
@@ -335,13 +337,13 @@ final class ChatConnectorTests: XCTestCase {
       XCTAssertEqual(try receipt.operatedID, FixtureData.accountID)
     }
   }
-  func testContinuationRejectsThreadReassignmentBeforeMutatingSettingsOrSending() async throws {
+  func testContinuationRejectsMismatchedThreadBeforeMutatingSettingsOrSending() async throws {
     let fixture = ChatHTTPFixture { request in
       XCTAssertEqual(request.httpMethod, "GET")
       XCTAssertTrue(request.url!.path.hasSuffix("/metadata"))
       return ChatHTTPResponse(
         body: FixtureData.metadata.replacingOccurrences(
-          of: FixtureData.agentID, with: FixtureData.siblingID))
+          of: FixtureData.threadID, with: FixtureData.siblingID))
     }
     let sync = ChatSync(client: fixture.client)
     let commands = ChatCommands(client: fixture.client, sync: sync)
@@ -352,8 +354,8 @@ final class ChatConnectorTests: XCTestCase {
     do {
       _ = try await commands.send(
         thread: thread, text: "Continue", expectedAgentID: FixtureData.agentID)
-      XCTFail("Expected reassigned Agent rejection")
-    } catch ChatError.agentUnavailable {}
+      XCTFail("Expected mismatched thread rejection")
+    } catch APIClientError.incompatibleData {}
   }
   func testOAuthCompletionAndOperationReceiptDoNotBorrowDefaultIdentity() async throws {
     let fixture = ChatHTTPFixture { request in

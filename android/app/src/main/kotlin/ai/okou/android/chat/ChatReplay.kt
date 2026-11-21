@@ -43,7 +43,7 @@ data class ChatCheckpoint(
         val threads = HashSet<String>()
         archive.chatThreads.forEach { row ->
             requireChatId(row.id)
-            requireChatId(row.agentId)
+            row.agentId?.let(::requireChatId)
             row.projectId?.let(::requireChatId)
             requireChatWire(threads.add(row.id))
             chatTime(row.createdAt)
@@ -59,13 +59,13 @@ data class ChatCheckpoint(
             requireChatId(event.threadId())
             when (event) {
                 is ChatEventsEventsItemVariant1 -> {
-                    requireChatId(event.agentId)
+                    event.agentId?.let(::requireChatId)
                     event.reassignedAgentId?.let(::requireChatId)
                     event.projectId?.let(::requireChatId)
                     chatTime(event.createdAt)
                 }
                 is ChatEventsEventsItemVariant2 -> {
-                    requireChatId(event.agentId)
+                    event.agentId?.let(::requireChatId)
                     event.projectId?.let(::requireChatId)
                     chatTime(event.createdAt)
                 }

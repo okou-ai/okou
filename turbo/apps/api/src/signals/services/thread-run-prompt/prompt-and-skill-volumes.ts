@@ -211,9 +211,6 @@ export function createPromptAndSkillVolumesSignals(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   threadContext: ThreadContext,
 ) {
-  const agent$ = computed((get) => {
-    return get(bootstrap.agent$);
-  });
   const memberMetadata$ = computed((get) => {
     return get(bootstrap.memberMetadata$);
   });
@@ -241,7 +238,6 @@ export function createPromptAndSkillVolumesSignals(
     singleAgent$,
   );
   const agentPrompt$ = createAgentPrompt(
-    agent$,
     featureSwitches$,
     cloudBrowserEnabled$,
     disabledPaidTools$,

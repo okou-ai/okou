@@ -1,3 +1,5 @@
+import { organizationAuthContext$ } from "../auth/auth-context";
+import { db$, writeDb$ } from "../external/db";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { WalletChangedPayload } from "@okouai/api-contracts/contracts/realtime";
 
@@ -34,8 +36,6 @@ import { array, object, string, uuid, type infer as zInfer } from "zod";
 
 import { now, nowDate } from "../../lib/time";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import { organizationAuthContext$ } from "../auth/auth-context";
-import { db$, writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import { onRejection } from "../utils";
 import { isLinkApprovalConfigured } from "./link-approval-config.service";
@@ -86,7 +86,6 @@ export interface WalletOwner {
   readonly agentId?: string | null;
 }
 interface WalletRunOwner extends WalletOwner {
-  readonly agentId: string;
   readonly runId?: string;
   readonly chatThreadId?: string | null;
 }
@@ -123,7 +122,6 @@ export const walletRunOwner$ = computed(
     const db = get(db$);
     const [run] = await db
       .select({
-        agentId: agentRuns.agentId,
         triggerSource: agentRuns.triggerSource,
         chatThreadId: agentRuns.chatThreadId,
         status: agentRuns.status,
@@ -138,11 +136,7 @@ export const walletRunOwner$ = computed(
         ),
       )
       .limit(1);
-    if (
-      !run?.agentId ||
-      run.triggerSource !== "web" ||
-      run.status !== "running"
-    ) {
+    if (!run || run.triggerSource !== "web" || run.status !== "running") {
       throw new LinkWalletError(
         403,
         "WALLET_INTERACTIVE_RUN_REQUIRED",
@@ -152,7 +146,6 @@ export const walletRunOwner$ = computed(
     return {
       orgId: auth.orgId,
       userId: auth.userId,
-      agentId: run.agentId,
       runId: auth.runId,
       chatThreadId: run.chatThreadId,
     };
@@ -952,7 +945,7 @@ function publicSpend(row: Spend, remote?: LinkSpend): WalletSpend {
     approvalUrl: state === "pending_approval" ? row.approvalUrl : null,
     expiresAt: row.expiresAt.toISOString(),
     autoContinue:
-      Boolean(row.approvalRunId && row.approvalThreadId) &&
+      Boolean(row.approvalThreadId) &&
       row.expiresAt.getTime() > now() &&
       ["check_status", "wait_for_user", "retrieve_credentials"].includes(
         nextAction,
@@ -1049,7 +1042,7 @@ export const createWalletSpend$ = command(
         orgId: owner.orgId,
         userId: owner.userId,
         ...input,
-        approvalThreadId: owner.chatThreadId ?? null,
+        approvalThreadId: autoContinue ? owner.chatThreadId : null,
         approvalRunId: autoContinue ? owner.runId : null,
         connectionId: access.connection.id,
         authorizationId: access.connection.authorizationId,
@@ -1060,7 +1053,6 @@ export const createWalletSpend$ = command(
           linkWalletSpends.orgId,
           linkWalletSpends.userId,
           linkWalletSpends.intentId,
-          linkWalletSpends.historicalIntentOrdinal,
         ],
       })
       .returning();
@@ -1079,16 +1071,8 @@ export const createWalletSpend$ = command(
               eq(linkWalletSpends.intentId, input.intentId),
             ),
           )
-          .orderBy(desc(linkWalletSpends.historicalIntentOrdinal))
           .limit(1);
     signal.throwIfAborted();
-    if (existing && existing.historicalIntentOrdinal > 0) {
-      throw new LinkWalletError(
-        409,
-        "WALLET_INTENT_CONFLICT",
-        "Multiple historical purchases share this intent. Inspect each purchase by its spend ID.",
-      );
-    }
     validateSpendIntent(existing, input, owner, access.connection);
     if (existing.providerSpendId) {
       const spend = await set(
@@ -1240,9 +1224,6 @@ export const getWalletSpendCredentials$ = command(
     signal: AbortSignal,
   ): Promise<WalletSpendCredentials> => {
     const { row, access } = await set(walletSpendAccess$, owner, id, signal);
-    if (owner.runId) {
-      requireApprovalThread(row, owner);
-    }
     if (!row.providerSpendId) {
       throw new LinkWalletError(
         409,

@@ -789,6 +789,7 @@ describe("okou connector check command", () => {
     });
 
     it("keeps current JSON identity and status with canonical environment identity", async () => {
+      vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", undefined);
       const target = { kind: "builtin", connectorSlug: "github" } as const;
       const account = connectorAccount(target, {
         id: "00000000-0000-4000-8000-000000000003",

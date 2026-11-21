@@ -82,7 +82,7 @@ final class PermissionActionTests: XCTestCase {
     let fixture = PermissionHTTPFixture()
     let (conversation, card) = try await setup(fixture)
     defer { conversation.close() }
-    fixture.state.withLock { $0.threadAgentID = UUID().uuidString }
+    fixture.state.withLock { $0.metadataThreadID = UUID().uuidString }
     await card.confirm()
     XCTAssertNotNil(card.error)
     XCTAssertTrue(fixture.state.withLock { $0.requests.allSatisfy { $0.httpMethod == "GET" } })

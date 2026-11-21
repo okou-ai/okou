@@ -54,7 +54,6 @@ type BrowserUserAction = BrowserInputAction;
 
 export interface BrowserUserActionDescriptor {
   readonly requestToken: string;
-  readonly agentId: string;
   readonly threadId: string;
   readonly callbackPrompt: string;
   readonly originalUrl: string;
@@ -208,7 +207,7 @@ type BrowserUserActionCardSignalsRegistry = CardSignalsRegistry<
 >;
 
 function hasExactQuery(url: URL): boolean {
-  const expected = ["agentId", "threadId", "callbackPrompt"] as const;
+  const expected = ["threadId", "callbackPrompt"] as const;
   return (
     [...url.searchParams.keys()].every((key) => {
       return expected.includes(key as (typeof expected)[number]);
@@ -220,23 +219,18 @@ function hasExactQuery(url: URL): boolean {
 }
 
 function hasValidBrowserUserActionClaims(
-  agentId: string,
   threadId: string,
   context: ChatActionContext | undefined,
 ): boolean {
-  if (
-    !chatActionIdMatches(agentId, agentId) ||
-    !chatActionIdMatches(threadId, threadId)
-  ) {
-    return false;
-  }
-  return !context || chatActionIdMatches(threadId, context.threadId);
+  return (
+    chatActionIdMatches(threadId, threadId) &&
+    (!context || chatActionIdMatches(threadId, context.threadId))
+  );
 }
 
 function hasValidBrowserUserActionParts(args: {
   readonly requestToken: string;
   readonly callbackPrompt: string;
-  readonly agentId: string;
   readonly threadId: string;
   readonly url: URL;
   readonly context: ChatActionContext | undefined;
@@ -244,11 +238,7 @@ function hasValidBrowserUserActionParts(args: {
   return (
     REQUEST_TOKEN_PATTERN.test(args.requestToken) &&
     hasExactQuery(args.url) &&
-    hasValidBrowserUserActionClaims(
-      args.agentId,
-      args.threadId,
-      args.context,
-    ) &&
+    hasValidBrowserUserActionClaims(args.threadId, args.context) &&
     args.callbackPrompt.trim() !== "" &&
     args.callbackPrompt.length <= BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH
   );
@@ -270,7 +260,6 @@ export function parseBrowserUserActionUrl(
   }
 
   const requestToken = match[1] ?? "";
-  const agentId = url.searchParams.get("agentId") ?? "";
   const threadId = url.searchParams.get("threadId") ?? "";
   const callbackPrompt = url.searchParams.get("callbackPrompt") ?? "";
   if (
@@ -278,7 +267,6 @@ export function parseBrowserUserActionUrl(
     !hasValidBrowserUserActionParts({
       requestToken,
       callbackPrompt,
-      agentId,
       threadId,
       url,
       context,
@@ -291,7 +279,6 @@ export function parseBrowserUserActionUrl(
     status: "valid",
     descriptor: {
       requestToken,
-      agentId: context?.agentId ?? agentId,
       threadId: context?.threadId ?? threadId,
       callbackPrompt,
       originalUrl: value,
@@ -304,7 +291,6 @@ export function browserUserActionResourceKey(
 ): string {
   return JSON.stringify([
     descriptor.requestToken,
-    descriptor.agentId.toLowerCase(),
     descriptor.threadId.toLowerCase(),
     descriptor.callbackPrompt,
   ]);
@@ -713,13 +699,12 @@ function createDraftSignals(): BrowserDraftSignals {
 }
 
 function callbackArgs(
-  action: Pick<BrowserUserAction, "threadId" | "agentId">,
+  descriptor: BrowserUserActionDescriptor,
   callbackPrompt: string,
   callbackIds: ChatActionCallbackIds,
 ) {
   return {
-    threadId: action.threadId,
-    agentId: action.agentId,
+    threadId: descriptor.threadId,
     callbackPrompt,
     callbackIds,
   };
@@ -740,7 +725,7 @@ interface BrowserUserActionMutationContext {
   readonly clearDraft$: BrowserUserActionSignals["clearDraft$"];
   readonly deliverCallback$: Command<
     Promise<void>,
-    [BrowserUserAction, string, ChatActionCallbackIds, AbortSignal]
+    [string, ChatActionCallbackIds, AbortSignal]
   >;
 }
 
@@ -1373,7 +1358,6 @@ function createSubmitSignal({
       if (result.body.state === "succeeded") {
         await set(
           deliverCallback$,
-          result.body,
           descriptor.callbackPrompt,
           result.body.callbackIds.success,
           signal,
@@ -1409,7 +1393,6 @@ function createCancelSignal({
     ) {
       await set(
         deliverCallback$,
-        result.body,
         BROWSER_INPUT_CANCELLATION_PROMPT,
         result.body.callbackIds.cancellation,
         signal,
@@ -1450,14 +1433,13 @@ function createMutationSignals({
   const deliverCallback$ = command(
     async (
       { set },
-      action: BrowserUserAction,
       callbackPrompt: string,
       callbackIds: ChatActionCallbackIds,
       signal: AbortSignal,
     ): Promise<void> => {
       await set(
         runChatActionCallback$,
-        callbackArgs(action, callbackPrompt, callbackIds),
+        callbackArgs(descriptor, callbackPrompt, callbackIds),
         signal,
       );
       signal.throwIfAborted();

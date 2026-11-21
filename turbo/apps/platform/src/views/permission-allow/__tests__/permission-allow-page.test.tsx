@@ -308,9 +308,9 @@ test("A user grants a time-limited connector permission and resumes the chat", a
       },
     ],
   });
+  expect(resumedChat).not.toHaveProperty("agentId");
   expect(resumedChat).toStrictEqual(
     expect.objectContaining({
-      agentId: AGENT_ID,
       threadId: THREAD_ID,
       prompt: "Continue the analytics review",
     }),

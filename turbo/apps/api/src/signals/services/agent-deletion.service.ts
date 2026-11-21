@@ -1,6 +1,5 @@
 import { Buffer } from "node:buffer";
 import { command } from "ccstate";
-import { agents } from "@okouai/db/schema/agent";
 import { agentDeletionError } from "@okouai/core/agent-protection";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, asc, eq, gt, sql } from "drizzle-orm";
@@ -38,22 +37,6 @@ interface DeleteAgentArgs {
 const log = logger("api:agent-deletion");
 const THREAD_DELETION_READ_PAGE_SIZE = 500;
 const THREAD_DELETION_EVENT_BATCH_SIZE = 16;
-
-export const agentExistsInOrg$ = command(
-  async (
-    { get },
-    args: { readonly orgId: string; readonly agentId: string },
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    const [row] = await get(db$)
-      .select({ id: agents.id })
-      .from(agents)
-      .where(and(eq(agents.id, args.agentId), eq(agents.orgId, args.orgId)))
-      .limit(1);
-    signal.throwIfAborted();
-    return Boolean(row);
-  },
-);
 
 const deletionResultSchema = discriminatedUnion("kind", [
   object({ kind: literal("missing") }),

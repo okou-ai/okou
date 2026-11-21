@@ -14,7 +14,6 @@ export interface PublishedChatThreadLease {
   readonly orgId: string;
   readonly chatThreadId: string;
   readonly userId: string;
-  readonly agentId: string;
   readonly claimId: string;
   readonly claimExpiresAt: Date;
   readonly queuedAt: Date;

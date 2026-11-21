@@ -25,7 +25,6 @@ function recordUsage(fields: Readonly<Record<string, string | boolean>>): void {
 interface WalletUsageOwner {
   readonly orgId: string;
   readonly userId: string;
-  readonly agentId: string;
 }
 
 export function recordWalletConnectionUsage(
@@ -56,7 +55,7 @@ export function recordWalletConnectionUsage(
  * of payment. Explicit fields exclude card data, tokens, URLs and purchase text.
  */
 export function recordWalletSpendUsage(
-  spend: Omit<WalletUsageOwner, "agentId"> & {
+  spend: WalletUsageOwner & {
     readonly id: string;
     readonly authorizationId: string;
     readonly intentId: string;

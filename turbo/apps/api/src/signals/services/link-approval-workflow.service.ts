@@ -1,3 +1,8 @@
+import { setAuthContext$ } from "../auth/auth-context";
+import { db$ } from "../external/db";
+import { getMemberRoleAndUpdateCache$ } from "./auth.service";
+import { sendNormalEvent$ } from "./chat-events.command";
+import { getWalletSpend$ } from "./link-wallet.service";
 import { command } from "ccstate";
 import {
   and,
@@ -20,13 +25,8 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { now, nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
-import { setAuthContext$ } from "../auth/auth-context";
-import { db$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import { settle, tapError } from "../utils";
-import { getMemberRoleAndUpdateCache$ } from "./auth.service";
-import { sendNormalEvent$ } from "./chat-events.command";
-import { getWalletSpend$ } from "./link-wallet.service";
 import { LinkWalletError } from "./link-wallet-provider.service";
 import {
   isLinkApprovalConfigured,
@@ -57,7 +57,7 @@ const approvalToObserve$ = command(
 
     // Provenance is server-written at purchase creation, not supplied by Worker.
     const [source] = await database
-      .select({ id: agentRuns.id, agentId: chatThreads.agentId })
+      .select({ id: agentRuns.id })
       .from(agentRuns)
       .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
       .where(
@@ -66,7 +66,6 @@ const approvalToObserve$ = command(
           eq(agentRuns.triggerSource, "web"),
           eq(agentRuns.orgId, row.orgId),
           eq(agentRuns.userId, row.userId),
-          eq(agentRuns.agentId, chatThreads.agentId),
           eq(chatThreads.id, row.approvalThreadId),
           eq(chatThreads.userId, row.userId),
           eq(chatThreads.orgId, row.orgId),
@@ -74,7 +73,7 @@ const approvalToObserve$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    if (!source?.agentId) {
+    if (!source) {
       return undefined;
     }
     const [delivered] = await database
@@ -88,11 +87,7 @@ const approvalToObserve$ = command(
     if (delivered) {
       return undefined;
     }
-    return {
-      ...row,
-      agentId: source.agentId,
-      approvalThreadId: row.approvalThreadId,
-    };
+    return { ...row, approvalThreadId: row.approvalThreadId };
   },
 );
 
@@ -174,7 +169,6 @@ export const pollLinkApproval$ = command(
         {
           orgId: row.orgId,
           userId: row.userId,
-          agentId: row.agentId,
         },
         row.id,
         false,
@@ -227,7 +221,6 @@ export const pollLinkApproval$ = command(
         orgId: row.orgId,
         userId: row.userId,
         body: {
-          agentId: row.agentId,
           threadId: row.approvalThreadId,
           clientEventId: row.id,
           chatThreadSortEventId: row.id,

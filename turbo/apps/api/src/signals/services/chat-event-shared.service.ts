@@ -1,4 +1,6 @@
 import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
+import { writeDb$ } from "../external/db";
+import { publishFirstAssistantEventCreatedSafely$ } from "./chat-first-assistant-event-metric.service";
 import type { ChatRecommendedFollowup } from "@okouai/api-contracts/contracts/chat-threads";
 import { serializeChatFollowupsContent } from "@okouai/api-contracts/validators/chat-threads";
 import {
@@ -10,7 +12,6 @@ import { command } from "ccstate";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
-import { writeDb$ } from "../external/db";
 import { settle, settleIncludingAbort } from "../utils";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { publishChatThreadReadCursorUpdatedSafely } from "../external/realtime";
@@ -20,7 +21,6 @@ import {
   followupsEventIdForRun,
 } from "./assistant-event-id";
 import { chatEventInsertSql, chatEventsInsertSql } from "./chat-event.service";
-import { publishFirstAssistantEventCreatedSafely$ } from "./chat-first-assistant-event-metric.service";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import { reportChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
@@ -246,14 +246,12 @@ export const touchChatThreadLastMessageAtIndependently$ = command(
       .select({
         id: chatThreads.id,
         userId: chatThreads.userId,
-        agentId: chatThreads.agentId,
         archived: chatThreads.archived,
       })
       .from(chatThreads)
       .where(
         and(
           eq(chatThreads.id, threadId),
-          isNotNull(chatThreads.agentId),
           authorizedScope
             ? and(
                 eq(chatThreads.userId, authorizedScope.userId),
@@ -264,10 +262,9 @@ export const touchChatThreadLastMessageAtIndependently$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    if (!thread?.agentId) {
+    if (!thread) {
       return;
     }
-    const agentId = thread.agentId;
     // The flag rides on the same single-row UPDATE; `archived` is not indexed.
     // A concurrent re-archive between the read and this write loses, which is
     // acceptable for a best-effort sidebar state.
@@ -307,7 +304,7 @@ export const touchChatThreadLastMessageAtIndependently$ = command(
     if (options.markRead && orgId && lastReadAt) {
       await publishChatThreadReadCursorUpdatedSafely(
         { userId: thread.userId, orgId },
-        { threadId, agentId, lastReadAt: lastReadAt.toISOString() },
+        { threadId, lastReadAt: lastReadAt.toISOString() },
       );
       signal.throwIfAborted();
     }
@@ -324,7 +321,6 @@ export const touchChatThreadLastMessageAtIndependently$ = command(
           userId: thread.userId,
           orgId,
           chatThreadId: threadId,
-          agentId,
           eventId,
           createdAt: touchedAt,
         },
@@ -350,7 +346,6 @@ export const touchChatThreadLastMessageAtIndependently$ = command(
           userId: thread.userId,
           orgId,
           chatThreadId: threadId,
-          agentId,
         },
         signal,
       ),
@@ -377,7 +372,6 @@ export const touchSentChatThreadSort$ = command(
       readonly threadId: string;
       readonly userId: string;
       readonly orgId: string;
-      readonly agentId: string;
       readonly touchedAt: Date;
       readonly eventId: string | undefined;
     },
@@ -410,7 +404,6 @@ export const touchSentChatThreadSort$ = command(
           userId: args.userId,
           orgId: args.orgId,
           chatThreadId: args.threadId,
-          agentId: args.agentId,
           eventId: args.eventId,
           createdAt: args.touchedAt,
         },

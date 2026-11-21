@@ -72,10 +72,16 @@ async function carrier(existingActor?: ApiTestUser, unattended = false) {
     displayName: "Wallet agent",
     visibility: "private",
   });
-  const run = unattended
+  const workflowAgentId = unattended
+    ? (await bdd.readOnboardingStatus(actor)).defaultAgentId
+    : undefined;
+  if (unattended && !workflowAgentId) {
+    throw new Error("Expected the personal workflow namespace");
+  }
+  const run = workflowAgentId
     ? await createWorkflowsBddApi(context).startEventAutomationRun(
         actor,
-        agent.agentId,
+        workflowAgentId,
       )
     : await api.createThreadRun(actor, {
         agentId: agent.agentId,
@@ -1003,7 +1009,7 @@ test("prevents an in-flight OAuth callback from resurrecting a disconnected gran
   ).toBeFalsy();
 });
 
-test("shares wallet activity across chats while restricting credentials to the original chat", async () => {
+test("shares purchase history and approved spends across runs of the same workspace member", async () => {
   const fixture = await carrier();
   server.use(
     tokenHandler(),
@@ -1019,6 +1025,7 @@ test("shares wallet activity across chats while restricting credentials to the o
     [200],
   );
   provider.approve();
+  provider.credentials({ card: virtualCard() });
   await accept(
     client().getSpend({
       headers: fixture.headers,
@@ -1044,7 +1051,7 @@ test("shares wallet activity across chats while restricting credentials to the o
       params: { id: created.body.id },
       body: {},
     }),
-    [409],
+    [200],
   );
   const secondPurchase = { ...purchase(), test: false };
   spendProvider(secondPurchase);
@@ -2810,11 +2817,10 @@ test("paginates owner-isolated recorded spend history and retains it after reaut
         client().listSpends({ headers: other.headers, query: {} }),
         [200],
       )
-    ).body.data,
-  ).toStrictEqual([
-    expect.objectContaining({ id: second.body.id, canRefresh: false }),
-    expect.objectContaining({ id: first.body.id, canRefresh: false }),
-  ]);
+    ).body.data.map((row) => {
+      return row.id;
+    }),
+  ).toStrictEqual(expect.arrayContaining([first.body.id, second.body.id]));
   await accept(
     client().listSpends({
       headers: other.headers,

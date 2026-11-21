@@ -1,20 +1,20 @@
+import { apiClient$ } from "../api-client.ts";
+import { chatThreads$ } from "../agent-chat.ts";
+import { eventDrivenChatThreads$ } from "../chat-page/chat-thread-event-sourcing.ts";
+import { chatListQuery$, debouncedChatListQuery$ } from "./sidebar-state.ts";
 import { computed } from "ccstate";
 import { chatSearchContract } from "@okouai/api-contracts/client/chat-threads";
 import type { ChatSearchResult } from "@okouai/api-contracts/contracts/chat-threads";
 import type { EventDrivenChatThread } from "@okouai/core/chat-thread-event-replay";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
-import { apiClient$ } from "../api-client.ts";
-import { chatThreads$ } from "../agent-chat.ts";
-import { eventDrivenChatThreads$ } from "../chat-page/chat-thread-event-sourcing.ts";
-import { chatListQuery$, debouncedChatListQuery$ } from "./sidebar-state.ts";
 
 const MAX_VISIBLE_CHAT_THREAD_RESULTS = 25;
 
 export interface WorkspaceSearchChatThread {
   readonly id: string;
   readonly title: string;
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly sortAt: string;
 }
 

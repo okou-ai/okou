@@ -41,7 +41,7 @@ export const takeOverWalletApproval$ = command(
     owner: { readonly runId?: string; readonly chatThreadId?: string | null },
     signal: AbortSignal,
   ) => {
-    if (!row.approvalThreadId || !row.approvalRunId || !owner.runId) {
+    if (!row.approvalThreadId || !owner.runId) {
       return;
     }
     requireApprovalThread(row, owner);

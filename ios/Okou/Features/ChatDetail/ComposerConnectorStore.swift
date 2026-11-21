@@ -147,7 +147,6 @@ final class ComposerConnectorStore {
   }
 
   private func makeResources() -> ComposerConnectorResources? {
-    guard let agentID else { return nil }
     let request = generation
     return ComposerConnectorResources(
       service: service, agentID: agentID, threadID: threadID, options: pendingOptions,
@@ -176,7 +175,7 @@ final class ComposerConnectorStore {
   }
 
   func perform(_ operation: @MainActor () async throws -> Void) async {
-    guard !closed, !isSaving, !uncertain, let agentID else { return }
+    guard !closed, !isSaving, !uncertain else { return }
     let request = generation
     isSaving = true
     notice = nil
@@ -303,7 +302,7 @@ final class ComposerConnectorStore {
     }
   }
   func connect(target: ChatConnectorTarget, accountID: String? = nil) {
-    guard let agentID, !closed else { return }
+    guard !closed else { return }
     authorization.activate(
       .configuration(
         target: target, agentID: agentID, threadID: threadID, connectionID: accountID))
@@ -321,9 +320,9 @@ final class ComposerConnectorStore {
     if let threadID { query.append(URLQueryItem(name: "returnThread", value: threadID)) }
     openWeb(path: "connectors", query: query)
   }
-  func consumeNewChatOptions(agentID: String) {
+  func consumeNewChatOptions(agentID: String?) {
     guard threadID == nil else { return }
-    pendingByAgent[agentID] = nil
+    if let agentID { pendingByAgent[agentID] = nil }
     if self.agentID == agentID { pendingOptions = ChatComposerOptions() }
   }
   func openDirectory() {
@@ -339,7 +338,7 @@ final class ComposerConnectorStore {
 
   @discardableResult
   func openPermissions(slug: String, label: String) -> ComposerConnectorPermissionResources? {
-    guard !closed, let agentID else { return nil }
+    guard !closed else { return nil }
     closePermissions()
     permissions = ComposerConnectorPermissionResources(
       composer: self, agentID: agentID, slug: slug, label: label, didFail: didFail)
@@ -378,7 +377,7 @@ final class ComposerConnectorStore {
   func openAccounts(
     _ connector: ChatComposerConnector, managesDefaults: Bool = false
   ) -> ComposerConnectorAccountResources? {
-    guard !closed, let agentID else { return nil }
+    guard !closed else { return nil }
     let page = ComposerConnectorAccountResources(
       composer: self, connector: connector, agentID: agentID,
       managesDefaults: managesDefaults, didFail: didFail)

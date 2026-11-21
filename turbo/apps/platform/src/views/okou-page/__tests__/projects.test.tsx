@@ -2349,7 +2349,7 @@ test("A Project message keeps its membership in the conversation it opens", asyn
   } = {};
   context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
     created.threadId = body.clientThreadId;
-    created.agentId = body.agentId;
+    expect(body).not.toHaveProperty("agentId");
     created.projectId = body.projectId;
     return respond(201, {
       id: body.clientThreadId ?? crypto.randomUUID(),
@@ -2384,12 +2384,10 @@ test("A Project message keeps its membership in the conversation it opens", asyn
   });
   click(button("Send"));
 
-  // The Project page composes with the default Agent inside its Project.
   await waitFor(() => {
     expect(created.threadId).toBeDefined();
   });
   expect(created).toMatchObject({
-    agentId: ordinary.agentId,
     projectId: id,
   });
   await waitFor(() => {
@@ -2721,16 +2719,14 @@ test("The Project home starts a conversation with the default Agent after visiti
     if (!body.clientThreadId) {
       throw new Error("Client chat identity missing");
     }
-    // Projects compose with the workspace's default Agent from the
-    // onboarding status, whichever Agent's chat was open.
-    expect(body.agentId).toBe(ordinary.agentId);
+    expect(body).not.toHaveProperty("agentId");
     expect(body.projectId).toBe(id);
     createdId = body.clientThreadId;
     await confirmation.promise;
     const thread = {
       ...continuityThread(95, 3, "New Project chat"),
       id: body.clientThreadId,
-      agentId: body.agentId,
+      agentId: undefined,
       projectId: body.projectId ?? null,
     };
     threads.set(thread.id, thread);

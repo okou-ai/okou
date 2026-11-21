@@ -28,12 +28,12 @@ public struct ChatConnectorAction: Equatable, Sendable, Identifiable {
   }
   public let id: String
   public let kind: Kind
-  public let agentID: String
+  public let agentID: String?
   public let threadID: String?
   public let callbackPrompt: String?
 
   public static func configuration(
-    target: ChatConnectorTarget, agentID: String, threadID: String?, connectionID: String? = nil
+    target: ChatConnectorTarget, agentID: String?, threadID: String?, connectionID: String? = nil
   ) -> Self {
     Self(
       id: UUID().uuidString, kind: .configuration(target: target, connectionID: connectionID),

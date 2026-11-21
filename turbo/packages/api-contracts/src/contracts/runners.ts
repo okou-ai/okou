@@ -173,7 +173,10 @@ export const runnerPreferenceSchema = union([
         evidence: literal("expected"),
         homeWaitUntil: iso.datetime({ offset: true }),
       }).strict(),
-      object({ evidence: literal("location") }).strict(),
+      object({
+        evidence: literal("location"),
+        homeWaitUntil: iso.datetime({ offset: true }).optional(),
+      }).strict(),
     ]),
   }).strict(),
   object({

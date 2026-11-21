@@ -28,6 +28,20 @@ function preferencesClient() {
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 describe("new chat event member defaults", () => {
+  it.each([undefined, "00000000-0000-4000-8000-000000000099"])(
+    "admits a member chat when the legacy Agent ID is %s",
+    async (agentId) => {
+      const { actor } = await entitledNativeChatActor();
+      const run = await sendChatRun(actor, {
+        agentId,
+        prompt: "start a member-owned thread",
+      });
+      const thread = await chat.readThreadMetadata(actor, run.threadId);
+      expect(thread.id).toBe(run.threadId);
+      await cancelChatRun(actor, run.runId);
+    },
+  );
+
   it("uses empty model settings and enables cloud browser without a saved member preference", async () => {
     const owner = await entitledNativeChatActor();
     const actor = bdd.user({ orgId: owner.actor.orgId, orgRole: "org:member" });
@@ -35,11 +49,6 @@ describe("new chat event member defaults", () => {
     await api.createPersonalModelProvider(actor, {
       type: "claude-code-oauth-token",
       secret: "bdd-member-defaults-claude-token",
-    });
-    const { agentId } = await bdd.createAgent(actor, {
-      displayName: "Member without saved preferences",
-      description: "Uses absent preference defaults",
-      visibility: "private",
     });
     // The membership entry initializes memory without creating Web preferences.
     webhooks.configureClerkWebhookSecret();
@@ -62,7 +71,6 @@ describe("new chat event member defaults", () => {
     expect(preference.body.updatedAt).toBeNull();
 
     const run = await sendChatRun(actor, {
-      agentId,
       model: "claude-fable-5-1",
       prompt: "use missing member defaults",
     });
@@ -126,7 +134,6 @@ describe("new chat event member defaults", () => {
         [200],
       );
       const continued = await sendChatRun(actor, {
-        agentId,
         threadId: first.threadId,
         prompt: "keep the thread snapshot",
       });

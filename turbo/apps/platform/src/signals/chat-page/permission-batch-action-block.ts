@@ -151,6 +151,7 @@ export function parsePermissionBatchActionUrl(
   if (
     !context ||
     !match[1] ||
+    !context.agentId ||
     !chatActionIdMatches(match[1], context.agentId)
   ) {
     return invalid;

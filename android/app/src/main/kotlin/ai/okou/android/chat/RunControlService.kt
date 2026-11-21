@@ -22,14 +22,24 @@ enum class RunControlKind {
 data class RunControlIntent(
     val id: String,
     val threadId: String,
-    val agentId: String,
+    val agentId: String?,
     val kind: RunControlKind,
     val targetId: String,
 ) {
     fun request(): SendRequest =
         when (kind) {
-            RunControlKind.Interrupt -> SendRequestVariant3(agentId, threadId, targetId, id)
-            RunControlKind.Revoke -> SendRequestVariant2(agentId, threadId, targetId, id)
+            RunControlKind.Interrupt ->
+                SendRequestVariant3(
+                    threadId = threadId,
+                    interruptsRunId = targetId,
+                    clientEventId = id,
+                )
+            RunControlKind.Revoke ->
+                SendRequestVariant2(
+                    threadId = threadId,
+                    revokesEventId = targetId,
+                    clientEventId = id,
+                )
         }
 }
 
@@ -42,10 +52,7 @@ data class RunControlJournal(
         require(format == 1 && pending.map { it.id }.distinct().size == pending.size)
         require(
             pending.all {
-                it.id.isNotEmpty() &&
-                    it.threadId.isNotEmpty() &&
-                    it.agentId.isNotEmpty() &&
-                    it.targetId.isNotEmpty()
+                it.id.isNotEmpty() && it.threadId.isNotEmpty() && it.targetId.isNotEmpty()
             }
         )
     }

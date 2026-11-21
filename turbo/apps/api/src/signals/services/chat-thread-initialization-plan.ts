@@ -79,7 +79,6 @@ export function chatThreadInitializationCtes(args: {
     { orgId: args.orgId, eventId: args.eventId, thread: args.thread },
     {
       gate: ready,
-      agentId: sql`${args.thread.agentId}`,
       reservationSource: sql`${sql.identifier("created_thread_events_reserved")}`,
     },
   );

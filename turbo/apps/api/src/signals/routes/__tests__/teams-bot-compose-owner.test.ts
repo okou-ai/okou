@@ -82,7 +82,7 @@ function absentSenderResponse(
   };
 }
 
-test("selects the onboarded default agent for a public Teams personal message", async () => {
+test("dispatches a Teams personal message as the connected member", async () => {
   const owner = createPublicTeamsDispatchFixture(context);
   await owner.run(async () => {
     const runs = createRunsApi(context);
@@ -121,7 +121,7 @@ test("selects the onboarded default agent for a public Teams personal message", 
       throw new Error("Expected the public Teams message to launch a Run");
     }
     expect(run).toMatchObject({
-      agentId: fixture.defaultAgentId,
+      agentId: null,
       prompt,
       triggerSource: "teams",
       status: "running",
@@ -137,7 +137,7 @@ test("selects the onboarded default agent for a public Teams personal message", 
     );
     expect(cancelled.body).toMatchObject({
       id: run.id,
-      agentId: fixture.defaultAgentId,
+      agentId: null,
       prompt,
       status: "cancelled",
       startedAt: run.startedAt,
@@ -199,7 +199,7 @@ test("refreshes a connected Teams sender ID without changing its Aad identity", 
       throw new Error("Expected the refreshed Teams sender to launch a Run");
     }
     expect(run).toMatchObject({
-      agentId: fixture.defaultAgentId,
+      agentId: null,
       prompt,
       triggerSource: "teams",
       status: "running",
@@ -215,7 +215,7 @@ test("refreshes a connected Teams sender ID without changing its Aad identity", 
     );
     expect(cancelled.body).toMatchObject({
       id: run.id,
-      agentId: fixture.defaultAgentId,
+      agentId: null,
       prompt,
       status: "cancelled",
       startedAt: run.startedAt,

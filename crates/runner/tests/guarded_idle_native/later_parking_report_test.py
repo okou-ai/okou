@@ -15,7 +15,7 @@ import later_parking_report as later
 import report
 import report_test
 import status_failure_report_test as failure_test
-from progress_report_fixture import foreground_heartbeat
+from progress_report_fixture import foreground_heartbeat, joined_observer
 
 
 class LaterParkingReportTests(unittest.TestCase):
@@ -63,8 +63,7 @@ class LaterParkingReportTests(unittest.TestCase):
                  "later_reuse_key":reuse,"blank":blank,"profile_name":"vm0/default","coverage":coverage},
                 {"inserted_ns":at(9),"revision":3,"pool_held_ns":at(10),"status_held_ns":at(11),
                  "heartbeat_pending_ns":at(12),"heartbeat_polled_pending":True,
-                 "observer":{"started_ns":at(13),"completed_ns":at(14),"available_bytes":32*1024**3,
-                    "age_ns":2,"read_duration_ns":1,"joined":True},"coverage":coverage},
+                 "observer":joined_observer(at(13), at(14)),"coverage":coverage},
                 {"pool_released_ns":at(17),"heartbeat":foreground_heartbeat(runner, 1, at(18), at(19), (4, 8192)),
                  "receiver_polled_pending":True,"coverage":coverage},
                 {"io_released_ns":at(22),"status_wait_polled_ns":at(26),"status_waits_before":0,"status_waits_after":1,

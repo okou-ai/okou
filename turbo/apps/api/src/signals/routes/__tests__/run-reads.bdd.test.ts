@@ -444,25 +444,24 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
       }),
     ).toContain("other run b");
 
-    const completedByAgent = await reads.requestListLogs(
+    const completed = await reads.requestListLogs(
       actor,
-      { status: "completed", agentId: other.agentId, limit: 1 },
+      { status: "completed", limit: 1 },
       [200],
     );
-    expect(completedByAgent.body.data).toHaveLength(1);
-    expect(completedByAgent.body.data[0]).toMatchObject({
+    expect(completed.body.data).toHaveLength(1);
+    expect(completed.body.data[0]).toMatchObject({
       id: runB.runId,
-      agentId: other.agentId,
+      agentId: null,
       status: "completed",
       prompt: "other run b",
     });
-    expect(completedByAgent.body.data[0]?.startedAt).not.toBeNull();
+    expect(completed.body.data[0]?.startedAt).not.toBeNull();
 
     const insideWindow = await reads.requestListLogs(
       actor,
       {
         status: "completed",
-        agentId: other.agentId,
         since: now() - 60 * 60_000,
       },
       [200],
@@ -970,7 +969,7 @@ describe("RUN-01: run admission boundaries", () => {
     await api.requestCancelRun(actor, third.runId, [200]);
   });
 
-  it("rejects a foreign agent before admitting a run", async () => {
+  it("ignores a legacy foreign agent ID when admitting a member run", async () => {
     const actor = await entitledActor();
     const compose = await createThreadAgent(actor, "bdd-admission");
     const first = await api.createThreadRun(actor, {
@@ -990,10 +989,9 @@ describe("RUN-01: run admission boundaries", () => {
         prompt: "run a foreign compose",
         model: "claude-fable-5-1",
       },
-      [404],
+      [201],
     );
-    expectApiError(crossOrgCompose.body);
-    expect(crossOrgCompose.body.error.message).toBe("Agent not found");
+    expect(crossOrgCompose.status).toBe(201);
     await api.requestCancelRun(actor, first.runId, [200]);
     await api.requestCancelRun(actor, second.runId, [200]);
   });
@@ -2727,15 +2725,8 @@ describe("RUN-04/OPS-01: agent run logs", () => {
   }
 
   it("lists organization run logs with their filter metadata", async () => {
-    const {
-      actor,
-      agentOne,
-      agentTwo,
-      secondAgentRun,
-      automationCompose,
-      automationRun,
-      webRun,
-    } = await setupRunLogFixture();
+    const { actor, secondAgentRun, automationRun, webRun } =
+      await setupRunLogFixture();
     const listed = await reads.requestListLogs(actor, {}, [200]);
     mustOk(listed, "the logs list");
     const listedIds = listed.body.data.map((entry) => {
@@ -2749,8 +2740,8 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       return entry.id === webRun.runId;
     });
     expect(webEntry).toMatchObject({
-      agentId: agentOne.agentId,
-      displayName: "BDD logs agent one",
+      agentId: null,
+      displayName: null,
       framework: "claude-code",
       triggerSource: "web",
       status: "cancelled",
@@ -2760,8 +2751,8 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       return entry.id === automationRun.runId;
     });
     expect(automationEntry).toMatchObject({
-      agentId: automationCompose.agentId,
-      displayName: automationCompose.displayName,
+      agentId: null,
+      displayName: null,
       triggerSource: "automation-event",
     });
     expect(listed.body.filters.statuses).toContain("cancelled");
@@ -2769,11 +2760,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       "automation-event",
       "web",
     ]);
-    expect(listed.body.filters.agents).toContain(agentOne.agentId);
-    expect(listed.body.filters.agents).toContain(agentTwo.agentId);
-    expect([...listed.body.filters.agents].sort()).toStrictEqual(
-      [agentOne.agentId, agentTwo.agentId, automationCompose.agentId].sort(),
-    );
+    expect(listed.body.filters.agents).toStrictEqual([]);
   });
 
   it("pages run logs and falls back from malformed cursors", async () => {
@@ -2809,7 +2796,6 @@ describe("RUN-04/OPS-01: agent run logs", () => {
   it("filters run logs by search, agent, status, and source", async () => {
     const { actor, agentOne, agentOneName, secondAgentRun, webRun } =
       await setupRunLogFixture();
-    const agentOneRunIds = [webRun.runId];
     const fuzzy = await reads.requestListLogs(
       actor,
       { search: agentOneName.toUpperCase() },
@@ -2822,7 +2808,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
           return entry.id;
         })
         .sort(),
-    ).toStrictEqual(agentOneRunIds);
+    ).toStrictEqual([]);
 
     const byName = await reads.requestListLogs(
       actor,
@@ -2836,7 +2822,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
           return entry.id;
         })
         .sort(),
-    ).toStrictEqual(agentOneRunIds);
+    ).toStrictEqual([]);
 
     const byAgentId = await reads.requestListLogs(
       actor,
@@ -2850,7 +2836,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
           return entry.id;
         })
         .sort(),
-    ).toStrictEqual(agentOneRunIds);
+    ).toStrictEqual([]);
 
     const byStatusAndSource = await reads.requestListLogs(
       actor,
@@ -2888,11 +2874,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     const owned = await publicChatActor(context);
     const { actor, agentId } = owned;
     await owned.run(async () => {
-      await bdd.updateAgentInstructions(
-        actor,
-        agentId,
-        `Run detail ${randomUUID()}`,
-      );
+      await bdd.updatePersonalInstructions(actor, `Run detail ${randomUUID()}`);
       const signing = holdDownloadSigning(context);
       const clientEventId = randomUUID();
       let pendingRunId: string | undefined;

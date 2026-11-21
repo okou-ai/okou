@@ -169,8 +169,7 @@ public struct ChatPermissions: Sendable {
   public func validateContext(_ action: ChatPermissionAction) async throws {
     let thread: ThreadMetadata = try await client.request(
       "/api/chat-threads/\(action.threadID)/metadata")
-    guard UUID(uuidString: thread.id) == UUID(uuidString: action.threadID),
-      UUID(uuidString: thread.agentId) == UUID(uuidString: action.agentID)
+    guard UUID(uuidString: thread.id) == UUID(uuidString: action.threadID)
     else { throw ChatError.invalidContract("This request no longer belongs to this chat.") }
   }
 

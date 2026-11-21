@@ -1,5 +1,4 @@
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
-import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { connectors } from "@okouai/db/schema/connector";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
@@ -18,7 +17,7 @@ export function connectorAccessThreadOwner(owner: ChatConnectorAccessOwner) {
   return and(
     eq(chatThreads.id, owner.chatThreadId),
     eq(chatThreads.userId, owner.userId),
-    eq(agents.orgId, owner.orgId),
+    eq(chatThreads.orgId, owner.orgId),
   );
 }
 
@@ -83,7 +82,7 @@ export function repairChatConnectorSelectionsSql(
       ? sql.empty()
       : sql`UNION ALL
         SELECT ${chatThreads.id} AS chat_thread_id
-        FROM ${chatThreads} JOIN ${agents} ON ${eq(agents.id, chatThreads.agentId)}
+        FROM ${chatThreads}
         WHERE ${connectorAccessThreadOwner({ ...owner, chatThreadId })}
           AND NOT EXISTS (
             SELECT 1 FROM ${chatThreadConnectorSelections}
@@ -94,12 +93,11 @@ export function repairChatConnectorSelectionsSql(
     SELECT ${chatThreads.id} AS chat_thread_id
     FROM ${chatThreadConnectorSelections}
     JOIN ${chatThreads} ON ${eq(chatThreads.id, chatThreadConnectorSelections.chatThreadId)}
-    JOIN ${agents} ON ${eq(agents.id, chatThreads.agentId)}
     JOIN ${connectors} ON ${eq(connectors.id, chatThreadConnectorSelections.connectorId)}
     LEFT JOIN ${chatThreadConnectorAccessOverrides} ON
       ${eq(chatThreadConnectorAccessOverrides.chatThreadId, chatThreads.id)} AND
       ${eq(chatThreadConnectorAccessOverrides.connectorId, connectors.id)}
-    WHERE ${and(eq(chatThreads.userId, owner.userId), eq(agents.orgId, owner.orgId), connectorAccessAccountOwner(owner))}
+    WHERE ${and(eq(chatThreads.userId, owner.userId), eq(chatThreads.orgId, owner.orgId), connectorAccessAccountOwner(owner))}
       AND NOT coalesce(${chatThreadConnectorAccessOverrides.enabled}, ${connectors.defaultEnabledForChats}) ${thread}
     ${missingSelection}
   ), choices AS MATERIALIZED (
@@ -130,7 +128,7 @@ export function saveChatConnectorCurrentSql(
 ) {
   return sql`INSERT INTO ${chatThreadConnectorSelections} (chat_thread_id, connector_id, connector_slug, custom_connector_id)
     SELECT ${chatThreads.id}, ${connectors.id}, ${connectors.connectorSlug}, ${connectors.customConnectorId}
-    FROM ${chatThreads} JOIN ${agents} ON ${eq(agents.id, chatThreads.agentId)}
+    FROM ${chatThreads}
     JOIN ${connectors} ON ${connectorAccessAccountOwner(owner)}
     LEFT JOIN ${chatThreadConnectorAccessOverrides} ON
       ${eq(chatThreadConnectorAccessOverrides.chatThreadId, chatThreads.id)} AND

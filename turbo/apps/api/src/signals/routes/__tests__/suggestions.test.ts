@@ -745,15 +745,18 @@ describe("Agent suggestions", () => {
     );
     expect(result.body.error.code).toBe("FORBIDDEN");
   });
-  it("does not grant suggestion publication to a secondary Agent", async () => {
+  it("publishes as the member when a send includes a legacy secondary Agent ID", async () => {
     const fixture = await primaryRun(true, true);
-    expect(fixture.prompt).not.toContain("# Suggestions feedback context");
-    await accept(
+    const created = await accept(
       client().create({ headers: fixture.headers, body: input() }),
-      [403],
+      [200],
     );
     const pool = await accept(client().list({ headers: humanHeaders }), [200]);
-    expect(pool.body.items).toStrictEqual([]);
+    expect(
+      pool.body.items.map((item) => {
+        return item.id;
+      }),
+    ).toContain(created.body.id);
   });
   it("limits homepage display while managing all concurrent cards and consumes once without replay resurrection", async () => {
     const fixture = await primaryRun();
@@ -1199,7 +1202,7 @@ describe("Agent suggestions", () => {
     const thread = await accept(
       threads.create({
         headers: humanHeaders,
-        body: { agentId: owner.agentId },
+        body: {},
       }),
       [201],
     );
@@ -1301,7 +1304,7 @@ describe("Agent suggestions", () => {
     const thread = await accept(
       threads.create({
         headers: humanHeaders,
-        body: { agentId: owner.agentId },
+        body: {},
       }),
       [201],
     );
@@ -1359,10 +1362,6 @@ describe("Agent suggestions", () => {
   });
   it("returns the original target and canonical draft when its thread was deleted after publication", async () => {
     const fixture = await primaryRun();
-    const secondary = await createBddApi(context).createAgent(fixture.actor, {
-      displayName: "Target Agent",
-      visibility: "private",
-    });
     const threads = setupApp({
       context,
       routes: [...chatThreadCreateRoutes, ...chatThreadDeleteRoutes],
@@ -1370,7 +1369,7 @@ describe("Agent suggestions", () => {
     const thread = await accept(
       threads.create({
         headers: humanHeaders,
-        body: { agentId: secondary.agentId },
+        body: {},
       }),
       [201],
     );
@@ -1495,7 +1494,7 @@ describe("Suggestion custom follow-ups", () => {
     const thread = await accept(
       threads.create({
         headers: humanHeaders,
-        body: { agentId: fixture.agentId },
+        body: {},
       }),
       [201],
     );
@@ -1608,7 +1607,7 @@ describe("Suggestion custom follow-ups", () => {
     const thread = await accept(
       setupApp({ context, routes: chatThreadCreateRoutes })(
         chatThreadsContract,
-      ).create({ headers: humanHeaders, body: { agentId: fixture.agentId } }),
+      ).create({ headers: humanHeaders, body: {} }),
       [201],
     );
     const contextPart = suggestionContextPart({
@@ -1624,7 +1623,6 @@ describe("Suggestion custom follow-ups", () => {
       setupApp({ context, routes: chatEventsRoutes })(chatEventsContract).send({
         headers: humanHeaders,
         body: {
-          agentId: fixture.agentId,
           threadId: thread.body.id,
           clientEventId: randomUUID(),
           prompt: "My own direction",
@@ -1699,7 +1697,7 @@ describe("Suggestion custom follow-ups", () => {
     const thread = await accept(
       setupApp({ context, routes: chatThreadCreateRoutes })(
         chatThreadsContract,
-      ).create({ headers: humanHeaders, body: { agentId: fixture.agentId } }),
+      ).create({ headers: humanHeaders, body: {} }),
       [201],
     );
     const events = setupApp({ context, routes: chatEventsRoutes })(
@@ -1789,14 +1787,13 @@ describe("Suggestion custom follow-ups", () => {
     const thread = await accept(
       setupApp({ context, routes: chatThreadCreateRoutes })(
         chatThreadsContract,
-      ).create({ headers: humanHeaders, body: { agentId: fixture.agentId } }),
+      ).create({ headers: humanHeaders, body: {} }),
       [201],
     );
     await accept(
       setupApp({ context, routes: chatEventsRoutes })(chatEventsContract).send({
         headers: humanHeaders,
         body: {
-          agentId: fixture.agentId,
           threadId: thread.body.id,
           clientEventId: randomUUID(),
           prompt: "What should I consider about this earlier decision?",
@@ -1863,7 +1860,7 @@ describe("Suggestion custom follow-ups", () => {
     const thread = await accept(
       setupApp({ context, routes: chatThreadCreateRoutes })(
         chatThreadsContract,
-      ).create({ headers: humanHeaders, body: { agentId: fixture.agentId } }),
+      ).create({ headers: humanHeaders, body: {} }),
       [201],
     );
     const events = setupApp({ context, routes: chatEventsRoutes })(

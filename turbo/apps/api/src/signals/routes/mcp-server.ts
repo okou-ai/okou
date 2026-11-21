@@ -8,7 +8,6 @@ import { isOwnedChatThreadSnapshotObjectKey } from "../services/chat-thread-snap
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { mcpChatCommandContract } from "@okouai/api-contracts/contracts/mcp-chat-tools";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import { notFound } from "../../lib/error";
@@ -82,33 +81,22 @@ const mcpSendChat$ = command(async ({ get, set }, signal: AbortSignal) => {
     return notFound("Project not found");
   }
   signal.throwIfAborted();
-  const agentId = threadId
-    ? (
-        await db
-          .select({ id: chatThreads.agentId })
-          .from(chatThreads)
-          .where(
-            and(
-              eq(chatThreads.id, threadId),
-              eq(chatThreads.userId, auth.userId),
-              eq(chatThreads.hidden, false),
-              chatThreadOrganizationPredicate(auth.orgId),
-            ),
-          )
-      )[0]?.id
-    : (
-        await db
-          .select({ id: orgMetadata.defaultAgentId })
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, auth.orgId))
-      )[0]?.id;
-  signal.throwIfAborted();
-  if (!agentId) {
-    return notFound(
-      threadId
-        ? "Chat thread not found"
-        : "New Chats are unavailable in this workspace",
-    );
+  if (threadId) {
+    const [thread] = await db
+      .select({ id: chatThreads.id })
+      .from(chatThreads)
+      .where(
+        and(
+          eq(chatThreads.id, threadId),
+          eq(chatThreads.userId, auth.userId),
+          eq(chatThreads.hidden, false),
+          chatThreadOrganizationPredicate(auth.orgId),
+        ),
+      );
+    signal.throwIfAborted();
+    if (!thread) {
+      return notFound("Chat thread not found");
+    }
   }
   const eventId = randomUUID();
   const response = await set(
@@ -116,7 +104,6 @@ const mcpSendChat$ = command(async ({ get, set }, signal: AbortSignal) => {
     {
       projectId,
       data: {
-        agentId,
         threadId,
         prompt,
         model,

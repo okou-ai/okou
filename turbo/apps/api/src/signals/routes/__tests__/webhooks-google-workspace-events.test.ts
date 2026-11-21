@@ -1,4 +1,3 @@
-import { retainedWorkflowCaller } from "./helpers/retained-workflow-caller";
 import { Buffer } from "node:buffer";
 import { generateKeyPairSync, randomUUID, sign as signData } from "node:crypto";
 
@@ -44,7 +43,6 @@ const mocks = createRouteMocks(context);
 const runs = createRunsApi(context);
 const runReadsApi = createRunReadsApi(context);
 const workflows = createWorkflowsBddApi(context);
-const retainedHeaders = retainedWorkflowCaller(context);
 
 const PUSH_AUDIENCE =
   "https://api.okou.ai/api/webhooks/google-workspace-events";
@@ -104,10 +102,10 @@ interface GoogleMeetFixture {
   readonly provider: GoogleMeetProviderRecorder;
 }
 
-async function listActiveRuns(actor: OrgActor, agentName: string) {
+async function listActiveRuns(actor: OrgActor) {
   const response = await runReadsApi.requestListLogs(
     actor,
-    { name: agentName, limit: 20 },
+    { limit: 20 },
     [200],
   );
   expect(response.body.pagination).toMatchObject({ hasMore: false });
@@ -463,7 +461,7 @@ async function setupFixture(
 ): Promise<GoogleMeetFixture> {
   const provider = configureGoogleMeetBoundaries(options);
   await runs.registerDirectRunner(provider.runnerGroup);
-  const { actor } = await workflows.setupWorkflowOrg();
+  const { defaultAgentId: agentId, actor } = await workflows.setupWorkflowOrg();
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
@@ -472,19 +470,16 @@ async function setupFixture(
     model: "claude-fable-5-1",
   });
   const orgActor: OrgActor = { ...actor, orgId: actor.orgId };
-  const agent = await workflows.createAgent(orgActor, {
-    displayName: "Google Meet automation agent",
-  });
   const { objects: volumeObjects } = installWorkflowVolumeS3Fixture(context);
   const workflowId = await workflows.createWorkflow(orgActor, {
-    agentId: agent.agentId,
+    agentId,
     name: `google-meet-transcript-${randomUUID()}`,
   });
   const connectorId = await connectGoogleMeet(orgActor, provider);
   return {
     volumeObjects,
     actor: orgActor,
-    agentId: agent.agentId,
+    agentId,
     workflowId,
     connectorId,
     provider,
@@ -757,7 +752,7 @@ describe("Google Workspace Events subscription lifecycle", () => {
     });
     await flushWaitUntilForTest();
     const primaryRunIds = new Set(
-      (await listActiveRuns(fixture.actor, fixture.agentId)).runs.map((run) => {
+      (await listActiveRuns(fixture.actor)).runs.map((run) => {
         return run.id;
       }),
     );
@@ -768,11 +763,11 @@ describe("Google Workspace Events subscription lifecycle", () => {
       dispatched: 1,
     });
     await flushWaitUntilForTest();
-    const secondaryRunId = (
-      await listActiveRuns(fixture.actor, fixture.agentId)
-    ).runs.find((run) => {
-      return !primaryRunIds.has(run.id);
-    })?.id;
+    const secondaryRunId = (await listActiveRuns(fixture.actor)).runs.find(
+      (run) => {
+        return !primaryRunIds.has(run.id);
+      },
+    )?.id;
     if (!secondaryRunId) {
       throw new Error("Expected a queued run for the secondary account");
     }
@@ -895,15 +890,12 @@ describe("Google Workspace Events subscription lifecycle", () => {
       throw new Error("Expected a source-account subscription");
     }
 
-    const targetAgent = await workflows.createAgent(fixture.actor, {
-      displayName: "Google Meet copy target agent",
-    });
     installWorkflowVolumeS3Fixture(context, fixture.volumeObjects);
     const copied = await accept(
       workflowDetailClient().copy({
-        headers: await retainedHeaders(fixture.actor),
+        headers: authHeaders(fixture.actor),
         params: { workflowId: fixture.workflowId },
-        body: { toAgentId: targetAgent.agentId },
+        body: { toAgentId: fixture.agentId },
       }),
       [201],
     );

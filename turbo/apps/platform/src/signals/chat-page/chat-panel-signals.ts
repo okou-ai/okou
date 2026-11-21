@@ -139,7 +139,7 @@ export interface QueueMessageOptions {
 export interface ChatPanelSignals {
   readonly mail: ThreadMailSignals;
   readonly threadId: string;
-  readonly agentId: string;
+  readonly agentId?: string;
   // -- Data signals ----------------------------------------------------------
   readonly threadDraft$: Computed<Promise<ChatThreadDraft | null>>;
   readonly threadMeta$: Computed<ThreadMeta | null>;

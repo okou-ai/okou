@@ -25,7 +25,6 @@ export const captureRunNativeSession$ = command(
     const [run] = await db
       .select({
         id: agentRuns.id,
-        agentId: agentRuns.agentId,
         chatThreadId: agentRuns.chatThreadId,
         launchSnapshot: agentRuns.launchSnapshot,
         officialWorkflowProvenance: agentRuns.officialWorkflowProvenance,

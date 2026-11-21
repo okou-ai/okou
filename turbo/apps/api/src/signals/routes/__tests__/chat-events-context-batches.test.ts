@@ -103,7 +103,8 @@ describe("shared context statement projections through normal sends", () => {
   it.each(["providers", "all"] as const)(
     "preserves %s rowsets in first and continuation sends",
     async (mode) => {
-      const { actor, agentId } = await entitledNativeChatActor();
+      const { actor, defaultAgentId: agentId } =
+        await entitledNativeChatActor();
       const s3 = installWorkflowVolumeS3Fixture(context);
       const hasAgentRows = mode === "all";
       await misc.upsertPersonalModelProvider(

@@ -6,7 +6,6 @@ import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 
 import {
   buildSlackSystemPrompt,
@@ -147,10 +146,13 @@ export function createSlackLaunchContext(args: SlackLaunchSource) {
           ),
         ),
       )
-      .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
       .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
+        chatThreads,
+        and(
+          eq(chatThreads.id, chatEvents.chatThreadId),
+          eq(chatThreads.orgId, args.orgId),
+          eq(chatThreads.userId, args.userId),
+        ),
       )
       .where(
         and(

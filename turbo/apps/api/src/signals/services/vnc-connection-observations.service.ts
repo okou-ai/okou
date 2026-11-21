@@ -1,6 +1,5 @@
 import { vncConnectionObservationSchema } from "@okouai/api-contracts/contracts/vnc-connection-observations";
 import type { RunnerVncObservationRequest } from "@okouai/api-contracts/contracts/runner-vnc";
-import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
@@ -164,14 +163,6 @@ function observationWriteSource(
       and(
         eq(agentRuns.orgId, vncConnections.orgId),
         eq(agentRuns.userId, vncConnections.userId),
-      ),
-    )
-    .innerJoin(
-      agents,
-      and(
-        eq(agents.id, agentRuns.agentId),
-        eq(agents.orgId, agentRuns.orgId),
-        or(eq(agents.visibility, "public"), eq(agents.owner, agentRuns.userId)),
       ),
     )
     .where(

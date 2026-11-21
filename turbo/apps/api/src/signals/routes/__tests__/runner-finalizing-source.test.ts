@@ -269,16 +269,32 @@ describe("Independent finalizing resource dispatch", () => {
     );
   });
 
-  it.each(["accept", "alternate", "stale"] as const)(
+  it.each([
+    "active-producer",
+    "drain-release",
+    "drain-expiry",
+    "stopping",
+    "stale-drain",
+    "different-generation",
+  ] as const)(
     "bounds Home dispatch and same-byte retry with %s",
     async (scenario) => {
       const f = await terminalPredecessor(context, "completed");
+      const expectsRetry =
+        scenario === "active-producer" ||
+        scenario === "drain-release" ||
+        scenario === "drain-expiry";
+      mockNow(f.clock + 26 * 60_000);
       await heartbeat(f, {
+        snapshotGeneration: scenario === "different-generation" ? 8 : 7,
         snapshotSequence: 2,
-        mode: "draining",
-        activeReuseProducers: scenario === "stale" ? [] : [producer(f)],
+        mode: scenario === "stopping" ? "stopping" : "draining",
+        activeReuseProducers:
+          scenario === "active-producer" ? [producer(f)] : [],
       });
-      mockNow(f.clock + 2000);
+      if (scenario === "stale-drain") {
+        mockNow(now() + 180_001);
+      }
       const sentAt = now();
       const preferredBytes: string[] = [];
       const preferredDeadlines: number[] = [];
@@ -291,20 +307,24 @@ describe("Independent finalizing resource dispatch", () => {
             preferredBytes.push(bytes);
             preferredDeadlines.push(envelope.notAfter);
             const hint = envelope.preferredHomeCheckout;
-            if (scenario === "stale") {
-              expect(hint).toBeUndefined();
-            } else {
+            if (expectsRetry) {
               expect(hint).toBeDefined();
               expect(hint?.predecessorRunId).toBe(f.run.runId);
               expect(hint?.waitUntil).toBeGreaterThan(sentAt);
               expect(hint?.waitUntil).toBeLessThanOrEqual(sentAt + 1000);
               expect(hint?.waitUntil).toBeLessThan(envelope.notAfter);
+            } else {
+              expect(hint).toBeUndefined();
             }
             const busy =
-              scenario === "alternate" ||
-              (scenario === "accept" && preferredBytes.length === 1);
+              expectsRetry &&
+              (scenario === "drain-expiry" || preferredBytes.length === 1);
             if (busy && hint) {
-              mockNow(hint.waitUntil + 1);
+              mockNow(
+                scenario === "drain-release"
+                  ? sentAt + 492
+                  : hint.waitUntil + 1,
+              );
             }
             return HttpResponse.json(
               {
@@ -315,7 +335,7 @@ describe("Independent finalizing resource dispatch", () => {
               },
               {
                 status: busy ? 429 : 200,
-                ...(scenario === "accept"
+                ...(scenario === "active-producer"
                   ? {
                       headers: {
                         "x-okou-runner-dispatch-timing": busy
@@ -352,7 +372,7 @@ describe("Independent finalizing resource dispatch", () => {
       });
       const next = await continuation(f);
       expect(next.status).toBe("running");
-      const useAlternative = scenario === "alternate";
+      const useAlternative = scenario === "drain-expiry";
       const owner = useAlternative
         ? replacement.alternative
         : replacement.identity;
@@ -362,7 +382,7 @@ describe("Independent finalizing resource dispatch", () => {
         owner.runnerId,
         owner.heartbeatGeneration,
       );
-      expect(preferredBytes).toHaveLength(scenario === "stale" ? 1 : 2);
+      expect(preferredBytes).toHaveLength(expectsRetry ? 2 : 1);
       if (preferredBytes.length === 2) {
         expect(preferredBytes[1]).toBe(preferredBytes[0]);
       }

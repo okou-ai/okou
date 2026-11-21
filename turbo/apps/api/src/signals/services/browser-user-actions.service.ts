@@ -288,7 +288,6 @@ function generateToken(): string {
 
 function actionUrl(args: {
   readonly requestToken: string;
-  readonly agentId: string;
   readonly threadId: string;
   readonly callbackPrompt: string;
 }): string {
@@ -296,7 +295,6 @@ function actionUrl(args: {
     `/browser/actions/${encodeURIComponent(args.requestToken)}`,
     env("APP_URL"),
   );
-  url.searchParams.set("agentId", args.agentId);
   url.searchParams.set("threadId", args.threadId);
   url.searchParams.set("callbackPrompt", args.callbackPrompt);
   return url.toString();
@@ -310,7 +308,6 @@ function decodePayload(row: RequestRow): BrowserUserActionPayload | null {
 }
 
 function publicRequest(
-  agentId: string,
   row: RequestRow,
   requestToken: string,
   payload: BrowserUserActionPayload,
@@ -320,7 +317,6 @@ function publicRequest(
     requestToken,
     state: row.status,
     completedAt: row.completedAt?.toISOString() ?? null,
-    agentId,
     threadId: row.chatThreadId,
     callbackIds: payload.callbackIds,
   };
@@ -433,45 +429,6 @@ const loadOwnedBrowserUserActionRequest$ = command(
       .limit(1);
     signal.throwIfAborted();
     return row ?? null;
-  },
-);
-
-// The existing wire response uses the thread's executor as a compatibility field.
-const browserActionThreadAgentId$ = command(
-  async ({ get }, row: RequestRow): Promise<string> => {
-    const [thread] = await get(db$)
-      .select({ agentId: chatThreads.agentId })
-      .from(chatThreads)
-      .where(
-        and(
-          eq(chatThreads.id, row.chatThreadId),
-          eq(chatThreads.orgId, row.orgId),
-          eq(chatThreads.userId, row.userId),
-        ),
-      )
-      .limit(1);
-    if (!thread?.agentId) {
-      throw new Error("Browser action thread executor is unavailable");
-    }
-    return thread.agentId;
-  },
-);
-
-const publicRequest$ = command(
-  async (
-    { set },
-    row: RequestRow,
-    requestToken: string,
-    payload: BrowserUserActionPayload,
-    controls?: readonly BrowserUseControlInspection[],
-  ): Promise<BrowserUserActionResponse> => {
-    return publicRequest(
-      await set(browserActionThreadAgentId$, row),
-      row,
-      requestToken,
-      payload,
-      controls,
-    );
   },
 );
 
@@ -1104,7 +1061,7 @@ function browserUserActionCreationPlan(args: {
 }) {
   const query = new QueryBuilder();
   const runQuery = query
-    .select({ agentId: chatThreads.agentId })
+    .select({ id: chatThreads.id })
     .from(agentRuns)
     .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
     .where(
@@ -1116,7 +1073,6 @@ function browserUserActionCreationPlan(args: {
         inArray(agentRuns.status, ["pending", "running"]),
         eq(chatThreads.userId, args.userId),
         eq(chatThreads.orgId, args.orgId),
-        isNotNull(chatThreads.agentId),
         eq(chatThreads.cloudBrowserEnabled, true),
       ),
     )
@@ -1270,8 +1226,7 @@ const persistBrowserUserAction = command(
       .select(
         browserUserActionRequestProjection(input, leased.providerSessionId),
       )
-      .from(leased)
-      .innerJoin(plan.run, sql`TRUE`);
+      .from(leased);
     const [created] = await db
       .with(plan.run, plan.liveClock, plan.browser, plan.leaseClock, leased)
       .insert(browserUserActionRequests)
@@ -1331,18 +1286,15 @@ export const createBrowserUserAction$ = command(
         "BROWSER_USER_ACTION_UNAVAILABLE",
       );
     }
-    const agentId = await set(browserActionThreadAgentId$, created);
-    signal.throwIfAborted();
     return {
       kind: "ok",
       value: {
         actionUrl: actionUrl({
           requestToken,
-          agentId,
           threadId: created.chatThreadId,
           callbackPrompt: args.input.callbackPrompt,
         }),
-        action: publicRequest(agentId, created, requestToken, decoded),
+        action: publicRequest(created, requestToken, decoded),
       },
     };
   },
@@ -1439,7 +1391,7 @@ export const readBrowserUserAction$ = command(
       ? {
           kind: "ok",
           value: {
-            ...(await set(publicRequest$, row, args.requestToken, payload)),
+            ...publicRequest(row, args.requestToken, payload),
             callbackDelivered,
           },
         }
@@ -1787,13 +1739,12 @@ export const preflightBrowserUserAction$ = command(
       }
       return {
         kind: "ok",
-        value: await set(publicRequest$, stale, args.requestToken, payload),
+        value: publicRequest(stale, args.requestToken, payload),
       };
     }
     return {
       kind: "ok",
-      value: await set(
-        publicRequest$,
+      value: publicRequest(
         current,
         args.requestToken,
         payload,
@@ -2069,12 +2020,7 @@ export const applyBrowserUserAction$ = command(
     signal.throwIfAborted();
     return {
       kind: "ok",
-      value: await set(
-        publicRequest$,
-        applied.value,
-        args.requestToken,
-        payload,
-      ),
+      value: publicRequest(applied.value, args.requestToken, payload),
     };
   },
 );
@@ -2141,7 +2087,7 @@ export const cancelBrowserUserAction$ = command(
     }
     const result: ServiceResult<BrowserUserActionResponse> = {
       kind: "ok",
-      value: await set(publicRequest$, current, args.requestToken, payload),
+      value: publicRequest(current, args.requestToken, payload),
     };
     if (decodePayload(row)?.target.fields[0]?.fieldKind === "file") {
       const cleanup = await settle(

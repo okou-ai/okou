@@ -164,7 +164,7 @@ extension WorkspaceStore {
 }
 
 struct WorkspaceNotificationReadState: Equatable {
-  let agentID: String
+  let agentID: String?
   let hidden: Bool
   let muted: Bool
   let archived: Bool

@@ -335,7 +335,7 @@ describe("Run cancellation reconciliation", () => {
     });
   });
 
-  it("confirms physical absence after permitted Agent deletion with the original sandbox token", async () => {
+  it("keeps the cancelled member Run visible to its sandbox after legacy Agent deletion", async () => {
     const f = await fixture();
     await f.runs.requestCancelRun(f.actor, f.runId, [200]);
     await flushWaitUntilForTest();
@@ -343,7 +343,8 @@ describe("Run cancellation reconciliation", () => {
     expect((await read(f)).body).toStrictEqual({
       protocolVersion: 1,
       runId: f.runId,
-      state: "gone",
+      state: "present",
+      mode: "cooperative",
     });
   });
 

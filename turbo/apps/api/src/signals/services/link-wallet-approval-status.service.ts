@@ -15,7 +15,6 @@ export const walletApprovalStatus$ = command(
     { get },
     owner: { readonly userId: string; readonly orgId: string },
     input: {
-      readonly agentId: string;
       readonly threadId: string;
       readonly approvalUrl: string;
     },

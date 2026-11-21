@@ -1,3 +1,4 @@
+import { writeDb$ } from "../external/db";
 import { chatEmailContext } from "@okouai/db/schema/email-integration";
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
 import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
@@ -27,7 +28,6 @@ import {
 } from "@okouai/db/schema/chat-thread-event";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
 import { prepareChatEvent } from "./chat-event.service";
 import type { ThreadModelReplacement } from "./chat-input-model.service";
 import {
@@ -199,7 +199,7 @@ function integrationModelReplacementSql(
       RETURNING last_seq_id
     ), model_events AS (
       INSERT INTO ${chatThreadEvents}
-        (id, user_id, org_id, seq_id, chat_thread_id, kind, event_executor_id,
+        (id, user_id, org_id, seq_id, chat_thread_id, kind,
          selected_model, service_tier, cloud_browser_enabled, created_at)
       SELECT CASE WHEN event.ordinal = 0 THEN ${modelId}::uuid ELSE ${tierId}::uuid END,
         ${replacement.userId}, ${replacement.orgId},
@@ -207,7 +207,6 @@ function integrationModelReplacementSql(
         ${replacement.chatThreadId}::uuid,
         CASE WHEN event.ordinal = 0 THEN 'model_selection_updated'::chat_thread_event_kind
           ELSE 'service_tier_updated'::chat_thread_event_kind END,
-        ${replacement.agentId}::uuid,
         CASE WHEN event.ordinal = 0 THEN ${replacement.selectedModel} ELSE NULL END,
         CASE WHEN event.ordinal = 1 THEN ${tier} ELSE NULL END, false,
         ${sql.param(updatedAt, chatThreadEvents.createdAt)}

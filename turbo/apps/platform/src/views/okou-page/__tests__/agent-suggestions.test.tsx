@@ -970,7 +970,7 @@ test("A deleted target shows its unavailable page and preserves the home draft",
     expect(composer()).toHaveTextContent("Keep my home draft");
   });
 });
-test("Suggestion options start in the default Agent after visiting a secondary Agent", async () => {
+test("Suggestion options start a member chat after visiting a legacy Agent", async () => {
   const secondary = "c0000000-0000-4000-a000-000000000002";
   const agents: AgentResponse[] = [agentId, secondary].map((id) => {
     return {
@@ -1000,8 +1000,9 @@ test("Suggestion options start in the default Agent after visiting a secondary A
   mockChatLifecycle(context);
   const sender = context.mocks.deferred<string>();
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    expect(body).not.toHaveProperty("agentId");
     if (!sender.settled()) {
-      sender.resolve(body.agentId);
+      sender.resolve(body.threadId ?? threadId);
     }
     return respond(201, {
       threadId: body.threadId ?? threadId,
@@ -1019,7 +1020,7 @@ test("Suggestion options start in the default Agent after visiting a secondary A
   expect(pathname()).toBe(suggestionPath);
   click(button(makeOption().label));
   await screen.findByText(SENT);
-  await expect(sender.promise).resolves.toBe(agentId);
+  await expect(sender.promise).resolves.toMatch(/^[0-9a-f-]{36}$/u);
   expect(pathname()).toBe(suggestionPath);
 });
 test("Custom direction opens a full composer for a new chat without touching the home draft", async () => {

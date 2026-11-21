@@ -1,4 +1,3 @@
-import { workspaceExecutorId } from "../../lib/command/workspace-executor";
 import chalk from "chalk";
 import { Command } from "commander";
 
@@ -25,6 +24,7 @@ export const createCommand = new Command()
   .name("create")
   .description("Create a new web chat thread")
   .argument("<title...>", "Chat title")
+
   .option(
     "--model <id>",
     "Model id for the thread, or auto for Auto (defaults to your model preference, then Auto)",
@@ -78,11 +78,9 @@ Model, effort and priority use your existing preferences unless specified.
                 ? undefined
                 : { catalog: await getModelCatalog(), model },
             );
-      const agentId = await workspaceExecutorId();
       let thread;
       try {
         thread = await createChatThread({
-          agentId,
           title,
           projectId: options.projectId,
           ...(model === undefined ? {} : { model }),

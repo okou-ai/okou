@@ -32,9 +32,11 @@ fun chatEventWire(
     kind: String = "created",
     extra: String = "",
     title: String = "Personal chat",
-    agent: String = CHAT_AGENT,
-): String =
-    """{"id":"$id","seqId":$seq,"kind":"$kind","chatThreadId":"$thread","agentId":"$agent","title":"$title","selectedModel":null,"serviceTier":null,"computerUseHostId":null,"createdAt":"$CHAT_DATE"$extra}"""
+    agent: String? = CHAT_AGENT,
+): String {
+    val legacyAgent = agent?.let { ""","agentId":"$it"""" }.orEmpty()
+    return """{"id":"$id","seqId":$seq,"kind":"$kind","chatThreadId":"$thread"$legacyAgent,"title":"$title","selectedModel":null,"serviceTier":null,"computerUseHostId":null,"createdAt":"$CHAT_DATE"$extra}"""
+}
 
 const val HISTORY_LAST_EVENT = "88888888-8888-4888-8888-888888888888"
 const val HISTORY_RUN = "99999999-9999-4999-8999-999999999999"

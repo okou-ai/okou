@@ -2,17 +2,25 @@ import {
   publishChatThreadMessageCreated$,
   projectCommittedChatThreadSearch$,
 } from "./chat-event-publication.service";
+import { touchNativeChatThread$ } from "./native-chat-event-write.service";
+import { writeDb$ } from "../external/db";
+import { reconcileWechatThreadTyping$ } from "./wechat-thread-typing.service";
+import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
+import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
+import {
+  pickEnqueuedChatThread$,
+  notifyRunningChatRunOfPendingInput$,
+} from "./chat-thread-queue-drain.service";
 import { wechatAttachments } from "../external/wechat-media";
 import { MAX_WECHAT_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/integrations-wechat-files";
 import {
-  materializeIntegrationInputAssets$,
   integrationInputMessageFiles,
   type IntegrationInputFile,
+  materializeIntegrationInputAssets$,
 } from "./integration-input-assets.service";
 import { isWechatOwnerMessage, wechatEventId } from "./wechat-message-identity";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { publishThreadListChangedSafely } from "../external/realtime";
-import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
@@ -24,25 +32,19 @@ import {
   wechatMessages,
 } from "@okouai/db/schema/wechat";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { agents } from "@okouai/db/schema/agent";
-import { writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
-import { reconcileWechatThreadTyping$ } from "./wechat-thread-typing.service";
 import type { WechatMessage } from "@okouai/api-contracts/contracts/wechat-protocol";
 import { monotonicNow, nowDate } from "../../lib/time";
 import { recordWechatMessageReceived } from "./wechat-delivery-timing.service";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import {
   integrationChatThreadValues,
   integrationChatThreadInsertFromRouteSql,
   integrationThreadCreatedEventSql,
 } from "./integration-chat-thread-publication";
-import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import {
-  resolveEnqueuedChatInputModel$,
   type ThreadModelReplacement,
+  resolveEnqueuedChatInputModel$,
 } from "./chat-input-model.service";
 import { chatThreadServiceTierFromCodex } from "./chat-thread-event.service";
 import {
@@ -52,10 +54,6 @@ import {
 import { prepareChatEvent } from "./chat-event.service";
 import { canonicalChatEventAppendCtes } from "./chat-event-append.service";
 import { encryptStoredSecretValue } from "./crypto.utils";
-import {
-  pickEnqueuedChatThread$,
-  notifyRunningChatRunOfPendingInput$,
-} from "./chat-thread-queue-drain.service";
 
 type Connection = typeof wechatConnections.$inferSelect;
 
@@ -99,9 +97,9 @@ function modelReplacementCtes(replacement: ThreadModelReplacement | null) {
     ON CONFLICT(user_id,org_id) DO UPDATE SET last_seq_id=chat_thread_event_sequences.last_seq_id+EXCLUDED.last_seq_id
     RETURNING last_seq_id
   ), replacement_events AS (
-    INSERT INTO chat_thread_events(user_id,org_id,seq_id,chat_thread_id,kind,event_executor_id,selected_model,service_tier)
+    INSERT INTO chat_thread_events(user_id,org_id,seq_id,chat_thread_id,kind,selected_model,service_tier)
     SELECT ${replacement.userId},${replacement.orgId},last_seq_id-${count}+ordinal,${replacement.chatThreadId}::uuid,
-      kind::chat_thread_event_kind,${replacement.agentId}::uuid,
+      kind::chat_thread_event_kind,
       CASE WHEN ordinal=1 THEN ${replacement.selectedModel} ELSE NULL END,
       CASE WHEN ordinal=2 THEN ${chatThreadServiceTierFromCodex(replacement.codexServiceTier)} ELSE NULL END
     FROM replacement_positions CROSS JOIN (VALUES (1,'model_selection_updated'),(2,'service_tier_updated')) AS changes(ordinal,kind)
@@ -128,22 +126,6 @@ const ensureThread$ = command(
     if (existing.chatThreadId) {
       return existing.chatThreadId;
     }
-    const [agent] = await db
-      .select({ id: agents.id })
-      .from(orgMetadata)
-      .innerJoin(
-        agents,
-        and(
-          eq(agents.id, orgMetadata.defaultAgentId),
-          eq(agents.orgId, orgMetadata.orgId),
-        ),
-      )
-      .where(eq(orgMetadata.orgId, connection.orgId))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!agent) {
-      throw new WechatIngressError("default_agent_unavailable", false);
-    }
     const owner = { orgId: connection.orgId, userId: connection.userId };
     const initialModel = await set(
       resolveDefaultModelFirstPin$,
@@ -152,7 +134,7 @@ const ensureThread$ = command(
     );
     const defaults = await set(loadNewChatThreadDefaults$, owner, signal);
     const thread = integrationChatThreadValues(
-      { ...owner, agentId: agent.id, currentTime: nowDate(), initialModel },
+      { ...owner, currentTime: nowDate(), initialModel },
       randomUUID(),
       defaults,
     );
@@ -178,14 +160,13 @@ const ensureThread$ = command(
       .onConflictDoNothing({ target: wechatChatThreadRoutes.connectionId })
       .returning({ chatThreadId: wechatChatThreadRoutes.chatThreadId });
     const route = db.$with("wechat_route").as(routeInsert);
-    const threadInsert = sql`${integrationChatThreadInsertFromRouteSql(thread, route)} RETURNING ${chatThreads.agentId}`;
+    const threadInsert = sql`${integrationChatThreadInsertFromRouteSql(thread, route)} RETURNING ${chatThreads.id}`;
     const [inserted] = parseRawRows(
       object({ chatThreadId: uuid() }),
       await db.execute(
         integrationThreadCreatedEventSql(connection.orgId, thread, {
           cte: sql`wechat_route AS (${routeInsert.getSQL()}), wechat_thread AS (${threadInsert})`,
           gate: sql`EXISTS(SELECT 1 FROM wechat_thread)`,
-          agentId: sql`(SELECT agent_id FROM wechat_thread)`,
           result: sql`SELECT chat_thread_id AS "chatThreadId" FROM wechat_route WHERE EXISTS(SELECT 1 FROM inserted)`,
         }),
       ),

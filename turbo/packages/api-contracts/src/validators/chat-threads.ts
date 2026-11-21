@@ -203,7 +203,7 @@ export const chatThreadSnapshotProjectionSchema = object({
    * retained snapshots are rewritten and those API rollback targets retire (#44591).
    */
   projectId: uuid().nullable().optional(),
-  agentId: uuid(),
+  agentId: uuid().optional(),
   title: string().nullable(),
   sortAt: string(),
   createdAt: string(),
@@ -247,7 +247,7 @@ const ordinaryChatThreadEventSchema = object({
   ]),
   chatThreadId: uuid(),
   projectId: uuid().nullable().optional(),
-  agentId: uuid(),
+  agentId: uuid().optional(),
   /** On sort_touched, an explicit canonical agent reassignment. */
   reassignedAgentId: uuid().optional(),
   title: string().nullable(),
@@ -490,7 +490,7 @@ const userMessageAgentSourcePartSchema = object({
   kind: literal("agent"),
   runId: uuid(),
   threadId: uuid(),
-  agentId: uuid(),
+  agentId: uuid().optional(),
   titleSnapshot: string().min(1),
   href: string().min(1),
 }).strict();

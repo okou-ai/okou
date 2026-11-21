@@ -11,7 +11,6 @@ import {
   notExists,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -49,7 +48,6 @@ export function subscriptionSwitchRecoveries(
       .from(chatEvents)
       .innerJoin(agentRuns, eq(agentRuns.id, chatEvents.runId))
       .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .innerJoin(
         modelProviderAccounts,
         eq(modelProviderAccounts.id, agentRuns.modelProviderId),
@@ -104,7 +102,7 @@ export function subscriptionSwitchRecoveries(
             "account_verification_required",
           ]),
           eq(chatThreads.userId, args.userId),
-          eq(agents.orgId, args.orgId),
+          eq(chatThreads.orgId, args.orgId),
           eq(chatThreads.archived, false),
           eq(chatThreads.selectedModel, agentRuns.selectedModel),
           eq(chatEvents.eventType, "run.failed"),

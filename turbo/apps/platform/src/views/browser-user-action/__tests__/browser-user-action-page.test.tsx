@@ -27,14 +27,13 @@ import { createDeferredPromise } from "../../../signals/utils.ts";
 
 const context = testContext();
 const REQUEST_TOKEN = `vm0_browser_user_action_${"b".repeat(43)}`;
-const AGENT_ID = "c0000000-0000-4000-a000-000000001201";
 const THREAD_ID = "b0000000-0000-4000-a000-000000001202";
 const CALLBACK_PROMPT = "Continue after standalone browser input";
 const SUCCESS_CLIENT_ID = "10000000-0000-4000-a000-000000001203";
 const SUCCESS_SORT_ID = "10000000-0000-4000-a000-000000001204";
 const CANCEL_CLIENT_ID = "10000000-0000-4000-a000-000000001205";
 const CANCEL_SORT_ID = "10000000-0000-4000-a000-000000001206";
-const OTHER_AGENT_ID = "c0000000-0000-4000-a000-000000001207";
+const OTHER_THREAD_ID = "c0000000-0000-4000-a000-000000001207";
 
 function action(
   state: BrowserUserActionResponse["state"],
@@ -52,7 +51,6 @@ function action(
     state,
     callbackDelivered: context.store.get(callbackSent$),
     completedAt: state === "pending" ? null : "2026-09-22T05:00:00.000Z",
-    agentId: AGENT_ID,
     threadId: THREAD_ID,
     siteOrigin: "https://login.example.test",
     fields: [
@@ -390,7 +388,6 @@ function mockPendingPreflight(hasTaskContext = true) {
 
 function route(args: { readonly threadId?: string } = {}): string {
   const params = new URLSearchParams({
-    agentId: AGENT_ID,
     threadId: args.threadId ?? THREAD_ID,
     callbackPrompt: CALLBACK_PROMPT,
   });
@@ -1026,14 +1023,14 @@ test("The standalone form accepts input and submission while its background chec
   const checkStarted = createDeferredPromise<void>(context.signal);
   const releaseCheck = createDeferredPromise<void>(context.signal);
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, { ...action(state), agentId: OTHER_AGENT_ID });
+    return respond(200, action(state));
   });
   context.mocks.api(
     browserUserActionsContract.preflight,
     async ({ respond }) => {
       checkStarted.resolve(undefined);
       await releaseCheck.promise;
-      return respond(200, { ...action("pending"), agentId: OTHER_AGENT_ID });
+      return respond(200, action("pending"));
     },
   );
   context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
@@ -1042,10 +1039,9 @@ test("The standalone form accepts input and submission while its background chec
       { key: "email", value: "owner@example.test" },
     ]);
     state = "succeeded";
-    return respond(200, { ...action(state), agentId: OTHER_AGENT_ID });
+    return respond(200, action(state));
   });
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    expect(body.agentId).toBe(OTHER_AGENT_ID);
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
     acceptCallback();
     return respond(201, { threadId: THREAD_ID });
   });
@@ -2209,12 +2205,9 @@ test("Maps an expired API response to the inert expiry state", async () => {
   ).resolves.toBeInTheDocument();
 });
 
-test("Fails closed for a mismatched thread in the response", async () => {
+test("Fails closed for a mismatched response", async () => {
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, {
-      ...action("pending"),
-      threadId: "b0000000-0000-4000-a000-000000001299",
-    });
+    return respond(200, { ...action("pending"), threadId: OTHER_THREAD_ID });
   });
 
   await setupPage({

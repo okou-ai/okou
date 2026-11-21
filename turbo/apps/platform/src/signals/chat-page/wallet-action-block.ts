@@ -173,7 +173,7 @@ function createWalletApprovalSignals(
     get(reload$);
     const response = await accept(
       get(apiClient$)(walletUserContract).spendStatus({
-        body: { ...context, approvalUrl },
+        body: { threadId: context.threadId, approvalUrl },
       }),
       [200, 403],
     );

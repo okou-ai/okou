@@ -101,9 +101,6 @@ export interface ExecutionOrgRows {
     readonly attached: unknown;
   }[];
 }
-export function executionOrgAttached(snapshot: ExecutionOrgRows): unknown {
-  return requiredOrgRow(snapshot).attached;
-}
 function requiredOrgRow(snapshot: ExecutionOrgRows) {
   const row = snapshot.rows[0];
   if (!row) {

@@ -85,11 +85,8 @@ export const linkWalletSpends = pgTable(
       }),
     authorizationId: uuid("authorization_id").notNull(),
     intentId: uuid("intent_id").notNull(),
-    historicalIntentOrdinal: integer("historical_intent_ordinal")
-      .notNull()
-      .default(0),
-    // The originating chat guards credential retrieval; legacy rows can be null.
-    // Only approvals eligible for automatic continuation have an approval run.
+    // An opt-in approval continuation belongs to the original interactive chat.
+    // Null on legacy requests and requests created while the feature is off.
     approvalThreadId: uuid("approval_thread_id").references(
       () => {
         return chatThreads.id;
@@ -117,11 +114,10 @@ export const linkWalletSpends = pgTable(
   },
   (table) => {
     return [
-      uniqueIndex("idx_link_wallet_spends_intent").on(
+      uniqueIndex("idx_link_wallet_spends_member_intent").on(
         table.orgId,
         table.userId,
         table.intentId,
-        table.historicalIntentOrdinal,
       ),
       uniqueIndex("idx_link_wallet_spends_provider").on(table.providerSpendId),
       index("idx_link_wallet_spends_approval_deadline")

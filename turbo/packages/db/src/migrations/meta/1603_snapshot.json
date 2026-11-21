@@ -1,5 +1,5 @@
 {
-  "id": "e7212e65-f6e4-4db2-a189-20f6fa800a84",
+  "id": "4b6bdf7a-a977-400e-8107-df385ae74bd9",
   "prevId": "ab997e8a-2abd-4d07-9c8d-f661bfcb62ba",
   "version": "7",
   "dialect": "postgresql",
@@ -172,6 +172,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
         "draft_user_message": {
           "name": "draft_user_message",
           "type": "jsonb",
@@ -200,8 +206,8 @@
         }
       },
       "indexes": {
-        "idx_agent_drafts_user_org": {
-          "name": "idx_agent_drafts_user_org",
+        "idx_agent_drafts_user_org_agent": {
+          "name": "idx_agent_drafts_user_org_agent",
           "columns": [
             {
               "expression": "user_id",
@@ -214,6 +220,12 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
+            },
+            {
+              "expression": "agent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
             }
           ],
           "isUnique": true,
@@ -222,7 +234,21 @@
           "with": {}
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "agent_drafts_agent_id_agents_id_fk": {
+          "name": "agent_drafts_agent_id_agents_id_fk",
+          "tableFrom": "agent_drafts",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -3617,6 +3643,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
         "connection_id": {
           "name": "connection_id",
           "type": "uuid",
@@ -3694,6 +3726,12 @@
               "nulls": "last"
             },
             {
+              "expression": "agent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
               "expression": "connection_id",
               "isExpression": false,
               "asc": true,
@@ -3701,6 +3739,27 @@
             }
           ],
           "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_banking_agent_enablements_agent_user": {
+          "name": "idx_banking_agent_enablements_agent_user",
+          "columns": [
+            {
+              "expression": "agent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -3713,6 +3772,19 @@
           "tableTo": "banking_connections",
           "columnsFrom": [
             "connection_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "banking_agent_enablements_agent_id_agents_id_fk": {
+          "name": "banking_agent_enablements_agent_id_agents_id_fk",
+          "tableFrom": "banking_agent_enablements",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "agent_id"
           ],
           "columnsTo": [
             "id"
@@ -5166,6 +5238,12 @@
         "user_id": {
           "name": "user_id",
           "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
@@ -8304,6 +8382,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "title": {
           "name": "title",
           "type": "text",
@@ -8377,12 +8461,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "event_executor_id": {
-          "name": "event_executor_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -19861,9 +19939,9 @@
           "primaryKey": false,
           "notNull": true
         },
-        "retired_at": {
-          "name": "retired_at",
-          "type": "timestamp with time zone",
+        "agent_id": {
+          "name": "agent_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },
@@ -19906,6 +19984,33 @@
         }
       },
       "indexes": {
+        "idx_link_wallet_connections_owner_agent": {
+          "name": "idx_link_wallet_connections_owner_agent",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "agent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_link_wallet_connections_owner": {
           "name": "idx_link_wallet_connections_owner",
           "columns": [
@@ -19923,13 +20028,27 @@
             }
           ],
           "isUnique": true,
-          "where": "\"link_wallet_connections\".\"retired_at\" IS NULL",
+          "where": "\"link_wallet_connections\".\"agent_id\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "link_wallet_connections_agent_id_agents_id_fk": {
+          "name": "link_wallet_connections_agent_id_agents_id_fk",
+          "tableFrom": "link_wallet_connections",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -20060,6 +20179,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "connection_id": {
           "name": "connection_id",
           "type": "uuid",
@@ -20163,13 +20288,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "historical_intent_ordinal": {
-          "name": "historical_intent_ordinal",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
         }
       },
       "indexes": {
@@ -20189,13 +20307,13 @@
               "nulls": "last"
             },
             {
-              "expression": "intent_id",
+              "expression": "agent_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             },
             {
-              "expression": "historical_intent_ordinal",
+              "expression": "intent_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -20242,9 +20360,49 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_link_wallet_spends_member_intent": {
+          "name": "idx_link_wallet_spends_member_intent",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "intent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
+        "link_wallet_spends_agent_id_agents_id_fk": {
+          "name": "link_wallet_spends_agent_id_agents_id_fk",
+          "tableFrom": "link_wallet_spends",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
         "link_wallet_spends_connection_id_link_wallet_connections_id_fk": {
           "name": "link_wallet_spends_connection_id_link_wallet_connections_id_fk",
           "tableFrom": "link_wallet_spends",

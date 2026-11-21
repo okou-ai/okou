@@ -570,7 +570,6 @@ async function setupFixture(
     throw new Error("Expected Gmail webhook fixture actor to have an org");
   }
 
-  // Gmail automations in this fixture belong to a retained named Agent.
   bdd.acceptAgentStorageWrites();
   await bdd.readOnboardingStatus(actor);
   await bdd.bootstrapLimitedFreeOnboarding(actor, {
@@ -579,14 +578,10 @@ async function setupFixture(
   await grantVisibleCredits({ ...actor, orgId: actor.orgId });
   // Fable's native Runner route requires the same Pro eligibility as other
   // native-harness fixtures; keep the credit-purchase setup for billing checks.
-  await runsApi.grantProEntitlement(actor);
-  const agent = await bdd.createAgent(actor, {
-    displayName: "gmail-webhook-agent",
-    visibility: "private",
-  });
+  const { defaultAgentId: agentId } = await runsApi.grantProEntitlement(actor);
   const workflow = await miscApi.createWorkflow(
     actor,
-    agent.agentId,
+    agentId,
     WORKFLOW_NAME,
     { content: "Handle Gmail webhook events." },
     [201],
@@ -600,7 +595,7 @@ async function setupFixture(
   }
   return {
     actor: { ...actor, orgId: actor.orgId },
-    agentId: agent.agentId,
+    agentId,
     workflowId: workflow.body.id,
   };
 }
@@ -1584,7 +1579,7 @@ describe("POST /api/webhooks/gmail", () => {
       cc: [],
       subject: "Invoice needs a reply",
     });
-    expect(execution.appendSystemPrompt).toContain("# Agent Identity");
+    expect(execution.appendSystemPrompt).toContain("# Identity");
     expect(
       Object.values(execution.secretConnectorMetadataMap ?? {}),
     ).toContainEqual(expect.objectContaining({ sourceId: secondConnectorId }));
@@ -2269,7 +2264,7 @@ describe("POST /api/webhooks/gmail", () => {
         cc: [],
         subject: "Invoice needs a reply",
       });
-      expect(appendSystemPrompt).toContain("# Agent Identity");
+      expect(appendSystemPrompt).toContain("# Identity");
     });
   });
 });

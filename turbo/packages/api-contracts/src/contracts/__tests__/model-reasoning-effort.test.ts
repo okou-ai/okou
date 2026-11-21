@@ -70,7 +70,6 @@ describe("chat reasoning effort capabilities", () => {
       schema.parse({ model: "gpt-6-astra", reasoningEffort: "ultra" }),
     ).toMatchObject({ reasoningEffort: "ultra" });
     const message = {
-      agentId: "agent-1",
       prompt: "Task",
       hasTextContent: true,
       userMessage: { version: 1, parts: [{ type: "text", text: "Task" }] },

@@ -50,7 +50,6 @@ import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 import postgres from "postgres";
 import { array, literal, number, object, string } from "zod";
-import { validateWalletIntentUpgrade } from "./test-wallet-intent-upgrade";
 import { applyPendingMigrations } from "./migration-runner";
 import { validatePermanentAgentInstructions } from "./test-agent-instructions-permanent";
 import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-snapshot";
@@ -511,15 +510,15 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
     const event = await client.query<{ id: string; seqId: string }>(
       `
         INSERT INTO "chat_thread_events" (
-          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "title", "selected_model"
+          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "event_executor_id", "title", "selected_model"
         )
         VALUES (
           'append-only-test-user', 'append-only-test-org', 1,
-          $1, 'created', 'append-only migration test', 'auto'
+          $1, 'created', $2, 'append-only migration test', 'auto'
         )
         RETURNING "id", "seq_id" AS "seqId"
       `,
-      [threadId],
+      [threadId, agentId],
     );
     const eventId = event.rows[0]?.id;
     if (!eventId) {
@@ -549,15 +548,15 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
     const nextEvent = await client.query<{ id: string; seqId: string }>(
       `
         INSERT INTO "chat_thread_events" (
-          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "title"
+          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "event_executor_id", "title"
         )
         VALUES (
           'append-only-test-user', 'append-only-test-org', 2,
-          $1, 'renamed', 'advanced append-only migration test'
+          $1, 'renamed', $2, 'advanced append-only migration test'
         )
         RETURNING "id", "seq_id" AS "seqId"
       `,
-      [threadId],
+      [threadId, agentId],
     );
     const nextEventId = nextEvent.rows[0]?.id;
     if (!nextEventId) {
@@ -1406,7 +1405,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "91c7e4000e63fc2b8c901635c53304bd",
+    bodyHash: "25db80210453a692dd82a9d70e1dffe3",
   },
   {
     schemaName: "public",
@@ -1460,7 +1459,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "6f4a7c7a81b6d4c83619a70db2ad6174",
+    bodyHash: "ce4cdadf93bef2a2e177ebcfdf0e069f",
   },
   {
     schemaName: "public",
@@ -3058,10 +3057,6 @@ async function main(): Promise<void> {
     await validatePiResourceIndexRetirement(
       dbUrl1,
       await migrationTimestamp("1595_drop_legacy_pi_resource_version_indexes"),
-    );
-    await validateWalletIntentUpgrade(
-      dbUrl1,
-      await migrationTimestamp("1603_retire_secondary_agent_columns"),
     );
     await runMigrations(dbUrl1);
     console.log("   ✅ Migrations applied successfully\n");

@@ -118,7 +118,7 @@ describe("iOS notification read-state reconciliation", () => {
       removeIdentifiers: ["unread"],
     });
     const archivedIndicators = await chat.listIndicators(actor);
-    expect(archivedIndicators.agents[unread.agentId]).toBeUndefined();
+    expect(archivedIndicators.agents).toStrictEqual({});
     expect(archivedIndicators.threads[unread.threadId]).toBe("unread");
     expect(archivedIndicators.unreadAt[unread.threadId]).toBeDefined();
     await expect(
@@ -143,7 +143,7 @@ describe("iOS notification read-state reconciliation", () => {
         )
       ).body.unreadCount,
     ).toBe(1);
-    expect((await chat.listIndicators(actor)).agents[unread.agentId]).toBe(
+    expect((await chat.listIndicators(actor)).threads[unread.threadId]).toBe(
       "unread",
     );
     await expect(
@@ -178,7 +178,7 @@ describe("iOS notification read-state reconciliation", () => {
     ).resolves.toMatchObject({
       archived: false,
     });
-    expect((await chat.listIndicators(actor)).agents[previous.agentId]).toBe(
+    expect((await chat.listIndicators(actor)).threads[sent.threadId]).toBe(
       "unread",
     );
     expect((await reconcile(actor, [])).body.unreadCount).toBe(1);

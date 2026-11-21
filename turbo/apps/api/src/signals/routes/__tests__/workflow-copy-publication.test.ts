@@ -1,12 +1,9 @@
-import { retainedWorkflowCaller } from "./helpers/retained-workflow-caller";
 import { randomUUID } from "node:crypto";
-import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { workflowsDetailContract } from "@okouai/api-contracts/contracts/workflows";
 import { onTestFinished, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createDeferredPromise } from "../../utils";
-import { agentsRoutes } from "../agents";
 import { workflowsRoutes } from "../workflows";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
@@ -14,7 +11,6 @@ import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
 const context = testContext();
-const retainedHeaders = retainedWorkflowCaller(context);
 const bdd = createBddApi(context);
 const misc = createMiscRoutesApi(context);
 const mocks = createRouteMocks(context);
@@ -27,21 +23,24 @@ function headers(actor: ApiTestUser) {
 test("rejects a prepared copy after the source Workflow changes", async () => {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
-  const source = await bdd.createAgent(actor, { displayName: "Copy source" });
-  const target = await bdd.createAgent(actor, { displayName: "Copy target" });
+  const namespace = await bdd.bootstrapLimitedFreeOnboarding(actor, {
+    displayName: "Workflow member",
+  });
+  const copier = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
   const s3 = installWorkflowVolumeS3Fixture(context);
   const name = `changed-copy-${randomUUID().slice(0, 8)}`;
   const workflow = await misc.createWorkflow(
     actor,
-    source.agentId,
+    namespace,
     name,
     {
+      visibility: "public",
       content: "# Before preparation",
       files: [{ path: "notes.md", content: "Prepared file" }],
     },
     [201],
   );
-  const copyHeaders = await retainedHeaders(actor);
+  const copyHeaders = headers(copier);
   if (workflow.status !== 201) {
     throw new Error("Expected the source Workflow to be created");
   }
@@ -58,7 +57,7 @@ test("rejects a prepared copy after the source Workflow changes", async () => {
     ).copy({
       headers: copyHeaders,
       params: { workflowId: workflow.body.id },
-      body: { toAgentId: target.agentId },
+      body: { toAgentId: namespace },
     }),
     [409],
   );
@@ -79,10 +78,10 @@ test("rejects a prepared copy after the source Workflow changes", async () => {
   uploadReleased = true;
   released.resolve();
   expect((await copying).body.error.code).toBe("CONFLICT");
-  const listed = await misc.listWorkflows(actor);
+  const listed = await misc.listWorkflows(copier);
   expect(
     listed.body.filter((row) => {
-      return row.agentId === target.agentId && row.name === name;
+      return row.visibility === "private" && row.name === name;
     }),
   ).toStrictEqual([]);
   const current = await accept(
@@ -97,30 +96,27 @@ test("rejects a prepared copy after the source Workflow changes", async () => {
   expect(current.body.instruction).toBe("# Changed during preparation");
 });
 
-test("rejects a prepared admin copy after another owner's target Agent becomes private", async () => {
+test("rejects a prepared member copy after its public source is deleted", async () => {
   const admin = bdd.user({ orgRole: "org:admin" });
   const owner = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
   bdd.acceptAgentStorageWrites();
-  const source = await bdd.createAgent(admin, {
-    displayName: "Admin copy source",
-  });
-  const target = await bdd.createAgent(owner, {
-    displayName: "Revoked copy target",
-    visibility: "public",
+  const namespace = await bdd.bootstrapLimitedFreeOnboarding(admin, {
+    displayName: "Workflow member",
   });
   const s3 = installWorkflowVolumeS3Fixture(context);
   const name = `revoked-copy-${randomUUID().slice(0, 8)}`;
   const workflow = await misc.createWorkflow(
     admin,
-    source.agentId,
+    namespace,
     name,
     {
+      visibility: "public",
       content: "# Permission checked before upload",
       files: [{ path: "notes.md", content: "Prepared file" }],
     },
     [201],
   );
-  const copyHeaders = await retainedHeaders(admin);
+  const copyHeaders = headers(owner);
   if (workflow.status !== 201) {
     throw new Error("Expected the source Workflow to be created");
   }
@@ -137,7 +133,7 @@ test("rejects a prepared admin copy after another owner's target Agent becomes p
     ).copy({
       headers: copyHeaders,
       params: { workflowId: workflow.body.id },
-      body: { toAgentId: target.agentId },
+      body: { toAgentId: namespace },
     }),
     [409],
   );
@@ -149,24 +145,14 @@ test("rejects a prepared admin copy after another owner's target Agent becomes p
     await copying;
   });
   await entered.promise;
-  const changed = await accept(
-    setupApp({ context, routes: agentsRoutes })(
-      agentsByIdContract,
-    ).updateMetadata({
-      headers: headers(owner),
-      params: { id: target.agentId },
-      body: { visibility: "private" },
-    }),
-    [200],
-  );
-  expect(changed.body.visibility).toBe("private");
+  await misc.deleteWorkflow(admin, workflow.body.id, [204]);
   uploadReleased = true;
   released.resolve();
   expect((await copying).body.error.code).toBe("CONFLICT");
-  const listed = await misc.listWorkflows(admin);
+  const listed = await misc.listWorkflows(owner);
   expect(
     listed.body.filter((row) => {
-      return row.agentId === target.agentId && row.name === name;
+      return row.visibility === "private" && row.name === name;
     }),
   ).toStrictEqual([]);
 });

@@ -32,13 +32,10 @@ describe("Direct Run launch defaults", () => {
       );
       expect(execution.platformEnvironment).toMatchObject({
         OKOU_APP_URL: "https://execution-defaults.example",
-        OKOU_AGENT_ID: owned.agentId,
         OKOU_CHAT_THREAD_ID: queued.threadId,
         OKOU_TOKEN: expect.any(String),
       });
-      expect(execution.vars).toMatchObject({
-        OKOU_AGENT_ID: owned.agentId,
-      });
+      expect(execution.vars ?? {}).not.toHaveProperty("OKOU_AGENT_ID");
       await api.requestCancelRun(owned.actor, queued.runId, [200]);
       const next = await api.createThreadRun(owned.actor, {
         agentId: owned.agentId,

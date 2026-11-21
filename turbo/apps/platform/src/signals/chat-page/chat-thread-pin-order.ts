@@ -41,12 +41,9 @@ const movePinnedThread$ = command(
     if (!thread) {
       return;
     }
-    // A pin ranks against the pins listed with it: the chats of its Project,
-    // which can belong to several Agents, or else the chats of its Agent.
+    // Each Project and the top-level member list have independent pin ranks.
     const ranked = threads.filter((item) => {
-      return move.projectId === null
-        ? item.agentId === thread.agentId
-        : item.projectId === move.projectId;
+      return item.projectId === move.projectId;
     });
     const pinOrders = new Map(
       moveChatThreadPinOrder(

@@ -313,7 +313,6 @@ async function expectAutomationSourceAnnotation(
       kind: "agent",
       runId: sourceRun.runId,
       threadId: sourceRun.threadId,
-      agentId: fixture.agentId,
       titleSnapshot: WATCHED_THREAD_TITLE,
       href: `/chats/${sourceRun.threadId}#run-${sourceRun.runId}`,
     },

@@ -6,7 +6,7 @@ import SwiftUI
 /// Read identity inside the hosted row so metadata updates refresh existing cells.
 struct ChatAgentAvatar: View {
   let agents: ThreadListStore?
-  let agentID: String
+  let agentID: String?
   var size: CGFloat = OkouAvatarSize.message
 
   var body: some View {
@@ -23,11 +23,11 @@ struct ChatAgentAvatar: View {
 
 private struct ChatAgentAvatarContent: View {
   let agents: ThreadListStore
-  let agentID: String
+  let agentID: String?
   let size: CGFloat
   @ResolvedValue private var current: [AgentRecord]?
 
-  init(agents: ThreadListStore, agentID: String, size: CGFloat) {
+  init(agents: ThreadListStore, agentID: String?, size: CGFloat) {
     self.agents = agents
     self.agentID = agentID
     self.size = size
@@ -37,8 +37,8 @@ private struct ChatAgentAvatarContent: View {
   var body: some View {
     let agent = (current ?? agents.agents).first(where: { $0.agentId == agentID })
     OkouAgentAvatar(
-      avatarURL: agent?.avatarUrl, name: agent?.displayName ?? "Agent",
-      isDefault: agent?.isDefaultAgent ?? false, size: size)
+      avatarURL: agent?.avatarUrl, name: agent?.displayName ?? "Okou",
+      isDefault: agent?.isDefaultAgent ?? true, size: size)
   }
 }
 
