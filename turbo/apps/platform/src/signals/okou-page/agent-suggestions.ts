@@ -103,7 +103,6 @@ function showSuggestionSent(): void {
 interface SuggestionThreadTarget {
   readonly kind: "thread";
   readonly id: string;
-  readonly agentId?: string;
 }
 
 /**
@@ -151,13 +150,9 @@ const directionGraph$ = computed((get) => {
   }
   return {
     kind: target.kind,
-    ...createInPlaceThreadComposerSignals(
-      target.id,
-      target.agentId,
-      (submission) => {
-        session.finish(target.id, submission);
-      },
-    ),
+    ...createInPlaceThreadComposerSignals(target.id, (submission) => {
+      session.finish(target.id, submission);
+    }),
   };
 });
 
@@ -302,7 +297,6 @@ export const openSuggestionDirection$ = command(
           ? {
               kind: "thread",
               id: threadId,
-              agentId: thread.agentId,
             }
           : { kind: "new", agentId },
       finish: (sentThreadId, submission) => {

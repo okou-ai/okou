@@ -4,10 +4,7 @@ import { chatThreadIndicatorsFromWorker$ } from "./shared-database.ts";
 import { chatThreadOnlyUnread$ } from "./chat-page/chat-thread-only-unread.ts";
 import { chatThreadOnlyArchived$ } from "./chat-page/chat-thread-only-archived.ts";
 import { chatThreadOnlyMuted$ } from "./chat-page/chat-thread-only-muted.ts";
-import {
-  chatThreadMetaMap$,
-  eventDrivenChatThreads$,
-} from "./chat-page/chat-thread-event-sourcing.ts";
+import { eventDrivenChatThreads$ } from "./chat-page/chat-thread-event-sourcing.ts";
 import { projects$ } from "./projects/projects.ts";
 import { expandedProjectIds$ } from "./projects/project-expansion.ts";
 import { command, computed, state, type Computed } from "ccstate";
@@ -42,26 +39,13 @@ export const hasCurrentChatThread$ = computed((get): boolean => {
   return get(currentChatThreadId$) !== null;
 });
 
-const currentChatThreadAgentId$ = computed((get): string | null => {
-  const threadId = get(currentChatThreadId$);
-  if (!threadId) {
-    return null;
-  }
-  return get(chatThreadMetaMap$).get(threadId)?.agentId ?? null;
-});
-
 export const currentChatAgentScope$ = computed((get): string | null => {
-  return (
-    get(currentChatThreadAgentId$) ??
-    get(internalChatAgentId$) ??
-    get(currentAgentId$)
-  );
+  return get(internalChatAgentId$) ?? get(currentAgentId$);
 });
 
 export const currentChatAgentId$ = computed(
   async (get): Promise<string | null> => {
     return (
-      (await get(currentChatThreadAgentId$)) ??
       get(internalChatAgentId$) ??
       get(currentAgentId$) ??
       (await get(defaultAgentId$))
@@ -69,7 +53,7 @@ export const currentChatAgentId$ = computed(
   },
 );
 
-/** New chats use the default executor. Existing threads keep theirs. */
+/** New chats use the member default executor. */
 export const newChatAgentId$ = defaultAgentId$;
 
 const uuidPattern =

@@ -560,14 +560,10 @@ export function createComposerSignals(
 ): ComposerSignals {
   const eventSignals = createComposerChatEventSignals(options.eventSignals);
   const draft = options.draft.signals;
-  const agentId$ = computed((): string | null => {
-    return options.agentId ?? null;
-  });
   const ui = createComposerUiSignals();
   const workflowComposer = createWorkflowComposerSignals(
     draft,
     ui.openTemplatePickerDialog$,
-    agentId$,
     {
       autoFocus: true,
       ...(options.forwardComposer

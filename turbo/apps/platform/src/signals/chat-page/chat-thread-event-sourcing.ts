@@ -56,7 +56,6 @@ interface ChatThreadEventState {
 
 export interface ThreadMeta {
   readonly id: string;
-  readonly agentId?: string;
   readonly title: string | null;
   readonly pinnedAt: string | null;
   readonly archived: boolean;

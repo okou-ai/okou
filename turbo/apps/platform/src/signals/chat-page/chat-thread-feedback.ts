@@ -501,7 +501,6 @@ function forwardContextFrom(
 ): ChatForwardContext {
   return {
     ...selection,
-    agentId: source.agentId,
     titleSnapshot:
       source.title ??
       i18n.t(($) => {

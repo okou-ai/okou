@@ -34,14 +34,14 @@ export const setChatThreadArchivedWithFeedback$ = command(
     {
       threadId,
       archived,
-      leaveToAgentId,
+      leaveThread,
     }: {
       readonly threadId: string;
       readonly archived: boolean;
       // The mobile header fills the screen with the thread, so archiving
       // returns to the agent's list (My Okou's `/`) instead of staying on a
       // hidden chat.
-      readonly leaveToAgentId?: string;
+      readonly leaveThread?: boolean;
     },
     signal: AbortSignal,
   ) => {
@@ -50,7 +50,7 @@ export const setChatThreadArchivedWithFeedback$ = command(
     if (meta?.archived === archived) {
       return;
     }
-    const leaving = archived && leaveToAgentId !== undefined;
+    const leaving = archived && leaveThread === true;
     // The archive is optimistic, so leave the thread without waiting for the
     // request. The caller passes a root-scoped signal because this navigation
     // aborts the current page signal.

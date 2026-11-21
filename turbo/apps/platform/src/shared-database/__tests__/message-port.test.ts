@@ -1491,7 +1491,6 @@ test("Keep indicators readable when message-triggered chat warming fails", async
   await expect(
     bridge.getComputed("chat-thread-indicators"),
   ).resolves.toStrictEqual({
-    agents: {},
     threads: { [threadId]: "unread" },
     unreadAt: {},
   });
