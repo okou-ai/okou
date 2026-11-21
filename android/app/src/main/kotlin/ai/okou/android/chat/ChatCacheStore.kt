@@ -609,7 +609,8 @@ internal constructor(
                 }
             }
 
-        suspend fun saveProjects(checkpoint: ProjectCheckpoint, confirmedAt: Long): Unit =
+        /** Returns false when the transaction preserves a strictly newer Project checkpoint. */
+        suspend fun saveProjects(checkpoint: ProjectCheckpoint, confirmedAt: Long): Boolean =
             withContext(dispatcher) {
                 checkpoint.validate()
                 require(confirmedAt > 0)

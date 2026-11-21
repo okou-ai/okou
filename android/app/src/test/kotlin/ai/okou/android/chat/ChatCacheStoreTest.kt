@@ -204,9 +204,9 @@ class ChatCacheStoreTest {
         store
             .open(identity) { true }
             .use {
-                it.saveProjects(snapshot, 1234)
-                it.saveProjects(renamed, 2345)
-                it.saveProjects(snapshot, 1234)
+                assertTrue(it.saveProjects(snapshot, 1234))
+                assertTrue(it.saveProjects(renamed, 2345))
+                assertFalse(it.saveProjects(snapshot, 1234))
                 assertNull(it.load())
             }
         store.close()
