@@ -140,7 +140,7 @@ class ChatListApiFixture : Closeable {
     @Volatile
     var indicators: () -> MockResponse = {
         jsonResponse(
-            """{"agents":{},"threads":{"$CHAT_PERSONAL":"active","$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}"""
+            """{"threads":{"$CHAT_PERSONAL":"active","$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}"""
         )
     }
     @Volatile
