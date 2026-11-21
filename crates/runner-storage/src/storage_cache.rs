@@ -64,7 +64,6 @@ use futures_util::StreamExt;
 use reqwest::Client;
 use sandbox::{Sandbox, WriteFileEntry};
 use tokio::fs;
-use tokio::io::AsyncReadExt as _;
 #[cfg(test)]
 use tokio::sync::Notify;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, TryAcquireError, oneshot};
@@ -2781,7 +2780,8 @@ async fn process_one_hit_or_passthrough(
         }
     };
 
-    match read_cache_entry(&cache_dir, &archive_path, metrics).await? {
+    let (cached, reader) = read_cache_entry(&cache_dir, &archive_path, reader, metrics).await?;
+    match cached {
         CachedArchive::Hit(bytes) => {
             let guest_path = guest_archive_path(&target.name, &target.version);
             drop(reader);
@@ -2856,33 +2856,52 @@ async fn cached_archive_exists(archive_path: &Path) -> RunnerResult<bool> {
 async fn read_cache_entry(
     cache_dir: &Path,
     archive_path: &Path,
+    reader: nix::fcntl::Flock<std::fs::File>,
     metrics: &mut CacheProcessMetrics,
-) -> RunnerResult<CachedArchive> {
-    match fs::metadata(archive_path).await {
-        Ok(metadata) if metadata.len() == 0 => Ok(CachedArchive::Empty),
-        Ok(metadata) if metadata.len() <= CACHE_MAX_SIZE => {
-            let started_at = Instant::now();
-            match read_cached_archive(archive_path, Some(metadata.len()), CACHE_MAX_SIZE).await? {
-                DownloadBody::Complete(bytes) => {
-                    metrics.record(STORAGE_CACHE_HIT_READ, started_at.elapsed(), true, None);
-                    touch_mtime(cache_dir);
-                    Ok(CachedArchive::Hit(bytes))
-                }
-                DownloadBody::Empty => Ok(CachedArchive::Empty),
-                DownloadBody::OverSize { observed_size } => {
-                    Ok(CachedArchive::OverSize { observed_size })
-                }
-            }
+) -> RunnerResult<(CachedArchive, nix::fcntl::Flock<std::fs::File>)> {
+    let size = match fs::metadata(archive_path).await {
+        Ok(metadata) => metadata.len(),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok((CachedArchive::Missing, reader));
         }
-        Ok(metadata) => Ok(CachedArchive::OverSize {
-            observed_size: metadata.len(),
-        }),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(CachedArchive::Missing),
-        Err(e) => Err(RunnerError::Internal(format!(
-            "stat cached {}: {e}",
-            archive_path.display()
-        ))),
+        Err(error) => {
+            return Err(RunnerError::Internal(format!(
+                "stat cached {}: {error}",
+                archive_path.display()
+            )));
+        }
+    };
+    if size == 0 {
+        return Ok((CachedArchive::Empty, reader));
     }
+    if size > CACHE_MAX_SIZE {
+        return Ok((
+            CachedArchive::OverSize {
+                observed_size: size,
+            },
+            reader,
+        ));
+    }
+
+    let started_at = Instant::now();
+    let path = archive_path.to_path_buf();
+    // The accepted read retains the shared lock if its async caller is cancelled.
+    let (result, reader) = tokio::task::spawn_blocking(move || {
+        let result = read_cached_archive(&path, Some(size), CACHE_MAX_SIZE);
+        (result, reader)
+    })
+    .await
+    .map_err(|error| RunnerError::Internal(format!("cached archive read task: {error}")))?;
+    let cached = match result? {
+        DownloadBody::Complete(bytes) => {
+            metrics.record(STORAGE_CACHE_HIT_READ, started_at.elapsed(), true, None);
+            touch_mtime(cache_dir);
+            CachedArchive::Hit(bytes)
+        }
+        DownloadBody::Empty => CachedArchive::Empty,
+        DownloadBody::OverSize { observed_size } => CachedArchive::OverSize { observed_size },
+    };
+    Ok((cached, reader))
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -3158,45 +3177,33 @@ async fn download_tarball(
     Ok(DownloadBody::Complete(bytes))
 }
 
-async fn read_cached_archive(
+fn read_cached_archive(
     path: &Path,
     expected_size: Option<u64>,
     max_size: u64,
 ) -> RunnerResult<DownloadBody> {
-    let mut file = fs::File::open(path)
-        .await
+    use std::io::Read as _;
+    let mut file = std::fs::File::open(path)
         .map_err(|e| RunnerError::Internal(format!("open cached {}: {e}", path.display())))?;
     let capacity = initial_body_capacity(None, expected_size, max_size);
-    let mut body = BoundedArchiveBody::new(capacity, max_size);
-    // Keep the scratch space out of every spawned archive task's future. Small
-    // cached archives also need no 64-KiB Tokio file read buffer. The size is
-    // only a hint: retain a useful minimum and read to EOF under the byte limit.
-    let mut buf = vec![0u8; capacity.clamp(4096, BODY_BUFFER_FALLBACK_CAPACITY)];
-
-    loop {
-        let n = file
-            .read(&mut buf)
-            .await
-            .map_err(|e| RunnerError::Internal(format!("read cached {}: {e}", path.display())))?;
-        if n == 0 {
-            break;
-        }
-        let chunk = buf.get(..n).ok_or_else(|| {
-            RunnerError::Internal(format!(
-                "read cached {} produced invalid chunk length {n}",
-                path.display()
-            ))
-        })?;
-        if let Some(observed_size) = body.append(chunk)? {
-            return Ok(DownloadBody::OverSize { observed_size });
-        }
+    let read_error = |e| RunnerError::Internal(format!("read cached {}: {e}", path.display()));
+    let mut bytes = Vec::with_capacity(capacity);
+    let read = (&mut file)
+        .take(max_size)
+        .read_to_end(&mut bytes)
+        .map_err(read_error)?;
+    let observed_size = u64::try_from(read)
+        .map_err(|_| RunnerError::Internal("body length overflow".to_string()))?;
+    // Check for growth beyond the limit without growing the retained buffer.
+    if observed_size == max_size && file.read(&mut [0]).map_err(read_error)? != 0 {
+        return Ok(DownloadBody::OverSize {
+            observed_size: observed_size.saturating_add(1),
+        });
     }
-
-    let bytes = body.into_bytes();
+    let bytes = Bytes::from(bytes);
     if bytes.is_empty() {
         return Ok(DownloadBody::Empty);
     }
-
     Ok(DownloadBody::Complete(bytes))
 }
 

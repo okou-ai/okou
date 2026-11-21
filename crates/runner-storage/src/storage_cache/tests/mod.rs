@@ -27,7 +27,7 @@ use std::sync::{
     Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
 };
-use tokio::io::AsyncWriteExt as _;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 
 use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
@@ -6081,9 +6081,7 @@ async fn cached_archive_read_rejects_one_byte_over_limit() {
     let archive_path = temp.path().join("archive.tar.gz");
     fs::write(&archive_path, b"abcdefg").await.unwrap();
 
-    let result = read_cached_archive(&archive_path, Some(7), 6)
-        .await
-        .unwrap();
+    let result = read_cached_archive(&archive_path, Some(7), 6).unwrap();
 
     match result {
         DownloadBody::Complete(bytes) => {
@@ -6105,9 +6103,7 @@ async fn cached_archive_read_preserves_contents_with_stale_size_hints() {
         let content = (0..length).map(|i| (i % 251) as u8).collect::<Vec<_>>();
         fs::write(&archive_path, &content).await.unwrap();
         for hint in [None, Some(0), Some(1), Some(length as u64)] {
-            let result = read_cached_archive(&archive_path, hint, length as u64)
-                .await
-                .unwrap();
+            let result = read_cached_archive(&archive_path, hint, length as u64).unwrap();
             match result {
                 DownloadBody::Empty => assert!(content.is_empty()),
                 DownloadBody::Complete(bytes) => assert_eq!(bytes.as_ref(), content),
@@ -6117,9 +6113,7 @@ async fn cached_archive_read_preserves_contents_with_stale_size_hints() {
             }
         }
         if length > 1 {
-            let result = read_cached_archive(&archive_path, Some(1), length as u64 - 1)
-                .await
-                .unwrap();
+            let result = read_cached_archive(&archive_path, Some(1), length as u64 - 1).unwrap();
             assert!(matches!(result, DownloadBody::OverSize { observed_size }
                     if observed_size == length as u64));
         }
