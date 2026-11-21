@@ -1,7 +1,7 @@
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { catalogFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import { act, screen, waitFor, within } from "@testing-library/react";
-import { bankingUserContract } from "@okouai/api-contracts/contracts/banking";
+import { bankingWorkspaceContract } from "@okouai/api-contracts/contracts/banking";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/run-connector-accounts";
 
@@ -24,8 +24,8 @@ import { createChatEvent } from "../../../mocks/mock-helpers.ts";
 const context = testContext();
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const THREAD_ID = "b0000000-0000-4000-a000-000000000902";
-const CONNECTOR_URL = `https://app.okou.ai/connectors/github/authorize?agentId=${AGENT_ID}`;
-const PERMISSION_URL = `https://app.okou.ai/agents/${AGENT_ID}/permissions?connectorSlug=slack&permission=files:read`;
+const CONNECTOR_URL = `https://app.okou.ai/connectors/github/authorize?threadId=${THREAD_ID}`;
+const PERMISSION_URL = `https://app.okou.ai/connectors/permissions?orgId=org_default&userId=test-user-123&connectorSlug=slack&permission=files:read`;
 const EXACT_CONNECTION_ID = "f0000000-0000-4000-a000-000000000911";
 const DEFAULT_CONNECTION_ID = "f0000000-0000-4000-a000-000000000912";
 
@@ -36,7 +36,6 @@ function exactReconnectUrl(connectionId = EXACT_CONNECTION_ID): URL {
   const url = new URL(
     `https://app.okou.ai/connectors/github/reconnect/${connectionId}`,
   );
-  url.searchParams.set("agentId", AGENT_ID);
   url.searchParams.set("threadId", THREAD_ID);
   url.searchParams.set("callbackPrompt", "Continue the account-specific task");
   return url;
@@ -353,9 +352,7 @@ test("Removing formatted bare actions leaves readable prose without empty marker
 test("Incomplete action links are shown as unavailable", async () => {
   const connectorWithoutAgent =
     "https://app.okou.ai/connectors/github/authorize";
-  const bankingWithoutReason = new URL(
-    `https://app.okou.ai/agents/${AGENT_ID}/banking`,
-  );
+  const bankingWithoutReason = new URL(`https://app.okou.ai/banking/access`);
   bankingWithoutReason.searchParams.set("threadId", THREAD_ID);
   bankingWithoutReason.searchParams.set(
     "callbackPrompt",
@@ -388,8 +385,8 @@ test("Incomplete action links are shown as unavailable", async () => {
 
 test("Invalid actions remain unavailable beside valid and external links", async () => {
   const wrongAgentUrl = CONNECTOR_URL.replace(
-    AGENT_ID,
-    "c0000000-0000-4000-a000-000000000099",
+    THREAD_ID,
+    "b0000000-0000-4000-a000-000000000099",
   );
   const wrongThreadUrl = `${PERMISSION_URL}&threadId=b0000000-0000-4000-a000-000000000099&callbackPrompt=Continue`;
   const externalUrl = CONNECTOR_URL.replace(
@@ -571,8 +568,8 @@ test("A bare action stops before adjacent Chinese punctuation and prose", async 
 
 test("Action labels stay literal instead of becoming new Markdown links or headings", async () => {
   const wrongAgentUrl = CONNECTOR_URL.replace(
-    AGENT_ID,
-    "c0000000-0000-4000-a000-000000000099",
+    THREAD_ID,
+    "b0000000-0000-4000-a000-000000000099",
   );
   await setupChat(
     [
@@ -1055,11 +1052,6 @@ test("Closing the exact reconnect dialog does not send the callback", async () =
 });
 
 test("Malformed or context-mismatched exact reconnect links are inert", async () => {
-  const wrongAgent = exactReconnectUrl();
-  wrongAgent.searchParams.set(
-    "agentId",
-    "c0000000-0000-4000-a000-000000000099",
-  );
   const wrongThread = exactReconnectUrl();
   wrongThread.searchParams.set(
     "threadId",
@@ -1067,7 +1059,7 @@ test("Malformed or context-mismatched exact reconnect links are inert", async ()
   );
   const malformedId = exactReconnectUrl("not-an-account-id");
   await setupChat(
-    [wrongAgent, wrongThread, malformedId]
+    [wrongThread, malformedId]
       .map((url) => {
         return url.toString();
       })
@@ -1075,12 +1067,12 @@ test("Malformed or context-mismatched exact reconnect links are inert", async ()
   );
 
   await waitFor(() => {
-    expect(screen.getAllByTestId("unavailable-action-card")).toHaveLength(3);
+    expect(screen.getAllByTestId("unavailable-action-card")).toHaveLength(2);
   });
   expect(screen.queryByTestId("connector-action-card")).toBeNull();
   expect(
     queryAllByRoleFast("link").some((link) => {
-      return [wrongAgent, wrongThread, malformedId].some((url) => {
+      return [wrongThread, malformedId].some((url) => {
         return link.getAttribute("href") === url.toString();
       });
     }),
@@ -1412,9 +1404,8 @@ async function reviewBankingRequest(entry: "chat" | "direct") {
     "Continue with the subscription review",
   );
   context.mocks.api(
-    bankingUserContract.accessRequestStatus,
-    ({ params, respond }) => {
-      expect(params.agentId).toBe(AGENT_ID);
+    bankingWorkspaceContract.accessRequestStatus,
+    ({ respond }) => {
       return respond(200, {
         agent: { id: AGENT_ID, name: "Finance Assistant" },
         connection: null,
@@ -1439,7 +1430,6 @@ async function reviewBankingRequest(entry: "chat" | "direct") {
     entry === "chat",
   );
   expect(card).toHaveTextContent("Banking access request");
-  expect(card).toHaveTextContent("Finance Assistant");
   expect(card).toHaveTextContent(reason);
   expect(card).toHaveTextContent(
     "Accounts, balances, and transactions · read only",

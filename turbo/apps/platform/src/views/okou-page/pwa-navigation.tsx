@@ -13,8 +13,7 @@ import {
 import { Link } from "../router/link.tsx";
 import { AgentUnreadIndicator } from "./sidebar-agent-row-actions.tsx";
 
-type PwaParentPathname =
-  typeof ROUTES.me | typeof ROUTES.agents | typeof ROUTES.workflows;
+type PwaParentPathname = typeof ROUTES.me | typeof ROUTES.workflows;
 
 function PwaBackLink({
   pathname,
@@ -52,14 +51,11 @@ export function PwaBackToChats() {
   );
 }
 
-// Agents, Workflows and Works are opened from Me, so each page steps back one
+// Workflows and Works are opened from Me, so each page steps back one
 // level toward it. Tab roots have no parent.
 function pwaParentPathname(route: RouteKey | null): PwaParentPathname | null {
-  if (route === "agents" || route === "workflows" || route === "works") {
+  if (route === "workflows" || route === "works") {
     return ROUTES.me;
-  }
-  if (route === "agentDetail" || route === "agentPermissions") {
-    return ROUTES.agents;
   }
   if (isWorkflowDetailRouteKey(route)) {
     return ROUTES.workflows;

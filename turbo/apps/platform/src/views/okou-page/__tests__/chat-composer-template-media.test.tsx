@@ -10,7 +10,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   AGENT_ID,
   expectInlineTemplate,
@@ -45,7 +45,7 @@ test("Preview a website template and return to its picker", async () => {
   mockTemplateChat();
   // Category navigation has its own suite. Open this preview from a genuine
   // saved website draft instead of mounting and replacing another catalog.
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: {
         version: 1,

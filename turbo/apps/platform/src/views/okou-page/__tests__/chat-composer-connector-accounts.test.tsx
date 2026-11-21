@@ -7,7 +7,7 @@ import {
   chatThreadsContract,
   type ChatEventSendBody,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -180,7 +180,7 @@ test.each([false, true])(
         createdAt: "2026-10-27T00:00:00Z",
       });
     });
-    context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
+    context.mocks.api(composerDraftContract.patch, ({ body, respond }) => {
       if (body.draftUserMessage === null) {
         clearedDrafts.push(body);
       }

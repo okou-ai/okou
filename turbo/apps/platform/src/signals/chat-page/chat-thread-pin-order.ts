@@ -55,8 +55,7 @@ const movePinnedThread$ = command(
         return [update.threadId, update.pinOrder] as const;
       }),
     );
-    // A move between equal ranks also re-ranks the chats tied with it, and
-    // each of them keeps its own Agent.
+    // A move between equal ranks also re-ranks the chats tied with it.
     const reranked = ranked.flatMap((item) => {
       const pinOrder = pinOrders.get(item.id);
       return pinOrder === undefined
@@ -68,7 +67,6 @@ const movePinnedThread$ = command(
         id: update.eventId,
         kind: "sort_touched",
         chatThreadId: update.thread.id,
-        agentId: update.thread.agentId,
         pinOrder: update.pinOrder,
       });
     }

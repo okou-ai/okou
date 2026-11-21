@@ -4,16 +4,13 @@ import { chatThreadIndicatorsFromWorker$ } from "./shared-database.ts";
 import { chatThreadOnlyUnread$ } from "./chat-page/chat-thread-only-unread.ts";
 import { chatThreadOnlyArchived$ } from "./chat-page/chat-thread-only-archived.ts";
 import { chatThreadOnlyMuted$ } from "./chat-page/chat-thread-only-muted.ts";
-import {
-  chatThreadMetaMap$,
-  eventDrivenChatThreads$,
-} from "./chat-page/chat-thread-event-sourcing.ts";
+import { eventDrivenChatThreads$ } from "./chat-page/chat-thread-event-sourcing.ts";
 import { projects$ } from "./projects/projects.ts";
 import { expandedProjectIds$ } from "./projects/project-expansion.ts";
-import { command, computed, state, type Computed } from "ccstate";
+import { computed, type Computed } from "ccstate";
 import type { EventDrivenChatThread } from "@okouai/core/chat-thread-event-replay";
 import { comparePinnedThreads } from "@okouai/core/chat-thread-pin-order";
-import { agentById, currentAgentId$, defaultAgentId$ } from "./agent.ts";
+
 import {
   buildChatThreadListRows,
   buildChatThreadNavigationList,
@@ -21,12 +18,6 @@ import {
   type ChatThreadListRow,
   type ChatThreadNavigationList,
 } from "./chat-page/chat-thread-list-rows.ts";
-
-const internalChatAgentId$ = state<string | null>(null);
-
-export const setChatAgentId$ = command(({ set }, agentId: string | null) => {
-  set(internalChatAgentId$, agentId);
-});
 
 export const currentChatThreadId$ = computed((get): string | null => {
   const params = get(pathParams$);
@@ -41,73 +32,6 @@ export const currentChatThreadId$ = computed((get): string | null => {
 export const hasCurrentChatThread$ = computed((get): boolean => {
   return get(currentChatThreadId$) !== null;
 });
-
-const currentChatThreadAgentId$ = computed((get): string | null => {
-  const threadId = get(currentChatThreadId$);
-  if (!threadId) {
-    return null;
-  }
-  return get(chatThreadMetaMap$).get(threadId)?.agentId ?? null;
-});
-
-export const currentChatAgentScope$ = computed((get): string | null => {
-  return (
-    get(currentChatThreadAgentId$) ??
-    get(internalChatAgentId$) ??
-    get(currentAgentId$)
-  );
-});
-
-export const currentChatAgentId$ = computed(
-  async (get): Promise<string | null> => {
-    return (
-      (await get(currentChatThreadAgentId$)) ??
-      get(internalChatAgentId$) ??
-      get(currentAgentId$) ??
-      (await get(defaultAgentId$))
-    );
-  },
-);
-
-/** New chats use the default executor. Existing threads keep theirs. */
-export const newChatAgentId$ = defaultAgentId$;
-
-const uuidPattern =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-export const currentChatAgentRecordId$ = computed(
-  async (get): Promise<string | null> => {
-    const agentId = await get(currentChatAgentId$);
-    if (!agentId) {
-      return null;
-    }
-
-    if (uuidPattern.test(agentId)) {
-      return agentId;
-    }
-
-    return (await get(agentById(agentId))).agentId;
-  },
-);
-
-export const currentChatAgent$ = computed(async (get) => {
-  const agentId = await get(currentChatAgentId$);
-  if (!agentId) {
-    return null;
-  }
-
-  return await get(agentById(agentId));
-});
-
-export const currentChatAgentDisplayName$ = computed(
-  async (get): Promise<string | null> => {
-    if ((await get(currentChatAgentId$)) === (await get(defaultAgentId$))) {
-      return "Okou";
-    }
-    // A missing agent and a missing name both mean "no display name".
-    return (await get(currentChatAgent$))?.displayName ?? null;
-  },
-);
 
 export interface ChatThreadListSignals {
   /** Listed chats outside Projects, which own number shortcuts. */

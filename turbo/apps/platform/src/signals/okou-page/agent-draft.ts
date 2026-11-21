@@ -1,6 +1,7 @@
 import { composerDraftSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { command, computed, state, type Command } from "ccstate";
-import { agentDraftContract } from "@okouai/api-contracts/client/agent-draft";
+import { currentOrgInfo$, currentUserInfo$ } from "../auth.ts";
+import { composerDraftContract } from "@okouai/api-contracts/client/agent-draft";
 import type {
   PersistedAttachment,
   UserMessageDocument,
@@ -60,15 +61,14 @@ function userMessageAgentDraftState(args: {
   };
 }
 
-function createAgentDraftSync(agentId: string, draft: DraftSignals) {
+function createAgentDraftSync(draft: DraftSignals) {
   const draftSyncReset$ = resetSignal();
 
   const patchDraft$ = command(
     async ({ get }, payload: DraftPersistencePayload, signal: AbortSignal) => {
-      const client = get(apiClient$)(agentDraftContract);
+      const client = get(apiClient$)(composerDraftContract);
       await accept(
         client.patch({
-          params: { id: agentId },
           body: {
             draftUserMessage: payload.userMessage,
             draftAttachments: payload.attachments,
@@ -148,22 +148,28 @@ function createAgentDraftSync(agentId: string, draft: DraftSignals) {
   return { queueDraftSync$, cancelDraftSync$, flushDraftClear$ };
 }
 
-export function createAgentDraftSignals(agentId: string): EnsuredAgentDraft {
+export function createAgentDraftSignals(): EnsuredAgentDraft {
   const draft = createDraftSignals();
-  const sync = createAgentDraftSync(agentId, draft);
-  const load$ = createAgentDraftLoad(agentId, draft, sync.queueDraftSync$);
+  const sync = createAgentDraftSync(draft);
+  const load$ = createAgentDraftLoad(draft, sync.queueDraftSync$);
   return { draft, load$, ...sync };
 }
 
 export const ensureAgentDraft$ = command(
-  ({ get, set }, agentId: string): EnsuredAgentDraft => {
+  async ({ get, set }, signal: AbortSignal): Promise<EnsuredAgentDraft> => {
+    const [org, user] = await Promise.all([
+      get(currentOrgInfo$),
+      get(currentUserInfo$),
+    ]);
+    signal.throwIfAborted();
+    const scope = JSON.stringify([org?.id, user?.id]);
     const cache = get(agentDraftCache$);
-    const existing = cache.get(agentId);
+    const existing = cache.get(scope);
     if (existing) {
       return existing;
     }
 
-    const created = createAgentDraftSignals(agentId);
+    const created = createAgentDraftSignals();
     const entry: AgentDraftEntry = {
       draft: created.draft,
       load$: created.load$,
@@ -172,7 +178,7 @@ export const ensureAgentDraft$ = command(
       flushDraftClear$: created.flushDraftClear$,
     };
     const next = new Map(cache);
-    next.set(agentId, entry);
+    next.set(scope, entry);
     set(agentDraftCache$, next);
     return created;
   },
@@ -209,7 +215,6 @@ function createAgentDraftHandoffSync(
 }
 
 function createAgentDraftLoad(
-  agentId: string,
   draft: DraftSignals,
   queueDraftSync$: AgentDraftEntry["queueDraftSync$"],
 ): AgentDraftEntry["load$"] {
@@ -218,7 +223,7 @@ function createAgentDraftLoad(
   const serverDraft$ = computed(async (get) => {
     get(revision$);
     const result = await accept(
-      get(apiClient$)(agentDraftContract).get({ params: { id: agentId } }),
+      get(apiClient$)(composerDraftContract).get(),
       [200],
     );
     return userMessageAgentDraftState(composerDraftSchema.parse(result.body));
@@ -306,9 +311,9 @@ function createAgentDraftLoad(
   return load$;
 }
 
-export const clearAgentDraftById$ = command(
-  async ({ set }, agentId: string, signal: AbortSignal) => {
-    const entry = set(ensureAgentDraft$, agentId);
+export const clearComposerDraft$ = command(
+  async ({ set }, signal: AbortSignal) => {
+    const entry = await set(ensureAgentDraft$, signal);
     set(entry.draft.clear$);
     await set(entry.flushDraftClear$, signal);
   },

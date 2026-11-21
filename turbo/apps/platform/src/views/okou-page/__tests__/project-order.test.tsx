@@ -9,7 +9,7 @@ import {
   chatThreadDraftContract,
   chatThreadPinOrderContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   click,
   fill,
@@ -155,13 +155,13 @@ async function prepare(projectPage = false, configure?: () => void) {
   context.mocks.api(chatThreadPinOrderContract.reorder, ({ respond }) => {
     return respond(204);
   });
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, { draftUserMessage: null, draftAttachments: null });
   });
   context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
     return respond(200, { draftUserMessage: null, draftAttachments: null });
   });
-  context.mocks.api(agentDraftContract.patch, ({ respond }) => {
+  context.mocks.api(composerDraftContract.patch, ({ respond }) => {
     return respond(204);
   });
   context.mocks.api(chatThreadByIdContract.patch, ({ respond }) => {

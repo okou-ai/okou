@@ -3,7 +3,6 @@ import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-id
 interface UseCase {
   readonly id: string;
   readonly prompt: string;
-  readonly customAgentOnly?: boolean;
   readonly connectorSlugs?: readonly ConnectorSlug[];
 }
 
@@ -13,7 +12,6 @@ interface Category {
 }
 
 interface IdeationFilterOptions {
-  readonly isCustomAgent: boolean;
   readonly visibleConnectorSlugs?: ReadonlySet<string>;
 }
 
@@ -468,11 +466,6 @@ const categories: readonly Category[] = [
           "Open this URL in the browser and take a screenshot: [paste URL]",
       },
       {
-        id: "self-update-instructions",
-        prompt: "Update yourself: add the following instructions — ...",
-        customAgentOnly: true,
-      },
-      {
         id: "meeting-notes-pipeline",
         prompt:
           "Set up a meeting notes pipeline that takes Fireflies transcripts, generates a summary in Notion, and posts action items to Slack after each meeting",
@@ -529,9 +522,6 @@ function filterUseCase(
   options: IdeationFilterOptions,
 ): UseCase | null {
   const visibleConnectorSlugs = options.visibleConnectorSlugs;
-  if (useCase.customAgentOnly && !options.isCustomAgent) {
-    return null;
-  }
 
   if (
     !useCase.connectorSlugs ||

@@ -1,73 +1,7 @@
 {
   "actions": {
-    "cancel": "取消",
-    "close": "關閉",
-    "copying": "複製中…",
-    "delete": "刪除智能體",
-    "deleting": "刪除中…",
-    "discard": "放棄更改",
-    "save": "儲存",
-    "saving": "儲存中…"
+    "close": "關閉"
   },
-  "avatar": {
-    "accessibilityDescription": "自定義智能體頭像的風格、顏色和五官細節。",
-    "actions": {
-      "customize": "自定義頭像"
-    },
-    "create": "建立自定義頭像",
-    "description": "挑一種風格，或者隨機換一換試試驚喜。",
-    "editDescription": "想改哪裡就改哪裡，也可以隨機換個新造型。",
-    "editTitle": "編輯頭像",
-    "nextStep": "下一步",
-    "previousStep": "上一步",
-    "randomize": "隨機生成頭像",
-    "shuffleHint": "隨機換一換——試試新造型！",
-    "steps": {
-      "color": "顏色",
-      "face": "五官",
-      "hair": "髮型",
-      "mood": "表情",
-      "skin": "膚色",
-      "sweater": "毛衣"
-    },
-    "title": "給你的智能體一張臉",
-    "use": "使用這個頭像"
-  },
-  "delete": {
-    "dangerZone": "危險操作",
-    "dangerZoneDescription": "永久刪除這個智能體及其所有資料。此操作無法撤銷。",
-    "description": "將刪除這個智能體，以及它的工作流、自動化和所有人的聊天記錄。",
-    "irreversible": "此操作無法撤銷。",
-    "success": "智能體已刪除",
-    "title": "刪除{{agentName}}？",
-    "workflows": {
-      "copyTo": "複製到{{agentName}}",
-      "deleteWithAgent": "隨智能體一起刪除",
-      "description": "把想保留的工作流複製到其他智能體，剩下的都會被刪除。",
-      "handle": "處理工作流{{workflowTitle}}",
-      "loadFailed": "無法載入工作流程。",
-      "loading": "正在載入工作流…",
-      "title": "要保留哪些工作流？"
-    }
-  },
-  "detail": {
-    "chatWith": "與{{agentName}}對話",
-    "defaultDescription": "為你調校的 AI 同事",
-    "notFound": {
-      "back": "返回團隊",
-      "description": "智能體「{{agentId}}」不存在，或者你沒有訪問權限。",
-      "title": "找不到該智能體"
-    },
-    "sectionNavigation": "智能體詳情欄目",
-    "tabs": {
-      "instructions": "指令",
-      "profile": "資料"
-    }
-  },
-  "errors": {
-    "unknown": "未知錯誤"
-  },
-  "fallbackName": "智能體",
   "ideation": {
     "all": "全部",
     "catalog": {
@@ -194,10 +128,6 @@
           "personal-weekly-digest": {
             "description": "PR、郵件和日曆彙總成一條 Slack 週報",
             "title": "個人每週摘要"
-          },
-          "self-update-instructions": {
-            "description": "直接在對話裡更新智能體的指令",
-            "title": "自助更新指令"
           },
           "send-messages-on-your-behalf": {
             "description": "替你把團隊公告發到 Slack",
@@ -434,91 +364,6 @@
     },
     "title": "靈感與用例"
   },
-  "instructions": {
-    "editor": {
-      "accessibilityLabel": "指令編輯器",
-      "footerHint": "直接編輯指令，就能調整智能體的行為。",
-      "placeholder": "為你的智能體寫下指令…",
-      "toolbar": {
-        "blockquote": "引用",
-        "bold": "加粗",
-        "bulletList": "無序列表",
-        "heading1": "一級標題",
-        "heading2": "二級標題",
-        "heading3": "三級標題",
-        "inlineCode": "行內程式碼",
-        "italic": "斜體",
-        "orderedList": "有序列表",
-        "strikethrough": "刪除線"
-      }
-    },
-    "saved": "指令已儲存"
-  },
-  "list": {
-    "title": "智能體"
-  },
-  "profile": {
-    "fields": {
-      "avatar": {
-        "description": "建立屬於你的頭像。",
-        "label": "頭像"
-      },
-      "description": {
-        "description": "這個智能體能幫上什麼忙——團隊成員可見。",
-        "label": "描述",
-        "placeholder": "這個智能體是做什麼的？"
-      },
-      "name": {
-        "description": "會顯示在團佇列表裡，它發言時也會出現。",
-        "label": "名稱",
-        "placeholder": "該怎麼稱呼它？"
-      },
-      "tone": {
-        "accessibilityLabel": "{{agentName}}的說話風格",
-        "description": "回覆時的語氣風格。切換語氣後，預覽會隨之更新。",
-        "groupLabel": "語氣",
-        "label": "說話風格"
-      },
-      "visibility": {
-        "description": "這個工作區裡的所有人都可見。",
-        "label": "設為公開"
-      }
-    },
-    "makePrivate": {
-      "confirm": "設為私有",
-      "description": "設為私有後，其他成員將無法訪問自己在它下面的聊天記錄。你重新設為公開，他們就能恢復訪問。",
-      "title": "將{{agentName}}設為私有？",
-      "warningDescription": "其他成員將看不到{{agentName}}，也看不到自己在它下面的聊天。",
-      "warningTitle": "成員將失去訪問權限"
-    },
-    "saved": "資料已儲存",
-    "tones": {
-      "direct": {
-        "agentSample": "週五。週四先給你草稿。",
-        "hint": "直截了當",
-        "label": "直接",
-        "userSample": "我需要在週五前拿到三季度報告。"
-      },
-      "friendly": {
-        "agentSample": "沒問題！三季度報告我週五前給你——週四先發一版草稿，你可以先過目。",
-        "hint": "溫暖親切",
-        "label": "友好",
-        "userSample": "我需要在週五前拿到三季度報告。"
-      },
-      "professional": {
-        "agentSample": "三季度報告我會在週五前準備好，週四先發草稿供你審閱。",
-        "hint": "清晰得體",
-        "label": "專業",
-        "userSample": "我需要在週五前拿到三季度報告。"
-      },
-      "supportive": {
-        "agentSample": "我會確保你在週五前拿到三季度報告。週四我先發草稿，讓你有時間審閱——還需要什麼隨時告訴我。",
-        "hint": "始終站在你這邊",
-        "label": "支援型",
-        "userSample": "我需要在週五前拿到三季度報告。"
-      }
-    }
-  },
   "sidebar": {
     "escapeShortcut": "Esc",
     "filterAll": "全部",
@@ -536,8 +381,5 @@
   },
   "status": {
     "unread": "未讀"
-  },
-  "unsaved": {
-    "message": "你有未儲存的修改"
   }
 }

@@ -26,12 +26,15 @@ import {
   type CapturedChatSend,
   readyChat,
   RUN_PATH,
+  RUN_THREAD_ID,
   createChatCapabilityHelpers,
 } from "./chat-capability-test-helpers.ts";
 import {
   permissionActionUrl,
   permissionMetadata,
 } from "./chat-capability-connector-test-helpers.ts";
+
+import { mockAuthorizationCallbackThread } from "./authorization-callback-test-helpers.ts";
 
 const context = testContext();
 const { installCapabilityChat } = createChatCapabilityHelpers(context);
@@ -40,6 +43,7 @@ function installActionConversation(args: {
   readonly lines: readonly string[];
   readonly sends?: CapturedChatSend[];
 }): void {
+  mockAuthorizationCallbackThread(context, RUN_THREAD_ID);
   installCapabilityChat({
     events: completedConversation(args.lines.join("\n\n")),
     onSend(send) {

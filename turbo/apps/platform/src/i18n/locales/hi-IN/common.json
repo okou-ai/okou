@@ -378,7 +378,6 @@
         "openAutomations": "मोबाइल ऑटोमेशन खोलें"
       },
       "navigation": {
-        "agents": "एजेंटों",
         "artifacts": "आर्टिफ़ैक्ट्स",
         "connectors": "कनेक्टर्स",
         "settings": "सेटिंग्स",
@@ -1817,7 +1816,7 @@
       "repair": "सुधारें",
       "repairRequired": "{{institution}} को सुधारने की आवश्यकता है",
       "revoke": "एक्सेस वापस लें",
-      "revokeConfirm": "इस एजेंट की बैंकिंग एक्सेस वापस लें?",
+      "revokeConfirm": "इस वर्कस्पेस की बैंकिंग एक्सेस वापस लें?",
       "selectAccounts": "खाते चुनें",
       "sevenDays": "7 दिन",
       "thirtyDays": "30 दिन",
@@ -2801,7 +2800,6 @@
       "noEmojiFound": "कोई इमोजी नहीं मिला",
       "notFound": "चैट थ्रेड नहीं मिला",
       "openBrowser": "खुला ब्राउज़र",
-      "openNamedAgent": "ओपन एजेंट {{name}}",
       "openNamedChat": "चैट {{title}} खोलें",
       "pickEmoji": "एक इमोजी चुनें",
       "scrollToBottom": "नीचे स्क्रॉल करें",

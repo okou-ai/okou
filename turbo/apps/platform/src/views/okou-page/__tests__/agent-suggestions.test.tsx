@@ -1,5 +1,5 @@
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { suggestionFeedbacks } from "@okouai/api-contracts/contracts/suggestion-context";
 import {
   act,
@@ -1215,7 +1215,7 @@ test("The custom direction editor sends the background files without the home dr
     [incoming.id]: [incoming.url],
     [original.id]: [original.url],
   });
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: {
         version: 1,

@@ -292,21 +292,10 @@ test("accepts hosted PKCE consent after 20 minutes, binds the callback to the se
   const state = url.searchParams.get("state") ?? "";
   const statusRequest = {
     headers: sessionHeaders,
-    body: { agentId: fixture.agentId, state },
+    body: { state },
   };
   expect(
     (await accept(userClient().connectStatus(statusRequest), [200])).body,
-  ).toStrictEqual({ status: "pending" });
-  expect(
-    (
-      await accept(
-        userClient().connectStatus({
-          ...statusRequest,
-          body: { ...statusRequest.body, agentId: randomUUID() },
-        }),
-        [200],
-      )
-    ).body,
   ).toStrictEqual({ status: "pending" });
   await accept(
     userClient().connectStatus({
@@ -417,7 +406,7 @@ test("denies declined and expired OAuth requests and unrecognized scopes", async
       await accept(
         userClient().connectStatus({
           headers: sessionHeaders,
-          body: { agentId: fixture.agentId, state },
+          body: { state },
         }),
         [200],
       )
@@ -451,7 +440,7 @@ test("denies declined and expired OAuth requests and unrecognized scopes", async
       await accept(
         userClient().connectStatus({
           headers: sessionHeaders,
-          body: { agentId: fixture.agentId, state: declinedState },
+          body: { state: declinedState },
         }),
         [200],
       )
@@ -468,7 +457,6 @@ test("denies declined and expired OAuth requests and unrecognized scopes", async
         userClient().connectStatus({
           headers: sessionHeaders,
           body: {
-            agentId: fixture.agentId,
             state: new URL(expired.body.url).searchParams.get("state") ?? "",
           },
         }),
@@ -502,7 +490,7 @@ test("tracks the exact wallet consent instead of an older grant, including repla
       await accept(
         userClient().connectStatus({
           headers: sessionHeaders,
-          body: { agentId: fixture.agentId, state },
+          body: { state },
         }),
         [200],
       )
@@ -3106,7 +3094,6 @@ async function approvalCard(
     userClient().spendStatus({
       headers: sessionHeaders,
       body: {
-        agentId: fixture.agentId,
         threadId,
         approvalUrl: fixture.spend.approvalUrl ?? "https://app.link.com/",
       },

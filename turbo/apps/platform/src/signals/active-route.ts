@@ -13,8 +13,8 @@ export const activeRoute$ = computed((get): RouteKey | null => {
   return null;
 });
 
-/** The agent chat page: `/agents/:agentId/chat`, or `/` under My Okou. */
+/** The workspace new-chat page. */
 export const agentChatPageActive$ = computed((get): boolean => {
   const route = get(activeRoute$);
-  return route === "agentChat" || route === "home";
+  return route === "home";
 });

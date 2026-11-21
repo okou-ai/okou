@@ -378,7 +378,6 @@
         "openAutomations": "開啟自動化面板"
       },
       "navigation": {
-        "agents": "智能體",
         "artifacts": "成果",
         "connectors": "連接器",
         "settings": "設定",
@@ -1811,7 +1810,7 @@
       "repair": "修復",
       "repairRequired": "{{institution}} 需要修復",
       "revoke": "撤銷",
-      "revokeConfirm": "撤銷這個智能體的銀行訪問權限？",
+      "revokeConfirm": "撤銷此工作區的銀行存取權限？",
       "selectAccounts": "選擇帳戶",
       "sevenDays": "7 天",
       "thirtyDays": "30 天",
@@ -2786,7 +2785,6 @@
       "noEmojiFound": "沒有找到表情",
       "notFound": "找不到該聊天會話",
       "openBrowser": "開啟瀏覽器",
-      "openNamedAgent": "開啟智能體 {{name}}",
       "openNamedChat": "開啟聊天 {{title}}",
       "pickEmoji": "選擇表情",
       "scrollToBottom": "滾動到底部",

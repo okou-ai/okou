@@ -781,7 +781,6 @@ export function createAssistantErrorRecoverySignals(deps: {
         {
           kind: "input",
           delivery: "run",
-          agentId: meta.agentId,
           prompt: CONTINUE_PROMPT,
           hasTextContent: true,
           userMessage,

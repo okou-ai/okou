@@ -1474,7 +1474,7 @@ export const workflowsCollectionContract = c.router({
     method: "GET",
     path: "/api/workflows/for-composer",
     headers: authHeadersSchema,
-    query: object({ agentId: uuid() }),
+    query: object({ agentId: uuid().optional() }),
     responses: {
       200: composerWorkflowListResponseSchema,
       400: apiErrorSchema,

@@ -11,7 +11,7 @@ import { TEXT_TOAST_ACTION, toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { now } from "../../lib/time.ts";
-import { defaultAgentId$ } from "../agent.ts";
+
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
@@ -181,8 +181,7 @@ const agentSuggestionsEnabled$ = computed(async (get) => {
   if (!(await get(suggestionsEnabled$))) {
     return false;
   }
-  // A new-chat option starts in the default agent.
-  return (await get(defaultAgentId$)) !== null;
+  return true;
 });
 
 const feedVersion$ = computed((get) => {

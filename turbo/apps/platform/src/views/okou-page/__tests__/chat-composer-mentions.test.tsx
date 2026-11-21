@@ -103,15 +103,6 @@ function menuButton(name: string): HTMLElement {
   return button;
 }
 
-function agentMention(
-  composer: HTMLElement,
-  agentId: string,
-): HTMLElement | null {
-  return composer.querySelector<HTMLElement>(
-    `[data-agent-mention="${agentId}"]`,
-  );
-}
-
 function threadMention(
   composer: HTMLElement,
   threadId: string,
@@ -548,13 +539,13 @@ test.each([false, true])(
   },
 );
 
-test("A previously saved Agent mention can still be opened in a retained chat", async () => {
+test("A saved mention keeps its name when the draft reopens", async () => {
   const { savedMentionThread } = await openAgentMentionWorkspace();
   await openConversation(savedMentionThread.id);
   await waitFor(() => {
-    expect(
-      agentMention(screen.getByRole("textbox", { name: "Message" }), ZETA_ID),
-    ).toHaveTextContent("Zeta Agent");
+    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
+      "Zeta Agent",
+    );
   });
 });
 

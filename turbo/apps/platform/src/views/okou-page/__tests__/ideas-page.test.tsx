@@ -22,8 +22,7 @@ import { pathname } from "../../../signals/location.ts";
 const context = testContext();
 
 const AGENT_ID = "c0000000-0000-4000-a000-000000000030";
-const DEFAULT_AGENT_ID = "c0000000-0000-4000-a000-000000000031";
-const IDEAS_PATH = `/agents/${AGENT_ID}/ideas`;
+const IDEAS_PATH = "/ideas";
 
 const STANDUP_PROMPT =
   "Set up a daily standup report that pulls data from GitHub, Sentry, Axiom, and Plausible every morning, generates a pptx, and posts it to #team-updates";
@@ -197,59 +196,6 @@ test("The breadcrumb links back to My Okou", async () => {
   expect(pathname()).toBe("/");
 });
 
-function configureWorkspaceAgents(): void {
-  context.mocks.data.agents([
-    {
-      ...agentFixture(),
-      agentId: DEFAULT_AGENT_ID,
-      isDefaultAgent: true,
-      displayName: "Okou",
-    },
-    agentFixture(),
-  ]);
-  context.mocks.data.onboardingStatus({ defaultAgentId: DEFAULT_AGENT_ID });
-}
-
-test.each(["/ideas", `/agents/${DEFAULT_AGENT_ID}/ideas`])(
-  "Keep default Okou instruction self-management unavailable on %s",
-  async (path) => {
-    configureWorkspaceAgents();
-    mockCatalog([]);
-
-    await setupPage({ context, path });
-    await screen.findByText("Browser screenshots");
-
-    expect(
-      screen.queryByText("Self-update instructions"),
-    ).not.toBeInTheDocument();
-  },
-);
-
-test("A custom Agent can start the instruction self-management example", async () => {
-  configureWorkspaceAgents();
-  mockCatalog([]);
-
-  await setupPage({ context, path: IDEAS_PATH });
-  const title = await screen.findByText("Self-update instructions");
-  const idea = queryAllByRoleFast("link", screen.getByRole("main")).find(
-    (link) => {
-      return link.contains(title);
-    },
-  );
-  if (!idea) {
-    throw new Error("Expected the custom Agent instruction example link");
-  }
-  click(idea);
-
-  const composer = await findComposer();
-  await waitFor(() => {
-    expect(composer.textContent).toBe(
-      "Update yourself: add the following instructions — ...",
-    );
-  });
-  expect(pathname()).toBe("/");
-});
-
 test("Connector-dependent ideas fail closed when availability cannot be verified", async () => {
   configureAgent();
   const failCatalog = context.mocks.deferred<void>();
@@ -287,63 +233,45 @@ test("A use case is hidden when any required connector is unavailable", async ()
   expect(screen.queryByText("Daily standup report")).not.toBeInTheDocument();
 });
 
-test.each([
-  { path: "/ideas", destination: "/" },
-  {
-    path: IDEAS_PATH,
-    destination: `/agents/${AGENT_ID}/chat`,
-  },
-])(
-  "A card on $path exposes its prompt link and opens by keyboard",
-  async ({ path, destination }) => {
-    const user = userEvent.setup({ delay: null });
-    context.mocks.data.agents([
-      {
-        ...agentFixture(),
-        agentId: DEFAULT_AGENT_ID,
-        isDefaultAgent: true,
-        displayName: "General",
-      },
-      agentFixture(),
-    ]);
-    context.mocks.data.onboardingStatus({ defaultAgentId: DEFAULT_AGENT_ID });
-    mockCatalog([
-      catalogItem("github", "GitHub"),
-      catalogItem("sentry", "Sentry"),
-      catalogItem("axiom", "Axiom"),
-      catalogItem("plausible", "Plausible"),
-      catalogItem("slack", "Slack"),
-    ]);
+test("A card exposes its prompt link and opens by keyboard", async () => {
+  const user = userEvent.setup({ delay: null });
+  configureAgent();
+  mockCatalog([
+    catalogItem("github", "GitHub"),
+    catalogItem("sentry", "Sentry"),
+    catalogItem("axiom", "Axiom"),
+    catalogItem("plausible", "Plausible"),
+    catalogItem("slack", "Slack"),
+  ]);
 
-    await setupPage({ context, path });
-    const search = await screen.findByLabelText("Search use cases");
-    await fill(search, "Daily standup report");
+  await setupPage({ context, path: IDEAS_PATH });
+  const search = await screen.findByLabelText("Search use cases");
+  await fill(search, "Daily standup report");
 
-    const title = await screen.findByText("Daily standup report");
-    const idea = queryAllByRoleFast("link", screen.getByRole("main")).find(
-      (link) => {
-        return link.contains(title);
-      },
-    );
-    if (!idea) {
-      throw new Error("Expected the use-case card to expose a link");
-    }
-    expect(idea).toHaveAttribute(
-      "href",
-      `${destination}?${new URLSearchParams({ prompt: STANDUP_PROMPT })}`,
-    );
+  const title = await screen.findByText("Daily standup report");
+  const idea = queryAllByRoleFast("link", screen.getByRole("main")).find(
+    (link) => {
+      return link.contains(title);
+    },
+  );
+  if (!idea) {
+    throw new Error("Expected the use-case card to expose a link");
+  }
+  expect(idea).toHaveAttribute(
+    "href",
+    `/?${new URLSearchParams({ prompt: STANDUP_PROMPT })}`,
+  );
 
-    await user.keyboard("{Tab}");
-    expect(idea).toHaveFocus();
-    await user.keyboard("{Enter}");
+  await user.keyboard("{Tab}");
+  expect(idea).toHaveFocus();
+  await user.keyboard("{Enter}");
 
-    const composer = await findComposer();
-    await waitFor(() => {
-      expect(composer.textContent).toBe(STANDUP_PROMPT);
-    });
-    expect(pathname()).toBe("/");
-  },
-);
+  const composer = await findComposer();
+  await waitFor(() => {
+    expect(composer.textContent).toBe(STANDUP_PROMPT);
+  });
+  expect(pathname()).toBe("/");
+});
 
 test("Search for a use case and start it with the agent", async () => {
   configureAgent();

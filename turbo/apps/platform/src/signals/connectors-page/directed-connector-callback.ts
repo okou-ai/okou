@@ -23,7 +23,8 @@ function matchesCallback(
   callback: ChatActionCallback,
 ): previous is CallbackAttempt {
   return (
-    previous?.callback.threadId === callback.threadId &&
+    previous !== null &&
+    previous.callback.threadId === callback.threadId &&
     previous.callback.callbackPrompt === callback.callbackPrompt
   );
 }

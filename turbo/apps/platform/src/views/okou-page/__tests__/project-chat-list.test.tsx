@@ -7,7 +7,7 @@ import {
   chatThreadDraftContract,
   chatThreadPinOrderContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   click,
   queryAllByRoleFast,
@@ -116,13 +116,13 @@ function installProjects(
   context.mocks.api(projectsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });
   });
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, { draftUserMessage: null, draftAttachments: null });
   });
   context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
     return respond(200, { draftUserMessage: null, draftAttachments: null });
   });
-  context.mocks.api(agentDraftContract.patch, ({ respond }) => {
+  context.mocks.api(composerDraftContract.patch, ({ respond }) => {
     return respond(204);
   });
   context.mocks.api(chatThreadByIdContract.patch, ({ respond }) => {

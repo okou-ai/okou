@@ -1,4 +1,4 @@
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import type { ComposerDraft } from "@okouai/api-contracts/contracts/chat-threads";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -25,10 +25,10 @@ async function openWhitespaceDraft(kind: "agent" | "thread") {
   });
   let agentDraft = textContinuityDraft("");
   const agentPatches: ComposerDraft[] = [];
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, agentDraft);
   });
-  context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
+  context.mocks.api(composerDraftContract.patch, ({ body, respond }) => {
     agentDraft = {
       draftUserMessage: body.draftUserMessage,
       draftAttachments: body.draftAttachments ?? null,
