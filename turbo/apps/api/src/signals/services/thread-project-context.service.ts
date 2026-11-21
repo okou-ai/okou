@@ -2,7 +2,6 @@ import { computed, type Computed } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
 import { projects } from "@okouai/db/schema/project";
 import { db$ } from "../external/db";
-import type { BootstrapFeatureSwitchContext } from "./agent-run-context.signals";
 import { userMessageReferences } from "./chat-user-message.service";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
@@ -18,7 +17,7 @@ export interface ThreadProjectContext {
 /** Project authority is observed for the actual picked input, before rendering. */
 export function createThreadProjectContext(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
+  owner: { readonly userId: string; readonly orgId: string },
 ): Computed<Promise<ThreadProjectContext | null>> {
   return computed(async (get) => {
     const picked = await get(pickedEvent$);
@@ -26,10 +25,6 @@ export function createThreadProjectContext(
       !picked ||
       (picked.contextType !== "web" && picked.contextType !== "agent_run")
     ) {
-      return null;
-    }
-    const owner = await get(featureSwitches$);
-    if (!owner.personalExecution) {
       return null;
     }
     const refs = picked.userMessage

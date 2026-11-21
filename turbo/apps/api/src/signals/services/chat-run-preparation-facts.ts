@@ -34,6 +34,7 @@ export interface EnqueuedChatInputFacts {
   readonly userMessage: UserMessageDocument;
   readonly modelSelection: ChatInputModelSelection;
   readonly requiredOfficialWorkflowIds: readonly string[] | undefined;
+  readonly sourceAutonomyBudget?: number;
   readonly captureNetworkBodies: boolean;
   /** Route-entry time of the `POST /api/chat/events` request. */
   readonly requestReceivedAt?: number;
