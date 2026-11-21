@@ -49,11 +49,8 @@
     <string name="auth_switch_workspace">Arbeitsbereich wechseln</string>
     <string name="auth_browser_unavailable">Installiere einen Browser, um den Arbeitsbereich einzurichten.</string>
     <string name="preferences_title">Gemeinsame Einstellungen</string>
-    <string name="preference_loading">Einstellungen werden aktualisiert…</string>
-    <string name="preference_saving">Einstellungen werden gespeichert…</string>
     <string name="preference_save_failed">Deine Einstellungen konnten nicht gespeichert werden. Deine Auswahl bleibt aktiv.</string>
     <string name="preference_refresh_failed">Einstellungen konnten nicht aktualisiert werden. Versuche es erneut.</string>
-    <string name="preference_refresh">Einstellungen aktualisieren</string>
     <string name="preference_color_theme">Farbthema</string>
     <string name="preference_language">Sprache</string>
     <string name="palette_default">Standard</string>
@@ -77,14 +74,11 @@
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
     <string name="instructions_title">Persönliche Anweisungen</string>
-    <string name="instructions_timing">Gespeicherte Änderungen gelten für künftige Aufgaben.</string>
     <string name="instructions_loading">Anweisungen werden geladen…</string>
-    <string name="instructions_saving">Anweisungen werden gespeichert…</string>
     <string name="instructions_conflict">Die Anweisungen wurden andernorts geändert. Beim Laden der neuesten Version werden lokale Änderungen verworfen.</string>
     <string name="instructions_uncertain">Das Speichern ist nicht bestätigt. Dein Text bleibt erhalten. Prüfe die gespeicherte Version vor einem neuen Versuch.</string>
     <string name="instructions_load_failed">Anweisungen konnten nicht geladen werden.</string>
     <string name="instructions_unavailable">Persönliche Anweisungen sind hier nicht verfügbar.</string>
-    <string name="instructions_current">Die Anweisungen sind aktuell.</string>
     <string name="instructions_unsaved">Du hast ungespeicherte Änderungen.</string>
     <string name="instructions_local_failed">Der lokale Entwurf konnte nicht gespeichert werden. Erneut versuchen.</string>
     <string name="instructions_save_rejected">Das Speichern wurde abgelehnt. Deine Änderungen bleiben erhalten.</string>
@@ -116,7 +110,6 @@
     <string name="updates_preparing">Vorbereitung…</string>
     <string name="updates_installing">Installation…</string>
     <string name="updates_install_failed">Installation fehlgeschlagen</string>
-    <string name="updates_retry_install">Installation erneut versuchen</string>
     <string name="updates_waiting_for_connection">Warten auf Verbindung</string>
     <string name="updates_connect_to_check">Stelle eine Internetverbindung her, um nach Updates zu suchen.</string>
     <string name="updates_connect_to_download">Stelle eine Internetverbindung her, um das Update herunterzuladen.</string>

@@ -185,9 +185,10 @@ class NativeUpdateTest {
             awaitMenuFocus(filter)
             assertTrue(device.pressDPadCenter())
             awaitMenuFocus(inbox)
-            assertTrue(device.pressBack())
+            // A popup can close without emitting the accessibility event that pressBack awaits.
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             awaitMenuFocus(filter)
-            assertTrue(device.pressBack())
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             val moreLabel = app.getString(R.string.chat_more_actions)
             device.awaitKeyboardFocus(By.pkg(app.packageName).desc(moreLabel))
             assertTrue(device.wait(Until.gone(By.pkg(app.packageName).text(filter)), 10_000))
@@ -266,7 +267,8 @@ class NativeUpdateTest {
                     By.pkg(app.packageName).text(app.getString(R.string.updates_allow_install))
                 )
             )
-            device.pressBack()
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            assertTrue(device.wait(Until.gone(By.pkg(app.packageName).text(filter)), 10_000))
             val continueInstall =
                 button(By.pkg(app.packageName).desc(app.getString(R.string.updates_ready)))
             assertFalse(

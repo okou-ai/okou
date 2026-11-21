@@ -49,11 +49,8 @@
     <string name="auth_switch_workspace">Changer d’espace de travail</string>
     <string name="auth_browser_unavailable">Installez un navigateur pour configurer votre espace de travail.</string>
     <string name="preferences_title">Préférences partagées</string>
-    <string name="preference_loading">Actualisation des préférences…</string>
-    <string name="preference_saving">Enregistrement des préférences…</string>
     <string name="preference_save_failed">Vos préférences n’ont pas pu être enregistrées. Vos choix restent actifs.</string>
     <string name="preference_refresh_failed">Impossible d’actualiser les préférences. Réessayez.</string>
-    <string name="preference_refresh">Actualiser les préférences</string>
     <string name="preference_color_theme">Thème de couleur</string>
     <string name="preference_language">Langue</string>
     <string name="palette_default">Par défaut</string>
@@ -77,14 +74,11 @@
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
     <string name="instructions_title">Instructions personnelles</string>
-    <string name="instructions_timing">Les modifications enregistrées concernent les prochaines tâches.</string>
     <string name="instructions_loading">Chargement des instructions…</string>
-    <string name="instructions_saving">Enregistrement des instructions…</string>
     <string name="instructions_conflict">Les instructions ont changé ailleurs. Rechargez la dernière version pour abandonner les modifications locales.</string>
     <string name="instructions_uncertain">Enregistrement non confirmé. Votre texte est conservé. Vérifiez la version enregistrée avant de réessayer.</string>
     <string name="instructions_load_failed">Impossible de charger les instructions.</string>
     <string name="instructions_unavailable">Les instructions personnelles sont indisponibles dans ce contexte.</string>
-    <string name="instructions_current">Les instructions sont à jour.</string>
     <string name="instructions_unsaved">Vous avez des modifications non enregistrées.</string>
     <string name="instructions_local_failed">Impossible de conserver le brouillon local. Réessayez.</string>
     <string name="instructions_save_rejected">Enregistrement refusé. Vos modifications sont conservées.</string>
@@ -116,7 +110,6 @@
     <string name="updates_preparing">Préparation…</string>
     <string name="updates_installing">Installation…</string>
     <string name="updates_install_failed">Installation impossible</string>
-    <string name="updates_retry_install">Réessayer l’installation</string>
     <string name="updates_waiting_for_connection">En attente de connexion</string>
     <string name="updates_connect_to_check">Connectez-vous à Internet pour rechercher des mises à jour.</string>
     <string name="updates_connect_to_download">Connectez-vous à Internet pour télécharger la mise à jour.</string>

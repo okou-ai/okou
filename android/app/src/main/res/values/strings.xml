@@ -50,11 +50,8 @@
     <string name="auth_switch_workspace">Switch workspace</string>
     <string name="auth_browser_unavailable">Install a browser to open workspace setup.</string>
     <string name="preferences_title">Shared preferences</string>
-    <string name="preference_loading">Refreshing preferences…</string>
-    <string name="preference_saving">Saving preferences…</string>
     <string name="preference_save_failed">Could not save your preferences. Your selections are still in use.</string>
     <string name="preference_refresh_failed">Could not refresh preferences. Try again.</string>
-    <string name="preference_refresh">Refresh preferences</string>
     <string name="preference_color_theme">Color theme</string>
     <string name="preference_language">Language</string>
     <string name="palette_default">Default</string>
@@ -78,14 +75,11 @@
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
     <string name="instructions_title">Personal Instructions</string>
-    <string name="instructions_timing">Saved changes apply to future tasks.</string>
     <string name="instructions_loading">Loading Instructions…</string>
-    <string name="instructions_saving">Saving Instructions…</string>
     <string name="instructions_conflict">Saved Instructions changed elsewhere. Reload the latest version to discard your local changes.</string>
     <string name="instructions_uncertain">The save is not confirmed. Your text is kept. Check the saved version before retrying.</string>
     <string name="instructions_load_failed">Could not load Instructions.</string>
     <string name="instructions_unavailable">Personal Instructions are unavailable in this context.</string>
-    <string name="instructions_current">Instructions are up to date.</string>
     <string name="instructions_unsaved">You have unsaved changes.</string>
     <string name="instructions_local_failed">Could not save the local draft. Try again.</string>
     <string name="instructions_save_rejected">The save was rejected. Your changes are kept.</string>
@@ -117,7 +111,6 @@
     <string name="updates_preparing">Preparing…</string>
     <string name="updates_installing">Installing…</string>
     <string name="updates_install_failed">Installation failed</string>
-    <string name="updates_retry_install">Retry installation</string>
     <string name="updates_waiting_for_connection">Waiting for connection</string>
     <string name="updates_connect_to_check">Connect to the internet to check for updates.</string>
     <string name="updates_connect_to_download">Connect to the internet to download the update.</string>

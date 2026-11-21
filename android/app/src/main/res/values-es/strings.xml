@@ -49,11 +49,8 @@
     <string name="auth_switch_workspace">Cambiar de espacio de trabajo</string>
     <string name="auth_browser_unavailable">Instala un navegador para configurar el espacio de trabajo.</string>
     <string name="preferences_title">Preferencias compartidas</string>
-    <string name="preference_loading">Actualizando preferencias…</string>
-    <string name="preference_saving">Guardando preferencias…</string>
     <string name="preference_save_failed">No se pudieron guardar las preferencias. Tus opciones siguen activas.</string>
     <string name="preference_refresh_failed">No se pudieron actualizar las preferencias. Inténtalo de nuevo.</string>
-    <string name="preference_refresh">Actualizar preferencias</string>
     <string name="preference_color_theme">Tema de color</string>
     <string name="preference_language">Idioma</string>
     <string name="palette_default">Predeterminado</string>
@@ -77,14 +74,11 @@
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
     <string name="instructions_title">Instrucciones personales</string>
-    <string name="instructions_timing">Los cambios guardados se aplican a las tareas futuras.</string>
     <string name="instructions_loading">Cargando instrucciones…</string>
-    <string name="instructions_saving">Guardando instrucciones…</string>
     <string name="instructions_conflict">Las instrucciones cambiaron en otro lugar. Recarga la última versión para descartar los cambios locales.</string>
     <string name="instructions_uncertain">No se confirmó el guardado. Tu texto se conserva. Comprueba la versión guardada antes de reintentar.</string>
     <string name="instructions_load_failed">No se pudieron cargar las instrucciones.</string>
     <string name="instructions_unavailable">Las instrucciones personales no están disponibles en este contexto.</string>
-    <string name="instructions_current">Las instrucciones están actualizadas.</string>
     <string name="instructions_unsaved">Tienes cambios sin guardar.</string>
     <string name="instructions_local_failed">No se pudo guardar el borrador local. Inténtalo de nuevo.</string>
     <string name="instructions_save_rejected">Se rechazó el guardado. Tus cambios se conservan.</string>
@@ -116,7 +110,6 @@
     <string name="updates_preparing">Preparando…</string>
     <string name="updates_installing">Instalando…</string>
     <string name="updates_install_failed">Error de instalación</string>
-    <string name="updates_retry_install">Reintentar instalación</string>
     <string name="updates_waiting_for_connection">Esperando conexión</string>
     <string name="updates_connect_to_check">Conéctate a internet para buscar actualizaciones.</string>
     <string name="updates_connect_to_download">Conéctate a internet para descargar la actualización.</string>

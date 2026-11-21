@@ -49,11 +49,8 @@
     <string name="auth_switch_workspace">Cambia spazio di lavoro</string>
     <string name="auth_browser_unavailable">Installa un browser per configurare lo spazio di lavoro.</string>
     <string name="preferences_title">Preferenze condivise</string>
-    <string name="preference_loading">Aggiornamento delle preferenze…</string>
-    <string name="preference_saving">Salvataggio delle preferenze…</string>
     <string name="preference_save_failed">Impossibile salvare le preferenze. Le tue scelte sono ancora attive.</string>
     <string name="preference_refresh_failed">Impossibile aggiornare le preferenze. Riprova.</string>
-    <string name="preference_refresh">Aggiorna preferenze</string>
     <string name="preference_color_theme">Tema colore</string>
     <string name="preference_language">Lingua</string>
     <string name="palette_default">Predefinito</string>
@@ -77,14 +74,11 @@
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
     <string name="instructions_title">Istruzioni personali</string>
-    <string name="instructions_timing">Le modifiche salvate si applicano alle attività future.</string>
     <string name="instructions_loading">Caricamento istruzioni…</string>
-    <string name="instructions_saving">Salvataggio istruzioni…</string>
     <string name="instructions_conflict">Le istruzioni sono cambiate altrove. Ricarica la versione più recente per scartare le modifiche locali.</string>
     <string name="instructions_uncertain">Il salvataggio non è confermato. Il testo è conservato. Controlla la versione salvata prima di riprovare.</string>
     <string name="instructions_load_failed">Impossibile caricare le istruzioni.</string>
     <string name="instructions_unavailable">Le istruzioni personali non sono disponibili in questo contesto.</string>
-    <string name="instructions_current">Le istruzioni sono aggiornate.</string>
     <string name="instructions_unsaved">Hai modifiche non salvate.</string>
     <string name="instructions_local_failed">Impossibile salvare la bozza locale. Riprova.</string>
     <string name="instructions_save_rejected">Salvataggio rifiutato. Le modifiche sono conservate.</string>
@@ -116,7 +110,6 @@
     <string name="updates_preparing">Preparazione…</string>
     <string name="updates_installing">Installazione…</string>
     <string name="updates_install_failed">Installazione non riuscita</string>
-    <string name="updates_retry_install">Riprova l’installazione</string>
     <string name="updates_waiting_for_connection">In attesa di connessione</string>
     <string name="updates_connect_to_check">Connettiti a Internet per cercare aggiornamenti.</string>
     <string name="updates_connect_to_download">Connettiti a Internet per scaricare l’aggiornamento.</string>

@@ -49,11 +49,8 @@
     <string name="auth_switch_workspace">कार्यक्षेत्र बदलें</string>
     <string name="auth_browser_unavailable">कार्यक्षेत्र सेट अप करने के लिए ब्राउज़र इंस्टॉल करें।</string>
     <string name="preferences_title">साझा प्राथमिकताएँ</string>
-    <string name="preference_loading">प्राथमिकताएँ रीफ़्रेश हो रही हैं…</string>
-    <string name="preference_saving">प्राथमिकताएँ सेव हो रही हैं…</string>
     <string name="preference_save_failed">आपकी प्राथमिकताएँ सेव नहीं हो सकीं। आपके चुनाव अब भी लागू हैं।</string>
     <string name="preference_refresh_failed">प्राथमिकताएँ रीफ़्रेश नहीं हो सकीं। फिर कोशिश करें।</string>
-    <string name="preference_refresh">प्राथमिकताएँ रीफ़्रेश करें</string>
     <string name="preference_color_theme">कलर थीम</string>
     <string name="preference_language">भाषा</string>
     <string name="palette_default">डिफ़ॉल्ट</string>
@@ -77,14 +74,11 @@
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
     <string name="instructions_title">व्यक्तिगत निर्देश</string>
-    <string name="instructions_timing">सहेजे गए बदलाव आगामी कार्यों पर लागू होते हैं।</string>
     <string name="instructions_loading">निर्देश लोड हो रहे हैं…</string>
-    <string name="instructions_saving">निर्देश सहेजे जा रहे हैं…</string>
     <string name="instructions_conflict">निर्देश कहीं और बदल गए हैं। नवीनतम संस्करण लोड करने पर स्थानीय बदलाव हट जाएंगे।</string>
     <string name="instructions_uncertain">सहेजने की पुष्टि नहीं हुई। आपका पाठ सुरक्षित है। फिर प्रयास करने से पहले सहेजा गया संस्करण देखें।</string>
     <string name="instructions_load_failed">निर्देश लोड नहीं हो सके।</string>
     <string name="instructions_unavailable">इस संदर्भ में निजी निर्देश उपलब्ध नहीं हैं।</string>
-    <string name="instructions_current">निर्देश अद्यतित हैं।</string>
     <string name="instructions_unsaved">आपके बदलाव अभी सहेजे नहीं गए हैं।</string>
     <string name="instructions_local_failed">स्थानीय ड्राफ़्ट सहेजा नहीं जा सका। फिर प्रयास करें।</string>
     <string name="instructions_save_rejected">सहेजना अस्वीकार हुआ। आपके बदलाव सुरक्षित हैं।</string>
@@ -116,7 +110,6 @@
     <string name="updates_preparing">तैयारी…</string>
     <string name="updates_installing">इंस्टॉल हो रहा है…</string>
     <string name="updates_install_failed">इंस्टॉलेशन विफल</string>
-    <string name="updates_retry_install">फिर से इंस्टॉल करें</string>
     <string name="updates_waiting_for_connection">कनेक्शन का इंतज़ार</string>
     <string name="updates_connect_to_check">अपडेट देखने के लिए इंटरनेट से कनेक्ट करें।</string>
     <string name="updates_connect_to_download">अपडेट डाउनलोड करने के लिए इंटरनेट से कनेक्ट करें।</string>
