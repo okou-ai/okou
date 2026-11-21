@@ -489,7 +489,8 @@ matching R8 version from Google Maven with a 30-second command budget. It valida
 the tested APK's R8 marker and the mapping's version, map ID and content hash.
 When a crash stack is available, the separate restored-stack artifact includes
 the extracted input, output and identity receipt. The Android gate uses the
-original smoke result independently of retrace. For a downloaded crash:
+original smoke result independently of retrace. A downloaded crash can be
+retraced locally with the matching APK and map.
 
 ```bash
 python3 scripts/retrace-release.py app.apk version-mapping.txt.gz crash.txt retraced
