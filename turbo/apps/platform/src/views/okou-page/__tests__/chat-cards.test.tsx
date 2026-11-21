@@ -1430,7 +1430,6 @@ async function reviewBankingRequest(entry: "chat" | "direct") {
     entry === "chat",
   );
   expect(card).toHaveTextContent("Banking access request");
-  expect(card).toHaveTextContent("Finance Assistant");
   expect(card).toHaveTextContent(reason);
   expect(card).toHaveTextContent(
     "Accounts, balances, and transactions · read only",

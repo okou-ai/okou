@@ -24,9 +24,9 @@ import {
   chatActionCallbackFromUrl,
   runChatActionCallback$,
 } from "./action-callback.ts";
-import {
-  type ChatActionContext,
-  type ChatActionParseResult,
+import type {
+  ChatActionContext,
+  ChatActionParseResult,
 } from "./chat-action-context.ts";
 import {
   createCardSignalsRegistry,

@@ -2,8 +2,10 @@ import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Edit, HandHeart } from "lucide-react";
 import { cn, getShortcutLabel } from "@okouai/ui";
-import { agentChatPageActive$ } from "../../signals/active-route.ts";
-import { activeRoute$ } from "../../signals/active-route.ts";
+import {
+  activeRoute$,
+  agentChatPageActive$,
+} from "../../signals/active-route.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import {
   followForYouFeedOnRef$,
