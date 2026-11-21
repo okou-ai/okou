@@ -11,6 +11,7 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
@@ -949,10 +950,11 @@ class ChatListRootTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun aCommittedArchiveSwipeOffersUndoAcrossFilters() {
+    fun aCommittedArchiveSwipeOffersUndoAcrossFiltersAndRename() {
         val app = compose.activity.application as ChatListApplication
-        val events = app.fixture.rowEventTail {}
+        val events = app.fixture.rowEventTail()
         val commands = CopyOnWriteArrayList<RecordedRequest>()
+        val releaseRename = CountDownLatch(1)
         app.fixture.commandResponse = { request ->
             when (request.requestUrl?.encodedPath) {
                 "/api/chat-threads/$CHAT_PERSONAL/archive" -> {
@@ -962,7 +964,22 @@ class ChatListRootTest {
                 }
                 "/api/chat-threads/$CHAT_PERSONAL/unarchive" -> {
                     commands.add(request)
-                    events.add(25L to request.rowEvent(25, CHAT_PERSONAL, "unarchived"))
+                    events.add(26L to request.rowEvent(26, CHAT_PERSONAL, "unarchived"))
+                    MockResponse().setResponseCode(204)
+                }
+                "/api/chat-threads/$CHAT_PERSONAL/rename" -> {
+                    commands.add(request)
+                    releaseRename.await()
+                    val body = request.jsonCommandBody()
+                    events.add(
+                        25L to
+                            chatEventWire(
+                                id = body.getValue("eventId").jsonPrimitive.content,
+                                seq = 25,
+                                kind = "renamed",
+                                title = body.getValue("title").jsonPrimitive.content,
+                            )
+                    )
                     MockResponse().setResponseCode(204)
                 }
                 else -> null
@@ -990,12 +1007,33 @@ class ChatListRootTest {
         row.assertDoesNotExist()
         compose.onNodeWithContentDescription("Filter").performClick()
         compose.onNodeWithText("Archived").performClick()
-        compose.onNodeWithText("Undo").assertIsDisplayed().performClick()
+        val undo = compose.onNodeWithText("Undo").assertIsDisplayed()
+        awaitRowActionSettled(CHAT_PERSONAL)
+        try {
+            compose.runOnIdle {
+                checkNotNull(
+                        ViewModelProvider(compose.activity)[SessionModel::class.java]
+                            .uiState
+                            .value
+                            .ready
+                    )
+                    .chats
+                    .renameThread(CHAT_PERSONAL, "Weekly brief")
+            }
+            compose.waitUntil(10_000) { commands.size == 2 }
+            undo.assertIsDisplayed().assertIsNotEnabled()
+        } finally {
+            releaseRename.countDown()
+        }
+        awaitRowActionSettled(CHAT_PERSONAL)
+        undo.assertIsEnabled().performClick()
         compose.waitUntil(10_000) {
-            currentList()?.threads?.any { it.id == CHAT_PERSONAL && !it.archived } == true
+            currentList()?.threads?.any {
+                it.id == CHAT_PERSONAL && !it.archived && it.title == "Weekly brief"
+            } == true && commands.size == 3
         }
         assertEquals(
-            listOf("archive", "unarchive"),
+            listOf("archive", "rename", "unarchive"),
             commands.map { it.requestUrl?.pathSegments?.last() },
         )
         compose.onNodeWithText("Undo").assertDoesNotExist()
@@ -1103,6 +1141,27 @@ class ChatListRootTest {
                     .fetchSemanticsNodes()
                     .isNotEmpty()
             }
+            row.performTouchInput {
+                val second = center.copy(x = width * 0.45f)
+                down(0, center.copy(x = width * 0.8f))
+                down(1, second)
+                up(0)
+                moveTo(1, second.copy(x = second.x - 20.dp.toPx()))
+                up(1)
+            }
+            row.assertIsDisplayed()
+            row.performTouchInput {
+                val first = center.copy(x = width * 0.8f)
+                val second = center.copy(x = width * 0.55f)
+                down(0, first)
+                moveTo(0, first.copy(x = first.x - 24.dp.toPx()))
+                down(1, second)
+                up(0)
+                moveTo(1, second.copy(x = second.x - 84.dp.toPx()))
+                up(1)
+            }
+            row.assertIsDisplayed()
+            assertTrue(commands.isEmpty())
             row.performTouchInput { longClick() }
             compose.onNodeWithText("Archive chat").performClick()
             compose.waitUntil(10_000) { compose.runOnIdle { readback.count == 0L } }
