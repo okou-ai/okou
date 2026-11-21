@@ -3690,6 +3690,13 @@
       "when": 1795213062931,
       "tag": "1605_browser_user_action_member",
       "breakpoints": true
+    },
+    {
+      "idx": 1606,
+      "version": "7",
+      "when": 1795231131377,
+      "tag": "1606_custom_connector_skill_publications",
+      "breakpoints": true
     }
   ]
 }

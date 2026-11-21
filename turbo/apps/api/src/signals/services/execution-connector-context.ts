@@ -4,7 +4,7 @@ import {
   memberConnectorRuleColumns,
   memberConnectorSelectionQueries,
 } from "./member-connector-selection";
-import { array, object, string, unknown as zUnknown } from "zod";
+import { array, boolean, object, string, unknown as zUnknown } from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { contextJsonRows, contextProjectionSchema } from "./context-rowset";
 import { executionConnectorSelectionFromRows } from "./execution-connector-selection";
@@ -13,13 +13,13 @@ import {
   customConnectorExecutionOAuthSelection,
 } from "./custom-connector-definition-selection";
 import { customConnectorNetworkMetadataSchema } from "@okouai/api-contracts/validators/custom-connector-network";
-import { customConnectorSkillBundleSelection } from "./custom-connector-skill-bundle-columns";
+import { orgCustomConnectorSkillPublications } from "@okouai/db/schema/org-custom-connector-skill-publication";
 
 const { networkBinding: _networkBinding, ...connectorDefinitionColumns } =
   customConnectorExecutionDefinitionSelection();
 const connectorColumns = Object.freeze({
   ...connectorDefinitionColumns,
-  ...customConnectorSkillBundleSelection(),
+  skillContentBundle: orgCustomConnectorSkillPublications.skillContentBundle,
 });
 const oauthColumns = customConnectorExecutionOAuthSelection();
 const connectorSlugRow = object({ connectorSlug: string() });
@@ -64,6 +64,7 @@ export function createExecutionConnectorContext(
         connector: contextProjectionSchema(connectorColumns).and(
           object({
             networkBinding: customConnectorNetworkMetadataSchema.nullable(),
+            hasSkill: boolean(),
           }),
         ),
         oauthConfig: contextProjectionSchema(oauthColumns).nullable(),

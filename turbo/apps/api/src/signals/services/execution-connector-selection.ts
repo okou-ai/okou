@@ -8,7 +8,6 @@ import type {
   CustomConnectorExecutionDefinition,
   CustomConnectorExecutionOAuthConfig,
 } from "./custom-connector-definition-selection";
-import type { CustomConnectorSkillBundleRow } from "./custom-connector-skill-bundle-columns";
 import { normaliseCustomConnectorConnectionDefinition } from "./custom-connector.service";
 
 interface SelectedCustomConnector {
@@ -43,17 +42,11 @@ export function executionConnectorSelectionFromRows(
     .sort();
   const customConnectors = customRows
     .map(({ connector }): SelectedCustomConnector => {
-      const hasSkill = connector.skillStorageVersionId !== null;
       return {
         customConnectorId: connector.id,
         connectorSlug: connector.slug,
-        hasSkill,
-        skillContentBundle:
-          hasSkill &&
-          connector.skillContentBundleSourceVersionId ===
-            connector.skillStorageVersionId
-            ? connector.skillContentBundle
-            : null,
+        hasSkill: connector.hasSkill,
+        skillContentBundle: connector.skillContentBundle,
         permissionBundleRef: connector.permissionBundleRef,
         isMcp: connector.mcpEndpoint !== null,
       };
@@ -75,7 +68,7 @@ export function executionConnectorSelectionFromRows(
 
 type SelectedDefinitionRow = {
   readonly connector: CustomConnectorExecutionDefinitionRow &
-    CustomConnectorSkillBundleRow;
+    Pick<SelectedCustomConnector, "hasSkill" | "skillContentBundle">;
   readonly oauthConfig: CustomConnectorExecutionOAuthConfig | null;
 };
 

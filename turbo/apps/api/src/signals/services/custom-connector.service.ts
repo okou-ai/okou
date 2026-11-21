@@ -38,7 +38,6 @@ import {
   publishedCustomConnectorNetworkBinding,
   type PreparedCustomConnectorNetworkBinding,
 } from "./custom-connector-network-publication";
-import { orgCustomConnectorSkillBundles } from "@okouai/db/runtime/org-custom-connector-skill-bundle";
 import { orgCustomConnectorDcrRegistrations } from "@okouai/db/schema/org-custom-connector-dcr-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
@@ -1933,11 +1932,11 @@ export function customConnectorCreateSource(
         .mapWith(orgCustomConnectors.skillStorageVersionId)
         .as("skill_storage_version_id"),
     skillContentBundle:
-      sql`${sql.param(skill.skillContentBundle, orgCustomConnectorSkillBundles.skillContentBundle)}`
+      sql`${sql.param(skill.skillContentBundle, orgCustomConnectors.skillContentBundle)}`
         .mapWith(zodDriverValueDecoder(contentBundleSchema.nullable()))
         .as("skill_content_bundle"),
     skillContentBundleSourceVersionId:
-      sql`${sql.param(skill.skillContentBundleSourceVersionId, orgCustomConnectorSkillBundles.skillContentBundleSourceVersionId)}`
+      sql`${sql.param(skill.skillContentBundleSourceVersionId, orgCustomConnectors.skillContentBundleSourceVersionId)}`
         .mapWith(nullableDriverValueDecoder(pgTextDecoder))
         .as("skill_content_bundle_source_version_id"),
     storageVersion:
@@ -2040,9 +2039,16 @@ const persistCustomConnectorCreate$ = command(
     }
     const source = sql`(VALUES (1)) AS connector_create_source`;
     const values = db.select(customConnectorCreateSource(args)).from(source);
+    const { networkBinding: _networkBinding, ...definitionColumns } =
+      customConnectorDefinitionSelection();
     const created = db
       .$with("created_connector")
-      .as(db.insert(orgCustomConnectors).select(values).returning());
+      .as(
+        db
+          .insert(orgCustomConnectors)
+          .select(values)
+          .returning(definitionColumns),
+      );
     const createdCtes: WithSubquery[] = [created];
     if (args.networkBindingChange?.kind === "bind") {
       const change = args.networkBindingChange;
