@@ -543,7 +543,7 @@ struct ChatSidebarView: View {
       okouSymbol: read ? "message-square-check" : "message-square-dot"
     ) { Task { await store.setRead(thread, read: read) } }
     .labelStyle(.iconOnly)
-    .disabled(store.list.updatingThreads.contains(thread.id) || store.list.markingAgentRead)
+    .disabled(store.list.updatingThreads.contains(thread.id) || store.list.markingAllRead)
   }
   private var footer: some View {
     ChatSidebarFooter(

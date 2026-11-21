@@ -24,7 +24,7 @@ final class ThreadListMutations {
 
   private var threads: [ChatThread] { readThreads() }
   private var closed: Bool { isClosed() }
-  private var markingAgentRead: Bool { isMarkingRead() }
+  private var markingAllRead: Bool { isMarkingRead() }
   private var blocked: Bool {
     get { isBlocked() }
     set { setBlocked(newValue) }
@@ -225,7 +225,7 @@ final class ThreadListMutations {
   /// Whether a write may start, apart from the chat still being listed: a delete retry targets
   /// a chat its own optimistic event already hides.
   func canWrite(_ id: String) -> Bool {
-    !closed && !blocked && !updatingThreads.contains(id) && !markingAgentRead
+    !closed && !blocked && !updatingThreads.contains(id) && !markingAllRead
   }
 
   func canUpdate(_ id: String) -> Bool {
