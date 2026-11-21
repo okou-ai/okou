@@ -15,7 +15,6 @@ async function searchFixture() {
       results: [
         {
           chatThreadId: context.resourceId,
-          agentName: "Operations",
           matchedRanges: [{ start: 0, end: query.keyword.length }],
           matchedMessage: {
             role: "assistant",

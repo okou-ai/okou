@@ -2499,3 +2499,9 @@ Main `5181cd28d322da866f40aa508234af7a6417f370` includes #49875 and #49872. The 
 Historical first acceptances now total 1,160 of 2,681. Current complete evidence covers 1,143. The withdrawal cohort remains at 420 historical and 413 current out of 506. The other 2,175 selections have 740 historical and 730 current, including all 30 first acceptances this batch. The 240 closed files cover 1,459 frozen rows and 790 selections including four historical retirements. The 245 open files contain 3,652 frozen rows and 1,891 selections, with 357 currently covered.
 
 The original 86 withdrawal dispositions, 13 losses from #49838 (seven inside withdrawals and six outside), four losses from #49839 and 68 upstream items retain their earlier ownership. The late response in chat-activity-summary-002 still lacks an observable completion signal.
+
+### Batch 64 final main synchronization
+
+Main `abbf9f8e672ac56f0f98583cfb0b536e9225e905` (#49868) removed the obsolete search result agent name and legacy per-agent indicator storage. Two conflicts affected historical test paths. The independent chat-search-debounce fixture adopted the shorter result contract. Both debounce IDs passed and retain their original acceptance. The withdrawn sidebar-workspace implementation stays deleted and its full BDD remains open. This merge adds zero Platform registrations and changes no frozen acceptance.
+
+After the merge, seed 64068 passed 54 rows across 16 files, including all 30 nominees and both search regressions. Across the two shuffled runs, 118 distinct regression rows passed. The complete GWT mapping still resolves to one passing expanded row per nominee.

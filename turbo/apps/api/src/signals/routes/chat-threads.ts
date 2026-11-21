@@ -1,8 +1,3 @@
-import { selectClientResponseTransforms } from "@okouai/api-contracts/client-transforms/select";
-import {
-  androidLegacyIndicators,
-  iosLegacyIndicators,
-} from "@okouai/api-contracts/client-transforms/chat-indicators";
 import {
   androidChatUltrafastTransforms,
   iosChatUltrafastTransforms,
@@ -25,7 +20,6 @@ import {
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
-  CLIENT_VERSION_HEADER,
   CLIENT_TYPE_HEADER,
   CLIENT_TYPE_IOS,
 } from "@okouai/api-contracts/contracts/client-headers";
@@ -189,30 +183,13 @@ const listChatThreadLifecycleEventsInner$ = computed(async (get) => {
   };
 });
 
-const indicatorTransforms = [
-  iosLegacyIndicators,
-  androidLegacyIndicators,
-] as const;
-
 const listChatIndicatorsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  const route = chatThreadsContract.indicators;
-  const query = get(queryOf(route));
-  const request = get(request$);
-  const includeLegacyAgents =
-    selectClientResponseTransforms({
-      transforms: indicatorTransforms,
-      client: request.header(CLIENT_TYPE_HEADER),
-      version: request.header(CLIENT_VERSION_HEADER),
-      method: route.method,
-      path: route.path,
-      status: 200,
-    }).length > 0;
+  const query = get(queryOf(chatThreadsContract.indicators));
   const indicators = await get(
     chatIndicators({
       userId: auth.userId,
       orgId: auth.orgId,
-      includeLegacyAgents,
       includeActiveUnread: query.includeActiveUnread === "true",
     }),
   );
@@ -410,12 +387,7 @@ const searchChatInner$ = computed(async (get) => {
     body: {
       results: result.results.map(
         ({ chatThreadId, matchedMessage, matchedRanges }) => {
-          return {
-            chatThreadId,
-            agentName: "Okou",
-            matchedMessage,
-            matchedRanges,
-          };
+          return { chatThreadId, matchedMessage, matchedRanges };
         },
       ),
     },
@@ -426,7 +398,6 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   ...chatRelationsRoutes,
   {
     route: chatThreadsContract.indicators,
-    responseTransforms: indicatorTransforms,
     handler: authRoute(
       {
         requireOrganization: true,
