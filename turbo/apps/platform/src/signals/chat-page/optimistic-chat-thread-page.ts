@@ -148,25 +148,6 @@ function userMessageForNewThread(
   return userMessage;
 }
 
-function annotatedMessagesForNewThread(
-  request: SendNewThreadMessageRequest,
-  userMessage: UserMessageInputDocument,
-  modelSelection: ModelProviderSelection,
-): {
-  readonly annotatedUserMessage: UserMessageDocument;
-  readonly optimisticUserMessage: UserMessageDocument;
-} {
-  const annotatedUserMessage = withSelectedModelAnnotation(
-    userMessage,
-    modelSelection.selectedModel,
-    apiServiceTierFromSelection(modelSelection) ?? undefined,
-  );
-  return {
-    annotatedUserMessage,
-    optimisticUserMessage: annotatedUserMessage,
-  };
-}
-
 function createNewThreadOptimisticEventEntry({
   threadId,
   clientEventId,
@@ -804,12 +785,11 @@ const sendNewThreadMessage$ = command(
     }
     const features = await get(featureSwitches$);
     signal.throwIfAborted();
-    const { annotatedUserMessage, optimisticUserMessage } =
-      annotatedMessagesForNewThread(
-        request,
-        userMessageForNewThread(request, prepared),
-        resolvedModelSelection,
-      );
+    const annotatedUserMessage = withSelectedModelAnnotation(
+      userMessageForNewThread(request, prepared),
+      resolvedModelSelection.selectedModel,
+      apiServiceTierFromSelection(resolvedModelSelection) ?? undefined,
+    );
     const { threadId, clientEventId, chatThreadEventId, customDirection } =
       await set(
         reserveNewThreadSubmissionIdentity$,
@@ -864,7 +844,7 @@ const sendNewThreadMessage$ = command(
       { threadId, clientEventId, chatThreadEventId },
       {
         modelSelection: resolvedModelSelection,
-        userMessage: optimisticUserMessage,
+        userMessage: annotatedUserMessage,
       },
       signal,
     );
