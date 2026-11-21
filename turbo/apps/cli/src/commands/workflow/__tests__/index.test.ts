@@ -39,12 +39,6 @@ beforeEach(() => {
     "OKOU_TOKEN",
     `vm0_sandbox_header.${Buffer.from(JSON.stringify({ scope: "okou", capabilities: [], singleAgent: true })).toString("base64url")}.signature`,
   );
-  vi.stubEnv("OKOU_AGENT_ID", "55555555-5555-4555-8555-555555555555");
-  server.use(
-    http.get("*/api/agents", () => {
-      return HttpResponse.json([{ agentId: AGENT, isDefaultAgent: true }]);
-    }),
-  );
 });
 afterEach(() => {
   EventEmitter.prototype.emit.call(workflowCommand, "single-agent-mode", false);
@@ -56,7 +50,7 @@ afterEach(() => {
 test("lists the default workspace namespace and identifies the private slash override", async () => {
   server.use(
     http.get("*/api/workflows", ({ request }) => {
-      expect(new URL(request.url).searchParams.get("agentId")).toBe(AGENT);
+      expect(new URL(request.url).searchParams.get("scope")).toBe("workspace");
       return HttpResponse.json([
         summary(SHARED, "public"),
         summary(PRIVATE, "private"),
@@ -70,11 +64,10 @@ test("lists the default workspace namespace and identifies the private slash ove
   expect(text()).toContain("/weekly-review");
   expect(text()).not.toContain("AGENT ID");
 });
-test("creates a private workspace workflow using the default executor instead of the runtime Agent ID", async () => {
+test("creates a private workspace workflow without selecting an executor", async () => {
   server.use(
     http.post("*/api/workflows", async ({ request }) => {
-      expect(await request.json()).toMatchObject({
-        agentId: AGENT,
+      expect(await request.json()).toStrictEqual({
         name: "weekly-review",
         instruction: "Review the week",
       });
@@ -116,7 +109,7 @@ test("makes a private copy without a destination flag and reports only the calle
       return HttpResponse.json([summary(SHARED, "public")]);
     }),
     http.post(`*/api/workflows/${SHARED}/copy`, async ({ request }) => {
-      expect(await request.json()).toStrictEqual({ toAgentId: AGENT });
+      expect(await request.json()).toStrictEqual({});
       return HttpResponse.json(summary(COPIED, "private"), { status: 201 });
     }),
     http.get(`*/api/workflows/${COPIED}/automations`, () => {

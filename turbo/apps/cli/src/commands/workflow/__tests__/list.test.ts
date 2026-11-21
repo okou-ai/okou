@@ -31,11 +31,6 @@ describe("okou workflow list command", () => {
 
   beforeEach(() => {
     server.use(
-      http.get("*/api/agents", () => {
-        return HttpResponse.json([{ agentId: AGENT_ID, isDefaultAgent: true }]);
-      }),
-    );
-    server.use(
       http.get(
         "http://localhost:3000/api/workflows/:workflowId/owner-profile",
         ownerProfileRequest,
@@ -160,7 +155,7 @@ describe("okou workflow list command", () => {
 
       await listCommand.parseAsync(["node", "cli"]);
 
-      expect(capturedUrl).toContain(`agentId=${AGENT_ID}`);
+      expect(capturedUrl).toContain("scope=workspace");
     });
 
     it("should show empty state when no workflows", async () => {

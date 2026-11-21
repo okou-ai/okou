@@ -36,7 +36,6 @@ import {
 import { parseTrustedPlatformUrl } from "./trusted-platform-url.ts";
 
 export interface ConnectorAccountActionDescriptor {
-  readonly agentId: string;
   readonly selection: ConnectorAccountSelection;
   readonly originalUrl: string;
   readonly callbackPrompt: string;
@@ -76,7 +75,7 @@ type ConnectorAccountActionCardSignalsRegistry = CardSignalsRegistry<
 export function connectorAccountActionResourceKey(
   descriptor: ConnectorAccountActionDescriptor,
 ): string {
-  const path = `/agents/${encodeURIComponent(descriptor.agentId.toLowerCase())}/connector-accounts/${encodeURIComponent(descriptor.selection.connectionId.toLowerCase())}/select`;
+  const path = `/connectors/accounts/${encodeURIComponent(descriptor.selection.connectionId.toLowerCase())}/select`;
   const targetKey = connectorAccountTargetKey(descriptor.selection.target);
   const params = new URLSearchParams({
     target:
@@ -117,21 +116,23 @@ export function parseConnectorAccountActionUrl(
   if (!url) {
     return { status: "unrelated" };
   }
-  const match = url.pathname.match(
+  const legacy = url.pathname.match(
     /^\/agents\/([^/]+)\/connector-accounts\/([^/]+)\/select$/u,
   );
-  if (!match) {
+  const current = url.pathname.match(
+    /^\/connectors\/accounts\/([^/]+)\/select$/u,
+  );
+  const connectionId = legacy?.[2] ?? current?.[1];
+  if (!connectionId) {
     return { status: "unrelated" };
   }
-  const agentId = match[1] ?? "";
-  const connectionId = match[2] ?? "";
+  const agentId = legacy?.[1];
   const selection = selectionFromUrl(url, connectionId);
   const callback = context ? chatActionCallbackFromUrl(url, context) : null;
   if (
     !context ||
-    !agentId ||
-    !context.agentId ||
-    !chatActionIdMatches(agentId, context.agentId) ||
+    (agentId !== undefined &&
+      (!context.agentId || !chatActionIdMatches(agentId, context.agentId))) ||
     !selection ||
     !callback?.callbackPrompt ||
     !callback.threadId
@@ -141,7 +142,6 @@ export function parseConnectorAccountActionUrl(
   return {
     status: "valid",
     descriptor: {
-      agentId: context.agentId,
       selection,
       originalUrl: value,
       callbackPrompt: callback.callbackPrompt,
@@ -207,7 +207,6 @@ function createConnectorAccountConfirmSignal(
       runChatActionCallback$,
       {
         threadId: descriptor.threadId,
-        agentId: descriptor.agentId,
         callbackPrompt: descriptor.callbackPrompt,
         callbackIds,
       },

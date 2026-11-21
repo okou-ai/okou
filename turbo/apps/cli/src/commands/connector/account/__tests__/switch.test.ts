@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../../test/fixtures/captured-run-token";
 import { spawn } from "node:child_process";
 import { http, HttpResponse } from "msw";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
@@ -59,7 +60,7 @@ const error = vi.spyOn(console, "error").mockImplementation(() => {});
 let selected: unknown[] = [];
 beforeEach(() => {
   vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
-  vi.stubEnv("OKOU_AGENT_ID", "agent-1");
+  vi.stubEnv("OKOU_TOKEN", capturedRunToken(["connector:read"]));
   vi.stubEnv(
     "OKOU_TOKEN",
     `vm0_sandbox_e30.${Buffer.from(JSON.stringify({ scope: "okou", capabilities: ["connector-account:switch"] })).toString("base64url")}.signature`,

@@ -6,7 +6,6 @@ import {
 } from "../../../lib/api/domains/connectors";
 import { getPlatformOrigin } from "../../../lib/platform-url";
 import { isPaidToolEnabled } from "../../../lib/command/paid-tools";
-import { getOkouAgentId } from "../../../lib/okou-env";
 import { connectorActionUrl } from "../../connector/action-url";
 import {
   isRunBoundConnectorContext,
@@ -201,10 +200,9 @@ function runUnavailableReason(lookup: RunUnavailableAccountLookup): string {
 function toRunCandidate(params: {
   connector: ConnectorCatalogItem;
   lookup: RunConnectorAccountLookup;
-  agentId: string | undefined;
   platformOrigin: string;
 }): GenerationCandidate {
-  const { connector, lookup, agentId, platformOrigin } = params;
+  const { connector, lookup, platformOrigin } = params;
   if (lookup.state !== "available") {
     return {
       connectorSlug: connector.slug,
@@ -226,7 +224,6 @@ function toRunCandidate(params: {
         actionUrl: connectorActionUrl({
           origin: platformOrigin,
           path: `/connectors/${connector.slug}/reconnect/${lookup.connectionId}`,
-          agentId,
         }),
       }
     : {};
@@ -396,7 +393,6 @@ export async function runLister(
   options: ListerOptions = {},
 ): Promise<void> {
   const connectorGenerationType = getConnectorGenerationType(generationType);
-  const agentId = getOkouAgentId();
   const runBound = isRunBoundConnectorContext();
   const [catalog, platformOrigin] = await Promise.all([
     loadGenerationCatalog(connectorGenerationType, runBound),
@@ -421,7 +417,6 @@ export async function runLister(
       return toRunCandidate({
         connector,
         lookup,
-        agentId,
         platformOrigin,
       });
     });

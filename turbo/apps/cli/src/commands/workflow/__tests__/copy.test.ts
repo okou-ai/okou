@@ -66,13 +66,6 @@ describe("okou workflow copy command", () => {
     .mockImplementation(() => {});
 
   beforeEach(() => {
-    server.use(
-      http.get("*/api/agents", () => {
-        return HttpResponse.json([
-          { agentId: TARGET_AGENT_ID, isDefaultAgent: true },
-        ]);
-      }),
-    );
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", capturedRunToken(["agent:write"]));
@@ -133,7 +126,7 @@ describe("okou workflow copy command", () => {
 
       await copyCommand.parseAsync(["node", "cli", SOURCE_ID]);
 
-      expect(capturedBody?.toAgentId).toBe(TARGET_AGENT_ID);
+      expect(capturedBody).toStrictEqual({});
       const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
       expect(logCalls).toContain("copied");
       expect(logCalls).toContain(NEW_ID);

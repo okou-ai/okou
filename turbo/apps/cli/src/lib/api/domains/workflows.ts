@@ -29,18 +29,15 @@ type WorkflowAutomationListEntry = ServerInferResponseBody<
   200
 >[number];
 
-export async function listWorkflows(query: {
-  agentId?: string;
-}): Promise<WorkflowSummary[]> {
+export async function listWorkflows(): Promise<WorkflowSummary[]> {
   const config = await getClientConfig();
   const client = initClient(workflowsCollectionContract, config);
-  const result = await client.list({ query });
+  const result = await client.list({ query: { scope: "workspace" } });
   if (result.status === 200) return result.body;
   handleError(result, "Failed to list workflows");
 }
 
 export async function createWorkflow(body: {
-  agentId: string;
   chatThreadId?: string;
   name: string;
   instruction?: string;
@@ -92,13 +89,12 @@ export async function deleteWorkflow(workflowId: string): Promise<void> {
 
 export async function copyWorkflow(
   workflowId: string,
-  toAgentId: string,
 ): Promise<WorkflowSummary> {
   const config = await getClientConfig();
   const client = initClient(workflowsDetailContract, config);
   const result = await client.copy({
     params: { workflowId },
-    body: { toAgentId },
+    body: {},
   });
   if (result.status === 201) return result.body;
   handleError(result, `Failed to copy workflow "${workflowId}"`);

@@ -1102,7 +1102,7 @@ test("Connector account switches A → B → A keep their icon and continue with
   const otherConnectionId = "f0000000-0000-4000-a000-000000000902";
   const iconUrl = "https://icons.example.test/account-switch-github.svg";
   const switchUrl = new URL(
-    `https://app.okou.ai/agents/${AGENT_ID}/connector-accounts/${connectionId}/select`,
+    `https://app.okou.ai/connectors/accounts/${connectionId}/select`,
   );
   switchUrl.searchParams.set("kind", "builtin");
   switchUrl.searchParams.set("connectorSlug", github);
@@ -1367,7 +1367,7 @@ test("Ordinary or code links remain message content", async () => {
 
 test("A valid banking request becomes an action card", async () => {
   const reason = "Review quarterly subscription expenses";
-  const bankingUrl = new URL(`https://app.okou.ai/agents/${AGENT_ID}/banking`);
+  const bankingUrl = new URL("https://app.okou.ai/banking/access");
   bankingUrl.searchParams.set("reason", reason);
   bankingUrl.searchParams.set("threadId", THREAD_ID);
   bankingUrl.searchParams.set(

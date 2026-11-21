@@ -185,7 +185,6 @@ export const directedConnectAgentName$ = computed(async (get) => {
 
 export const continueConnectedConnector$ = command(
   async ({ get, set }, slug: ConnectorSlug, signal: AbortSignal) => {
-    const agentId = get(directedConnectAgentId$);
     const callback = get(routeChatActionCallback$);
     const accounts = await readConnectorAccountPage(
       get(apiClient$),
@@ -196,7 +195,7 @@ export const continueConnectedConnector$ = command(
     if (accounts.defaultConnection?.connectionStatus !== "connected") {
       throw new Error("The default account still needs attention.");
     }
-    await set(completeDirectedConnectorAction$, agentId, callback, signal);
+    await set(completeDirectedConnectorAction$, callback, signal);
   },
 );
 
@@ -293,12 +292,7 @@ export const connectDirectedConnector$ = command(
       ...accountOptions,
     };
     const onSuccess = (_connectionId: string, attemptSignal: AbortSignal) => {
-      return set(
-        completeDirectedConnectorAction$,
-        agentId,
-        callback,
-        attemptSignal,
-      );
+      return set(completeDirectedConnectorAction$, callback, attemptSignal);
     };
     if (launchMode === "browser-auth") {
       const method =

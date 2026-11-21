@@ -54,7 +54,6 @@ import {
 } from "./card-signal-map.ts";
 
 interface ConnectorActionDescriptorBase {
-  readonly agentId: string;
   readonly originalUrl: string;
   readonly callbackPrompt: ChatActionCallback["callbackPrompt"];
   readonly threadId: ChatActionCallback["threadId"];
@@ -192,14 +191,20 @@ export function parseConnectorActionUrl(
   const agentId = url.searchParams.get("agentId");
   if (
     !context ||
-    !agentId ||
-    !context.agentId ||
-    !chatActionIdMatches(agentId, context.agentId)
+    (agentId === null
+      ? !chatActionIdMatches(
+          url.searchParams.get("threadId") ?? "",
+          context.threadId,
+        )
+      : !context.agentId || !chatActionIdMatches(agentId, context.agentId))
   ) {
     return { status: "invalid", originalUrl: value };
   }
 
-  const callback = chatActionCallbackFromUrl(url, context);
+  const callback =
+    agentId === null && !url.searchParams.has("callbackPrompt")
+      ? { threadId: null, callbackPrompt: null }
+      : chatActionCallbackFromUrl(url, context);
   if (!callback) {
     return { status: "invalid", originalUrl: value };
   }
@@ -216,7 +221,6 @@ export function parseConnectorActionUrl(
         kind: "catalog-reconnect",
         connectorSlug: parsedCatalogSlug.data,
         connectionId: parsedConnectionId.data,
-        agentId: context.agentId,
         originalUrl: value,
         ...callback,
       },
@@ -228,7 +232,6 @@ export function parseConnectorActionUrl(
       descriptor: {
         kind: "catalog",
         connectorSlug: parsedCatalogSlug.data,
-        agentId: context.agentId,
         originalUrl: value,
         ...callback,
       },
@@ -244,7 +247,6 @@ export function parseConnectorActionUrl(
     descriptor: {
       kind: "custom",
       connectorSlug: parsedCustomSlug.data,
-      agentId: context.agentId,
       originalUrl: value,
       ...callback,
     },
@@ -264,7 +266,6 @@ const runConnectorActionCallback$ = command(
       runChatActionCallback$,
       {
         threadId: descriptor.threadId,
-        agentId: descriptor.agentId,
         callbackPrompt: descriptor.callbackPrompt,
       },
       signal,
@@ -299,7 +300,6 @@ function createConnectionCompletion(
         runChatActionCallback$,
         {
           threadId: descriptor.threadId,
-          agentId: descriptor.agentId,
           callbackPrompt: descriptor.callbackPrompt,
           callbackIds,
         },

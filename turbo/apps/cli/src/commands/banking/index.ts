@@ -6,7 +6,7 @@ import {
   type BankingResponse,
 } from "../../lib/api/domains/banking";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import { getOkouAgentId } from "../../lib/okou-env";
+import { getOkouChatThreadId } from "../../lib/okou-env";
 import {
   CALLBACK_PROMPT_GUIDANCE,
   CALLBACK_PROMPT_MAX_LENGTH,
@@ -90,10 +90,10 @@ const accessRequestCommand = new Command()
   .addHelpText("after", `\n${CALLBACK_PROMPT_GUIDANCE}`)
   .action(
     withErrorHandler(async (options: AccessRequestOptions) => {
-      const agentId = getOkouAgentId()?.trim();
-      if (!agentId) {
+      const threadId = getOkouChatThreadId()?.trim();
+      if (!threadId) {
         throw new Error(
-          "banking access-request is only available to the current web chat agent",
+          "banking access-request is only available to the current web chat",
         );
       }
       const reason = options.reason.trim();
@@ -105,12 +105,9 @@ const accessRequestCommand = new Command()
       }
 
       const origin = await getPlatformOrigin();
-      const actionUrl = new URL(
-        `/agents/${encodeURIComponent(agentId)}/banking`,
-        origin,
-      );
+      const actionUrl = new URL("/banking/access", origin);
       actionUrl.searchParams.set("reason", reason);
-      const url = finalizeActionUrl(actionUrl, options.callbackPrompt, agentId);
+      const url = finalizeActionUrl(actionUrl, options.callbackPrompt);
 
       console.log("Banking access requires user approval:");
       console.log(url);
@@ -198,7 +195,7 @@ Examples:
   Get transactions:   okou banking transactions --account-id <id> --from 2026-01-01 --to 2026-01-31 --json
 
 Notes:
-  - access-request only works for the current agent in the current web chat
+  - access-request only works for the current web chat
   - The user selects accounts and an expiration before access is granted
   - Banking grants never apply to automation runs
   - Authenticates via OKOU_TOKEN (requires banking:read capability)

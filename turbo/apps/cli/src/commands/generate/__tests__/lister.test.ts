@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,7 +21,6 @@ import {
 
 const generateCommand = createGenerateCommand();
 
-const AGENT_ID = "550e8400-e29b-41d4-a716-446655440000";
 const RUN_CONNECTION_ID = "00000000-0000-4000-8000-000000000001";
 
 const CONNECTOR_LABELS: Record<string, string> = {
@@ -168,7 +168,7 @@ describe("okou generate lister", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
-    vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken(["connector:read"]));
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
   });
 
@@ -292,13 +292,13 @@ describe("okou generate lister", () => {
     expect(text).toContain("connected, reconnect required");
     expect(text).not.toContain("Connect and authorize Luma AI");
     expect(text).toContain(
-      `[Reconnect OpenAI](http://localhost:3000/connectors/openai/reconnect/${RUN_CONNECTION_ID}?agentId=${AGENT_ID})`,
+      `[Reconnect OpenAI](http://localhost:3000/connectors/openai/reconnect/${RUN_CONNECTION_ID})`,
     );
     expect(text).toContain("start a new run");
   });
 
   it("discovers saved providers outside a run and directs users to inspect accounts", async () => {
-    vi.stubEnv("OKOU_AGENT_ID", "");
+    vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", "");
     server.use(
       stubConnectorCatalog([
