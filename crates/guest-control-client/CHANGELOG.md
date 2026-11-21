@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.122](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.121...guest-control-client-v0.23.122) (2026-11-21)
+
+
+### Refactoring
+
+* **guest-control:** centralize normal write-phase transitions ([#49739](https://github.com/okou-ai/okou/issues/49739)) ([12051d4](https://github.com/okou-ai/okou/commit/12051d429278e3858984226389e0a4701674f1f8))
+
 ## [0.23.121](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.120...guest-control-client-v0.23.121) (2026-11-21)
 
 

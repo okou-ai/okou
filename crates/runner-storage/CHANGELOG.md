@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.10](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.9...runner-storage-v0.12.10) (2026-11-21)
+
+
+### Performance Improvements
+
+* **runner-storage:** combine archive presence and shared lock probes ([#49723](https://github.com/okou-ai/okou/issues/49723)) ([669e883](https://github.com/okou-ai/okou/commit/669e883a2b415ba5bb3b5f545015575edd1e2fb5))
+
 ## [0.12.9](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.8...runner-storage-v0.12.9) (2026-11-21)
 
 

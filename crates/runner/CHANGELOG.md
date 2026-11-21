@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.84](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.83...runner-rs-v0.249.84) (2026-11-21)
+
+
+### Refactoring
+
+* **runner:** share catalog stream capture ownership ([#49760](https://github.com/okou-ai/okou/issues/49760)) ([0d9c3b0](https://github.com/okou-ai/okou/commit/0d9c3b0faf52bc042e423105dd6957b40624b610))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.83](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.82...runner-rs-v0.249.83) (2026-11-21)
 
 ### Release Dependencies

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.40](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.39...guest-storage-apply-v0.32.40) (2026-11-21)
+
+
+### Performance Improvements
+
+* **guest-storage:** avoid repeated decoded mount task scans ([#49746](https://github.com/okou-ai/okou/issues/49746)) ([bad5553](https://github.com/okou-ai/okou/commit/bad5553659e2926c43944ca700125e3108b9f92f))
+
 ## [0.32.39](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.38...guest-storage-apply-v0.32.39) (2026-11-21)
 
 

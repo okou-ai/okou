@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.34.0](https://github.com/okou-ai/okou/compare/android-v0.33.0...android-v0.34.0) (2026-11-21)
+
+
+### Features
+
+* **android:** align project row menu and rename ([#49761](https://github.com/okou-ai/okou/issues/49761)) ([5d48523](https://github.com/okou-ai/okou/commit/5d48523b748c6d0ab74b796305fbf00e3469d8ba))
+
+
+### Bug Fixes
+
+* **android:** align chat header and update screens with v114 ([#49750](https://github.com/okou-ai/okou/issues/49750)) ([a3a6703](https://github.com/okou-ai/okou/commit/a3a67031782a38ee6ffe39162ffcfc92a55907ef))
+* **android:** keep running chats eligible for unread actions ([#49730](https://github.com/okou-ai/okou/issues/49730)) ([7a9953d](https://github.com/okou-ai/okou/commit/7a9953ddcdf16cbea66610f40345d504d6f5c058))
+* **android:** retain send-order reconciliation through retries ([#49737](https://github.com/okou-ai/okou/issues/49737)) ([fe8cd30](https://github.com/okou-ai/okou/commit/fe8cd30ff5d23394a1597fb8cd3e34f53ebf8876))
+* **android:** verify accepted chat previews after snapshot replacement ([#49744](https://github.com/okou-ai/okou/issues/49744)) ([a7bef1e](https://github.com/okou-ai/okou/commit/a7bef1e4c8bdf68795900760a12e854c08f1cd25))
+
+
+### Refactoring
+
+* **android:** centralize optimistic chat list reconciliation ([#49752](https://github.com/okou-ai/okou/issues/49752)) ([dfc9248](https://github.com/okou-ai/okou/commit/dfc924814c2e30a1f8f75194d59a99c0edbb20d6))
+
+
+### Performance Improvements
+
+* **android:** restore pending chat rows before preferences ([#49758](https://github.com/okou-ai/okou/issues/49758)) ([157d8fa](https://github.com/okou-ai/okou/commit/157d8fafdaf00ac9d1b6dca23653267e4846cd87))
+* **android:** show outgoing messages in the chat list immediately ([#49696](https://github.com/okou-ai/okou/issues/49696)) ([f2d593c](https://github.com/okou-ai/okou/commit/f2d593cfa2853ff2dcafe6cc9199f5cd30314123))
+
 ## [0.33.0](https://github.com/okou-ai/okou/compare/android-v0.32.6...android-v0.33.0) (2026-11-21)
 
 
