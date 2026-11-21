@@ -1817,7 +1817,7 @@
       "repair": "सुधारें",
       "repairRequired": "{{institution}} को सुधारने की आवश्यकता है",
       "revoke": "एक्सेस वापस लें",
-      "revokeConfirm": "इस एजेंट की बैंकिंग एक्सेस वापस लें?",
+      "revokeConfirm": "इस वर्कस्पेस की बैंकिंग एक्सेस वापस लें?",
       "selectAccounts": "खाते चुनें",
       "sevenDays": "7 दिन",
       "thirtyDays": "30 दिन",

@@ -1811,7 +1811,7 @@
       "repair": "修復",
       "repairRequired": "{{institution}}は修復が必要です",
       "revoke": "取り消す",
-      "revokeConfirm": "このエージェントの銀行アクセスを取り消しますか？",
+      "revokeConfirm": "このワークスペースの銀行アクセスを取り消しますか？",
       "selectAccounts": "口座を選択",
       "sevenDays": "7日間",
       "thirtyDays": "30日間",

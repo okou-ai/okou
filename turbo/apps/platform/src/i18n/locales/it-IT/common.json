@@ -1847,7 +1847,7 @@
       "repair": "Ripara",
       "repairRequired": "{{institution}} deve essere riparato",
       "revoke": "Revoca",
-      "revokeConfirm": "Revocare l'accesso bancario di questo Agente?",
+      "revokeConfirm": "Revocare l’accesso bancario di questo spazio di lavoro?",
       "selectAccounts": "Seleziona conti",
       "sevenDays": "7 giorni",
       "thirtyDays": "30 giorni",

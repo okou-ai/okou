@@ -1811,7 +1811,7 @@
       "repair": "修复",
       "repairRequired": "{{institution}} 需要修复",
       "revoke": "撤销",
-      "revokeConfirm": "撤销这个智能体的银行访问权限？",
+      "revokeConfirm": "撤销此工作区的银行访问权限？",
       "selectAccounts": "选择账户",
       "sevenDays": "7 天",
       "thirtyDays": "30 天",

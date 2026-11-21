@@ -1811,7 +1811,7 @@
       "repair": "복구",
       "repairRequired": "{{institution}}에 복구가 필요합니다",
       "revoke": "철회",
-      "revokeConfirm": "이 에이전트의 뱅킹 접근을 철회하시겠습니까?",
+      "revokeConfirm": "이 워크스페이스의 뱅킹 접근 권한을 철회하시겠습니까?",
       "selectAccounts": "계좌 선택",
       "sevenDays": "7일",
       "thirtyDays": "30일",
