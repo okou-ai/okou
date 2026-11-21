@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material Symbols Outlined delete. Apache-2.0 license in assets/licenses. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+  <path
+      android:fillColor="@android:color/black"
+      android:pathData="M280,840Q247,840 223.5,816.5T200,760V240H160V160H360V120H600V160H800V240H760V760Q760,793 736.5,816.5T680,840H280ZM680,240H280V760H680V240ZM360,680H440V320H360V680ZM520,680H600V320H520V680Z"/>
+</vector>

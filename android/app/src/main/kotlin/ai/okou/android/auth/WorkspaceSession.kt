@@ -252,6 +252,9 @@ class CanonicalWorkspaceSession(
     override suspend fun setArchived(threadId: String, archived: Boolean, eventId: String) =
         api.setArchived(threadId, archived, eventId)
 
+    override suspend fun deleteThread(threadId: String, eventId: String) =
+        api.deleteThread(threadId, eventId)
+
     override suspend fun renameThread(threadId: String, title: String, eventId: String) =
         api.renameThread(threadId, title, eventId)
 

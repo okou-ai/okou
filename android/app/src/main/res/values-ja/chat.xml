@@ -52,4 +52,8 @@
     <string name="chat_title_field">チャットのタイトル</string>
     <string name="chat_rename_confirm">名前の変更</string>
     <string name="chat_rename_cancel">キャンセル</string>
+    <string name="chat_delete">チャットを削除する</string>
+    <string name="chat_delete_title">チャットを削除しますか?</string>
+    <string name="chat_delete_description">これにより、このチャットは完全に削除されます。このチャットで現在実行中のタスクはすぐに停止されます。リンクされている自動化は一時停止されます。この操作は元に戻すことができません。</string>
+    <string name="chat_delete_confirm">削除</string>
 </resources>

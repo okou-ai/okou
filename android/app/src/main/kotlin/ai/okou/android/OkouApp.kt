@@ -578,7 +578,15 @@ internal fun OkouApp(
                                     { chats?.refreshMetadata() },
                                     { chats?.refreshIndicators() },
                                     ::openChat,
-                                    { id, action -> chats?.performRowAction(id, action) },
+                                    { id, action ->
+                                        val started = chats?.performRowAction(id, action) == true
+                                        if (
+                                            started &&
+                                                action == ChatRowAction.Delete &&
+                                                (target as? WorkspaceTarget.Chat)?.id == id
+                                        )
+                                            returnToList()
+                                    },
                                     { id, title -> chats?.renameThread(id, title) },
                                     collapsed.values,
                                     collapsed::toggle,

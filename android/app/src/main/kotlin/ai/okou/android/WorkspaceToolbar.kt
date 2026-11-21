@@ -236,7 +236,11 @@ internal fun WorkspaceToolbarActions(
                         }
                     }
                 }
-                WorkspaceMenu(page, items, close = ::closeMenu) {
+                WorkspaceMenu(
+                    items,
+                    close = ::closeMenu,
+                    filter = page == WorkspaceMenuPage.Filter,
+                ) {
                     if (hasUpdate && menu == WorkspaceMenuPage.Filter) {
                         menu = WorkspaceMenuPage.Overflow
                     } else {
@@ -299,20 +303,22 @@ private enum class WorkspaceMenuPage {
     Filter,
 }
 
-private data class WorkspaceMenuItem(
+internal data class WorkspaceMenuItem(
     val label: String,
     @DrawableRes val icon: Int? = null,
     val selected: Boolean? = null,
     val enabled: Boolean = true,
+    val destructive: Boolean = false,
     val onClick: () -> Unit,
 )
 
 @Composable
-private fun WorkspaceMenu(
-    page: WorkspaceMenuPage,
+internal fun WorkspaceMenu(
     items: List<WorkspaceMenuItem>,
     close: () -> Unit,
-    back: () -> Unit,
+    filter: Boolean = false,
+    title: String? = null,
+    back: () -> Unit = close,
 ) {
     val colors = MaterialTheme.colorScheme
     val window = currentWindowSizeDp()
@@ -339,13 +345,19 @@ private fun WorkspaceMenu(
             shadowElevation = 6.dp,
             border = BorderStroke(1.dp, colors.outline),
         ) {
-            key(page) { WorkspaceMenuItems(items, page != WorkspaceMenuPage.Overflow, back) }
+            key(filter) { WorkspaceMenuItems(items, filter, title, close, back) }
         }
     }
 }
 
 @Composable
-private fun WorkspaceMenuItems(items: List<WorkspaceMenuItem>, filter: Boolean, back: () -> Unit) {
+private fun WorkspaceMenuItems(
+    items: List<WorkspaceMenuItem>,
+    filter: Boolean,
+    title: String?,
+    close: () -> Unit,
+    back: () -> Unit,
+) {
     val inputMode = LocalInputModeManager.current.inputMode
     val popupFocus = remember { FocusRequester() }
     val itemFocus = remember(items.size) { List(items.size) { FocusRequester() } }
@@ -367,6 +379,11 @@ private fun WorkspaceMenuItems(items: List<WorkspaceMenuItem>, filter: Boolean, 
                     Key.Escape -> {
                         if (event.type == KeyEventType.KeyUp && !event.nativeKeyEvent.isCanceled)
                             back()
+                        true
+                    }
+                    Key.Tab -> {
+                        if (event.type == KeyEventType.KeyUp && !event.nativeKeyEvent.isCanceled)
+                            close()
                         true
                     }
                     Key.DirectionUp,
@@ -396,6 +413,16 @@ private fun WorkspaceMenuItems(items: List<WorkspaceMenuItem>, filter: Boolean, 
             .verticalScroll(rememberScrollState())
             .padding(7.dp)
     ) {
+        if (title != null) {
+            Text(
+                title,
+                Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         val row: @Composable (Int) -> Unit = { index ->
             WorkspaceMenuRow(
                 items[index],
@@ -436,12 +463,12 @@ private fun WorkspacePopupBackHandler(back: () -> Unit) {
 
 @Composable
 private fun WorkspaceMenuRow(item: WorkspaceMenuItem, modifier: Modifier, focused: Boolean) {
-    val (label, icon, selected, enabled, onClick) = item
+    val (label, icon, selected, enabled, destructive, onClick) = item
     val gesture =
         if (selected == null) Modifier.clickable(enabled, role = Role.Button, onClick = onClick)
         else Modifier.selectable(selected, enabled, role = Role.RadioButton, onClick = onClick)
     val colors = MaterialTheme.colorScheme
-    val foreground = colors.onSurface
+    val foreground = if (destructive) colors.error else colors.onSurface
     val color = if (enabled) foreground else foreground.copy(alpha = 0.4f)
     val shape = RoundedCornerShape(10.dp)
     Row(
