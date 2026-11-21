@@ -1,4 +1,7 @@
 <resources>
+    <string name="workspace_workflows">Alur kerja</string>
+    <string name="workspace_connectors">Konektor</string>
+    <string name="workspace_artifacts">Artefak</string>
     <string name="chat_undo_archived">Chat diarsipkan</string>
     <string name="chat_undo_unarchived">Chat dikeluarkan dari arsip</string>
     <string name="chat_undo_marked_read">Chat ditandai sudah dibaca</string>

@@ -9,6 +9,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.MouseButton
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
@@ -104,6 +105,31 @@ class ChatListRootTest {
                     .viewModelScope
                     .coroutineContext[Job]
         }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun workspaceToolEntriesAreVisibleButDisabledOnTheList() {
+        val app = compose.activity.application as ChatListApplication
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val entries =
+            listOf("Workflows", "Connectors", "Artifacts").map {
+                compose
+                    .onNodeWithText(it)
+                    .assertIsDisplayed()
+                    .assertIsNotEnabled()
+                    .assertHasNoClickAction()
+            }
+        val search = compose.onNodeWithContentDescription("Search workspace")
+        val searchBounds = search.getUnclippedBoundsInRoot()
+        val entryBounds = entries.map { it.getUnclippedBoundsInRoot() }
+        assertTrue(entryBounds.all { it.top >= searchBounds.bottom && it.bottom - it.top >= 48.dp })
+        assertTrue(entryBounds.zipWithNext().all { (start, end) -> start.right < end.left })
+        search.performClick()
+        entries.forEach { it.assertDoesNotExist() }
+        compose.onNodeWithContentDescription("Back").performClick()
+        entries.forEach { it.assertIsDisplayed().assertIsNotEnabled() }
     }
 
     @Test

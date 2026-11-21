@@ -1,4 +1,7 @@
 <resources>
+    <string name="workspace_workflows">워크플로</string>
+    <string name="workspace_connectors">커넥터</string>
+    <string name="workspace_artifacts">아티팩트</string>
     <string name="chat_undo_archived">채팅을 보관했습니다</string>
     <string name="chat_undo_unarchived">채팅을 보관 해제했습니다</string>
     <string name="chat_undo_marked_read">채팅을 읽음으로 표시했습니다</string>

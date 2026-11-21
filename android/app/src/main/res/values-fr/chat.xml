@@ -1,4 +1,7 @@
 <resources>
+    <string name="workspace_workflows">Workflows</string>
+    <string name="workspace_connectors">Connecteurs</string>
+    <string name="workspace_artifacts">Artéfacts</string>
     <string name="chat_undo_archived">Discussion archivée</string>
     <string name="chat_undo_unarchived">Discussion désarchivée</string>
     <string name="chat_undo_marked_read">Discussion marquée comme lue</string>

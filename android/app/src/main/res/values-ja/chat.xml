@@ -1,4 +1,7 @@
 <resources>
+    <string name="workspace_workflows">ワークフロー</string>
+    <string name="workspace_connectors">コネクター</string>
+    <string name="workspace_artifacts">アーティファクト</string>
     <string name="chat_undo_archived">チャットをアーカイブしました</string>
     <string name="chat_undo_unarchived">チャットのアーカイブを解除しました</string>
     <string name="chat_undo_marked_read">チャットを既読にしました</string>

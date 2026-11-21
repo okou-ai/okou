@@ -27,6 +27,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import okhttp3.mockwebserver.MockResponse
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -211,6 +212,13 @@ class NativeChatListTest {
         var scenario: ActivityScenario<MainActivity>? = null
         var chatJob: Job? = null
         val failures = mutableListOf<Throwable>()
+        val toolLabels =
+            listOf(
+                    R.string.workspace_workflows,
+                    R.string.workspace_connectors,
+                    R.string.workspace_artifacts,
+                )
+                .map(app::getString)
         try {
             scenario = ActivityScenario.launch(MainActivity::class.java)
             fun text(value: String) =
@@ -275,6 +283,7 @@ class NativeChatListTest {
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             device.awaitChatList(app)
             revealText("Research")
+            toolLabels.forEach { assertFalse(text(it).isEnabled) }
             takeScreenshot().writeToTestStorage("android-list-home")
             click(UiSelector().description(app.getString(R.string.chat_search_workspace)))
             text(app.getString(R.string.chat_search_recent))
@@ -380,6 +389,11 @@ class NativeChatListTest {
                 val listTitle = device.awaitChatList(app)
                 val conversation = text(app.getString(R.string.history_completed))
                 assertTrue(listTitle.visibleBounds.right < conversation.visibleBounds.left)
+                toolLabels.forEach { label ->
+                    val entry = text(label)
+                    assertFalse(entry.isEnabled)
+                    assertTrue(entry.visibleBounds.right < conversation.visibleBounds.left)
+                }
                 val toolbarBack = By.pkg(app.packageName).desc(app.getString(R.string.back))
                 assertTrue(device.wait(Until.gone(toolbarBack), 10_000))
                 val filter = app.getString(R.string.chat_filter)
@@ -482,6 +496,8 @@ class NativeChatListTest {
                 assertTrue(device.wait(Until.gone(undo), 10_000))
                 revealText("Personal chat")
                 assertTrue(rowEvents.size == 2)
+                toolLabels.forEach { assertFalse(text(it).isEnabled) }
+                takeScreenshot().writeToTestStorage("android-list-home-large-text")
             } finally {
                 if (fontScale.toFloatOrNull() == null)
                     device.executeShellCommand("settings delete system font_scale")

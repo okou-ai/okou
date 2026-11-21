@@ -482,15 +482,18 @@ internal fun OkouApp(
         }
     val listToolbar =
         @Composable {
-            WorkspaceListToolbar(
-                widthDp = window.width,
-                listWidth = listWidth,
-                avatar = workspaceAvatar,
-                searchFocus = searchEntryFocus,
-                onSearchFocusChanged = { searchEntryFocused = it },
-                openSearch = if (chats != null) ::openSearch else null,
-                actions = toolbarActions,
-            )
+            Column {
+                WorkspaceListToolbar(
+                    widthDp = window.width,
+                    listWidth = listWidth,
+                    avatar = workspaceAvatar,
+                    searchFocus = searchEntryFocus,
+                    onSearchFocusChanged = { searchEntryFocused = it },
+                    openSearch = if (chats != null) ::openSearch else null,
+                    actions = toolbarActions,
+                )
+                if (chats != null) WorkspaceToolEntries()
+            }
             LaunchedEffect(Unit) {
                 if (restoreSearchFocus) {
                     restoreSearchFocus = false
