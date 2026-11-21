@@ -9,6 +9,7 @@ import {
   memoryVersions,
 } from "@okouai/db/schema/member-memory";
 import { phoneUseDevices, phoneUseGrants } from "@okouai/db/schema/phone-use";
+import { projects } from "@okouai/db/schema/project";
 import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import { computed } from "ccstate";
 import {
@@ -17,10 +18,13 @@ import {
   count,
   eq,
   exists,
+  inArray,
   isNotNull,
   isNull,
   lt,
   ne,
+  notInArray,
+  or,
   sql,
   type SQL,
 } from "drizzle-orm";
@@ -40,6 +44,7 @@ import { queuedThreadInputCondition } from "./chat-queued-event.service";
 import {
   pickedThreadColumns,
   type EnqueuedChatInputFacts,
+  type ProjectReferenceRow,
 } from "./chat-run-preparation-facts";
 import { officialWorkflowThreadCondition } from "./official-workflow-policy.service";
 import {
@@ -180,7 +185,48 @@ function pickedPhoneUseGrant(hasCapacity: SQL) {
     .as("preparation_phone_use_grant");
 }
 
-/** Capture availability, the FIFO head, its device grants, and the Memory HEAD together. */
+function pickedProjectJoin(
+  head: ReturnType<typeof buildPreparationTables>["head"],
+  hasCapacity: SQL,
+  requestInput: EnqueuedChatInputFacts | undefined,
+) {
+  const needsCurrentProject = requestInput?.projectReferences?.length
+    ? or(
+        ne(head.id, requestInput.id),
+        notInArray(
+          chatThreads.projectId,
+          requestInput.projectReferences.map(({ id }) => {
+            return id;
+          }),
+        ),
+      )
+    : undefined;
+  return and(
+    hasCapacity,
+    inArray(head.contextType, ["web", "agent_run"]),
+    eq(projects.id, chatThreads.projectId),
+    eq(projects.userId, chatThreads.userId),
+    eq(projects.orgId, chatThreads.orgId),
+    needsCurrentProject,
+  );
+}
+
+function pickedProjectFacts(
+  projectId: string | null,
+  current: ProjectReferenceRow | null,
+  owned: EnqueuedChatInputFacts | undefined,
+) {
+  const references = owned?.projectReferences;
+  return {
+    currentProject:
+      references?.find(({ id }) => {
+        return id === projectId;
+      }) ?? current,
+    ...(references ? { projectReferences: references } : {}),
+  };
+}
+
+/** Capture availability and launch facts for the actual FIFO head together. */
 export function createChatRunPreparationSnapshot(
   claim: { readonly orgId: string; readonly chatThreadId: string },
   bootstrap: AgentRunContextSignals,
@@ -220,6 +266,7 @@ export function createChatRunPreparationSnapshot(
           deviceId: phoneGrant.deviceId,
           grantId: phoneGrant.grantId,
         },
+        currentProject: { id: projects.id, name: projects.name },
         head: { ...head._.selectedFields },
         ...pickedPromptColumns(
           head,
@@ -253,6 +300,7 @@ export function createChatRunPreparationSnapshot(
         ),
       )
       .leftJoinLateral(phoneGrant, sql`true`)
+      .leftJoin(projects, pickedProjectJoin(head, hasCapacity, requestInput))
       .leftJoin(
         memberMemories,
         and(
@@ -297,9 +345,7 @@ export function createChatRunPreparationSnapshot(
         captureNetworkBodies: row.captureNetworkBodies,
         computerUseHostGrant: row.computerUseHostGrant,
         phoneUseGrant: row.phoneUseGrant,
-        ...(owned?.projectReferences
-          ? { projectReferences: owned.projectReferences }
-          : {}),
+        ...pickedProjectFacts(thread.projectId, row.currentProject, owned),
       },
     };
     return { ...snapshot, pickedEvent };

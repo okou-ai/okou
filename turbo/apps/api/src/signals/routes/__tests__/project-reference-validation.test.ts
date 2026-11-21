@@ -41,11 +41,20 @@ function mention(projectId: string, nameSnapshot = "Captured project") {
 describe("project reference admission through chat send", () => {
   it("admits ordinary chat messages without Project references", async () => {
     const { actor } = await fixture.entitledNativeChatActor();
+    const project = await createProject(actor, "The conversation's Project");
+    const thread = await fixture.chat.createThread(actor, {
+      projectId: project.id,
+    });
     const run = await fixture.sendChatRun(actor, {
+      threadId: thread.id,
       prompt: "No project references",
     });
     expect((await fixture.api.readRun(actor, run.runId)).prompt).toBe(
       "No project references",
+    );
+    const { execution } = await fixture.runExecution(run.runId);
+    expect(execution.appendSystemPrompt).toContain(
+      `Current Project: "The conversation's Project" (PROJECT_ID=${project.id})`,
     );
     await fixture.cancelChatRun(actor, run.runId);
   });
@@ -97,6 +106,9 @@ describe("project reference admission through chat send", () => {
   it("uses the Project name captured before attachment verification", async () => {
     const { actor } = await fixture.entitledNativeChatActor();
     const project = await createProject(actor, "Research at send");
+    const thread = await fixture.chat.createThread(actor, {
+      projectId: project.id,
+    });
     const storage = installS3Fixture(context);
     const filename = "project.txt";
     const contentType = "text/plain";
@@ -132,6 +144,7 @@ describe("project reference admission through chat send", () => {
       return await send(command);
     });
     const run = await fixture.sendChatRun(actor, {
+      threadId: thread.id,
       prompt: "Use the referenced Project",
       userMessage: {
         version: 1,
@@ -149,6 +162,9 @@ describe("project reference admission through chat send", () => {
     const { execution } = await fixture.runExecution(run.runId);
     expect(execution.appendSystemPrompt).toContain(
       'current name="Research at send"',
+    );
+    expect(execution.appendSystemPrompt).toContain(
+      `Current Project: "Research at send" (PROJECT_ID=${project.id})`,
     );
     const renamed = await accept(
       projects().get({
