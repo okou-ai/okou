@@ -6,6 +6,7 @@ import { applyPendingMigrations } from "./migration-runner";
 export async function validateCustomConnectorSkillCutover(
   databaseUrl: string,
   migrationMillis: number,
+  retirementMillis: number,
 ): Promise<void> {
   const sql = postgres(databaseUrl, { max: 1 });
   const id = randomUUID();
@@ -60,6 +61,11 @@ export async function validateCustomConnectorSkillCutover(
     await sql`UPDATE org_custom_connectors SET skill_markdown = 'Skill instructions',
       skill_storage_version_id = ${source}, skill_content_bundle = ${sql.json(bundle)},
       skill_content_bundle_source_version_id = ${source} WHERE id = ${id}`;
+    assert.deepEqual(Array.from(await readPublication()), Array.from(before));
+
+    // Native edits after 1608 can leave the obsolete mirror behind.
+    await sql`UPDATE org_custom_connectors SET skill_storage_version_id = ${"c".repeat(64)} WHERE id = ${id}`;
+    await applyPendingMigrations(sql, { beforeMillis: retirementMillis + 1 });
     assert.deepEqual(Array.from(await readPublication()), Array.from(before));
   } finally {
     await sql.end();
