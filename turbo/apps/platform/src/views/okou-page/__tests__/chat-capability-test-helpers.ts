@@ -130,7 +130,7 @@ function visibleSelectionRange(
   return range;
 }
 
-function setPassageSelection(
+export function setPassageSelection(
   passage: string,
   occurrence = 0,
   interaction: "mouse" | "native" = "mouse",
