@@ -13,6 +13,7 @@ use crate::{ConnectionState, Shared, normal_operation_transition_error};
 
 use super::state::{
     ExecCaptureState, ExecOperation, ExecOperationLifecycle, ExecStreamTryReserveError,
+    PendingExecControl,
 };
 use super::types::{
     ExecControlAck, ExecControlGuestStatus, ExecControlOutcome, ExecOperationResult,
@@ -463,15 +464,7 @@ pub(in crate::exec_operation) fn dispatch_result(
 }
 
 fn dispatch_control_result(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> io::Result<()> {
-    let Some(pending) = ({
-        let mut guard = shared.state.lock().unwrap_or_else(|e| e.into_inner());
-        match &mut *guard {
-            ConnectionState::Connected { operations, .. } => {
-                operations.take_pending_control(msg.seq)
-            }
-            ConnectionState::Closed(_) => None,
-        }
-    }) else {
+    let Some(pending) = take_pending_control_reply(shared, msg.seq) else {
         return Ok(());
     };
     let decoded = guest_control_proto::decode_exec_control_result(msg.payload)
@@ -495,11 +488,7 @@ fn dispatch_control_result(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) ->
             pending.message_id, decoded.message_id
         )));
     }
-    pending
-        .normal_operation
-        .complete()
-        .map_err(normal_operation_transition_error)?;
-    let outcome = match decoded.status {
+    settle_control_reply(pending, || match decoded.status {
         ExecControlStatus::Delivered => ExecControlOutcome::Delivered(ExecControlAck {
             target_seq: decoded.target_seq,
             message_id: decoded.message_id.to_owned(),
@@ -508,9 +497,7 @@ fn dispatch_control_result(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) ->
             status,
             diagnostic: decoded.diagnostic.to_owned(),
         }),
-    };
-    let _ = pending.response_tx.send(Ok(outcome));
-    Ok(())
+    })
 }
 
 fn dispatch_error(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> io::Result<bool> {
@@ -540,26 +527,33 @@ fn dispatch_error(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> io::Resu
 }
 
 fn dispatch_control_error(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> io::Result<bool> {
-    let Some(pending) = ({
-        let mut guard = shared.state.lock().unwrap_or_else(|e| e.into_inner());
-        match &mut *guard {
-            ConnectionState::Connected { operations, .. } => {
-                operations.take_pending_control(msg.seq)
-            }
-            ConnectionState::Closed(_) => None,
-        }
-    }) else {
+    let Some(pending) = take_pending_control_reply(shared, msg.seq) else {
         return Ok(false);
     };
     let message = guest_control_proto::decode_error(msg.payload)
         .map(|message| message.to_owned())
         .map_err(protocol_error::invalid_data)?;
+    settle_control_reply(pending, || ExecControlOutcome::GuestError(message))?;
+    Ok(true)
+}
+
+fn take_pending_control_reply(shared: &Shared, seq: u32) -> Option<PendingExecControl> {
+    let mut guard = shared.state.lock().unwrap_or_else(|e| e.into_inner());
+    match &mut *guard {
+        ConnectionState::Connected { operations, .. } => operations.take_pending_control(seq),
+        ConnectionState::Closed(_) => None,
+    }
+}
+
+fn settle_control_reply(
+    pending: PendingExecControl,
+    outcome: impl FnOnce() -> ExecControlOutcome,
+) -> io::Result<()> {
     pending
         .normal_operation
         .complete()
         .map_err(normal_operation_transition_error)?;
-    let _ = pending
-        .response_tx
-        .send(Ok(ExecControlOutcome::GuestError(message)));
-    Ok(true)
+    let outcome = outcome();
+    let _ = pending.response_tx.send(Ok(outcome));
+    Ok(())
 }
