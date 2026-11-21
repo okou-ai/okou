@@ -109,7 +109,7 @@ function ForYouStack() {
     ...settled,
   ];
   return (
-    <div className="relative mx-auto -mt-26 w-full max-w-176 pb-6 sm:-mt-28 @min-[64rem]/for-you:-mt-36">
+    <div className="relative mx-auto -mt-26 w-full max-w-176 pb-6 sm:-mt-36 @min-[64rem]/for-you:-mt-44">
       <div
         className="relative isolate mb-6 grid min-h-(--for-you-card-min-height)"
         style={
@@ -288,7 +288,7 @@ function ForYouCover() {
   const cover = useGet(forYouCover$);
   const select = useSet(selectForYouCover$);
   return (
-    <div className="group/cover relative -mx-4 h-44 shrink-0 sm:-mx-8 sm:h-48">
+    <div className="group/cover relative -mx-4 h-44 shrink-0 sm:-mx-8 sm:h-56">
       <img
         data-slot="for-you-cover"
         src={cover.src}
@@ -542,7 +542,7 @@ export function ForYouPage() {
             {complete && (
               <SuggestionsComplete
                 celebrate={settled.length > 0}
-                className="absolute inset-x-4 top-44 mx-auto max-w-160 pt-8 sm:top-48 sm:pt-12"
+                className="absolute inset-x-4 top-44 mx-auto max-w-160 pt-8 sm:top-56 sm:pt-12"
               />
             )}
             <ForYouStack />
