@@ -20,8 +20,8 @@ class ReleaseDiagnosticsTest(unittest.TestCase):
     def test_release_smoke_requires_app_owned_auth_surface(self):
         surface = runpy.run_path(str(SCRIPTS / "release-smoke.py"))["has_public_auth_surface"]
         self.assertTrue(surface('<hierarchy><node package="ai.okou.android" text="Welcome to Okou"/></hierarchy>'))
-        self.assertTrue(surface('<hierarchy><node package="ai.okou.android" text="Okou"/></hierarchy>'))
-        self.assertFalse(surface('<hierarchy><node package="com.android.launcher3" text="Okou"/></hierarchy>'))
+        self.assertFalse(surface('<hierarchy><node package="ai.okou.android" text="Okou"/></hierarchy>'))
+        self.assertFalse(surface('<hierarchy><node package="com.android.launcher3" text="Welcome to Okou"/></hierarchy>'))
         self.assertFalse(surface('<hierarchy><node package="ai.okou.android" text=""/></hierarchy>'))
         self.assertFalse(surface('<hierarchy>'))
 

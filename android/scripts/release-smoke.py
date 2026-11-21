@@ -24,8 +24,9 @@ def has_public_auth_surface(output):
         root = ElementTree.fromstring(output)
     except ElementTree.ParseError:
         return False
+    # Workspace screens also show the app name. Require the authentication heading.
     return any(
-        node.get("package") == PACKAGE and node.get("text") in {"Welcome to Okou", "Okou"}
+        node.get("package") == PACKAGE and node.get("text") == "Welcome to Okou"
         for node in root.iter("node")
     )
 
