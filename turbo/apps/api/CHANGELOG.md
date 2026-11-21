@@ -10,6 +10,31 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.100.3](https://github.com/okou-ai/okou/compare/api-v2.100.2...api-v2.100.3) (2026-11-21)
+
+
+### Bug Fixes
+
+* **android:** keep running chats eligible for unread actions ([#49730](https://github.com/okou-ai/okou/issues/49730)) ([7a9953d](https://github.com/okou-ai/okou/commit/7a9953ddcdf16cbea66610f40345d504d6f5c058))
+
+
+### Performance Improvements
+
+* **api:** advance Chat send validation reads ([#49767](https://github.com/okou-ai/okou/issues/49767)) ([7f0b87d](https://github.com/okou-ai/okou/commit/7f0b87d3f62eeb6d53e973f31c05d1ac51b03fd7))
+* **api:** advance scoped reads during run startup ([#49754](https://github.com/okou-ai/okou/issues/49754)) ([78003a5](https://github.com/okou-ai/okou/commit/78003a5026119ff6ea5fb27aa7df450758dd0794))
+* **api:** overlap admission and consolidate startup reads ([#49743](https://github.com/okou-ai/okou/issues/49743)) ([32bee13](https://github.com/okou-ai/okou/commit/32bee13cf9505e9276fe1bef38d79f465ca76f22))
+* **api:** remove mailbox and phone grant waits from run startup ([#49721](https://github.com/okou-ai/okou/issues/49721)) ([e3a95cf](https://github.com/okou-ai/okou/commit/e3a95cf2b04210bdd306948eff761563efc31f93))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.0
+    * @okouai/core bumped to 8.858.4
+    * @okouai/db bumped to 2.57.3
+    * @okouai/pi-agent-runtime bumped to 1.52.23
+
 ## [2.100.2](https://github.com/okou-ai/okou/compare/api-v2.100.1...api-v2.100.2) (2026-11-21)
 
 

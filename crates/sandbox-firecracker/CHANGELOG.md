@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.134](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.133...sandbox-firecracker-v0.53.134) (2026-11-21)
+
+
+### Refactoring
+
+* **firecracker:** share the guest rpc assignment gate ([#49762](https://github.com/okou-ai/okou/issues/49762)) ([8a4edd9](https://github.com/okou-ai/okou/commit/8a4edd94afe0505887f6b40975108990cc9a76c6))
+
 ## [0.53.133](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.132...sandbox-firecracker-v0.53.133) (2026-11-21)
 
 ## [0.53.132](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.131...sandbox-firecracker-v0.53.132) (2026-11-20)
