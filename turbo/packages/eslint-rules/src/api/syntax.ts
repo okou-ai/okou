@@ -5,13 +5,11 @@ import {
 } from "@typescript-eslint/utils";
 
 // These helpers intentionally model conventional, type-correct repository
-// syntax. Expression analysis follows local imports, const bindings, and scope.
-// Individual rules can provide a stricter check for the imported table.
+// syntax. They use only the current file's imports, const bindings, and scope
+// graph; unusual metaprogramming and cross-file type inference are out of scope.
 
 const DRIZZLE_MODULE_PREFIX = "drizzle-orm";
 const SCHEMA_MODULE_PREFIX = "@okouai/db/schema/";
-
-type TableImportCheck = (source: string, name: string) => boolean;
 
 function isSchemaModule(source: string | undefined): boolean {
   return (
@@ -543,7 +541,6 @@ export function drizzleCallName(
 export function isSchemaTableExpression(
   sourceCode: TSESLint.SourceCode,
   node: TSESTree.Expression,
-  isTableImport: TableImportCheck = isSchemaModule,
 ): boolean {
   const direct = unwrapExpression(node);
   const resolved = resolveLocalExpression(sourceCode, direct);
@@ -551,7 +548,7 @@ export function isSchemaTableExpression(
     const imported = importReference(sourceCode, resolved);
     if (
       imported !== null &&
-      isTableImport(imported.source, imported.importedName) &&
+      isSchemaModule(imported.source) &&
       !imported.isTypeOnly
     ) {
       return true;
@@ -577,8 +574,7 @@ export function isSchemaTableExpression(
   const imported = importReference(sourceCode, object);
   return (
     imported?.importedName === "*" &&
-    (imported.source === "@okouai/db" ||
-      isTableImport(imported.source, memberName(resolved) ?? ""))
+    (imported.source === "@okouai/db" || isSchemaModule(imported.source))
   );
 }
 
@@ -633,7 +629,6 @@ function isQueryBuilderExpression(
 export function isColumnExpression(
   sourceCode: TSESLint.SourceCode,
   node: TSESTree.Expression,
-  isTableImport: TableImportCheck = isSchemaModule,
 ): boolean {
   const resolved = resolveLocalExpression(sourceCode, node);
   if (resolved.type !== AST_NODE_TYPES.MemberExpression) {
@@ -641,7 +636,7 @@ export function isColumnExpression(
   }
   const object = unwrapExpression(resolved.object);
   return (
-    isSchemaTableExpression(sourceCode, object, isTableImport) ||
+    isSchemaTableExpression(sourceCode, object) ||
     (object.type === AST_NODE_TYPES.Identifier &&
       relationalParameterRole(sourceCode, object) === "fields")
   );

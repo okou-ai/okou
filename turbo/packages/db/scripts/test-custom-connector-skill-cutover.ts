@@ -51,6 +51,16 @@ export async function validateCustomConnectorSkillCutover(
     assert.equal(before.length, 1);
     await migrate();
     assert.deepEqual(Array.from(await readPublication()), Array.from(before));
+
+    // The deployed API can clear and republish a historical Skill after the migration.
+    await sql`UPDATE org_custom_connectors SET skill_markdown = NULL,
+      skill_storage_version_id = NULL, skill_content_bundle = NULL,
+      skill_content_bundle_source_version_id = NULL WHERE id = ${id}`;
+    assert.equal((await readPublication()).length, 0);
+    await sql`UPDATE org_custom_connectors SET skill_markdown = 'Skill instructions',
+      skill_storage_version_id = ${source}, skill_content_bundle = ${sql.json(bundle)},
+      skill_content_bundle_source_version_id = ${source} WHERE id = ${id}`;
+    assert.deepEqual(Array.from(await readPublication()), Array.from(before));
   } finally {
     await sql.end();
   }

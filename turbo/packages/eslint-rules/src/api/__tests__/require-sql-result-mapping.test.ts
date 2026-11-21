@@ -37,13 +37,6 @@ ruleTester.run("require-sql-result-mapping", requireSqlResultMapping, {
     },
     {
       code: `${preamble}
-        import { orgCustomConnectors } from "@okouai${"/db/runtime/org-custom-connector"}";
-        import { sql } from "drizzle-orm";
-        db.select({ name: sql\`upper(\${orgCustomConnectors.displayName})\`.mapWith(orgCustomConnectors.displayName) }).from(orgCustomConnectors);
-      `,
-    },
-    {
-      code: `${preamble}
         import { connectorCatalogEntries } from "@okouai${"/db/runtime/connector-catalog"}";
         import { sql } from "drizzle-orm";
         import { nullableDriverValueDecoder } from "../../apps/api/src/lib/db-structured-result";
@@ -178,17 +171,6 @@ ruleTester.run("require-sql-result-mapping", requireSqlResultMapping, {
     },
   ],
   invalid: [
-    {
-      code: `${preamble}
-        import * as ssh from "@okouai${"/db/runtime/ssh-connection"}";
-        import { sql } from "drizzle-orm";
-        db.select({
-          id: sql\`\${ssh.sshConnections.id}\`.mapWith(ssh.sshConnections.id),
-          invalid: sql\`true\`.mapWith(ssh.sshConnectionNeedsRebind.decoder),
-        }).from(ssh.sshConnections);
-      `,
-      errors: [{ messageId: "uninspectableResultDecoder" }],
-    },
     {
       code: `${preamble}
         import { orgMembersMetadata } from "@okouai${"/db/schema/org-members-metadata"}";

@@ -1,5 +1,5 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import {
   orgCustomConnectorOauthConfigs,
   type OrgCustomConnectorOAuthProviderAdapter,

@@ -2937,7 +2937,7 @@ async function main(): Promise<void> {
     await validateCustomConnectorSkillCutover(
       dbUrl1,
       await migrationTimestamp(
-        "1608_stop_custom_connector_skill_storage_writes",
+        "1608_prepare_custom_connector_skill_cutover",
       ),
     );
     await runMigrations(dbUrl1);

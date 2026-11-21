@@ -4,7 +4,7 @@ import { connectors } from "@okouai/db/schema/connector";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
-import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { secrets } from "@okouai/db/schema/secret";
 import { and, count, eq, exists, gte, inArray, or, sql } from "drizzle-orm";
 import type { FeishuPlatform } from "@okouai/core/feishu-platform";

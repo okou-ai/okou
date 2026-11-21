@@ -1,5 +1,5 @@
 {
-  "id": "581d28d7-6268-45d4-897c-ebc16a60c396",
+  "id": "806658e7-1b0d-4112-9229-12afe4345e79",
   "prevId": "93697604-ce91-442c-b919-5cdb7d53b4b4",
   "version": "7",
   "dialect": "postgresql",
@@ -24069,6 +24069,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "skill_storage_version_id": {
+          "name": "skill_storage_version_id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "skill_content_bundle": {
           "name": "skill_content_bundle",
           "type": "jsonb",
@@ -24107,12 +24113,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "skill_storage_version_id": {
-          "name": "skill_storage_version_id",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {

@@ -2,12 +2,12 @@ import type {
   ConnectorAccountConnection,
   connectorAccountFieldMetadataSchema,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import {
-  customConnectorFieldSchema,
-  type CustomConnectorAuthMode,
-  type CustomConnectorMcpTransport,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+import { customConnectorFieldSchema } from "@okouai/api-contracts/contracts/custom-connectors";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
+import type {
+  OrgCustomConnectorAuthMode,
+  OrgCustomConnectorMcpTransport,
+} from "@okouai/db/schema/org-custom-connector";
 import type { ConnectorRuntimeAuthLookup } from "./connector-catalog-runtime.service";
 import {
   builtinConnectorCredentialStorageIsCompatible,
@@ -35,8 +35,8 @@ interface ConnectorAccountFieldMarker extends AccountSetupContract {
 
 interface AccountSetupInput extends AccountSetupContract {
   readonly connectorSlug: string | null;
-  readonly definitionAuthMode: CustomConnectorAuthMode | null;
-  readonly definitionMcpTransport: CustomConnectorMcpTransport | null;
+  readonly definitionAuthMode: OrgCustomConnectorAuthMode | null;
+  readonly definitionMcpTransport: OrgCustomConnectorMcpTransport | null;
   readonly definitionFields: unknown;
 }
 

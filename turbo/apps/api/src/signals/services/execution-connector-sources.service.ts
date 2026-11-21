@@ -1,7 +1,7 @@
 import type {
-  CustomConnectorAuthMode,
-  CustomConnectorMcpTransport,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+  OrgCustomConnectorAuthMode,
+  OrgCustomConnectorMcpTransport,
+} from "@okouai/db/schema/org-custom-connector";
 
 export type ConnectorSourceIdentity =
   | {
@@ -34,9 +34,9 @@ export interface ConnectorSourceConnection {
 }
 /** Custom definition and OAuth binding captured by the bootstrap loader. */
 export interface CustomConnectorSourceBinding {
-  readonly definitionAuthMode: CustomConnectorAuthMode;
+  readonly definitionAuthMode: OrgCustomConnectorAuthMode;
   readonly definitionStorageVersion: number;
-  readonly definitionMcpTransport: CustomConnectorMcpTransport | null;
+  readonly definitionMcpTransport: OrgCustomConnectorMcpTransport | null;
   readonly automaticOAuthBindingId: string | null;
 }
 export interface ConnectorSourceSnapshot {
@@ -56,9 +56,9 @@ export interface ConnectorSourceRow extends ConnectorSourceConnection {
   readonly customConnectorId: string | null;
   readonly customOrgId: string | null;
   readonly customEnabled: boolean | null;
-  readonly definitionAuthMode: CustomConnectorAuthMode | null;
+  readonly definitionAuthMode: OrgCustomConnectorAuthMode | null;
   readonly definitionStorageVersion: number | null;
-  readonly definitionMcpTransport: CustomConnectorMcpTransport | null;
+  readonly definitionMcpTransport: OrgCustomConnectorMcpTransport | null;
   readonly automaticOAuthBindingId: string | null;
 }
 

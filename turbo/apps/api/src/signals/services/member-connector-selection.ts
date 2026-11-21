@@ -1,6 +1,6 @@
 import { connectors } from "@okouai/db/schema/connector";
 import { connectorPermissionGrants } from "@okouai/db/schema/connector-permission-grant";
-import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import {
   and,
