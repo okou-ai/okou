@@ -323,7 +323,7 @@ internal fun ChatListScreen(
     ChatListViewport(
         Modifier.fillMaxSize(),
         listState,
-        lastContentKey = lastContentKey,
+        contentChangeKey = lastContentKey to knownProjects,
         status = status,
         newChatEnabled = newChatEnabled,
         newChat = { newChat(null) },

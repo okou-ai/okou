@@ -539,7 +539,7 @@ class ChatListRootTest {
             val list = compose.onNodeWithTag("chat_list")
             val projectChat = compose.onNodeWithText("Startup chat 160")
             projectChat.assertIsDisplayed()
-            val projectInset = projectChat.getUnclippedBoundsInRoot().left
+            val projectInset = projectChat.fetchSemanticsNode().boundsInRoot.left
             compose.onNodeWithText("Research").assertDoesNotExist()
 
             // The header will replace 160 rows, taking the anchor outside Compose's key window.
@@ -548,7 +548,7 @@ class ChatListRootTest {
             val anchor = compose.onNodeWithText("Startup chat 185")
             anchor.assertIsDisplayed()
             val anchorBounds = anchor.getUnclippedBoundsInRoot()
-            assertTrue(projectInset > anchorBounds.left)
+            assertTrue(projectInset > anchor.fetchSemanticsNode().boundsInRoot.left)
             projectGate.countDown()
             awaitListAndNames()
             assertEquals(anchorBounds, anchor.getUnclippedBoundsInRoot())
@@ -558,7 +558,7 @@ class ChatListRootTest {
             projectChat.assertDoesNotExist()
             setResearchExpanded(true)
             projectChat.assertIsDisplayed()
-            assertEquals(projectInset, projectChat.getUnclippedBoundsInRoot().left)
+            assertEquals(projectInset, projectChat.fetchSemanticsNode().boundsInRoot.left)
         } finally {
             projectGate.countDown()
         }
