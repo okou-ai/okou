@@ -98,7 +98,7 @@ internal fun ConversationToolbarActions(
                                         R.drawable.ic_settings,
                                     ) {
                                         menu = false
-                                it(restoreFocus)
+                                        it(restoreFocus)
                                     }
                                 }
                             ),

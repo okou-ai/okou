@@ -200,11 +200,12 @@ internal fun ConversationRoute(
     val messageInset = if (window.width >= 600) 32.dp else 24.dp
     key(model, threadId) {
         val position = rememberLazyListState()
-        val runningRows = remember(content, activity, activeMessage) {
-            if (activity == R.string.conversation_processing)
-                setOf(content.lastOrNull { it.message.id == activeMessage }?.key ?: TimelineEnd)
-            else emptySet()
-        }
+        val runningRows =
+            remember(content, activity, activeMessage) {
+                if (activity == R.string.conversation_processing)
+                    setOf(content.lastOrNull { it.message.id == activeMessage }?.key ?: TimelineEnd)
+                else emptySet()
+            }
         val runningFrame = rememberRunningWaveFrame(position, runningRows)
         val scope = rememberCoroutineScope()
         var restored by remember { mutableStateOf(false) }

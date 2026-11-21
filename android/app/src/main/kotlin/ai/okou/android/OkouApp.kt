@@ -567,11 +567,12 @@ internal fun OkouApp(
                         } else {
                             Box(
                                 Modifier.padding(
-                                    start = when (listWidth) {
-                                        344 -> 24.dp
-                                        320 -> 16.dp
-                                        else -> 0.dp
-                                    }
+                                    start =
+                                        when (listWidth) {
+                                            344 -> 24.dp
+                                            320 -> 16.dp
+                                            else -> 0.dp
+                                        }
                                 )
                             ) {
                                 detailTitle()
@@ -582,9 +583,10 @@ internal fun OkouApp(
                     windowInsets =
                         if (settings == null && listWidth != null) WindowInsets(0, 0, 0, 0)
                         else TopAppBarDefaults.windowInsets,
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background,
-                    ),
+                    colors =
+                        TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.background
+                        ),
                     navigationIcon = {
                         if (settings != null || showWorkspaceBack)
                             IconButton(
