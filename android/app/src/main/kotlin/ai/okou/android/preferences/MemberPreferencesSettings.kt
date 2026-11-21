@@ -50,7 +50,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.currentStateAsState
-import java.util.TimeZone
 
 @Composable
 internal fun MemberPreferencesSettings(model: MemberPreferencesModel) {
@@ -150,8 +149,7 @@ private val commonTimezones =
     )
 
 @Composable
-private fun TimezonePicker(saved: String?, onSelect: (String) -> Unit) {
-    val current = saved ?: TimeZone.getDefault().id
+private fun TimezonePicker(current: String, onSelect: (String) -> Unit) {
     val title = stringResource(R.string.settings_timezone)
     val utc = stringResource(R.string.settings_timezone_utc)
     val locale = LocalConfiguration.current.locales[0]

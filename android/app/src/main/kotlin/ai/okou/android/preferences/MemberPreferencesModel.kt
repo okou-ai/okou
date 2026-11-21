@@ -75,8 +75,8 @@ data class MemberPreferencesState(
     val theme: UserPreferencesTheme
         get() = pending?.theme ?: confirmed.theme ?: UserPreferencesTheme.SYSTEM
 
-    val timezone: String?
-        get() = pending?.timezone ?: confirmed.timezone
+    val timezone: String
+        get() = pending?.timezone ?: checkNotNull(confirmed.timezone)
 
     val supportedLocales: List<UserPreferencesLocale>
         get() = confirmed.supportedLocales.map { UserPreferencesLocale.valueOf(it.name) }
