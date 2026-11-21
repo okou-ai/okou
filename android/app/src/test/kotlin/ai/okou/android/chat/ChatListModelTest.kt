@@ -2394,6 +2394,50 @@ class ChatListModelTest {
     }
 
     @Test
+    fun unchangedProjectRefreshKeepsPendingRenameAndHidesAnUnavailableCollection() = runTest {
+        val initialRead = CompletableDeferred<Unit>()
+        val service = HeldProjectRenameService(initialRead)
+        withCachedProjectRename(service) { model, _ ->
+            model.renameProject(CHAT_PROJECT, "Pending")
+            runCurrent()
+            assertEquals("Pending", model.uiState.value.projects.single().name)
+
+            initialRead.complete(Unit)
+            advanceUntilIdle()
+            val refreshed = model.uiState.value
+            assertEquals(ChatReadPhase.Ready, refreshed.projectsPhase)
+            assertEquals(ChatListSource.Network, refreshed.projectsSource)
+            assertEquals("Pending", refreshed.projects.single().name)
+            assertEquals(CHAT_PROJECT, refreshed.renamingProjectId)
+
+            service.collectionUnavailable = true
+            model.refreshMetadata()
+            advanceUntilIdle()
+            val unavailable = model.uiState.value
+            assertEquals(ChatReadPhase.Failed, unavailable.projectsPhase)
+            assertNull(unavailable.projectsSource)
+            assertTrue(unavailable.projects.isEmpty())
+            assertFalse(unavailable.canRenameProject)
+
+            service.response.completeExceptionally(ApiFailure.Network(IOException("Lost response")))
+            advanceUntilIdle()
+            val settled = model.uiState.value
+            assertTrue(settled.projects.isEmpty())
+            assertTrue(settled.unconfirmedProjectRenames.isEmpty())
+            assertNull(settled.renamingProjectId)
+
+            service.collectionUnavailable = false
+            model.refreshMetadata()
+            advanceUntilIdle()
+            val recovered = model.uiState.value
+            assertEquals(ChatReadPhase.Ready, recovered.projectsPhase)
+            assertEquals("Before", recovered.projects.single().name)
+            assertTrue(recovered.canRenameProject)
+            assertEquals(0, service.projectSnapshots)
+        }
+    }
+
+    @Test
     fun cachedProjectRenameRecoversLostResponseAfterTheInitialRead() = runTest {
         val initialRead = CompletableDeferred<Unit>()
         val service = HeldProjectRenameService(initialRead)
@@ -2639,10 +2683,13 @@ class ChatListModelTest {
         val sent = mutableListOf<String>()
         var projectReads = 0
         var nextProjectRead = initialRead
+        var projectSnapshots = 0
+        var collectionUnavailable = false
         var receipt: ProjectEventsEventsItem? = null
 
-        override suspend fun projectSnapshot() =
-            ProjectSnapshotVariant1(
+        override suspend fun projectSnapshot(): ProjectSnapshotVariant1 {
+            projectSnapshots++
+            return ProjectSnapshotVariant1(
                 listOf(
                     ProjectSnapshotVariant1ProjectsItem(
                         CHAT_PROJECT,
@@ -2654,9 +2701,11 @@ class ChatListModelTest {
                 latestEventId = null,
                 latestSeqId = 0,
             )
+        }
 
         override suspend fun projectEvents(since: Long): ProjectEvents {
             projectReads++
+            if (collectionUnavailable) throw ApiFailure.Http(404, null, null, null)
             val result = ProjectEvents(listOfNotNull(receipt?.takeIf { it.seqId > since }), false)
             val read = nextProjectRead
             nextProjectRead = null
@@ -2816,6 +2865,39 @@ class ChatListModelTest {
             store.clear()
             runCurrent()
             Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun projectRefreshReplaysAReplacementAfterTheCachedCursorExpires() = runTest {
+        val project =
+            ProjectSnapshotVariant1ProjectsItem(CHAT_PROJECT, "Before", CHAT_DATE, CHAT_DATE)
+        var snapshot = ProjectSnapshotVariant1(listOf(project), null, 0)
+        val service =
+            object : Service() {
+                override suspend fun projectSnapshot() = snapshot
+
+                override suspend fun projectEvents(since: Long): ProjectEvents {
+                    if (since < snapshot.latestSeqId) throw ApiFailure.Http(410, null, null, null)
+                    return ProjectEvents(emptyList(), false)
+                }
+            }
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            assertEquals("Before", model.uiState.value.projects.single().name)
+
+            snapshot =
+                ProjectSnapshotVariant1(listOf(project.copy(name = "Replacement")), CHAT_EVENT, 17)
+            model.refreshMetadata()
+            advanceUntilIdle()
+            val replaced = model.uiState.value
+            assertEquals(ChatReadPhase.Ready, replaced.projectsPhase)
+            assertEquals("Replacement", replaced.projects.single().name)
+
+            model.refreshMetadata()
+            advanceUntilIdle()
+            assertEquals(replaced.projectList, model.uiState.value.projectList)
         }
     }
 
