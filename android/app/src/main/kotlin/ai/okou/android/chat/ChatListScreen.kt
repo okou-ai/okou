@@ -86,13 +86,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.text.NumberFormat
-import kotlinx.coroutines.delay
 
 @Composable
 internal fun ChatListScreen(
@@ -310,13 +310,7 @@ internal fun ChatListScreen(
             !state.offline &&
             firstLoadFailure == null &&
             (startupRecovery == null || state.listPhase != ChatReadPhase.Idle)
-    var skeletonVisible by remember(awaitingFirstList) { mutableStateOf(false) }
-    LaunchedEffect(awaitingFirstList) {
-        if (awaitingFirstList) {
-            delay(100)
-            skeletonVisible = true
-        }
-    }
+    val skeletonVisible = rememberChatWaitIndicator(awaitingFirstList)
     // Follow changes to refreshed content without turning Project expansion into a scroll action.
     val lastContentKey =
         remember(groups, pendingByProject) {
@@ -382,17 +376,18 @@ internal fun ChatListScreen(
             if (state.confirmedAt == null || missingUnread) {
                 when {
                     state.offline ->
-                        item { ChatListLoadNotice(R.string.chat_list_load_when_online) }
+                        item { ChatContentLoadNotice(R.string.chat_list_load_when_online) }
                     firstLoadFailure != null ->
                         item {
-                            ChatListLoadNotice(R.string.chat_list_first_load_failed)
-                            if (firstLoadFailure == ChatListReadFailure.NeedsRetry)
-                                ChatAction(
-                                    R.string.retry,
-                                    if (missingUnread) retryIndicators else retryList,
-                                    enabled =
-                                        missingUnread || state.listPhase != ChatReadPhase.Loading,
-                                )
+                            ChatContentLoadNotice(
+                                R.string.chat_list_first_load_failed,
+                                retry =
+                                    (if (missingUnread) retryIndicators else retryList).takeIf {
+                                        firstLoadFailure == ChatListReadFailure.NeedsRetry
+                                    },
+                                retryEnabled =
+                                    missingUnread || state.listPhase != ChatReadPhase.Loading,
+                            )
                         }
                     skeletonVisible -> item { ChatListSkeleton() }
                 }
@@ -677,8 +672,8 @@ private fun ProjectRow(
     Box {
         Row(
             Modifier.fillMaxWidth()
-                .heightIn(min = 52.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .heightIn(min = ChatListRowHeight)
+                .clip(ChatListRowShape)
                 .contextMenuInput(openMenu)
                 .focusRequester(rowFocus)
                 .onFocusChanged { rowFocused = it.isFocused }
@@ -703,7 +698,7 @@ private fun ProjectRow(
                         }
                     }
                 }
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(ChatListRowPadding),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
@@ -836,7 +831,6 @@ private fun ChatRow(
                 )
             },
         )
-    val shape = RoundedCornerShape(8.dp)
     val colors = MaterialTheme.colorScheme
     val readAction =
         actions.firstOrNull { it == ChatRowAction.MarkRead || it == ChatRowAction.MarkUnread }
@@ -850,8 +844,8 @@ private fun ChatRow(
         Row(
             swipeModifier
                 .fillMaxWidth()
-                .heightIn(min = 52.dp)
-                .clip(shape)
+                .heightIn(min = ChatListRowHeight)
+                .clip(ChatListRowShape)
                 .background(if (isSelected) colors.secondaryContainer else colors.background)
                 .contextMenuInput(openMenu)
                 .focusRequester(rowFocus)
@@ -865,7 +859,7 @@ private fun ChatRow(
                     if (isSelected) selected = true
                     if (labels.isNotEmpty()) stateDescription = labels.joinToString()
                 }
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(ChatListRowPadding),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -903,7 +897,7 @@ private fun ChatRow(
 }
 
 @Composable
-private fun chatListTitleStyle() =
+internal fun chatListTitleStyle() =
     MaterialTheme.typography.bodyLarge.copy(
         fontSize = 16.sp,
         lineHeight = 24.sp,
@@ -1013,22 +1007,30 @@ private fun ChatListTextAction(
 }
 
 @Composable
-private fun ChatListLoadNotice(message: Int) {
-    Box(
-        Modifier.heightIn(min = 48.dp).padding(horizontal = 12.dp),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        Text(
-            stringResource(message),
-            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style =
-                MaterialTheme.typography.bodyMedium.copy(
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp,
-                    letterSpacing = 0.sp,
-                ),
-        )
+internal fun ChatContentLoadNotice(
+    @StringRes message: Int,
+    horizontalPadding: Dp = 12.dp,
+    retry: (() -> Unit)? = null,
+    retryEnabled: Boolean = true,
+) {
+    Column {
+        Box(
+            Modifier.heightIn(min = 48.dp).padding(horizontal = horizontalPadding),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Text(
+                stringResource(message),
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style =
+                    MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        letterSpacing = 0.sp,
+                    ),
+            )
+        }
+        if (retry != null) ChatAction(R.string.retry, retry, enabled = retryEnabled)
     }
 }
 

@@ -12,7 +12,6 @@
     <string name="chat_refresh">重新整理聊天</string>
     <string name="chat_loading">正在載入聊天…</string>
     <string name="chat_refresh_failed">無法重新整理，正在顯示上次載入的聊天。</string>
-    <string name="chat_cached">正在顯示已儲存的聊天。</string>
     <string name="chat_cache_unavailable">離線儲存空間無法使用，重新啟動後可能無法查看這些聊天。</string>
     <string name="chat_metadata_unavailable">部分 Okou 或專案資訊無法使用。</string>
     <string name="chat_inbox">收件匣</string>

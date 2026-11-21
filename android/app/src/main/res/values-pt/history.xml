@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="history_syncing">Sincronizando mensagens…</string>
     <string name="history_loading">Carregando conversa…</string>
     <string name="history_failed">Não foi possível atualizar a conversa. Tente novamente.</string>
     <string name="history_missing">Esta conversa foi excluída ou está indisponível.</string>

@@ -108,7 +108,7 @@ class NativeUpdateTest {
                 takeScreenshot().writeToTestStorage("android-update-$name")
             }
             device.awaitChatList(app)
-            val searchLabel = app.getString(R.string.chat_search)
+            val searchLabel = app.getString(R.string.chat_search_workspace)
             val search = By.pkg(app.packageName).desc(searchLabel)
             val searchBounds = button(search).visibleBounds
             captureState("toolbar-current")
