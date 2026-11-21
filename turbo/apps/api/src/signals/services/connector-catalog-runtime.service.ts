@@ -30,7 +30,6 @@ import {
 import type {
   ConnectorCatalogArtifactConnector,
   ConnectorCatalogAuthMethod,
-  ConnectorCatalogSkill,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import { singleton } from "../../lib/singleton";
 import {
@@ -82,7 +81,7 @@ export interface ConnectorRuntimeConnector<
   Detail extends ConnectorRuntimeCatalogDetail = PublicConnectorCatalogDetail,
 > extends ConnectorRuntimeCatalogConnector {
   readonly catalogConnector: Detail;
-  readonly skill: ConnectorCatalogSkill;
+  readonly skillSourceVersionId: string | null;
 }
 
 /** Account status needs method capability and storage semantics, not firewall data. */
@@ -610,7 +609,7 @@ function runtimeConnector<Detail extends ConnectorRuntimeCatalogDetail>(
       catalogConnector.authMethods,
       filteredMethodKeys,
     ),
-    skill: connector.skill,
+    skillSourceVersionId: connector.skillSourceVersionId,
   };
 }
 

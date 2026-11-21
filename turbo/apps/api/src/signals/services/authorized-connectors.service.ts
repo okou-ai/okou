@@ -30,19 +30,13 @@ const log = logger("api:authorized-connector-skills");
 function availableSkillBundle(
   connectorId: string,
   skillName: string,
-  row:
-    | {
-        readonly bundle: ContentBundle | null;
-        readonly sourceVersionId: string | null;
-      }
-    | undefined,
-  versionId: string,
+  contentBundle: ContentBundle | null,
 ): AuthorizedConnectorSkill | null {
-  if (!row?.bundle || row.sourceVersionId !== versionId) {
+  if (!contentBundle) {
     log.warn("Connector Skill bundle is unavailable", { connectorId });
     return null;
   }
-  const bundle = contentBundleSchema.safeParse(row.bundle);
+  const bundle = contentBundleSchema.safeParse(contentBundle);
   if (!bundle.success) {
     log.warn("Connector Skill bundle is invalid", { connectorId });
     return null;
@@ -91,9 +85,8 @@ export function createAuthorizedConnectors(
       catalog,
     ).allowedConnectorSlugs;
     const bundledSlugs = builtinSlugs.filter((slug) => {
-      return (
-        getConnectorRuntimeConnector(catalog, slug)?.skill.kind === "bundled"
-      );
+      const connector = getConnectorRuntimeConnector(catalog, slug);
+      return connector !== undefined && connector.skillSourceVersionId !== null;
     });
     const db = get(db$);
     // Built-in generations are immutable. Custom references already belong to
@@ -157,18 +150,20 @@ function authorizedConnectorsFromBundles({
           "Authorized connector is missing from captured catalog",
         );
       }
+      const publication = builtinBundles.get(connectorSlug);
       return {
         kind: "builtin",
         connectorSlug,
         isMcp: connector.catalogConnector.mcp !== undefined,
         skill:
-          connector.skill.kind === "none"
+          connector.skillSourceVersionId === null
             ? null
             : availableSkillBundle(
                 connectorSlug,
                 connectorSlug,
-                builtinBundles.get(connectorSlug),
-                connector.skill.versionId,
+                publication?.sourceVersionId === connector.skillSourceVersionId
+                  ? publication.bundle
+                  : null,
               ),
       };
     },
@@ -181,21 +176,16 @@ function authorizedConnectorsFromBundles({
         customConnectorId: connector.customConnectorId,
         connectorSlug: slug.data,
         isMcp: connector.isMcp,
-        skill:
-          connector.skillStorageVersionId === null
-            ? null
-            : availableSkillBundle(
+        skill: connector.hasSkill
+          ? availableSkillBundle(
+              connector.customConnectorId,
+              getCustomConnectorSkillName(
+                slug.data,
                 connector.customConnectorId,
-                getCustomConnectorSkillName(
-                  slug.data,
-                  connector.customConnectorId,
-                ),
-                {
-                  bundle: connector.skillContentBundle,
-                  sourceVersionId: connector.skillContentBundleSourceVersionId,
-                },
-                connector.skillStorageVersionId,
               ),
+              connector.skillContentBundle,
+            )
+          : null,
       });
     }
   }

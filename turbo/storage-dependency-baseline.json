@@ -6,16 +6,6 @@
   ],
   "sites": [
     {
-      "file": "turbo/packages/db/src/index.ts",
-      "uses": 2,
-      "dependency": "module:turbo/packages/db/src/schema/storage"
-    },
-    {
-      "file": "turbo/packages/db/src/index.ts",
-      "uses": 2,
-      "dependency": "module:turbo/packages/db/src/schema/storage-version-lineage"
-    },
-    {
       "file": "turbo/packages/db/src/schema/storage-version-lineage.ts",
       "uses": 2,
       "dependency": "module:turbo/packages/db/src/schema/storage"
