@@ -286,8 +286,9 @@ export const ensureProactiveWorkflows$ = command(
           ${definition.name}, 'installed', ${owner.userId}, ${owner.userId}, ${at}, ${at}
         WHERE ${proactiveWorkflowOwnerEnabledSql(owner, eligibility.agentId)}
           AND EXISTS (SELECT 1 FROM official_workflow_catalog_state WHERE accepted_release_id = ${catalog.releaseId})
-        ON CONFLICT (org_id, agent_id, owner_user_id, official_definition_name) WHERE official_definition_name IS NOT NULL
+        ON CONFLICT (org_id, owner_user_id, official_definition_name) WHERE official_definition_name IS NOT NULL
         DO UPDATE SET updated_at = EXCLUDED.updated_at
+        WHERE workflows.agent_id = EXCLUDED.agent_id
         RETURNING id
       ), scheduled AS (
         INSERT INTO workflow_automations (org_id, workflow_id, owner_user_id, kind, schedule_type, cron_expression, interval_seconds,

@@ -101,6 +101,17 @@ export const workflows = pgTable(
         .where(
           sql`visibility = 'private' AND official_definition_name IS NULL`,
         ),
+      officialMemberDefinitionIdx: uniqueIndex(
+        "idx_workflows_official_member_definition",
+      )
+        .on(table.orgId, table.ownerUserId, table.officialDefinitionName)
+        .where(sql`official_definition_name IS NOT NULL`),
+      morningBriefMemberIdx: uniqueIndex("idx_workflows_morning_brief_member")
+        .on(table.orgId, table.ownerUserId)
+        .where(
+          sql`official_definition_name IN ('morning-brief', 'internal-test-morning-brief')`,
+        ),
+      // Outgoing API and worker binaries still use this index as an upsert target.
       officialOwnerAgentDefinitionIdx: uniqueIndex(
         "idx_workflows_official_owner_agent_definition_unique",
       )

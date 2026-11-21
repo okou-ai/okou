@@ -3711,6 +3711,13 @@
       "when": 1795260992027,
       "tag": "1608_prepare_custom_connector_skill_cutover",
       "breakpoints": true
+    },
+    {
+      "idx": 1609,
+      "version": "7",
+      "when": 1795288157872,
+      "tag": "1609_scope_official_workflow_installations_to_members",
+      "breakpoints": true
     }
   ]
 }

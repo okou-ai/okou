@@ -169,17 +169,7 @@ const loadMorningBriefInstallations$ = command(
   },
 );
 
-/**
- * Resolve the one installation the enrollment owns.
- *
- * The catalog installs Morning Brief per Agent, so a member may legally hold
- * several installations. The enrollment records which one the preference
- * surface manages. That record can be absent — rows written before the column
- * existed, or a member who never enrolled — and it can be stale once its
- * installation is uninstalled, so fall back to the adoption rule: the
- * installation on the org's current default Agent, otherwise the oldest.
- * Installations that are not adopted keep running untouched.
- */
+/** Resolve the member’s recorded installation, falling back to the oldest persisted one. */
 export const loadMorningBriefOwnership$ = command(
   async (
     { get, set },
@@ -198,30 +188,11 @@ export const loadMorningBriefOwnership$ = command(
       owner,
       signal,
     );
-    if (installations.length <= 1) {
-      return {
-        owner,
-        enrollment,
-        installations,
-        installation: installations[0],
-      };
-    }
-    const owned = installations.find(({ id }) => {
-      return id === enrollment?.workflowId;
-    });
-    if (owned) {
-      return { owner, enrollment, installations, installation: owned };
-    }
-    const defaultAgentId = await set(
-      loadMorningBriefDefaultAgentId$,
-      owner,
-      signal,
-    );
-    const adopted =
-      installations.find(({ agentId }) => {
-        return agentId === defaultAgentId;
+    const installation =
+      installations.find(({ id }) => {
+        return id === enrollment?.workflowId;
       }) ?? installations[0];
-    return { owner, enrollment, installations, installation: adopted };
+    return { owner, enrollment, installations, installation };
   },
 );
 

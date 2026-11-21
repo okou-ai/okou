@@ -4,13 +4,11 @@ import {
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agents } from "@okouai/db/schema/agent";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import {
   morningBriefScheduleClaims,
   type MorningBriefScheduleClaimSettlement,
 } from "@okouai/db/schema/morning-brief-schedule-claim";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
@@ -85,7 +83,6 @@ export const isCanonicalMorningBriefAutomation$ = command(
       .select({
         id: workflows.id,
         installationState: workflows.officialInstallationState,
-        agentId: workflows.agentId,
       })
       .from(workflows)
       .where(
@@ -100,40 +97,10 @@ export const isCanonicalMorningBriefAutomation$ = command(
       )
       .orderBy(asc(workflows.createdAt), asc(workflows.id));
     signal.throwIfAborted();
-    let selected =
-      installations.length <= 1
-        ? installations[0]
-        : installations.find((installation) => {
-            return installation.id === enrollment?.workflowId;
-          });
-    if (!selected && installations.length > 1) {
-      const [candidate] = await db
-        .select({
-          id: agents.id,
-          owner: agents.owner,
-          visibility: agents.visibility,
-        })
-        .from(orgMetadata)
-        .leftJoin(
-          agents,
-          and(
-            eq(agents.id, orgMetadata.defaultAgentId),
-            eq(agents.orgId, orgMetadata.orgId),
-          ),
-        )
-        .where(eq(orgMetadata.orgId, owner.orgId))
-        .limit(1);
-      signal.throwIfAborted();
-      const defaultAgentId =
-        candidate?.id &&
-        (candidate.visibility !== "private" || candidate.owner === owner.userId)
-          ? candidate.id
-          : null;
-      selected =
-        installations.find((installation) => {
-          return installation.agentId === defaultAgentId;
-        }) ?? installations[0];
-    }
+    const selected =
+      installations.find((installation) => {
+        return installation.id === enrollment?.workflowId;
+      }) ?? installations[0];
     if (selected?.installationState !== "installed") {
       return false;
     }

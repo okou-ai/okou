@@ -489,7 +489,7 @@ const loadConfigurableAgent$ = command(
       return {
         kind: "forbidden",
         message:
-          "Only the private agent owner can install Official Workflows on this agent",
+          "Only the private agent owner can install Official Workflows for this member",
       };
     }
     return agent;
@@ -529,7 +529,6 @@ const recoverOrRejectExistingInstallation$ = command(
     { get, set },
     args: {
       readonly orgId: string;
-      readonly agentId: string;
       readonly userId: string;
       readonly definitionName: string;
       readonly currentTime: Date;
@@ -546,7 +545,6 @@ const recoverOrRejectExistingInstallation$ = command(
       .where(
         and(
           eq(workflows.orgId, args.orgId),
-          eq(workflows.agentId, args.agentId),
           eq(workflows.ownerUserId, args.userId),
           eq(workflows.visibility, "private"),
           eq(workflows.officialDefinitionName, args.definitionName),
@@ -582,7 +580,7 @@ const recoverOrRejectExistingInstallation$ = command(
     }
     return {
       kind: "conflict",
-      message: "Official Workflow is already installed on this agent",
+      message: "Official Workflow is already installed for this member",
     };
   },
 );
@@ -737,6 +735,14 @@ const insertInstallingWorkflow$ = command(
       if (
         isUniqueViolation(
           inserted.error,
+          "idx_workflows_official_member_definition",
+        ) ||
+        isUniqueViolation(
+          inserted.error,
+          "idx_workflows_morning_brief_member",
+        ) ||
+        isUniqueViolation(
+          inserted.error,
           "idx_workflows_official_owner_agent_definition_unique",
         ) ||
         isUniqueViolation(
@@ -747,7 +753,7 @@ const insertInstallingWorkflow$ = command(
         return {
           kind: "conflict",
           message:
-            "Official Workflow installation is in progress or already installed on this agent",
+            "Official Workflow installation is in progress or already installed for this member",
         };
       }
       if (
@@ -758,7 +764,7 @@ const insertInstallingWorkflow$ = command(
       ) {
         return {
           kind: "conflict",
-          message: `A private workflow named "${args.definition.name}" already exists on this agent`,
+          message: `A private workflow named "${args.definition.name}" already exists for this member`,
         };
       }
       throw inserted.error;
@@ -832,8 +838,7 @@ const activateInstallation$ = command(
       return "stale" as const;
     }
 
-    // Recheck the validated immutable release while retaining the existing
-    // catalog -> Agent lock order through the installing -> installed write.
+    // Hold the accepted catalog release through activation of this member’s installation.
     const catalog = db.$with("activation_catalog").as(
       db
         .select({ authority: officialWorkflowCatalogState.authority })
@@ -852,20 +857,6 @@ const activateInstallation$ = command(
         )
         .for("share"),
     );
-    const agent = db.$with("activation_agent").as(
-      db
-        .select({ id: agents.id })
-        .from(agents)
-        .where(
-          and(
-            eq(agents.id, args.installation.agentId),
-            eq(agents.orgId, args.installation.orgId),
-            exists(db.select({ authority: catalog.authority }).from(catalog)),
-          ),
-        )
-        .for("key share")
-        .limit(1),
-    );
     const installed = db.$with("activated_installation").as(
       db
         .update(workflows)
@@ -874,16 +865,17 @@ const activateInstallation$ = command(
           and(
             eq(workflows.id, args.workflowId),
             eq(workflows.officialInstallationState, "installing"),
-            exists(db.select({ id: agent.id }).from(agent)),
+            eq(workflows.orgId, args.installation.orgId),
+            eq(workflows.ownerUserId, args.installation.member.userId),
+            exists(db.select({ authority: catalog.authority }).from(catalog)),
           ),
         )
         .returning({ id: workflows.id }),
     );
     const [activation] = await db
-      .with(catalog, agent, installed)
-      .select({ agentId: agent.id, installedId: installed.id })
+      .with(catalog, installed)
+      .select({ installedId: installed.id })
       .from(catalog)
-      .leftJoin(agent, sql`true`)
       .leftJoin(installed, sql`true`);
     signal.throwIfAborted();
     if (!activation) {
@@ -993,7 +985,6 @@ export const installOfficialWorkflow$ = command(
       recoverOrRejectExistingInstallation$,
       {
         orgId: args.orgId,
-        agentId: agent.id,
         userId: args.member.userId,
         definitionName: args.definitionName,
         currentTime,
