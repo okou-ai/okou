@@ -10,6 +10,24 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.100.8](https://github.com/okou-ai/okou/compare/api-v2.100.7...api-v2.100.8) (2026-11-21)
+
+
+### Refactoring
+
+* **app:** retire legacy agent management and chat action ids ([#49838](https://github.com/okou-ai/okou/issues/49838)) ([c83928a](https://github.com/okou-ai/okou/commit/c83928ad6fc787a648fa6f2a71fbf5d98b3001cc))
+* stage retirement of chat and run agent identity ([#49839](https://github.com/okou-ai/okou/issues/49839)) ([01b34f9](https://github.com/okou-ai/okou/commit/01b34f9b9f1a7f7b117739ad834931fa646a1b8b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.2
+    * @okouai/core bumped to 8.858.7
+    * @okouai/db bumped to 2.57.8
+    * @okouai/pi-agent-runtime bumped to 1.52.26
+
 ## [2.100.7](https://github.com/okou-ai/okou/compare/api-v2.100.6...api-v2.100.7) (2026-11-21)
 
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.87](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.86...runner-rs-v0.249.87) (2026-11-21)
+
+
+### Refactoring
+
+* **runner:** share sandbox log attribution metadata ([#49867](https://github.com/okou-ai/okou/issues/49867)) ([79d1300](https://github.com/okou-ai/okou/commit/79d13003d3910cac22ab9ba8009da78727220043))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.86](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.85...runner-rs-v0.249.86) (2026-11-21)
 
 ### Release Dependencies
