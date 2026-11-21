@@ -57,23 +57,23 @@ import {
   forYouCovers,
 } from "../../lib/for-you-artwork.ts";
 
-// The header sits on the cover. This scrim keeps a light page-color wash behind the
+// The header sits on the cover. This scrim washes the cover's own tint behind the
 // title, subtitle and progress, then eases out past the header's bottom edge
 // so no band edge shows on dark covers.
 const HEADER_SCRIM = {
   backgroundImage: `linear-gradient(${[
-    [0.7, 0],
-    [0.7, 45],
-    [0.58, 55],
-    [0.43, 63],
-    [0.29, 71],
-    [0.17, 79],
-    [0.07, 87],
+    [0.8, 0],
+    [0.8, 45],
+    [0.66, 55],
+    [0.49, 63],
+    [0.33, 71],
+    [0.19, 79],
+    [0.08, 87],
     [0.02, 94],
     [0, 100],
   ]
     .map(([alpha, stop]) => {
-      return `hsl(var(--for-you-scrim) / ${String(alpha)}) ${String(stop)}%`;
+      return `rgb(var(--for-you-scrim) / ${String(alpha)}) ${String(stop)}%`;
     })
     .join(", ")})`,
 } satisfies CSSProperties;
@@ -405,20 +405,25 @@ function ForYouHeader() {
   const steps = cards.slice(firstStep, firstStep + 7);
   const browse = useSet(browseForYou$);
   const signal = useGet(pageSignal$);
+  const cover = useGet(forYouCover$);
   return (
-    <header className="absolute inset-x-0 top-0 z-10 grid h-14 grid-flow-col grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 px-4 sm:h-15 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8 sm:px-8 [--for-you-scrim:var(--brand-off-white)] dark:[--for-you-scrim:var(--background)]">
+    <header
+      data-tone={cover.tone}
+      style={{ "--for-you-scrim": cover.tint } as CSSProperties}
+      className="group/header absolute inset-x-0 top-0 z-10 grid h-14 grid-flow-col grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 px-4 sm:h-15 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8 sm:px-8"
+    >
       <div
         aria-hidden
         className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-27"
         style={HEADER_SCRIM}
       />
       <div className="min-w-0">
-        <h1 className="text-base font-semibold sm:text-lg">
+        <h1 className="text-base font-semibold text-black/85 group-data-[tone=dark]/header:text-white sm:text-lg">
           {t(($) => {
             return $.chat.agentSuggestions.forYou.title;
           })}
         </h1>
-        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+        <p className="mt-0.5 truncate text-xs text-black/60 group-data-[tone=dark]/header:text-white/75">
           {t(($) => {
             return $.chat.agentSuggestions.forYou.subtitle;
           })}
@@ -470,7 +475,7 @@ function ForYouHeader() {
                 <span
                   aria-hidden
                   className={cn(
-                    "h-1 w-full rounded-full bg-foreground/10 transition-colors",
+                    "h-1 w-full rounded-full bg-black/10 transition-colors group-data-[tone=dark]/header:bg-white/30",
                     index === position &&
                       "bg-linear-to-r from-primary/65 via-primary to-primary-hover",
                   )}
@@ -480,9 +485,14 @@ function ForYouHeader() {
           })}
         </nav>
         {cards.length > 0 && (
-          <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
-            <span className="text-foreground">{position + 1}</span>
-            <span aria-hidden className="mx-1 text-foreground/25">
+          <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-black/60 group-data-[tone=dark]/header:text-white/75">
+            <span className="text-black/85 group-data-[tone=dark]/header:text-white">
+              {position + 1}
+            </span>
+            <span
+              aria-hidden
+              className="mx-1 text-black/25 group-data-[tone=dark]/header:text-white/40"
+            >
               /
             </span>
             {cards.length}

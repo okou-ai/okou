@@ -1,6 +1,10 @@
 import { platformStaticAssetUrl } from "./static-assets.ts";
 
-// Okou-original 2.5:1 covers for the For you banner.
+// Okou-original 2.5:1 covers for the For you banner. `tint` is the average
+// RGB of the band the header sits on (37-49% of the artwork's height), pushed
+// away from the header text: darkened 20% for `dark` covers (white text) and
+// lifted 30% toward white for `light` covers (dark text). The header scrim
+// uses it so the wash matches each cover instead of whitening it.
 export const forYouCovers = [
   {
     id: "cover-01",
@@ -10,6 +14,8 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-01-thumb-beb59cdbe6bd.webp",
     ),
+    tint: "158 209 221",
+    tone: "light",
   },
   {
     id: "cover-02",
@@ -19,6 +25,8 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-02-thumb-6e0c54da4455.webp",
     ),
+    tint: "210 200 192",
+    tone: "light",
   },
   {
     id: "cover-03",
@@ -28,6 +36,8 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-03-thumb-72da71763deb.webp",
     ),
+    tint: "17 91 87",
+    tone: "dark",
   },
   {
     id: "cover-04",
@@ -37,6 +47,8 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-04-thumb-eaf89a5a0480.webp",
     ),
+    tint: "165 191 211",
+    tone: "light",
   },
   {
     id: "cover-05",
@@ -46,6 +58,8 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-05-thumb-87f12089b719.webp",
     ),
+    tint: "169 165 165",
+    tone: "light",
   },
   {
     id: "cover-06",
@@ -55,6 +69,8 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-06-thumb-95ca9506d7b5.webp",
     ),
+    tint: "165 202 157",
+    tone: "light",
   },
   {
     id: "cover-07",
@@ -64,6 +80,8 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-07-thumb-ad9879df695e.webp",
     ),
+    tint: "135 176 208",
+    tone: "light",
   },
   {
     id: "cover-08",
@@ -73,6 +91,8 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-08-thumb-e4b71d5847f1.webp",
     ),
+    tint: "242 202 95",
+    tone: "light",
   },
   {
     id: "cover-09",
@@ -82,6 +102,8 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-09-thumb-2c41b44bce1d.webp",
     ),
+    tint: "17 41 70",
+    tone: "dark",
   },
   {
     id: "cover-10",
@@ -91,6 +113,8 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-10-thumb-b31ebc318796.webp",
     ),
+    tint: "205 207 195",
+    tone: "light",
   },
   {
     id: "cover-11",
@@ -100,6 +124,8 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-11-thumb-32fd94948836.webp",
     ),
+    tint: "241 213 211",
+    tone: "light",
   },
   {
     id: "cover-12",
@@ -109,6 +135,8 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-12-thumb-2c69c0ec1771.webp",
     ),
+    tint: "151 194 214",
+    tone: "light",
   },
   {
     id: "cover-13",
@@ -118,6 +146,8 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-13-thumb-3a78b4a5581b.webp",
     ),
+    tint: "183 206 195",
+    tone: "light",
   },
   {
     id: "cover-14",
@@ -127,6 +157,8 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-14-thumb-b2e919051b48.webp",
     ),
+    tint: "86 101 104",
+    tone: "dark",
   },
   {
     id: "cover-15",
@@ -136,6 +168,8 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-15-thumb-6a93a13eb6c8.webp",
     ),
+    tint: "228 214 179",
+    tone: "light",
   },
   {
     id: "cover-16",
@@ -145,6 +179,8 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-16-thumb-8ff4893544d7.webp",
     ),
+    tint: "161 204 211",
+    tone: "light",
   },
   {
     id: "cover-17",
@@ -154,6 +190,8 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-17-thumb-2527d154ca8f.webp",
     ),
+    tint: "138 82 68",
+    tone: "dark",
   },
   {
     id: "cover-18",
@@ -163,6 +201,8 @@ export const forYouCovers = [
     thumbnail: platformStaticAssetUrl(
       "views/for-you/assets/cover-18-thumb-d742db4b4a7f.webp",
     ),
+    tint: "202 226 239",
+    tone: "light",
   },
 ] as const;
 
