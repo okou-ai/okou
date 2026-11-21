@@ -219,8 +219,8 @@ internal class ChatComposerOwner(
             }
     }
 
-    fun open(connection: Connection, target: ComposerTarget) {
-        if (!connection.current()) return
+    fun open(connection: Connection, target: ComposerTarget): Job? {
+        if (!connection.current()) return null
         restoreJournal()
         if (target.threadId == null && contextJob?.isActive != true) {
             contextConnection = connection
@@ -250,7 +250,7 @@ internal class ChatComposerOwner(
                     }
                 }
         }
-        connection.scope.launch {
+        return connection.scope.launch {
             restoring?.join()
             if (target.threadId == null) contextJob?.join()
             if (connection.current() && mutable.value.journal != null) {
@@ -260,9 +260,41 @@ internal class ChatComposerOwner(
                         mutable.value.defaultAgentId
                             ?.takeIf { mutable.value.context == ComposerContext.Ready }
                             ?.let { ServerDraftTarget(it, false) }
-                server?.let { synchronize(connection, it, refresh = true) }
+                server?.let { synchronize(connection, it, refresh = true)?.join() }
             }
         }
+    }
+
+    suspend fun prefillNew(
+        connection: Connection,
+        prefix: String,
+        expectedAgent: String?,
+    ): Boolean {
+        val target = ComposerTarget()
+        open(connection, target)?.join() ?: return false
+        val state = mutable.value
+        val agentId = state.defaultAgentId ?: return false
+        if (
+            !connection.current() ||
+                expectedAgent != null && expectedAgent != agentId ||
+                state.journal == null ||
+                state.entry(target).pending != null ||
+                target.key in state.busy ||
+                state.synchronization["agent:$agentId"] != ComposerSync.Saved
+        )
+            return false
+        beginNew(connection, null)
+        val text = mutable.value.entry(target).text
+        val command = prefix.trimEnd()
+        val existing = text.trimStart()
+        if (
+            existing != command &&
+                !existing.startsWith(prefix) &&
+                !existing.startsWith("$command\n")
+        ) {
+            edit(connection, target, prefix + text)
+        }
+        return true
     }
 
     private fun selectAgent(agent: String) {
@@ -371,20 +403,20 @@ internal class ChatComposerOwner(
         connection: Connection,
         target: ServerDraftTarget,
         refresh: Boolean = false,
-    ) {
+    ): Job? {
         if (
             !connection.current() ||
                 !target.thread &&
                     (mutable.value.context != ComposerContext.Ready ||
                         mutable.value.defaultAgentId != target.id)
         )
-            return
+            return null
         draftWork[target.key]?.let {
             it.refresh = it.refresh || refresh
-            return
+            return it.job
         }
         if (!refresh && mutable.value.synchronization[target.key] == ComposerSync.Unsupported)
-            return
+            return null
         val work = DraftWork(connection, target)
         draftWork[target.key] = work
         work.job =
@@ -468,6 +500,7 @@ internal class ChatComposerOwner(
                     }
                 }
             }
+        return work.job
     }
 
     fun retryLocal(connection: Connection) {

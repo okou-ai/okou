@@ -213,10 +213,16 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithContentDescription("Loading chats…").assertExists()
         compose.onNodeWithText(CACHED_CHAT).assertDoesNotExist()
         compose.onNodeWithContentDescription("Search workspace").assertDoesNotExist()
+        val toolEntries =
+            listOf("Workflows", "Connectors", "Artifacts").map {
+                compose.onNodeWithContentDescription(it)
+            }
+        toolEntries.forEach { it.assertDoesNotExist() }
         val searchEntry = compose.onNodeWithTag("workspace_search_entry")
         val startupBounds = searchEntry.getUnclippedBoundsInRoot()
         compose.runOnIdle { app.organizationResponse.complete(Unit) }
         awaitCachedRow()
+        toolEntries.forEach { it.assertIsDisplayed().assertIsNotEnabled() }
         compose.onNodeWithTag("chat_$CHAT_PERSONAL").assertIsEnabled().performClick()
         compose.waitUntil(10_000) {
             compose

@@ -20,6 +20,7 @@ import ai.okou.android.preferences.MemberAppearanceCache
 import ai.okou.android.preferences.MemberPreferencesModel
 import ai.okou.android.preferences.PreferenceChange
 import ai.okou.android.preferences.appearance
+import ai.okou.android.workflows.WorkflowModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -63,6 +64,7 @@ data class ReadyWorkspace(
     val composer: ChatComposerModel,
     val controls: RunControlsModel,
     val recovery: AssistantRecoveryModel,
+    val workflows: WorkflowModel?,
 )
 
 sealed interface OpeningWorkspace {
@@ -477,6 +479,16 @@ class SessionModel(
                     { workspaceFailure(ticket, snapshot, it) },
                 )
             }
+        val workflows =
+            owner.workflowService?.let { service ->
+                store.workspaceModel {
+                    WorkflowModel(
+                        service,
+                        authorized = { current(ticket, snapshot) },
+                        onFailure = { workspaceFailure(ticket, snapshot, it) },
+                    )
+                }
+            }
         mutable.value =
             mutable.value.copy(
                 stage = SessionStage.Ready,
@@ -491,6 +503,7 @@ class SessionModel(
                         opened.composer,
                         opened.controls,
                         opened.recovery,
+                        workflows,
                     ),
                 working = false,
                 cachedAppearance = null,

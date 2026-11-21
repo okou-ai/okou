@@ -148,10 +148,16 @@ export function queryBinding(
   if (!route.query) return { parameters: [] };
   // Query arguments describe post-coercion values. Defaults remain explicit.
   const schema = toJSONSchema(route.query, { io: "output" });
-  if (Array.isArray(schema.anyOf)) {
-    if (schema.anyOf.length < 2)
-      throw new Error("Unsupported Retrofit query union");
-    const branches = schema.anyOf;
+  const isUnion = Array.isArray(schema.anyOf);
+  if (isUnion && schema.anyOf!.length < 2)
+    throw new Error("Unsupported Retrofit query union");
+  if (!isUnion) queryObject(schema);
+  const fields = schema.properties && Object.values(schema.properties);
+  const hasConstrainedScalar = fields?.some((field) => {
+    return schemaObject(field) && (field.const !== undefined || field.enum);
+  });
+  if (isUnion || hasConstrainedScalar) {
+    const branches = isUnion ? schema.anyOf! : [schema];
     branches.forEach(queryObject);
     const queryName = `${name[0]!.toUpperCase()}${name.slice(1)}Query`;
     const checks = branches.map((branch) => {

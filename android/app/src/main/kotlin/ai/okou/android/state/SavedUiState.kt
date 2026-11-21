@@ -182,6 +182,50 @@ internal fun rememberWorkspaceNavigation(): MutableState<WorkspaceNavigation> =
         mutableStateOf(WorkspaceNavigation())
     }
 
+internal enum class WorkflowsMode {
+    Closed,
+    Directory,
+    Chat,
+}
+
+internal enum class WorkflowTab {
+    Instructions,
+    Automations,
+    History,
+}
+
+internal enum class WorkflowScope {
+    All,
+    Private,
+    Shared,
+}
+
+internal data class WorkflowsRoute(
+    val mode: WorkflowsMode = WorkflowsMode.Closed,
+    val id: String? = null,
+    val tab: WorkflowTab = WorkflowTab.Instructions,
+    val scope: WorkflowScope = WorkflowScope.All,
+)
+
+@Composable
+internal fun rememberWorkflowsRoute(): MutableState<WorkflowsRoute> =
+    rememberSaveable(
+        stateSaver =
+            listSaver<WorkflowsRoute, String>(
+                save = { listOf(it.mode.name, it.id.orEmpty(), it.tab.name, it.scope.name) },
+                restore = { (mode, id, tab, scope) ->
+                    WorkflowsRoute(
+                        WorkflowsMode.valueOf(mode),
+                        id.ifEmpty { null },
+                        WorkflowTab.valueOf(tab),
+                        WorkflowScope.valueOf(scope),
+                    )
+                },
+            )
+    ) {
+        mutableStateOf(WorkflowsRoute())
+    }
+
 internal class SavedUiIds(private val state: MutableState<List<String>>, private val limit: Int) {
     fun record(id: String): List<String> {
         val next = (state.value - id) + id

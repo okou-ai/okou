@@ -59,6 +59,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Honor multiple output formats selected by onboarding task links.",
     enabled: true,
   },
+  [FeatureSwitchKey.AndroidWorkspaceWorkflows]: {
+    maintainer: "liangyou@okou.ai",
+    description: "Show the native Workflows destination on Android.",
+    enabled: true,
+  },
   [FeatureSwitchKey.ArtifactThreePointTiming]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Artifact three-point phase timing",

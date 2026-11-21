@@ -26,6 +26,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import okhttp3.mockwebserver.MockResponse
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -210,12 +211,29 @@ class NativeChatListTest {
         var scenario: ActivityScenario<MainActivity>? = null
         var chatJob: Job? = null
         val failures = mutableListOf<Throwable>()
+        val toolLabels =
+            listOf(
+                    R.string.workspace_workflows,
+                    R.string.workspace_connectors,
+                    R.string.workspace_artifacts,
+                )
+                .map(app::getString)
         try {
             scenario = ActivityScenario.launch(MainActivity::class.java)
             fun text(value: String) =
                 checkNotNull(
                     device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000)
                 )
+            fun disabledTool(label: String) =
+                checkNotNull(
+                        device.wait(Until.findObject(By.pkg(app.packageName).desc(label)), 10_000)
+                    ) {
+                        "Missing workspace tool $label"
+                    }
+                    .also {
+                        assertFalse("Workspace tool $label is enabled", it.isEnabled)
+                        assertFalse("Workspace tool $label is clickable", it.isClickable)
+                    }
             fun click(selector: UiSelector) {
                 // Resolve at action time. The SDK return acknowledges accessibility events;
                 // verify Compose's actual application outcomes below instead.
@@ -274,6 +292,7 @@ class NativeChatListTest {
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             device.awaitChatList(app)
             revealText("Research")
+            toolLabels.forEach { disabledTool(it) }
             takeScreenshot().writeToTestStorage("android-list-home")
             click(UiSelector().description(app.getString(R.string.chat_search_workspace)))
             text(app.getString(R.string.chat_search_recent))
@@ -374,6 +393,11 @@ class NativeChatListTest {
                 val listTitle = device.awaitChatList(app)
                 val conversation = text("Native history reply")
                 assertTrue(listTitle.visibleBounds.right < conversation.visibleBounds.left)
+                toolLabels.forEach { label ->
+                    assertTrue(
+                        disabledTool(label).visibleBounds.right < conversation.visibleBounds.left
+                    )
+                }
                 val toolbarBack = By.pkg(app.packageName).desc(app.getString(R.string.back))
                 assertTrue(device.wait(Until.gone(toolbarBack), 10_000))
                 val filter = app.getString(R.string.chat_filter)
@@ -476,6 +500,8 @@ class NativeChatListTest {
                 assertTrue(device.wait(Until.gone(undo), 10_000))
                 revealText("Personal chat")
                 assertTrue(rowEvents.size == 2)
+                toolLabels.forEach { disabledTool(it) }
+                takeScreenshot().writeToTestStorage("android-list-home-large-text")
             } finally {
                 if (fontScale.toFloatOrNull() == null)
                     device.executeShellCommand("settings delete system font_scale")
