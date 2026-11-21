@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.PATCH
@@ -136,7 +137,10 @@ internal interface CanonicalApi {
     ): Response<ChatEvents>
 
     @GET("/api/indicators")
-    suspend fun `indicators`(@Header("Authorization") token: String): Response<Indicators>
+    suspend fun `indicators`(
+        @Header("Authorization") token: String,
+        @Query("includeActiveUnread") `queryIncludeActiveUnread`: String? = null,
+    ): Response<Indicators>
 
     @GET("/api/agents")
     suspend fun `agents`(@Header("Authorization") token: String): Response<Agents>
@@ -220,6 +224,13 @@ internal interface CanonicalApi {
         @Header("Authorization") token: String,
         @Path("id") `pathId`: String,
         @Body body: RenameThreadRequest,
+    ): Response<Unit>
+
+    @DELETE("/api/chat-threads/{id}")
+    suspend fun `deleteThread`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Query("eventId") `queryEventId`: String? = null,
     ): Response<Unit>
 
     @POST("/api/chat-threads/{id}/pin")

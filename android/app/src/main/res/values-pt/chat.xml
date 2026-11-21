@@ -24,7 +24,6 @@
         <item quantity="other">%1$d conversas marcadas como lidas.</item>
     </plurals>
     <string name="chat_filter">Filtrar</string>
-    <string name="chat_filter_subtitle">Filtro · %1$s</string>
     <string name="chat_back_to_inbox">Voltar para a caixa de entrada</string>
     <string name="chat_more_actions">Mais ações</string>
     <string name="chat_unread">Não lidas</string>
@@ -54,4 +53,8 @@
     <string name="chat_title_field">Título da conversa</string>
     <string name="chat_rename_confirm">Renomear</string>
     <string name="chat_rename_cancel">Cancelar</string>
+    <string name="chat_delete">Excluir</string>
+    <string name="chat_delete_title">Excluir conversa?</string>
+    <string name="chat_delete_description">Esta conversa será excluída permanentemente. Qualquer tarefa em execução nesta conversa será interrompida imediatamente. Todas as automações vinculadas serão pausadas. Esta ação não pode ser desfeita.</string>
+    <string name="chat_delete_confirm">Excluir</string>
 </resources>

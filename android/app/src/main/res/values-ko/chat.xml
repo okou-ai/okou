@@ -22,7 +22,6 @@
         <item quantity="other">채팅 %1$d개를 읽음으로 표시했습니다.</item>
     </plurals>
     <string name="chat_filter">필터</string>
-    <string name="chat_filter_subtitle">필터 · %1$s</string>
     <string name="chat_back_to_inbox">받은편지함으로 돌아가기</string>
     <string name="chat_more_actions">추가 작업</string>
     <string name="chat_unread">읽지 않음</string>
@@ -52,4 +51,8 @@
     <string name="chat_title_field">채팅 제목</string>
     <string name="chat_rename_confirm">이름 변경</string>
     <string name="chat_rename_cancel">취소</string>
+    <string name="chat_delete">채팅 삭제</string>
+    <string name="chat_delete_title">채팅을 삭제하시겠습니까?</string>
+    <string name="chat_delete_description">이 채팅을 영구 삭제합니다. 현재 실행 중인 작업은 즉시 중단됩니다. 연결된 자동화는 일시 중지됩니다. 이 작업은 되돌릴 수 없습니다.</string>
+    <string name="chat_delete_confirm">삭제</string>
 </resources>

@@ -223,6 +223,8 @@ class ChatListRootTest {
         compose.onNodeWithTag("chat_search").assertDoesNotExist()
         compose.onNodeWithTag("chat_list").assertExists()
         compose.onNodeWithTag("conversation").assertExists()
+        compose.onNodeWithTag("chat_$CHAT_IN_PROJECT").assertDoesNotExist()
+        setResearchExpanded(true)
         compose.onNodeWithTag("chat_$CHAT_IN_PROJECT").assertIsSelected()
     }
 
@@ -285,26 +287,43 @@ class ChatListRootTest {
     @Test
     fun selectedConversationKeepsNavigationUsableAndOnlyVisibleConfirmedContentMarksRead() {
         val app = compose.activity.application as ChatListApplication
+        val fixture = app.fixture
+        val historyRequested = CountDownLatch(1)
         val gate = CountDownLatch(1)
-        val indicatorsGate = CountDownLatch(1)
-        val indicatorReads = java.util.concurrent.atomic.AtomicInteger()
-        app.fixture.indicators = {
-            if (indicatorReads.incrementAndGet() == 1) {
-                indicatorsGate.await()
+        val indicatorReads = AtomicInteger()
+        fixture.indicators = {
+            indicatorReads.incrementAndGet()
+            if (fixture.readRequests.get() == 0) {
                 jsonResponse(
                     """{"agents":{},"threads":{"$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}"""
                 )
             } else jsonResponse("""{"agents":{},"threads":{},"unreadAt":{}}""")
         }
-        app.fixture.beforeHistoryResponse = { request ->
-            if (request.requestUrl?.encodedPath?.endsWith("/event-snapshot") == true) gate.await()
+        val snapshotResponse = fixture.historySnapshot
+        val rowsResponse = fixture.historyRows
+        fun awaitHistoryResponse() {
+            historyRequested.countDown()
+            gate.await()
+        }
+        fixture.historySnapshot = {
+            awaitHistoryResponse()
+            snapshotResponse()
+        }
+        fixture.historyRows = { request ->
+            awaitHistoryResponse()
+            rowsResponse(request)
         }
         try {
             app.responseGate.countDown()
             awaitListAndNames()
+            setResearchExpanded(true)
             compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Project chat"))
             compose.onNodeWithText("Project chat").performClick()
+            compose.waitUntil(10_000) { compose.runOnIdle { historyRequested.count == 0L } }
             compose.onNodeWithTag("conversation").assertExists()
+            compose
+                .onNodeWithTag("conversation")
+                .performScrollToNode(hasText("Loading conversation…"))
             compose.onNodeWithText("Loading conversation…").assertExists()
             compose.onNodeWithContentDescription("Settings").performClick()
             compose.onNodeWithText("Appearance").assertExists()
@@ -346,20 +365,18 @@ class ChatListRootTest {
                 }
             }
             org.junit.Assert.assertTrue(indicatorReads.get() >= 2)
-            indicatorsGate.countDown()
             compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
             compose.onNodeWithTag("conversation").assertDoesNotExist()
             compose.onNodeWithTag("chat_list").assertExists()
             compose.onNodeWithText("Project chat").assertExists()
-            compose.onNodeWithText("Research").performClick()
+            setResearchExpanded(false)
             compose.onNodeWithText("Project chat").assertDoesNotExist()
-            compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Research"))
-            compose.onNodeWithText("Research").performClick()
+            setResearchExpanded(true)
             compose.onNodeWithText("Project chat").assertExists()
         } finally {
             gate.countDown()
-            indicatorsGate.countDown()
-            app.fixture.beforeHistoryResponse = {}
+            fixture.historyRows = rowsResponse
+            fixture.historySnapshot = snapshotResponse
         }
     }
 
@@ -449,7 +466,7 @@ class ChatListRootTest {
         compose.onNodeWithContentDescription("Chats").assertExists()
         compose.mainClock.advanceTimeBy(120)
         compose.onNodeWithContentDescription("Loading chats…").assertExists()
-        compose.onNodeWithContentDescription("Switch workspace").performClick()
+        compose.onNodeWithContentDescription("Switch workspace", substring = true).performClick()
         compose.onNodeWithText("Workspace B").assertExists()
         compose.onNodeWithText("Back").performClick()
         compose.onNodeWithContentDescription("Settings").performClick()
@@ -458,6 +475,12 @@ class ChatListRootTest {
         compose.onNodeWithContentDescription("Back").performClick()
         awaitListAndNames()
         val unread = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unread")
+        val projectUnreadCount =
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unread 1")
+        compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Research"))
+        compose.onNodeWithText("Research").assert(projectUnreadCount)
+        compose.onNodeWithText("Project chat").assertDoesNotExist()
+        setResearchExpanded(true)
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Project chat"))
         compose.waitUntil(10_000) {
             compose
@@ -466,10 +489,7 @@ class ChatListRootTest {
                 .isNotEmpty()
         }
         compose.onNodeWithText("Project chat").assert(unread)
-        compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Research"))
-        val projectUnreadCount =
-            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unread 1")
-        compose.onNodeWithText("Research").assert(!projectUnreadCount).performClick()
+        setResearchExpanded(false)
         compose.onNodeWithText("Research").assert(projectUnreadCount)
         compose.onNodeWithText("Project chat").assertDoesNotExist()
         compose.onNodeWithTag("chat_list").performScrollToIndex(0)
@@ -499,7 +519,7 @@ class ChatListRootTest {
         compose.waitUntil(10_000) {
             currentList()?.listPhase == ai.okou.android.chat.ChatReadPhase.Failed
         }
-        compose.onNodeWithText("Filter · Archived").assertExists()
+        compose.onNodeWithTag("chat_filter_heading").assert(hasText("Archived"))
         compose.onNodeWithText("No chats in this view.").assertExists()
         compose.onNodeWithTag("chat_list_bottom_status").assertDoesNotExist()
     }
@@ -532,7 +552,7 @@ class ChatListRootTest {
         val filter = compose.onNodeWithContentDescription("Filter")
         filter.performClick()
         compose.onNodeWithText("Archived").performClick()
-        compose.onNodeWithText("Filter · Archived").assertExists()
+        compose.onNodeWithTag("chat_filter_heading").assert(hasText("Archived"))
         compose.onNodeWithText("No chats in this view.").assertIsDisplayed()
         compose.onNodeWithText("Back to Inbox").performClick()
         row.assertIsDisplayed()
@@ -585,6 +605,7 @@ class ChatListRootTest {
         }
         app.responseGate.countDown()
         awaitListAndNames()
+        setResearchExpanded(true)
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Project chat"))
         val target = hasText("Project chat")
         val unreadStatus =
@@ -628,6 +649,7 @@ class ChatListRootTest {
         val personalUnread = AtomicReference<String?>(CHAT_DATE)
         val projectUnread = AtomicBoolean(true)
         val rejectProject = AtomicBoolean(true)
+        val activeUnreadQuery = AtomicReference<String?>()
         val marked = CopyOnWriteArrayList<String>()
         val releaseWrites = CountDownLatch(1)
         val events =
@@ -674,7 +696,10 @@ class ChatListRootTest {
             )
         }
         app.fixture.commandResponse = { request ->
-            val path = request.requestUrl?.pathSegments.orEmpty()
+            val url = request.requestUrl
+            if (url?.encodedPath == "/api/indicators")
+                activeUnreadQuery.set(url.queryParameter("includeActiveUnread"))
+            val path = url?.pathSegments.orEmpty()
             if (request.method != "POST" || path.lastOrNull() != "mark-read") {
                 null
             } else {
@@ -713,15 +738,16 @@ class ChatListRootTest {
                 .fetchSemanticsNodes()
                 .isNotEmpty()
         }
+        assertEquals("true", activeUnreadQuery.get())
         compose.onNodeWithText("Unread").performClick()
+        setResearchExpanded(true)
         list.performScrollToNode(hasText("Project chat"))
         compose
             .onNodeWithText("Project chat")
             .assert(
                 SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Active, Unread")
             )
-        list.performScrollToNode(hasText("Research"))
-        compose.onNodeWithText("Research").performClick()
+        setResearchExpanded(false)
         compose.waitUntil(10_000) {
             compose
                 .onAllNodes(hasText("Research").and(projectUnreadCount))
@@ -760,12 +786,13 @@ class ChatListRootTest {
         val newChat = compose.onNodeWithText("New chat").getUnclippedBoundsInRoot()
         assertEquals(8f, (newChat.top - feedback.bottom).value, 1f)
         assertTrue(feedback.bottom - feedback.top >= 48.dp)
-        compose.onNodeWithText("Filter · Unread").assertExists()
+        compose.onNodeWithTag("chat_filter_heading").assert(hasText("Unread"))
         filter.performClick()
-        compose.onNodeWithText("Unread").assertIsSelected()
+        compose
+            .onNode(hasText("Unread").and(hasAnyAncestor(hasTestTag("workspace_popup"))))
+            .assertIsSelected()
         compose.onNodeWithText("Archived").performClick()
-        list.performScrollToNode(hasText("Research"))
-        compose.onNodeWithText("Research").performClick()
+        setResearchExpanded(true)
         list.performScrollToNode(hasText("Project chat"))
         compose
             .onNodeWithText("Project chat")
@@ -838,6 +865,7 @@ class ChatListRootTest {
         }
         app.responseGate.countDown()
         awaitListAndNames()
+        setResearchExpanded(true)
         val target = hasText("Project chat")
         val row = compose.onNode(target)
         compose.onNodeWithTag("chat_list").performScrollToNode(target)
@@ -1040,7 +1068,67 @@ class ChatListRootTest {
     }
 
     @Test
-    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    @Config(qualifiers = "en-rUS-w1000dp-h800dp")
+    fun deletingTheSelectedChatRequiresConfirmationAndReturnsToTheListWhilePending() {
+        val app = compose.activity.application as ChatListApplication
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val requests = AtomicInteger()
+        val events = app.fixture.rowEventTail()
+        app.fixture.commandResponse = { request ->
+            if (
+                request.method != "DELETE" ||
+                    request.requestUrl?.encodedPath != "/api/chat-threads/$CHAT_PERSONAL"
+            )
+                null
+            else {
+                requests.incrementAndGet()
+                started.countDown()
+                release.await()
+                events.add(24L to request.rowEvent(24, CHAT_PERSONAL, "deleted"))
+                MockResponse().setResponseCode(204)
+            }
+        }
+        try {
+            app.responseGate.countDown()
+            awaitListAndNames()
+            val rowTag = "chat_$CHAT_PERSONAL"
+            val row = compose.onNodeWithTag(rowTag)
+            compose.onNodeWithTag("chat_list").performScrollToNode(hasTestTag(rowTag))
+            row.performClick()
+            compose.onNodeWithTag("conversation").assertExists()
+            fun openConfirmation() {
+                row.performTouchInput { longClick() }
+                compose.onNodeWithText("Delete chat").performClick()
+                compose.onNodeWithText("Delete chat?").assertIsDisplayed()
+            }
+            openConfirmation()
+            compose.onNodeWithText("Cancel").performClick()
+            row.assertIsDisplayed().assertIsSelected()
+            assertEquals(0, requests.get())
+
+            openConfirmation()
+            compose.onNodeWithText("Delete").performClick()
+            compose.waitUntil(10_000) { started.count == 0L }
+            row.assertDoesNotExist()
+            compose.onNodeWithTag("conversation").assertDoesNotExist()
+            compose.onNodeWithTag("workspace_new_chat").assertExists()
+            compose.onNodeWithText("Undo").assertDoesNotExist()
+            release.countDown()
+            compose.waitUntil(10_000) {
+                currentList()?.let { list ->
+                    CHAT_PERSONAL !in list.pendingRowActions &&
+                        list.threads.none { it.id == CHAT_PERSONAL }
+                } == true
+            }
+            row.assertDoesNotExist()
+            assertEquals(1, requests.get())
+        } finally {
+            release.countDown()
+        }
+    }
+
+    @Test
     fun aRejectedArchiveSwipeRestoresTheRowAfterReadingAndCanBeRetried() {
         val app = compose.activity.application as ChatListApplication
         val requests = AtomicInteger()
@@ -1171,12 +1259,13 @@ class ChatListRootTest {
             compose.waitUntil(10_000) { compose.onAllNodes(target).fetchSemanticsNodes().isEmpty() }
             compose.onNodeWithContentDescription("Filter").performClick()
             compose.onNodeWithText("Archived").performClick()
-            val filterLabel = "Filter · Archived"
+            val filterLabel = "Archived"
             val filterLayouts = mutableListOf<TextLayoutResult>()
-            val subtitle = compose.onNodeWithText(filterLabel, useUnmergedTree = true)
-            subtitle.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { read ->
-                read(filterLayouts)
-            }
+            compose
+                .onNodeWithTag("chat_filter_heading", useUnmergedTree = true)
+                .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { read ->
+                    read(filterLayouts)
+                }
             val filterLayout = filterLayouts.single()
             assertEquals(filterLabel.length, filterLayout.getLineEnd(0, visibleEnd = true))
             compose.onNodeWithTag("chat_list").performScrollToNode(target)
@@ -1415,6 +1504,7 @@ class ChatListRootTest {
         }
         app.responseGate.countDown()
         awaitListAndNames()
+        setResearchExpanded(true)
         val first = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
         val target = compose.onNodeWithTag("chat_$neighbor")
         fun moveDown() {
@@ -1467,6 +1557,20 @@ class ChatListRootTest {
                 .toSet()
                 .size,
         )
+    }
+
+    private fun setResearchExpanded(expanded: Boolean) {
+        val project = hasText("Research")
+        val before = if (expanded) SemanticsActions.Expand else SemanticsActions.Collapse
+        val after = if (expanded) SemanticsActions.Collapse else SemanticsActions.Expand
+        compose.onNodeWithTag("chat_list").performScrollToNode(project)
+        compose.onNode(project.and(SemanticsMatcher.keyIsDefined(before))).performClick()
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodes(project.and(SemanticsMatcher.keyIsDefined(after)))
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
     }
 
     private fun awaitRowActionSettled(id: String) {
@@ -1562,6 +1666,7 @@ class ChatListRootTest {
         compose.onNodeWithText("Try again").performClick()
         awaitListAndNames()
         compose.onNodeWithText(loadFailure).assertDoesNotExist()
+        setResearchExpanded(true)
         compose.onNodeWithText("Project chat").assertIsDisplayed()
     }
 

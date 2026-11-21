@@ -32,6 +32,7 @@ class ComposerApiFixture : Closeable {
     private val inputOrder = CopyOnWriteArrayList<String>()
     val created = CopyOnWriteArrayList<JsonObject>()
     @Volatile var disconnectSend = false
+    @Volatile var rejectSend = false
     @Volatile var beforeCreateReturn: () -> Unit = {}
     @Volatile var beforeSendReturn: () -> Unit = {}
     @Volatile var beforeListReturn: () -> Unit = {}
@@ -89,6 +90,12 @@ class ComposerApiFixture : Closeable {
                                 .toString()
                         )
                         .setResponseCode(201)
+                }
+                path == "/api/chat/events" && request.method == "POST" && rejectSend -> {
+                    requests += request
+                    beforeSendReturn()
+                    json("""{"error":{"code":"BAD_REQUEST","message":"Input rejected"}}""")
+                        .setResponseCode(400)
                 }
                 path == "/api/chat/events" && request.method == "POST" -> {
                     requests += request

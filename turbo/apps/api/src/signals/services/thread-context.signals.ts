@@ -1,22 +1,15 @@
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { phoneUseDevices, phoneUseGrants } from "@okouai/db/schema/phone-use";
 import { createEmailMailboxConnections } from "./email-mailbox-context.service";
 import { createEmailThreadContext } from "./email-queued-launch-context.service";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { createWechatThreadContext } from "./wechat-context.service";
 import { randomUUID } from "node:crypto";
-import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { computed, type Computed } from "ccstate";
-import { and, eq, isNull } from "drizzle-orm";
-import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import {
   type ChatThreadContinuation,
   resolveChatThreadContinuation,
 } from "./chat-session-continuity.service";
-import type { PickedChatThread } from "./chat-run-preparation-facts";
 import { createDiscordThreadContext } from "./discord-thread-prompt-context.service";
 import type { ExecutionPackageSources } from "./execution-package-sources";
 import { createRunTemplates } from "./run-templates.service";
@@ -53,15 +46,9 @@ export interface ThreadContext extends ThreadWorkflowContext {
   readonly inputResources$: Computed<Promise<void>>;
   readonly projectContext$: ReturnType<typeof createThreadProjectContext>;
   readonly incompleteContext$: ReturnType<typeof createIncompletePrompt>;
-  readonly phoneUseGrant$: Computed<
-    Promise<{ readonly deviceId: string; readonly grantId: string } | null>
-  >;
   /** Whether this run resumes the thread's native session, and its binding. */
   readonly threadContinuation$: Computed<
     Promise<ChatThreadContinuation | null>
-  >;
-  readonly computerUseHostGrant$: Computed<
-    Promise<{ readonly hostId: string; readonly displayName: string } | null>
   >;
   readonly slackContext$: ReturnType<typeof createSlackThreadContext>;
   readonly feishuContext$: ReturnType<typeof createFeishuThreadContext>;
@@ -111,9 +98,6 @@ export function createThreadContext(
     return new ApiDispatchTimingCollector();
   });
   const sourceSettings = createThreadSourceSettings(bootstrap);
-  const thread$ = computed(async (get) => {
-    return (await get(pickedEvent$))?.thread ?? null;
-  });
   const integrations = createThreadIntegrationContexts(
     pickedEvent$,
     bootstrap,
@@ -144,8 +128,6 @@ export function createThreadContext(
     sourceSettings.disabledPaidTools$,
     bootstrap,
   );
-  const computerUseHostGrant$ = createThreadHostGrant(bootstrap, thread$);
-  const phoneUseGrant$ = createThreadPhoneUseGrant(bootstrap, thread$);
   const runIds$ = createRunIds();
   const threadContinuation$ = createThreadContinuation(
     pickedEvent$,
@@ -165,8 +147,6 @@ export function createThreadContext(
   const inputSources = {
     connectorSelection$: connectedAccounts.connectorSelection$,
     templateSources$: templates.sources$,
-    computerUseHostGrant$,
-    phoneUseGrant$,
     modelRoute$: model.modelRoute$,
     threadContinuation$,
     discordContext$,
@@ -184,8 +164,6 @@ export function createThreadContext(
     projectContext$: resources.projectContext$,
     incompleteContext$: resources.incompleteContext$,
     threadContinuation$,
-    computerUseHostGrant$,
-    phoneUseGrant$,
     slackContext$: integrations.slackContext$,
     feishuContext$: integrations.feishuContext$,
     teamsContext$: integrations.teamsContext$,
@@ -260,8 +238,6 @@ function createThreadInputResources(
     ThreadContext,
     | "connectorSelection$"
     | "templateSources$"
-    | "computerUseHostGrant$"
-    | "phoneUseGrant$"
     | "modelRoute$"
     | "threadContinuation$"
     | "discordContext$"
@@ -307,8 +283,6 @@ function createThreadInputResources(
     await Promise.allSettled([
       get(context.connectorSelection$),
       get(context.templateSources$),
-      get(context.computerUseHostGrant$),
-      get(context.phoneUseGrant$),
       get(incompleteContext$),
       get(integrationSources[event.contextType]),
       get(context.modelRoute$),
@@ -433,34 +407,6 @@ function createThreadExecutionPackageSources(
   });
 }
 
-function createThreadHostGrant(
-  selected: AgentRunContextSignals,
-  thread$: Computed<Promise<PickedChatThread | null>>,
-) {
-  return computed(async (get) => {
-    const thread = await get(thread$);
-    if (!thread?.computerUseHostId || thread.userId !== selected.userId) {
-      return null;
-    }
-    const [host] = await get(db$)
-      .select({
-        hostId: computerUseHosts.id,
-        displayName: computerUseHosts.displayName,
-      })
-      .from(computerUseHosts)
-      .where(
-        and(
-          eq(computerUseHosts.id, thread.computerUseHostId),
-          eq(computerUseHosts.orgId, selected.orgId),
-          eq(computerUseHosts.userId, selected.userId),
-          isNull(computerUseHosts.revokedAt),
-        ),
-      )
-      .limit(1);
-    return host ?? null;
-  });
-}
-
 function createRunIds() {
   return computed(() => {
     return { runId: randomUUID() };
@@ -498,41 +444,6 @@ function createThreadContinuation(
         finalizingSourceRunId: event.thread.frameworkSessionRunId,
       },
     });
-  });
-}
-
-function createThreadPhoneUseGrant(
-  bootstrap: AgentRunContextSignals,
-  thread$: Computed<Promise<PickedChatThread | null>>,
-) {
-  return computed(async (get) => {
-    const features = await get(bootstrap.featureSwitches$);
-    if (!isFeatureEnabled(FeatureSwitchKey.PhoneUse, features)) {
-      return null;
-    }
-    const thread = await get(thread$);
-    if (!thread || thread.userId !== bootstrap.userId) {
-      return null;
-    }
-    const [grant] = await get(db$)
-      .select({ deviceId: phoneUseDevices.id, grantId: phoneUseGrants.id })
-      .from(phoneUseGrants)
-      .innerJoin(
-        phoneUseDevices,
-        eq(phoneUseDevices.id, phoneUseGrants.deviceId),
-      )
-      .where(
-        and(
-          eq(phoneUseGrants.threadId, thread.id),
-          eq(phoneUseGrants.orgId, bootstrap.orgId),
-          eq(phoneUseGrants.userId, bootstrap.userId),
-          eq(phoneUseDevices.orgId, bootstrap.orgId),
-          eq(phoneUseDevices.userId, bootstrap.userId),
-          eq(phoneUseDevices.generation, phoneUseGrants.deviceGeneration),
-        ),
-      )
-      .limit(1);
-    return grant ?? null;
   });
 }
 

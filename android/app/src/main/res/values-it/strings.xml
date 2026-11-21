@@ -123,14 +123,17 @@
     <string name="updates_check">Cerca aggiornamenti</string>
     <string name="updates_view">Visualizza aggiornamento</string>
     <string name="updates_toolbar">Aggiorna</string>
-    <string name="updates_install_toolbar">Installa</string>
+    <string name="updates_download">Scarica aggiornamento</string>
+    <string name="updates_retry_download">Riprova il download</string>
+    <string name="updates_download_failed">Download non riuscito</string>
+    <string name="updates_retry_check">Controlla di nuovo</string>
+    <string name="updates_required_short">Aggiornamento necessario</string>
     <string name="updates_ready">Continua l’installazione</string>
     <string name="updates_later">Più tardi</string>
     <string name="updates_allow_install">Consenti installazione</string>
     <string name="updates_permission">Android richiede il permesso per installare questo aggiornamento. Consenti a Okou di installare app nelle Impostazioni, poi torna qui.</string>
     <string name="updates_required">Aggiorna Okou per continuare</string>
     <string name="updates_required_description">Questa versione non è più supportata. Aggiorna per continuare a lavorare.</string>
-    <string name="updates_target">Aggiorna a %1$s</string>
     <string name="updates_downloading">Aggiornamento · %1$s</string>
     <string name="updates_new_version">Nuova versione disponibile</string>
     <string name="updates_package_size">Pacchetto: %1$s</string>
@@ -152,4 +155,6 @@
     <string name="realtime_connecting">Connessione agli aggiornamenti in tempo reale…</string>
     <string name="realtime_unavailable">Gli aggiornamenti in tempo reale non sono disponibili. Puoi aggiornare manualmente.</string>
     <string name="settings_account">Account</string>
+    <string name="chat_project_expansion_read_failed">Impossibile caricare lo stato di espansione dei progetti su questo dispositivo.</string>
+    <string name="chat_project_expansion_save_failed">Impossibile salvare lo stato di espansione dei progetti su questo dispositivo.</string>
 </resources>

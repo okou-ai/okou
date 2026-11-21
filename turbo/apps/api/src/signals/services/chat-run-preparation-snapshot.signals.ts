@@ -1,12 +1,15 @@
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
 import {
   memberMemories,
   memoryVersions,
 } from "@okouai/db/schema/member-memory";
+import { phoneUseDevices, phoneUseGrants } from "@okouai/db/schema/phone-use";
+import { projects } from "@okouai/db/schema/project";
 import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import { computed } from "ccstate";
 import {
@@ -15,10 +18,15 @@ import {
   count,
   eq,
   exists,
+  inArray,
   isNotNull,
+  isNull,
   lt,
   ne,
+  notInArray,
+  or,
   sql,
+  type SQL,
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 
@@ -36,6 +44,7 @@ import { queuedThreadInputCondition } from "./chat-queued-event.service";
 import {
   pickedThreadColumns,
   type EnqueuedChatInputFacts,
+  type ProjectReferenceRow,
 } from "./chat-run-preparation-facts";
 import { officialWorkflowThreadCondition } from "./official-workflow-policy.service";
 import {
@@ -120,7 +129,104 @@ function buildPreparationTables(
   return { occupancy, head };
 }
 
-/** Capture availability, the FIFO head, the native binding, and the Memory HEAD together. */
+function pickedPromptColumns(
+  head: ReturnType<typeof buildPreparationTables>["head"],
+  hasCapacity: SQL,
+  owner: Parameters<typeof officialWorkflowThreadCondition>[0],
+  requestInput?: EnqueuedChatInputFacts,
+) {
+  // These policies apply only to prompts with capacity to launch.
+  const hasPromptCapacity = and(
+    hasCapacity,
+    eq(head.eventType, "input.prompt"),
+  );
+  const storedCapture = exists(
+    new QueryBuilder()
+      .select({ id: chatNetworkBodyCaptures.chatEventId })
+      .from(chatNetworkBodyCaptures)
+      .where(eq(chatNetworkBodyCaptures.chatEventId, head.id)),
+  );
+  const capture = requestInput
+    ? sql`CASE WHEN ${eq(head.id, requestInput.id)}
+        THEN ${requestInput.captureNetworkBodies} ELSE ${storedCapture} END`
+    : storedCapture;
+  return {
+    isOfficialWorkflowThread:
+      sql`CASE WHEN ${hasPromptCapacity} THEN ${officialWorkflowThreadCondition(owner)}
+        ELSE false END`.mapWith(pgBooleanDecoder),
+    captureNetworkBodies:
+      sql`CASE WHEN ${hasPromptCapacity} THEN ${capture} ELSE false END`.mapWith(
+        pgBooleanDecoder,
+      ),
+  };
+}
+
+function pickedPhoneUseGrant(hasCapacity: SQL) {
+  return new QueryBuilder()
+    .select({ deviceId: phoneUseGrants.deviceId, grantId: phoneUseGrants.id })
+    .from(phoneUseGrants)
+    .innerJoin(
+      phoneUseDevices,
+      and(
+        eq(phoneUseDevices.id, phoneUseGrants.deviceId),
+        eq(phoneUseDevices.orgId, phoneUseGrants.orgId),
+        eq(phoneUseDevices.userId, phoneUseGrants.userId),
+        eq(phoneUseDevices.generation, phoneUseGrants.deviceGeneration),
+      ),
+    )
+    .where(
+      and(
+        hasCapacity,
+        eq(phoneUseGrants.orgId, chatThreads.orgId),
+        eq(phoneUseGrants.userId, chatThreads.userId),
+        eq(phoneUseGrants.threadId, chatThreads.id),
+      ),
+    )
+    .as("preparation_phone_use_grant");
+}
+
+function pickedProjectJoin(
+  head: ReturnType<typeof buildPreparationTables>["head"],
+  hasCapacity: SQL,
+  requestInput: EnqueuedChatInputFacts | undefined,
+) {
+  const needsCurrentProject = requestInput?.projectReferences?.length
+    ? or(
+        ne(head.id, requestInput.id),
+        notInArray(
+          chatThreads.projectId,
+          requestInput.projectReferences.map(({ id }) => {
+            return id;
+          }),
+        ),
+      )
+    : undefined;
+  return and(
+    hasCapacity,
+    inArray(head.contextType, ["web", "agent_run"]),
+    eq(projects.id, chatThreads.projectId),
+    eq(projects.userId, chatThreads.userId),
+    eq(projects.orgId, chatThreads.orgId),
+    needsCurrentProject,
+  );
+}
+
+function pickedProjectFacts(
+  projectId: string | null,
+  current: ProjectReferenceRow | null,
+  owned: EnqueuedChatInputFacts | undefined,
+) {
+  const references = owned?.projectReferences;
+  return {
+    currentProject:
+      references?.find(({ id }) => {
+        return id === projectId;
+      }) ?? current,
+    ...(references ? { projectReferences: references } : {}),
+  };
+}
+
+/** Capture availability and launch facts for the actual FIFO head together. */
 export function createChatRunPreparationSnapshot(
   claim: { readonly orgId: string; readonly chatThreadId: string },
   bootstrap: AgentRunContextSignals,
@@ -137,21 +243,7 @@ export function createChatRunPreparationSnapshot(
     );
     const hasCapacity =
       capacity === 0 ? sql`true` : lt(occupancy.activeCount, capacity);
-    const hasPromptCapacity = and(
-      hasCapacity,
-      eq(head.eventType, "input.prompt"),
-    );
-    const storedCapture = exists(
-      new QueryBuilder()
-        .select({ id: chatNetworkBodyCaptures.chatEventId })
-        .from(chatNetworkBodyCaptures)
-        .where(eq(chatNetworkBodyCaptures.chatEventId, head.id)),
-    );
-    // The receipt can supply the flag only for the input it committed.
-    const capture = requestInput
-      ? sql`CASE WHEN ${eq(head.id, requestInput.id)}
-          THEN ${requestInput.captureNetworkBodies} ELSE ${storedCapture} END`
-      : storedCapture;
+    const phoneGrant = pickedPhoneUseGrant(hasCapacity);
     const [row] = await database
       .with(occupancy, head)
       .select({
@@ -166,33 +258,26 @@ export function createChatRunPreparationSnapshot(
         revision: memberMemoryHeadFields.revision,
         archiveCache: memberMemoryHeadFields.archiveCache,
         thread: pickedThreadColumns,
-        head: {
-          id: head.id,
-          chatThreadId: head.chatThreadId,
-          createdAt: head.createdAt,
-          seqId: head.seqId,
-          eventType: head.eventType,
-          contextType: head.contextType,
-          contextId: head.contextId,
-          userMessage: head.userMessage,
-          requiredOfficialWorkflowIds: head.requiredOfficialWorkflowIds,
-          modelSelection: head.modelSelection,
-          sourceAutonomyBudget: head.sourceAutonomyBudget,
+        computerUseHostGrant: {
+          hostId: computerUseHosts.id,
+          displayName: computerUseHosts.displayName,
         },
-        // No head/full queues do not inspect policy; automation
-        // inputs bypass the prompt-only Official thread policy as before.
-        isOfficialWorkflowThread:
-          sql`CASE WHEN ${hasPromptCapacity} THEN ${officialWorkflowThreadCondition(
-            {
-              threadId: claim.chatThreadId,
-              orgId: claim.orgId,
-              userId: bootstrap.userId,
-            },
-          )} ELSE false END`.mapWith(pgBooleanDecoder),
-        captureNetworkBodies:
-          sql`CASE WHEN ${hasPromptCapacity} THEN ${capture} ELSE false END`.mapWith(
-            pgBooleanDecoder,
-          ),
+        phoneUseGrant: {
+          deviceId: phoneGrant.deviceId,
+          grantId: phoneGrant.grantId,
+        },
+        currentProject: { id: projects.id, name: projects.name },
+        head: { ...head._.selectedFields },
+        ...pickedPromptColumns(
+          head,
+          hasCapacity,
+          {
+            threadId: claim.chatThreadId,
+            orgId: claim.orgId,
+            userId: bootstrap.userId,
+          },
+          requestInput,
+        ),
       })
       .from(occupancy)
       .leftJoin(head, sql`true`)
@@ -204,6 +289,18 @@ export function createChatRunPreparationSnapshot(
           eq(chatThreads.orgId, bootstrap.orgId),
         ),
       )
+      .leftJoin(
+        computerUseHosts,
+        and(
+          hasCapacity,
+          eq(computerUseHosts.id, chatThreads.computerUseHostId),
+          eq(computerUseHosts.orgId, chatThreads.orgId),
+          eq(computerUseHosts.userId, chatThreads.userId),
+          isNull(computerUseHosts.revokedAt),
+        ),
+      )
+      .leftJoinLateral(phoneGrant, sql`true`)
+      .leftJoin(projects, pickedProjectJoin(head, hasCapacity, requestInput))
       .leftJoin(
         memberMemories,
         and(
@@ -246,9 +343,9 @@ export function createChatRunPreparationSnapshot(
       preparation: {
         isOfficialWorkflowThread: row.isOfficialWorkflowThread,
         captureNetworkBodies: row.captureNetworkBodies,
-        ...(owned?.projectReferences
-          ? { projectReferences: owned.projectReferences }
-          : {}),
+        computerUseHostGrant: row.computerUseHostGrant,
+        phoneUseGrant: row.phoneUseGrant,
+        ...pickedProjectFacts(thread.projectId, row.currentProject, owned),
       },
     };
     return { ...snapshot, pickedEvent };

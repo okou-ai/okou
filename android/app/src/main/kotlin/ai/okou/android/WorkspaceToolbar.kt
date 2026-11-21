@@ -11,6 +11,7 @@ import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -66,8 +68,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
@@ -80,43 +80,18 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 
 @Composable
-internal fun workspaceListTitleStyle(widthDp: Int, listWidth: Int?): TextStyle {
-    val fontSize =
-        when {
-            listWidth == 320 -> 18.sp
-            widthDp < 360 -> 16.sp
-            else -> 20.sp
-        }
-    return MaterialTheme.typography.titleLarge.copy(
-        fontSize = fontSize,
-        lineHeight = 24.sp,
-        letterSpacing = 0.sp,
-        fontWeight = FontWeight.SemiBold,
-    )
-}
-
-@Composable
-internal fun WorkspaceFilterSubtitle(filter: ChatListFilter) {
-    if (filter == ChatListFilter.Inbox) return
-    Text(
-        stringResource(R.string.chat_filter_subtitle, stringResource(filter.label())),
-        style =
-            MaterialTheme.typography.bodySmall.copy(
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
-                letterSpacing = 0.sp,
-            ),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
-}
+internal fun workspaceSearchControlHeight() =
+    with(LocalDensity.current) {
+        maxOf(48.dp, MaterialTheme.typography.bodyLarge.lineHeight.toDp() + 16.dp)
+    }
 
 @Composable
 internal fun WorkspaceListToolbar(
     widthDp: Int,
     listWidth: Int?,
-    title: @Composable () -> Unit,
+    avatar: (@Composable () -> Unit)?,
+    workspaceName: String?,
+    openSearch: (() -> Unit)?,
     actions: @Composable () -> Unit,
 ) {
     val inset =
@@ -131,9 +106,50 @@ internal fun WorkspaceListToolbar(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) { title() }
+        avatar?.invoke()
+        val searchLabel = stringResource(R.string.chat_search)
+        val searchShape = RoundedCornerShape(100)
+        val compact = (listWidth ?: widthDp).dp <= with(LocalDensity.current) { 16.sp.toDp() * 21 }
+        Surface(
+            Modifier.weight(1f),
+            shape = searchShape,
+            color = MaterialTheme.colorScheme.surface,
+        ) {
+            Row(
+                Modifier.heightIn(min = workspaceSearchControlHeight())
+                    .clip(searchShape)
+                    .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), searchShape)
+                    .then(
+                        if (openSearch != null)
+                            Modifier.clickable(role = Role.Button, onClick = openSearch)
+                        else Modifier
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    painterResource(R.drawable.ic_search),
+                    contentDescription = searchLabel.takeIf { openSearch != null },
+                    modifier = Modifier.size(20.dp),
+                )
+                if (!compact || workspaceName != null) {
+                    Text(
+                        when {
+                            workspaceName == null -> searchLabel
+                            compact -> workspaceName
+                            else -> "$searchLabel · $workspaceName"
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
         Row(
-            Modifier.width(156.dp),
+            Modifier.widthIn(min = 100.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -148,9 +164,7 @@ internal fun WorkspaceToolbarActions(
     list: ChatListUiState,
     selectFilter: (ChatListFilter) -> Unit,
     markAllRead: () -> Unit,
-    openSearch: (() -> Unit)? = null,
     update: UpdateToolbarAction?,
-    stackUpdateLabel: Boolean,
     settingsFocus: FocusRequester,
     openSettings: ((restoreFocus: Boolean) -> Unit)?,
 ) {
@@ -163,6 +177,12 @@ internal fun WorkspaceToolbarActions(
     val settingsAnchor =
         Modifier.focusRequester(settingsFocus).onFocusChanged { anchorFocused = it.isFocused }
     val colors = MaterialTheme.colorScheme
+    val currentFilter = stringResource(list.filter.label())
+    val filterApplied = showFilter && list.filter != ChatListFilter.Inbox
+    val filterTreatment =
+        if (filterApplied) Modifier.background(colors.secondaryContainer, RoundedCornerShape(12.dp))
+        else Modifier
+    val filterTint = if (filterApplied) colors.onSecondaryContainer else colors.onSurfaceVariant
 
     fun closeMenu() {
         restoreMenuFocus = true
@@ -187,17 +207,6 @@ internal fun WorkspaceToolbarActions(
                                     R.drawable.ic_filter_list,
                                 ) {
                                     menu = WorkspaceMenuPage.Filter
-                                }
-                            )
-                        }
-                        if (openSearch != null) {
-                            add(
-                                WorkspaceMenuItem(
-                                    stringResource(R.string.chat_search),
-                                    R.drawable.ic_search,
-                                ) {
-                                    menu = null
-                                    openSearch()
                                 }
                             )
                         }
@@ -236,7 +245,11 @@ internal fun WorkspaceToolbarActions(
                         }
                     }
                 }
-                WorkspaceMenu(page, items, close = ::closeMenu) {
+                WorkspaceMenu(
+                    items,
+                    close = ::closeMenu,
+                    filter = page == WorkspaceMenuPage.Filter,
+                ) {
                     if (hasUpdate && menu == WorkspaceMenuPage.Filter) {
                         menu = WorkspaceMenuPage.Overflow
                     } else {
@@ -248,25 +261,20 @@ internal fun WorkspaceToolbarActions(
     if (update == null) {
         if (showFilter) {
             Box {
-                val currentFilter = stringResource(list.filter.label())
                 IconButton(
                     onClick = { menu = WorkspaceMenuPage.Filter },
                     modifier =
-                        Modifier.focusRequester(filterFocus).semantics {
+                        Modifier.focusRequester(filterFocus).then(filterTreatment).semantics {
                             stateDescription = currentFilter
                         },
                 ) {
                     Icon(
                         painterResource(R.drawable.ic_filter_list),
                         stringResource(R.string.chat_filter),
+                        tint = filterTint,
                     )
                 }
                 menuContent()
-            }
-        }
-        if (openSearch != null) {
-            IconButton(onClick = openSearch) {
-                Icon(painterResource(R.drawable.ic_search), stringResource(R.string.chat_search))
             }
         }
         if (openSettings != null) {
@@ -275,10 +283,13 @@ internal fun WorkspaceToolbarActions(
             }
         }
     } else {
-        UpdateToolbarButton(update, stacked = stackUpdateLabel)
+        UpdateToolbarButton(update)
         Box {
             IconButton(
-                modifier = settingsAnchor,
+                modifier =
+                    settingsAnchor.then(filterTreatment).semantics {
+                        if (showFilter) stateDescription = currentFilter
+                    },
                 onClick = {
                     restoreSettingsAnchor = anchorFocused
                     menu = WorkspaceMenuPage.Overflow
@@ -287,6 +298,7 @@ internal fun WorkspaceToolbarActions(
                 Icon(
                     painterResource(R.drawable.ic_more_horiz),
                     stringResource(R.string.chat_more_actions),
+                    tint = filterTint,
                 )
             }
             menuContent()
@@ -299,20 +311,22 @@ private enum class WorkspaceMenuPage {
     Filter,
 }
 
-private data class WorkspaceMenuItem(
+internal data class WorkspaceMenuItem(
     val label: String,
     @DrawableRes val icon: Int? = null,
     val selected: Boolean? = null,
     val enabled: Boolean = true,
+    val destructive: Boolean = false,
     val onClick: () -> Unit,
 )
 
 @Composable
-private fun WorkspaceMenu(
-    page: WorkspaceMenuPage,
+internal fun WorkspaceMenu(
     items: List<WorkspaceMenuItem>,
     close: () -> Unit,
-    back: () -> Unit,
+    filter: Boolean = false,
+    title: String? = null,
+    back: () -> Unit = close,
 ) {
     val colors = MaterialTheme.colorScheme
     val window = currentWindowSizeDp()
@@ -339,13 +353,19 @@ private fun WorkspaceMenu(
             shadowElevation = 6.dp,
             border = BorderStroke(1.dp, colors.outline),
         ) {
-            key(page) { WorkspaceMenuItems(items, page != WorkspaceMenuPage.Overflow, back) }
+            key(filter) { WorkspaceMenuItems(items, filter, title, close, back) }
         }
     }
 }
 
 @Composable
-private fun WorkspaceMenuItems(items: List<WorkspaceMenuItem>, filter: Boolean, back: () -> Unit) {
+private fun WorkspaceMenuItems(
+    items: List<WorkspaceMenuItem>,
+    filter: Boolean,
+    title: String?,
+    close: () -> Unit,
+    back: () -> Unit,
+) {
     val inputMode = LocalInputModeManager.current.inputMode
     val popupFocus = remember { FocusRequester() }
     val itemFocus = remember(items.size) { List(items.size) { FocusRequester() } }
@@ -367,6 +387,11 @@ private fun WorkspaceMenuItems(items: List<WorkspaceMenuItem>, filter: Boolean, 
                     Key.Escape -> {
                         if (event.type == KeyEventType.KeyUp && !event.nativeKeyEvent.isCanceled)
                             back()
+                        true
+                    }
+                    Key.Tab -> {
+                        if (event.type == KeyEventType.KeyUp && !event.nativeKeyEvent.isCanceled)
+                            close()
                         true
                     }
                     Key.DirectionUp,
@@ -396,6 +421,16 @@ private fun WorkspaceMenuItems(items: List<WorkspaceMenuItem>, filter: Boolean, 
             .verticalScroll(rememberScrollState())
             .padding(7.dp)
     ) {
+        if (title != null) {
+            Text(
+                title,
+                Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         val row: @Composable (Int) -> Unit = { index ->
             WorkspaceMenuRow(
                 items[index],
@@ -436,12 +471,12 @@ private fun WorkspacePopupBackHandler(back: () -> Unit) {
 
 @Composable
 private fun WorkspaceMenuRow(item: WorkspaceMenuItem, modifier: Modifier, focused: Boolean) {
-    val (label, icon, selected, enabled, onClick) = item
+    val (label, icon, selected, enabled, destructive, onClick) = item
     val gesture =
         if (selected == null) Modifier.clickable(enabled, role = Role.Button, onClick = onClick)
         else Modifier.selectable(selected, enabled, role = Role.RadioButton, onClick = onClick)
     val colors = MaterialTheme.colorScheme
-    val foreground = colors.onSurface
+    val foreground = if (destructive) colors.error else colors.onSurface
     val color = if (enabled) foreground else foreground.copy(alpha = 0.4f)
     val shape = RoundedCornerShape(10.dp)
     Row(

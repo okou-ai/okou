@@ -6,6 +6,7 @@ import ai.okou.android.CHAT_EVENT
 import ai.okou.android.CHAT_IN_PROJECT
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.CHAT_PROJECT
+import ai.okou.android.HISTORY_LAST_EVENT
 import ai.okou.android.TestChatService
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.TestRealtimeService
@@ -22,6 +23,8 @@ import ai.okou.android.api.generated.IndicatorsThreadsValue
 import ai.okou.android.api.generated.ProjectEvents
 import ai.okou.android.api.generated.ProjectSnapshot
 import ai.okou.android.api.generated.ReadState
+import ai.okou.android.api.generated.SendRequestVariant1
+import ai.okou.android.api.generated.ThreadDetail
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.chatEventWire
 import androidx.lifecycle.ViewModelProvider
@@ -168,6 +171,7 @@ class ChatListModelTest {
         service: ChatListService,
         realtime: TestRealtimeService? = null,
         connectivity: MutableStateFlow<Boolean> = MutableStateFlow(true),
+        authorized: () -> Boolean = { true },
         exercise: suspend (ChatListModel) -> Unit,
     ) {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -183,7 +187,7 @@ class ChatListModelTest {
                                 service,
                                 cache(temporary.newFolder(), dispatcher),
                                 identity,
-                                { true },
+                                authorized,
                                 {},
                                 dispatcher,
                                 realtime,
@@ -453,6 +457,135 @@ class ChatListModelTest {
             advanceUntilIdle()
             val archived = model.uiState.value.threads.filter { it.archived }
             assertEquals(listOf(CHAT_PERSONAL), archived.map { it.id })
+        }
+    }
+
+    @Test
+    fun deleteReconcilesExplicitRejectionLostResponseAndConcurrentDeletion() = runTest {
+        for (status in listOf(400, 404, null)) {
+            var deletion: String? = null
+            val source =
+                object : Service() {
+                    override suspend fun chatEvents(since: Long?) =
+                        when {
+                            since == null -> page()
+                            since < 18 -> page(listOfNotNull(deletion))
+                            else -> page(emptyList())
+                        }
+
+                    override suspend fun deleteThread(threadId: String, eventId: String) {
+                        if (status != 400) {
+                            deletion =
+                                chatEventWire(
+                                    id =
+                                        if (status == 404) "77777777-7777-4777-8777-777777777777"
+                                        else eventId,
+                                    seq = 18,
+                                    thread = threadId,
+                                    kind = "deleted",
+                                )
+                        }
+                        if (status == null) throw IOException("Unavailable response")
+                        throw ApiFailure.Http(status, null, null, null)
+                    }
+                }
+            withCatchUpModel(source) { model ->
+                model.refresh()
+                advanceUntilIdle()
+                model.performRowAction(CHAT_PERSONAL, ChatRowAction.Delete)
+                advanceUntilIdle()
+                val state = model.uiState.value
+                assertTrue(state.pendingRowActions.isEmpty())
+                assertNull(state.rowUndo)
+                if (status == 400) {
+                    assertEquals(CHAT_PERSONAL, state.threads.single().id)
+                    assertEquals(ChatRowAction.Delete, state.failedRowAction)
+                } else {
+                    assertTrue(state.threads.isEmpty())
+                    assertNull(state.failedRowAction)
+                    model.refresh()
+                    advanceUntilIdle()
+                    assertTrue(model.uiState.value.threads.isEmpty())
+                }
+            }
+        }
+    }
+
+    @Test
+    fun reconnectRestoresARejectedDeletionAfterItsFirstReadbackFails() = runTest {
+        val connected = MutableStateFlow(true)
+        var readbackFails = false
+        var deletes = 0
+        val source =
+            object : Service() {
+                override suspend fun chatEvents(since: Long?) =
+                    when {
+                        since == null -> page()
+                        readbackFails -> throw IOException("Unavailable list")
+                        else -> page(emptyList())
+                    }
+
+                override suspend fun deleteThread(threadId: String, eventId: String) {
+                    deletes++
+                    readbackFails = true
+                    throw ApiFailure.Http(400, null, null, null)
+                }
+            }
+        withCatchUpModel(source, connectivity = connected) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Delete))
+            advanceUntilIdle()
+            val unavailable = model.uiState.value
+            assertEquals(ChatReadPhase.Failed, unavailable.listPhase)
+            assertEquals(ChatRowAction.Delete, unavailable.failedRowAction)
+            assertTrue(chatListGroups(unavailable).all { it.threads.isEmpty() })
+
+            connected.value = false
+            runCurrent()
+            readbackFails = false
+            connected.value = true
+            advanceUntilIdle()
+
+            val recovered = model.uiState.value
+            assertEquals(ChatReadPhase.Ready, recovered.listPhase)
+            assertEquals(
+                listOf(CHAT_PERSONAL),
+                chatListGroups(recovered).flatMap { group -> group.threads.map { it.id } },
+            )
+            assertEquals(1, deletes)
+        }
+    }
+
+    @Test
+    fun deletionResponseCannotPublishAfterWorkspaceReplacement() = runTest {
+        val release = CompletableDeferred<Unit>()
+        var active = true
+        var reads = 0
+        val source =
+            object : Service() {
+                override suspend fun chatEvents(since: Long?): ChatEvents {
+                    reads++
+                    return if (since == null) page() else page(emptyList())
+                }
+
+                override suspend fun deleteThread(threadId: String, eventId: String) {
+                    release.await()
+                }
+            }
+        withCatchUpModel(source, authorized = { active }) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.Delete)
+            runCurrent()
+            val pending = model.uiState.value
+            assertEquals(ChatRowAction.Delete, pending.pendingRowActions[CHAT_PERSONAL])
+            val priorReads = reads
+            active = false
+            release.complete(Unit)
+            advanceUntilIdle()
+            assertSame(pending, model.uiState.value)
+            assertEquals(priorReads, reads)
         }
     }
 
@@ -949,10 +1082,28 @@ class ChatListModelTest {
     }
 
     @Test
-    fun writeDuringOlderReadGetsOneTrailingReadWhenNotificationIsMissed() = runTest {
-        val events = mutableListOf(chatEventWire())
+    fun mixedOptimisticRowsSurviveAnOlderReadAndSettleWithTheirOwnEvidence() = runTest {
+        val other =
+            chatEventWire(id = HISTORY_LAST_EVENT, seq = 18, thread = CHAT_IN_PROJECT)
+                .replace(CHAT_DATE, "2026-11-14T00:00:00.000Z")
+        val events = mutableListOf(chatEventWire(), other)
         var reads = 0
         val olderRead = CompletableDeferred<Unit>()
+        val trailingRead = CompletableDeferred<Unit>()
+        val preview = ProvisionalChat("cccccccc-cccc-4ccc-8ccc-cccccccccccc", CHAT_PROJECT)
+        val sortEvent = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        val outgoing =
+            PendingText(
+                "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                CHAT_PERSONAL,
+                null,
+                json.decodeFromString<SendRequestVariant1>(
+                    """{"prompt":"Hello","threadId":"$CHAT_PERSONAL",
+                            "userMessage":{"version":1,"parts":[{"type":"text","text":"Hello"}]},
+                            "hasTextContent":true,"chatThreadSortEventId":"$sortEvent"}"""
+                ),
+                TextStage.Sending,
+            )
         val source =
             Service().apply {
                 listRead = {
@@ -968,46 +1119,370 @@ class ChatListModelTest {
                     eventId: String,
                 ) {
                     events.add(
-                        chatEventWire(id = eventId, seq = 18, kind = "renamed", title = title)
+                        chatEventWire(id = eventId, seq = 19, kind = "renamed", title = title)
                     )
                 }
             }
         withCatchUpModel(service) { model ->
             model.refresh()
             advanceUntilIdle()
+            assertEquals(CHAT_IN_PROJECT, model.uiState.value.threadsByRecency.first().id)
             val initialReads = reads
             source.listRead = {
                 reads++
                 val captured = page(events)
-                if (reads == initialReads + 1) olderRead.await()
+                when (reads - initialReads) {
+                    1 -> olderRead.await()
+                    2 -> trailingRead.await()
+                }
                 captured
             }
 
             model.refreshList()
             runCurrent()
             model.renameThread(CHAT_PERSONAL, "Local edit")
+            model.showOutgoingActivity(outgoing)
+            model.retainAcceptedNewChats(listOf(preview))
             model.reloadAfterRowActionFailure()
             runCurrent()
             assertEquals(initialReads + 1, reads)
             assertEquals(ChatRowAction.Rename, model.uiState.value.pendingRowActions[CHAT_PERSONAL])
 
-            olderRead.complete(Unit)
-            advanceUntilIdle()
-            assertEquals(initialReads + 2, reads)
-            assertTrue(model.uiState.value.pendingRowActions.isEmpty())
-            assertNull(model.uiState.value.failedRowAction)
-
             events.add(
                 chatEventWire(
                     id = "77777777-7777-4777-8777-777777777777",
-                    seq = 19,
+                    seq = 20,
+                    thread = preview.threadId,
+                    extra = ""","projectId":"$CHAT_PROJECT"""",
+                )
+            )
+            olderRead.complete(Unit)
+            runCurrent()
+            assertEquals(initialReads + 2, reads)
+            val held = model.uiState.value
+            assertEquals("Local edit", held.threads.single { it.id == CHAT_PERSONAL }.title)
+            assertEquals(listOf(preview), held.acceptedNewChats)
+            assertEquals(CHAT_PERSONAL, held.threadsByRecency.first().id)
+
+            trailingRead.complete(Unit)
+            advanceUntilIdle()
+            val confirmed = model.uiState.value
+            assertTrue(confirmed.pendingRowActions.isEmpty())
+            assertNull(confirmed.failedRowAction)
+            assertTrue(confirmed.acceptedNewChats.isEmpty())
+            assertEquals(
+                CHAT_PROJECT,
+                confirmed.threads.single { it.id == preview.threadId }.projectId,
+            )
+            assertEquals(CHAT_PERSONAL, confirmed.threadsByRecency.first().id)
+
+            events.add(
+                chatEventWire(
+                    id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                    seq = 21,
                     kind = "renamed",
                     title = "Remote edit",
                 )
             )
             model.refreshList()
             advanceUntilIdle()
-            assertEquals("Remote edit", model.uiState.value.threads.single().title)
+            assertEquals(
+                "Remote edit",
+                model.uiState.value.threads.single { it.id == CHAT_PERSONAL }.title,
+            )
+            model.refreshAfterSendFailure(outgoing, rejected = true)
+            assertEquals(CHAT_IN_PROJECT, model.uiState.value.threadsByRecency.first().id)
+        }
+    }
+
+    @Test
+    fun sendReceiptKeepsActivityUntilTheSortEventOrAnExplicitReconciliation() = runTest {
+        val other =
+            chatEventWire(
+                    id = "77777777-7777-4777-8777-777777777777",
+                    seq = 18,
+                    thread = CHAT_IN_PROJECT,
+                )
+                .replace(CHAT_DATE, "2026-11-14T00:00:00.000Z")
+        val service = Service().apply { listRead = { page(listOf(chatEventWire(), other)) } }
+        val online = MutableStateFlow(true)
+        val pending =
+            PendingText(
+                "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                CHAT_PERSONAL,
+                null,
+                json.decodeFromString<SendRequestVariant1>(
+                    """{"prompt":"Hello","threadId":"$CHAT_PERSONAL",
+                            "userMessage":{"version":1,"parts":[{"type":"text","text":"Hello"}]},
+                            "hasTextContent":true,
+                            "chatThreadSortEventId":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}"""
+                ),
+                TextStage.Sending,
+            )
+        withCatchUpModel(service, connectivity = online) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            val baseline = model.uiState.value.threads.map { it.id }
+            assertEquals(listOf(CHAT_IN_PROJECT, CHAT_PERSONAL), baseline)
+            val older = CompletableDeferred<Unit>()
+            val afterSend = CompletableDeferred<Unit>()
+            var reads = 0
+            service.listRead = {
+                if (++reads == 1) older.await() else afterSend.await()
+                page(emptyList())
+            }
+            model.showOutgoingActivity(pending)
+            assertEquals(CHAT_PERSONAL, model.uiState.value.threads.first().id)
+            model.refreshList()
+            runCurrent()
+            model.acknowledgeOutgoingActivity(pending)
+            model.refreshAfterSend(pending.threadId)
+            older.complete(Unit)
+            runCurrent()
+            assertEquals(2, reads)
+            assertEquals(CHAT_PERSONAL, model.uiState.value.threads.first().id)
+            afterSend.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(CHAT_PERSONAL, model.uiState.value.threads.first().id)
+            model.refresh()
+            advanceUntilIdle()
+            assertEquals(baseline, model.uiState.value.threads.map { it.id })
+
+            model.showOutgoingActivity(pending)
+            assertEquals(CHAT_PERSONAL, model.uiState.value.threads.first().id)
+            model.refreshAfterSendFailure(pending, rejected = true)
+            assertEquals(baseline, model.uiState.value.threads.map { it.id })
+            advanceUntilIdle()
+
+            model.showOutgoingActivity(pending)
+            online.value = false
+            runCurrent()
+            model.refreshAfterSendFailure(pending, rejected = false)
+            advanceUntilIdle()
+            assertEquals(CHAT_PERSONAL, model.uiState.value.threads.first().id)
+            service.listRead = {
+                page(
+                    listOf(
+                        chatEventWire(
+                            id = checkNotNull(pending.send.chatThreadSortEventId),
+                            seq = 19,
+                            kind = "sort_touched",
+                        )
+                    )
+                )
+            }
+            online.value = true
+            advanceUntilIdle()
+            // The matching event is authoritative even when its server position differs.
+            assertEquals(baseline, model.uiState.value.threads.map { it.id })
+            model.showOutgoingActivity(pending)
+            assertEquals(baseline, model.uiState.value.threads.map { it.id })
+        }
+    }
+
+    @Test
+    fun sendOrderReconciliationSurvivesBackoffAndFailedReads() = runTest {
+        val other =
+            chatEventWire(
+                    id = "77777777-7777-4777-8777-777777777777",
+                    seq = 18,
+                    thread = CHAT_IN_PROJECT,
+                )
+                .replace(CHAT_DATE, "2026-11-14T00:00:00.000Z")
+        val pending =
+            PendingText(
+                "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                CHAT_PERSONAL,
+                null,
+                json.decodeFromString<SendRequestVariant1>(
+                    """{"prompt":"Hello","threadId":"$CHAT_PERSONAL",
+                            "userMessage":{"version":1,"parts":[{"type":"text","text":"Hello"}]},
+                            "hasTextContent":true,
+                            "chatThreadSortEventId":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}"""
+                ),
+                TextStage.Sending,
+            )
+        for (requestDuringBackoff in listOf(false, true)) {
+            val service = Service().apply { listRead = { page(listOf(chatEventWire(), other)) } }
+            withCatchUpModel(service) { model ->
+                model.refresh()
+                runCurrent()
+                val baseline = model.uiState.value.threads.map { it.id }
+                assertEquals(listOf(CHAT_IN_PROJECT, CHAT_PERSONAL), baseline)
+                model.showOutgoingActivity(pending)
+                model.acknowledgeOutgoingActivity(pending)
+                var reads = 0
+                service.listRead = {
+                    if (++reads == 1) throw ApiFailure.Http(503, null, null, null)
+                    page(emptyList())
+                }
+                if (requestDuringBackoff) model.refreshList() else model.refresh()
+                runCurrent()
+                assertEquals(ChatListReadFailure.Retrying, model.uiState.value.listReadFailure)
+                if (requestDuringBackoff) model.refresh()
+                advanceTimeBy(4_999)
+                assertEquals(1, reads)
+                assertEquals(CHAT_PERSONAL, model.uiState.value.threads.first().id)
+                advanceTimeBy(1)
+                runCurrent()
+                assertEquals(2, reads)
+                assertEquals(baseline, model.uiState.value.threads.map { it.id })
+
+                model.showOutgoingActivity(pending)
+                model.acknowledgeOutgoingActivity(pending)
+                model.refreshList()
+                runCurrent()
+                assertEquals(CHAT_PERSONAL, model.uiState.value.threads.first().id)
+
+                val held = CompletableDeferred<Unit>()
+                service.listRead = {
+                    held.await()
+                    page(emptyList())
+                }
+                model.refresh()
+                runCurrent()
+                model.showOutgoingActivity(pending)
+                held.complete(Unit)
+                runCurrent()
+                assertEquals(CHAT_PERSONAL, model.uiState.value.threads.first().id)
+            }
+        }
+    }
+
+    @Test
+    fun restoredAcceptedChatWaitsForTheListWhenDetailConfirmsItExists() = runTest {
+        val detail = CompletableDeferred<ThreadDetail>()
+        var detailReads = 0
+        val preview = ProvisionalChat(CHAT_IN_PROJECT, CHAT_PROJECT)
+        val service =
+            object : Service() {
+                override suspend fun threadDetail(threadId: String): ThreadDetail {
+                    assertEquals(preview.threadId, threadId)
+                    if (++detailReads == 1) throw ApiFailure.Http(503, null, null, null)
+                    return detail.await()
+                }
+            }
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            runCurrent()
+            model.retainAcceptedNewChats(listOf(preview), restored = true)
+            runCurrent()
+            assertEquals(listOf(preview), model.uiState.value.acceptedNewChats)
+
+            service.listRead = { page(emptyList()) }
+            model.refreshList()
+            runCurrent()
+            model.refreshList()
+            runCurrent()
+            assertEquals(2, detailReads)
+            detail.complete(ThreadDetail(null, false))
+            runCurrent()
+            assertEquals(listOf(preview), model.uiState.value.acceptedNewChats)
+
+            service.listRead = {
+                page(
+                    listOf(
+                        chatEventWire(id = HISTORY_LAST_EVENT, seq = 18, thread = preview.threadId)
+                    )
+                )
+            }
+            model.refreshList()
+            runCurrent()
+            assertTrue(model.uiState.value.threads.any { it.id == preview.threadId })
+            assertTrue(model.uiState.value.acceptedNewChats.isEmpty())
+            assertEquals(2, detailReads)
+        }
+    }
+
+    @Test
+    fun replacementDuringDetailReadRechecksAnUnmatchedAcceptedChat() = runTest {
+        val previousDetail = CompletableDeferred<ThreadDetail>()
+        val replacementDetail = CompletableDeferred<ThreadDetail>()
+        val preview = ProvisionalChat(CHAT_IN_PROJECT, CHAT_PROJECT)
+        var replacement: ChatSnapshot? = null
+        var detailReads = 0
+        val service =
+            object : Service() {
+                override suspend fun chatSnapshot() = replacement ?: super.chatSnapshot()
+
+                override suspend fun chatArchive(url: String) = ChatArchive(emptyList())
+
+                override suspend fun chatEvents(since: Long?) =
+                    when (since) {
+                        null -> page()
+                        17L -> throw ApiFailure.Http(410, null, null, null)
+                        40L -> page(emptyList())
+                        else -> error("Unexpected cursor $since")
+                    }
+
+                override suspend fun threadDetail(threadId: String): ThreadDetail {
+                    assertEquals(preview.threadId, threadId)
+                    return if (++detailReads == 1) previousDetail.await()
+                    else replacementDetail.await()
+                }
+            }
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            runCurrent()
+            assertEquals(listOf(CHAT_PERSONAL), model.uiState.value.threads.map { it.id })
+            model.retainAcceptedNewChats(listOf(preview), restored = true)
+            runCurrent()
+            assertEquals(1, detailReads)
+
+            replacement =
+                ChatSnapshotVariant1("https://fixture.test/archive", 60, HISTORY_LAST_EVENT, 40)
+            model.refreshList()
+            runCurrent()
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertTrue(model.uiState.value.threads.isEmpty())
+            assertEquals(listOf(preview), model.uiState.value.acceptedNewChats)
+            assertEquals(1, detailReads)
+
+            previousDetail.complete(ThreadDetail(null, false))
+            runCurrent()
+            assertEquals(listOf(preview), model.uiState.value.acceptedNewChats)
+            assertEquals(2, detailReads)
+
+            replacementDetail.completeExceptionally(ApiFailure.Http(404, null, null, null))
+            runCurrent()
+            assertTrue(model.uiState.value.acceptedNewChats.isEmpty())
+        }
+    }
+
+    @Test
+    fun createAndDeleteInOneCatchUpRetireTheAcceptedPreview() = runTest {
+        val service = Service().apply { listRead = { page(listOf(chatEventWire())) } }
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            val preview = ProvisionalChat(CHAT_IN_PROJECT, CHAT_PROJECT)
+            model.retainAcceptedNewChats(listOf(preview))
+            assertEquals(listOf(preview), model.uiState.value.acceptedNewChats)
+            service.listRead = {
+                page(
+                    listOf(
+                        chatEventWire(
+                            id = "77777777-7777-4777-8777-777777777777",
+                            seq = 18,
+                            thread = preview.threadId,
+                        ),
+                        chatEventWire(
+                            id = "88888888-8888-4888-8888-888888888888",
+                            seq = 19,
+                            thread = preview.threadId,
+                            kind = "deleted",
+                        ),
+                    )
+                )
+            }
+            model.refreshList()
+            advanceUntilIdle()
+            assertEquals(listOf(CHAT_PERSONAL), model.uiState.value.threads.map { it.id })
+            assertTrue(model.uiState.value.acceptedNewChats.isEmpty())
+
+            // A receipt arriving after the canonical deletion cannot restore the preview.
+            model.retainAcceptedNewChats(listOf(preview))
+            assertTrue(model.uiState.value.acceptedNewChats.isEmpty())
         }
     }
 

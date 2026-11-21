@@ -1,5 +1,4 @@
 import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
-import { loadEmailSourceMessageContext$ } from "./email-source-message.service";
 import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-queue-revocation.service";
 import { writeDb$ } from "../external/db";
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
@@ -12,9 +11,6 @@ import { initializeMemberMemory$ } from "./member-memory-initialization.service"
 import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
 import type { AgentRunCallbackPayload } from "@okouai/db/jsonb-contracts/agent-run-callback";
 import { STAFF_SINGLE_AGENT_ORG_ID } from "@okouai/core/single-agent-migration";
-import { buildEmailPrompt } from "./email-prompt";
-import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
-import { renderRunPrompts } from "./run-prompt-and-skills";
 import { emailDeliveryTargetSchema } from "./email-chat-callback-payload";
 import { performance } from "node:perf_hooks";
 import {
@@ -87,15 +83,7 @@ import {
 } from "../external/realtime";
 
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
-import {
-  joinAll,
-  joinAllInOrder,
-  onRejection,
-  safeSync,
-  settle,
-  settleIncludingAbort,
-  tapError,
-} from "../utils";
+import { joinAll, safeSync, settle, tapError } from "../utils";
 import type { DirectRunDispatchResult } from "./direct-run-dispatch.service";
 import {
   createExecutionBundleCache,
@@ -720,31 +708,6 @@ function buildWorkflowAutomationCallbacks(
     payload: { threadId: chatThreadId },
   });
   return callbacks;
-}
-
-function withEmailSystemPrompt(
-  plan: RunPlan,
-  integrationContext: string,
-  runPrompt: PreparedRunPrompt,
-): RunPlan {
-  const appendSystemPrompt = renderRunPrompts({
-    systemPromptVariables: {
-      ...runPrompt.systemPromptVariables,
-      integrationContext,
-    },
-    userPromptVariables: { message: runPrompt.userPrompt },
-  }).systemPrompt;
-  return {
-    ...plan,
-    integrationContext,
-    persisted: {
-      ...plan.persisted,
-      content: {
-        ...plan.persisted.content,
-        appendSystemPrompt,
-      },
-    },
-  };
 }
 
 function claimCommitInput(input: RunPlan): ThreadRunContext["input"] {
@@ -1616,13 +1579,6 @@ export function createThreadClaimRunObjects(
   const isAutomation$ = computed(async (get) => {
     return (await get(head$)).contextType === "automation";
   });
-  const inputResources$ = computed(async (get) => {
-    if (await get(isAutomation$)) {
-      await settle(get(automationModel$));
-      return;
-    }
-    await get(threadContext.inputResources$);
-  });
   const assembly$ = computed(async (get) => {
     return get(
       (await get(isAutomation$)) ? automationAssembly$ : promptAssembly$,
@@ -1731,6 +1687,21 @@ export function createThreadClaimRunObjects(
     bootstrap,
     threadContext,
   );
+  const inputResources$ = computed(async (get) => {
+    if (await get(isAutomation$)) {
+      if ((await get(automationSource$)).kind === "ready") {
+        await Promise.allSettled([
+          get(automationModel$),
+          get(connectorAdmission$),
+        ]);
+      }
+      return;
+    }
+    await Promise.allSettled([
+      get(threadContext.inputResources$),
+      get(connectorAdmission$),
+    ]);
+  });
   const officialWorkflow$ = createOfficialWorkflowSignal(
     pickedEvent$,
     threadContext,
@@ -2174,17 +2145,30 @@ export function createThreadClaimRunObjects(
     };
   });
   const bundleHashes$ = computed(async (get) => {
-    if (
-      !(await get(resourceAllowed$)) ||
-      (await get(captureNetworkBodiesGate$))
-    ) {
+    const [automation, captureNetworkBodies] = await Promise.all([
+      get(isAutomation$),
+      get(captureNetworkBodiesGate$),
+    ]);
+    if (captureNetworkBodies) {
       return null;
     }
-    if (
-      (await get(isAutomation$)) &&
-      (await get(automationLaunch$)).kind !== "launch"
-    ) {
-      return null;
+    if (automation) {
+      if (
+        !(await get(resourceAllowed$)) ||
+        (await get(automationLaunch$)).kind !== "launch"
+      ) {
+        return null;
+      }
+    } else {
+      // Prompt material can still be loading from an integration. Package
+      // selection needs the prepared input's model and templates.
+      const [ready, templates] = await Promise.all([
+        get(promptReady$),
+        get(runTemplates$),
+      ]);
+      if (!ready || "error" in templates) {
+        return null;
+      }
     }
     const packagePlan = await get(runnerPackages$);
     return isRouteError(packagePlan)
@@ -2318,113 +2302,14 @@ export function createThreadClaimRunObjects(
       return head;
     },
   );
-  const prepareEmailIntegrationContext$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<string | null> => {
-      if (!(await get(resourceAllowed$))) {
-        return null;
-      }
-      signal.throwIfAborted();
-      const [email, mailboxes] = await Promise.all([
-        get(threadContext.emailContext$),
-        get(threadContext.emailMailboxConnections$),
-      ]);
-      signal.throwIfAborted();
-      if (!email || mailboxes.length === 0) {
-        return null;
-      }
-      const [snapshot, policies, featureSwitchContext] = await Promise.all([
-        get(bootstrap.catalog$),
-        get(bootstrap.permissionPolicies$),
-        get(bootstrap.featureSwitches$),
-      ]);
-      signal.throwIfAborted();
-      if (!snapshot) {
-        throw new Error(
-          "Email mailbox context requires its authorized catalog",
-        );
-      }
-      const messageContext = await set(
-        loadEmailSourceMessageContext$,
-        {
-          email,
-          mailboxes,
-          snapshot,
-          policies,
-          featureSwitchContext,
-          orgId: bootstrap.orgId,
-          userId: bootstrap.userId,
-        },
-        signal,
-      );
-      return buildEmailPrompt(
-        email,
-        resolveIntegrationNotePrompt({
-          triggerSource: "email",
-          featureSwitchContext,
-          emailHasConnectedMailbox: true,
-        }),
-        mailboxes,
-        messageContext,
-      );
-    },
-  );
-  /** Join Email prompt enrichment and the independent Runner inputs. */
   const prepareRunnerResources$ = command(
-    async ({ get, set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
-      const emailAbort =
-        head.contextType === "email" ? new AbortController() : null;
-      const emailLookup = emailAbort
-        ? settleIncludingAbort(() => {
-            return set(
-              prepareEmailIntegrationContext$,
-              AbortSignal.any([signal, emailAbort.signal]),
-            );
-          })
-        : null;
-      const planned = onRejection(
-        (async () => {
-          const plan = await get(runPlan$);
-          signal.throwIfAborted();
-          if (!plan || isRouteError(plan)) {
-            emailAbort?.abort();
-          }
-          return plan;
-        })(),
-        () => {
-          emailAbort?.abort();
-        },
-      );
-      const [plan, runnerLaunch] = await joinAllInOrder(
-        [
-          (async () => {
-            // Join the lookup even if planning rejects. Credential refresh can
-            // persist changes while the provider operation is being cancelled.
-            const email = await emailLookup;
-            const plan = await planned;
-            if (!plan || isRouteError(plan)) {
-              return plan;
-            }
-            if (email?.ok === false) {
-              throw email.error;
-            }
-            const integrationContext = email?.value ?? null;
-            return integrationContext === null
-              ? plan
-              : withEmailSystemPrompt(
-                  plan,
-                  integrationContext,
-                  await get(promptResources.prompt$),
-                );
-          })(),
-          (async () => {
-            const plan = await planned;
-            return !plan || isRouteError(plan)
-              ? null
-              : await set(prepareRunnerStorage$, plan.runner, signal);
-          })(),
-        ],
-        signal,
-      );
+    async ({ get, set }, signal: AbortSignal) => {
+      const plan = await get(runPlan$);
+      signal.throwIfAborted();
+      const runnerLaunch =
+        !plan || isRouteError(plan)
+          ? null
+          : await set(prepareRunnerStorage$, plan.runner, signal);
       return { plan, runnerLaunch };
     },
   );
@@ -2442,7 +2327,7 @@ export function createThreadClaimRunObjects(
       }
       const [{ plan: input, runnerLaunch }, callbacks, assembly] =
         await joinAll([
-          set(prepareRunnerResources$, head, signal),
+          set(prepareRunnerResources$, signal),
           get(preparedCallbacks$),
           get(assembly$),
         ]);

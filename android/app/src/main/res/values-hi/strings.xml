@@ -123,14 +123,17 @@
     <string name="updates_check">अपडेट जाँचें</string>
     <string name="updates_view">अपडेट देखें</string>
     <string name="updates_toolbar">अपडेट</string>
-    <string name="updates_install_toolbar">इंस्टॉल</string>
+    <string name="updates_download">अपडेट डाउनलोड करें</string>
+    <string name="updates_retry_download">फिर से डाउनलोड करें</string>
+    <string name="updates_download_failed">डाउनलोड विफल</string>
+    <string name="updates_retry_check">फिर से जाँचें</string>
+    <string name="updates_required_short">अपडेट ज़रूरी है</string>
     <string name="updates_ready">इंस्टॉलेशन जारी रखें</string>
     <string name="updates_later">बाद में</string>
     <string name="updates_allow_install">अपडेट इंस्टॉल करने की अनुमति दें</string>
     <string name="updates_permission">इस अपडेट को इंस्टॉल करने के लिए Android को आपकी अनुमति चाहिए। सेटिंग में Okou को ऐप इंस्टॉल करने की अनुमति दें, फिर वापस आएँ।</string>
     <string name="updates_required">जारी रखने के लिए Okou अपडेट करें</string>
     <string name="updates_required_description">यह वर्शन अब समर्थित नहीं है। काम जारी रखने के लिए अपडेट करें।</string>
-    <string name="updates_target">%1$s पर अपडेट करें</string>
     <string name="updates_downloading">अपडेट हो रहा है · %1$s</string>
     <string name="updates_new_version">नया वर्शन उपलब्ध है</string>
     <string name="updates_package_size">पैकेज: %1$s</string>
@@ -152,4 +155,6 @@
     <string name="realtime_connecting">लाइव अपडेट से कनेक्ट हो रहा है…</string>
     <string name="realtime_unavailable">लाइव अपडेट उपलब्ध नहीं हैं। आप मैन्युअल रूप से रीफ़्रेश कर सकते हैं।</string>
     <string name="settings_account">खाता</string>
+    <string name="chat_project_expansion_read_failed">इस डिवाइस पर प्रोजेक्ट के खुले या बंद होने की स्थिति लोड नहीं हो सकी।</string>
+    <string name="chat_project_expansion_save_failed">इस डिवाइस पर प्रोजेक्ट के खुले या बंद होने की स्थिति सहेजी नहीं जा सकी।</string>
 </resources>

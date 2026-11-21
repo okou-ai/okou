@@ -170,7 +170,9 @@ class ApiClient(
 
     suspend fun chatEvents(since: Long?): ChatEvents = execute { reads.chatEvents(it, since) }
 
-    suspend fun indicators(): Indicators = execute { reads.indicators(it) }
+    suspend fun indicators(): Indicators = execute {
+        reads.indicators(it, queryIncludeActiveUnread = "true")
+    }
 
     suspend fun agents(): Agents = execute { reads.agents(it) }
 
@@ -262,6 +264,10 @@ class ApiClient(
             if (archived) api.archiveThread(it, threadId, eventId)
             else api.unarchiveThread(it, threadId, eventId)
         }
+    }
+
+    suspend fun deleteThread(threadId: String, eventId: String) {
+        executeResponse(204) { api.deleteThread(it, threadId, eventId) }
     }
 
     suspend fun renameThread(threadId: String, title: String, eventId: String) {

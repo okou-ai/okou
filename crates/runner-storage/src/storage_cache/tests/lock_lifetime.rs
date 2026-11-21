@@ -9,7 +9,9 @@ use runner_host::test_fixtures::blocking_worker::{BlockingWorkerRelease, occupy_
 use tokio::runtime::{Builder, Runtime};
 use tokio::task::JoinHandle;
 
-use super::super::remove_storage_lock_after_missing_cache;
+use super::super::{
+    CacheProcessMetrics, read_cache_entry, remove_storage_lock_after_missing_cache,
+};
 
 const WAIT: Duration = Duration::from_secs(5);
 
@@ -28,11 +30,10 @@ fn acquire(path: &Path) -> nix::fcntl::Flock<std::fs::File> {
     }
 }
 
-fn poll_pending(runtime: &Runtime, cleanup: Pin<&mut impl Future<Output = ()>>) {
+fn poll_pending(runtime: &Runtime, work: Pin<&mut impl Future>) {
     let _entered = runtime.enter();
     assert!(
-        cleanup
-            .poll(&mut Context::from_waker(Waker::noop()))
+        work.poll(&mut Context::from_waker(Waker::noop()))
             .is_pending()
     );
 }
@@ -48,22 +49,56 @@ fn drain_blocking(runtime: &Runtime, worker: JoinHandle<()>) {
     });
 }
 
-fn queue_cleanup(
+fn queue_second_blocking_operation(
     runtime: &Runtime,
-    mut cleanup: Pin<&mut impl Future<Output = ()>>,
+    mut work: Pin<&mut impl Future>,
 ) -> (BlockingWorkerRelease, JoinHandle<()>) {
-    // First queue the existing-only probe, then retire it without polling its
-    // observer. Its completed result now owns the acquired flock.
-    let (probe_gate, probe_worker) = occupy_blocking_worker(runtime, WAIT);
-    poll_pending(runtime, cleanup.as_mut());
-    drop(probe_gate);
-    drain_blocking(runtime, probe_worker);
+    // Retire the initial lock probe without polling its observer.
+    let (first_gate, first_worker) = occupy_blocking_worker(runtime, WAIT);
+    poll_pending(runtime, work.as_mut());
+    drop(first_gate);
+    drain_blocking(runtime, first_worker);
 
-    // Poll the acquired result with the only worker occupied: physical cleanup
-    // is admitted but cannot validate or unlink until this gate is released.
+    // Admit the next operation while the only blocking worker is occupied.
     let (gate, worker) = occupy_blocking_worker(runtime, WAIT);
-    poll_pending(runtime, cleanup);
+    poll_pending(runtime, work);
     (gate, worker)
+}
+
+#[test]
+fn cancelled_cached_read_retains_flock_until_physical_retirement() {
+    let temp = tempfile::tempdir().unwrap();
+    let lock_path = temp.path().join("storage.lock");
+    let archive_path = temp.path().join("archive.tar.gz");
+    drop(acquire(&lock_path));
+    std::fs::write(&archive_path, b"published archive").unwrap();
+    let reader = match lock::try_acquire_existing_shared_or_missing_blocking(&lock_path).unwrap() {
+        ExistingTryLock::Acquired(reader) => reader,
+        _ => panic!("could not acquire cache reader"),
+    };
+    let runtime = runtime();
+    let mut metrics = CacheProcessMetrics::default();
+    let mut read = Box::pin(read_cache_entry(
+        temp.path(),
+        &archive_path,
+        reader,
+        &mut metrics,
+    ));
+    let (gate, worker) = occupy_blocking_worker(&runtime, WAIT);
+    poll_pending(&runtime, read.as_mut());
+    drop(read);
+
+    assert!(
+        matches!(
+            lock::try_acquire_existing_or_missing_blocking(&lock_path).unwrap(),
+            ExistingTryLock::Busy
+        ),
+        "cancelled observer released the flock before the physical read retired"
+    );
+
+    drop(gate);
+    drain_blocking(&runtime, worker);
+    drop(acquire(&lock_path));
 }
 
 #[test]
@@ -77,7 +112,7 @@ fn cancelled_missing_cache_cleanup_retains_flock_until_physical_retirement() {
         &lock_path,
         &archive_path,
     ));
-    let (gate, worker) = queue_cleanup(&runtime, cleanup.as_mut());
+    let (gate, worker) = queue_second_blocking_operation(&runtime, cleanup.as_mut());
     drop(cleanup);
 
     assert!(
@@ -119,7 +154,7 @@ fn queued_missing_cache_cleanup_preserves_replacement_inode() {
         &lock_path,
         &archive_path,
     ));
-    let (gate, worker) = queue_cleanup(&runtime, cleanup.as_mut());
+    let (gate, worker) = queue_second_blocking_operation(&runtime, cleanup.as_mut());
 
     std::fs::rename(&lock_path, temp.path().join("retired.lock")).unwrap();
     let replacement = acquire(&lock_path);
@@ -150,7 +185,7 @@ fn queued_missing_cache_cleanup_rechecks_archive_before_removal() {
         &lock_path,
         &archive_path,
     ));
-    let (gate, worker) = queue_cleanup(&runtime, cleanup.as_mut());
+    let (gate, worker) = queue_second_blocking_operation(&runtime, cleanup.as_mut());
 
     std::fs::write(&archive_path, b"published archive").unwrap();
     drop(gate);

@@ -8,9 +8,10 @@ import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ComposerJournalStore
+import ai.okou.android.chat.ProjectExpansionModel
+import ai.okou.android.chat.ProjectExpansionStore
 import ai.okou.android.chat.RunControlJournalStore
 import ai.okou.android.chat.RunControlsModel
-import ai.okou.android.chat.chatScopeHash
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.instructions.PersonalInstructionsModel
 import ai.okou.android.preferences.MemberAppearance
@@ -54,6 +55,7 @@ data class ReadyWorkspace(
     val organization: Organization,
     val preferences: MemberPreferencesModel,
     val chats: ChatListModel,
+    val projectExpansion: ProjectExpansionModel,
     val instructions: PersonalInstructionsModel,
     val composer: ChatComposerModel,
     val controls: RunControlsModel,
@@ -69,6 +71,10 @@ sealed interface OpeningWorkspace {
         override val identity: WorkspaceIdentity,
         val organization: Organization,
         val chats: ChatListModel,
+        val projectExpansion: ProjectExpansionModel,
+        val composer: ChatComposerModel,
+        val controls: RunControlsModel,
+        val recovery: AssistantRecoveryModel,
     ) : OpeningWorkspace
 }
 
@@ -92,6 +98,7 @@ class SessionModel(
     private val composerJournal: ComposerJournalStore,
     private val runControlJournal: RunControlJournalStore,
     private val appearanceCache: MemberAppearanceCache,
+    private val projectExpansionStore: ProjectExpansionStore,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     updatesRequired: Flow<Boolean> = emptyFlow(),
     private val connectivity: Flow<Boolean> = emptyFlow(),
@@ -221,7 +228,7 @@ class SessionModel(
                     val identity =
                         initialIdentity.copy(
                             authorizationScope =
-                                chatScopeHash(
+                                scopeHash(
                                     listOf(role) +
                                         refreshedAccess
                                             ?.let {
@@ -251,6 +258,10 @@ class SessionModel(
                     requireCurrent(ticket, snapshot)
                     val store = ViewModelStore()
                     presentation = store
+                    val projectExpansion =
+                        store.workspaceModel {
+                            ProjectExpansionModel(projectExpansionStore, identity)
+                        }
                     val chats =
                         store.workspaceModel {
                             ChatListModel(
@@ -264,7 +275,53 @@ class SessionModel(
                                 connectivity = connectivity,
                             )
                         }
-                    val opened = OpeningWorkspace.Authorized(identity, organization, chats)
+                    val controls =
+                        store.workspaceModel {
+                            RunControlsModel(
+                                owner,
+                                runControlJournal,
+                                identity,
+                                chats.history,
+                                { current(ticket, snapshot) },
+                                { workspaceFailure(ticket, snapshot, it) },
+                                dispatcher,
+                            )
+                        }
+                    val recovery =
+                        store.workspaceModel {
+                            AssistantRecoveryModel(
+                                owner,
+                                chats.history,
+                                controls,
+                                { current(ticket, snapshot) },
+                                { workspaceFailure(ticket, snapshot, it) },
+                                dispatcher,
+                            )
+                        }
+                    val composer =
+                        store.workspaceModel {
+                            ChatComposerModel(
+                                owner,
+                                composerJournal,
+                                identity,
+                                { current(ticket, snapshot) },
+                                { workspaceFailure(ticket, snapshot, it) },
+                                chats::refreshAfterSend,
+                                recovery,
+                                chats.history,
+                                chats,
+                            )
+                        }
+                    val opened =
+                        OpeningWorkspace.Authorized(
+                            identity,
+                            organization,
+                            chats,
+                            projectExpansion,
+                            composer,
+                            controls,
+                            recovery,
+                        )
                     val knownMemberships =
                         if (fastAccess == null) memberships
                         else
@@ -355,52 +412,14 @@ class SessionModel(
                     onFailure = { error -> workspaceFailure(ticket, snapshot, error) },
                 )
             }
-        val identity = opened.identity
-        val chats = opened.chats
-        val controls =
-            store.workspaceModel {
-                RunControlsModel(
-                    owner,
-                    runControlJournal,
-                    identity,
-                    chats.history,
-                    { current(ticket, snapshot) },
-                    { workspaceFailure(ticket, snapshot, it) },
-                    dispatcher,
-                )
-            }
-        val recovery =
-            store.workspaceModel {
-                AssistantRecoveryModel(
-                    owner,
-                    chats.history,
-                    controls,
-                    { current(ticket, snapshot) },
-                    { workspaceFailure(ticket, snapshot, it) },
-                    dispatcher,
-                )
-            }
         val instructions =
             store.workspaceModel {
                 PersonalInstructionsModel(
                     owner,
                     instructionsDrafts,
-                    identity,
+                    opened.identity,
                     { current(ticket, snapshot) },
                     { workspaceFailure(ticket, snapshot, it) },
-                )
-            }
-        val composer =
-            store.workspaceModel {
-                ChatComposerModel(
-                    owner,
-                    composerJournal,
-                    identity,
-                    { current(ticket, snapshot) },
-                    { workspaceFailure(ticket, snapshot, it) },
-                    chats::refreshAfterSend,
-                    recovery,
-                    chats.history,
                 )
             }
         mutable.value =
@@ -408,14 +427,15 @@ class SessionModel(
                 stage = SessionStage.Ready,
                 ready =
                     ReadyWorkspace(
-                        identity,
+                        opened.identity,
                         opened.organization,
                         preferences,
-                        chats,
+                        opened.chats,
+                        opened.projectExpansion,
                         instructions,
-                        composer,
-                        controls,
-                        recovery,
+                        opened.composer,
+                        opened.controls,
+                        opened.recovery,
                     ),
                 working = false,
                 cachedAppearance = null,
@@ -424,7 +444,7 @@ class SessionModel(
         preferences.uiState
             .map { it.confirmed.appearance }
             .distinctUntilChanged()
-            .collect { appearanceCache.save(identity, it) }
+            .collect { appearanceCache.save(opened.identity, it) }
     }
 
     private fun current(ticket: Long, snapshot: AuthenticationState): Boolean {

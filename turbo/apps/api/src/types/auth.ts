@@ -73,7 +73,6 @@ export type AuthContext =
       readonly expiresAt: number;
       readonly scopes: readonly string[];
       readonly clientId: string;
-      readonly clientName?: string;
       readonly userId: string;
       readonly orgId: string;
       readonly orgRole: ApiOrgRole;

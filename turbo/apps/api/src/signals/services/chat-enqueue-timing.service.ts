@@ -13,7 +13,6 @@ type EnqueueStage =
   | "references"
   | "suggestion_validation"
   | "suggestion_access"
-  | "mcp_attribution"
   | "context_ready"
   | "thread_selection"
   | "followup_validation"

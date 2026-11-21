@@ -23,7 +23,6 @@
         <item quantity="other">Marked %1$d chats as read.</item>
     </plurals>
     <string name="chat_filter">Filter</string>
-    <string name="chat_filter_subtitle">Filter · %1$s</string>
     <string name="chat_back_to_inbox">Back to Inbox</string>
     <string name="chat_more_actions">More actions</string>
     <string name="chat_unread">Unread</string>
@@ -53,4 +52,8 @@
     <string name="chat_title_field">Chat title</string>
     <string name="chat_rename_confirm">Rename</string>
     <string name="chat_rename_cancel">Cancel</string>
+    <string name="chat_delete">Delete chat</string>
+    <string name="chat_delete_title">Delete chat?</string>
+    <string name="chat_delete_description">This will permanently delete this chat. Any task currently running in this chat will be stopped immediately. Any linked automations will be paused. This action cannot be undone.</string>
+    <string name="chat_delete_confirm">Delete</string>
 </resources>

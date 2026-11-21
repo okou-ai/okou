@@ -8,16 +8,12 @@ import type { RunPrompt } from "../run-prompt-and-skills";
 import type { PickedThreadInputEvent } from "./types";
 
 export function createComputerUsePrompt(
-  event$: Computed<Promise<Pick<PickedThreadInputEvent, "contextType"> | null>>,
-  hostGrant$: Computed<Promise<{ readonly displayName: string } | null>>,
+  event$: Computed<Promise<PickedThreadInputEvent | null>>,
   features$: Computed<Promise<FeatureSwitchContext>>,
 ): Computed<Promise<RunPrompt>> {
   return computed(async (get): Promise<RunPrompt> => {
-    const [event, host, features] = await Promise.all([
-      get(event$),
-      get(hostGrant$),
-      get(features$),
-    ]);
+    const [event, features] = await Promise.all([get(event$), get(features$)]);
+    const host = event?.preparation.computerUseHostGrant;
     const automation = event?.contextType === "automation";
     return {
       systemPromptVariables: {

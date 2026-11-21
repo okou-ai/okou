@@ -14,6 +14,7 @@ class ChatComposerModel(
     accepted: (String) -> Unit,
     recovery: AssistantRecoveryModel? = null,
     history: ConversationHistoryModel? = recovery?.history,
+    chatList: ChatListModel? = null,
 ) : ViewModel() {
     private val connection =
         ChatComposerOwner.Connection(
@@ -24,6 +25,7 @@ class ChatComposerModel(
             accepted,
             recovery,
             history,
+            chatList,
         )
     private val owner = store.attach(identity, connection)
     val uiState = owner.uiState

@@ -464,6 +464,13 @@ export const chatThreadsContract = c.router({
     method: "GET",
     path: "/api/indicators",
     headers: authHeadersSchema,
+    query: object({
+      includeActiveUnread: string()
+        .describe(
+          'Set to "true" to include unread watermarks independently of activity.',
+        )
+        .optional(),
+    }),
     responses: {
       200: indicatorsSchema,
       401: apiErrorSchema,

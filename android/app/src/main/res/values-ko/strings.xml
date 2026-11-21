@@ -123,14 +123,17 @@
     <string name="updates_check">업데이트 확인</string>
     <string name="updates_view">업데이트 보기</string>
     <string name="updates_toolbar">업데이트</string>
-    <string name="updates_install_toolbar">설치</string>
+    <string name="updates_download">업데이트 다운로드</string>
+    <string name="updates_retry_download">다운로드 다시 시도</string>
+    <string name="updates_download_failed">다운로드 실패</string>
+    <string name="updates_retry_check">다시 확인</string>
+    <string name="updates_required_short">업데이트 필요</string>
     <string name="updates_ready">설치 계속</string>
     <string name="updates_later">나중에</string>
     <string name="updates_allow_install">업데이트 설치 허용</string>
     <string name="updates_permission">Android에서 업데이트 설치 권한이 필요합니다. 설정에서 Okou의 앱 설치를 허용한 후 돌아와 주세요.</string>
     <string name="updates_required">Okou 업데이트 필요</string>
     <string name="updates_required_description">이 버전은 더 이상 지원되지 않습니다. 작업을 계속하려면 업데이트하세요.</string>
-    <string name="updates_target">%1$s(으)로 업데이트</string>
     <string name="updates_downloading">업데이트 중 · %1$s</string>
     <string name="updates_new_version">새 버전 사용 가능</string>
     <string name="updates_package_size">패키지: %1$s</string>
@@ -152,4 +155,6 @@
     <string name="realtime_connecting">실시간 업데이트에 연결 중…</string>
     <string name="realtime_unavailable">실시간 업데이트를 사용할 수 없습니다. 수동으로 새로고침할 수 있습니다.</string>
     <string name="settings_account">계정</string>
+    <string name="chat_project_expansion_read_failed">이 기기에서 프로젝트의 펼침 상태를 불러오지 못했습니다.</string>
+    <string name="chat_project_expansion_save_failed">이 기기에서 프로젝트의 펼침 상태를 저장하지 못했습니다.</string>
 </resources>

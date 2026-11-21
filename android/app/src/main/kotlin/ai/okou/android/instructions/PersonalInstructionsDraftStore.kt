@@ -2,7 +2,7 @@ package ai.okou.android.instructions
 
 import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.auth.WorkspaceIdentity
-import ai.okou.android.chat.chatScopeHash
+import ai.okou.android.auth.workspaceStorageKey
 import android.content.Context
 import android.util.AtomicFile
 import java.io.File
@@ -23,7 +23,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.encodeToStream
-import okhttp3.HttpUrl.Companion.toHttpUrl
 
 @Serializable
 data class InstructionsDraft(
@@ -64,18 +63,13 @@ class PersonalInstructionsDraftStore(
         explicitNulls = true
     }
 
-    private fun key(identity: WorkspaceIdentity) =
-        chatScopeHash(
-            listOf(identity.apiOrigin.toHttpUrl().toString(), identity.userId, identity.workspaceId)
-        )
-
     // Presentation controllers attach on Main. Only attached identities retain a shared editor.
     internal fun attach(
         identity: WorkspaceIdentity,
         connection: PersonalInstructionsOwner.Connection,
     ): PersonalInstructionsOwner =
         editors
-            .getOrPut(key(identity)) { PersonalInstructionsOwner(this, identity) }
+            .getOrPut(identity.workspaceStorageKey()) { PersonalInstructionsOwner(this, identity) }
             .also { it.attach(connection) }
 
     internal fun detach(
@@ -83,14 +77,14 @@ class PersonalInstructionsDraftStore(
         connection: PersonalInstructionsOwner.Connection,
         editor: PersonalInstructionsOwner,
     ) {
-        if (editor.detach(connection)) editors.remove(key(identity), editor)
+        if (editor.detach(connection)) editors.remove(identity.workspaceStorageKey(), editor)
     }
 
     internal fun persist(
         identity: WorkspaceIdentity,
         value: InstructionsDraft?,
     ): Deferred<InstructionsCommit> {
-        val key = key(identity)
+        val key = identity.workspaceStorageKey()
         val write = Write(value)
         synchronized(guard) {
             check(!closed) { "Instructions store is closed" }
@@ -120,7 +114,7 @@ class PersonalInstructionsDraftStore(
     }
 
     suspend fun load(identity: WorkspaceIdentity): RestoredInstructionsDraft {
-        val key = key(identity)
+        val key = identity.workspaceStorageKey()
         while (true) {
             val pending = synchronized(guard) { latest[key] }
             if (pending != null) {

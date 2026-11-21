@@ -2,6 +2,8 @@ package ai.okou.android.chat
 
 import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
+import ai.okou.android.WorkspaceMenu
+import ai.okou.android.WorkspaceMenuItem
 import ai.okou.android.currentWindowSizeDp
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
@@ -22,9 +24,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -49,6 +52,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
@@ -83,6 +88,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.text.NumberFormat
 import kotlinx.coroutines.delay
 
@@ -93,10 +100,11 @@ internal fun ChatListScreen(
     retryMetadata: () -> Unit,
     retryIndicators: () -> Unit,
     open: (ConfirmedChat) -> Unit,
+    provisionalChats: List<ProvisionalChat>,
+    openProvisional: (ProvisionalChat) -> Unit,
     performRowAction: (String, ChatRowAction) -> Unit,
     renameThread: (String, String) -> Unit,
-    collapsed: List<String>,
-    toggleProject: (String) -> Unit,
+    projectExpansion: ProjectExpansionModel?,
     listState: LazyListState,
     newChat: (String?) -> Unit,
     showInbox: () -> Unit,
@@ -107,6 +115,53 @@ internal fun ChatListScreen(
     feedback: @Composable () -> Unit,
 ) {
     var renamingId by remember { mutableStateOf<String?>(null) }
+    var deletingId by remember { mutableStateOf<String?>(null) }
+    deletingId?.let { id ->
+        val thread = state.threads.firstOrNull { it.id == id && it.hidden != true }
+        if (thread != null) {
+            AlertDialog(
+                onDismissRequest = { deletingId = null },
+                modifier =
+                    Modifier.padding(horizontal = 24.dp).widthIn(max = 360.dp).fillMaxWidth(),
+                shape = RoundedCornerShape(28.dp),
+                containerColor = MaterialTheme.colorScheme.surface,
+                tonalElevation = 0.dp,
+                properties = DialogProperties(usePlatformDefaultWidth = false),
+                title = {
+                    Text(
+                        stringResource(R.string.chat_delete_title),
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                },
+                text = {
+                    Text(
+                        stringResource(R.string.chat_delete_description),
+                        Modifier.verticalScroll(rememberScrollState()),
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            deletingId = null
+                            performRowAction(id, ChatRowAction.Delete)
+                        },
+                        enabled =
+                            id !in state.pendingRowActions &&
+                                ChatRowAction.Delete in state.rowActions(thread),
+                        colors =
+                            ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            ),
+                    ) {
+                        Text(stringResource(R.string.chat_delete_confirm))
+                    }
+                },
+                dismissButton = { ChatAction(R.string.chat_rename_cancel, { deletingId = null }) },
+            )
+        } else if (state.listPhase == ChatReadPhase.Ready) {
+            LaunchedEffect(id) { deletingId = null }
+        }
+    }
     val renaming =
         renamingId?.let { id -> state.threads.firstOrNull { it.id == id && it.hidden != true } }
     if (renaming != null) {
@@ -140,9 +195,28 @@ internal fun ChatListScreen(
         }
     val indicators = state.indicators?.threads.orEmpty()
     val unreadChatIds = remember(unreadAt, state.readIntents) { state.unreadChatIds() }
+    val knownProjects = remember(state.projects) { state.projects.mapTo(hashSetOf()) { it.id } }
+    val pendingByProject =
+        remember(state.threads, state.filter, provisionalChats, knownProjects) {
+            if (state.filter != ChatListFilter.Inbox || provisionalChats.isEmpty()) emptyMap()
+            else {
+                val confirmedIds = state.threads.mapTo(hashSetOf()) { it.id }
+                provisionalChats
+                    .filterNot { it.threadId in confirmedIds }
+                    .groupBy { it.projectId?.takeIf(knownProjects::contains) }
+            }
+        }
+    val expansion = projectExpansion?.state?.collectAsStateWithLifecycle()?.value
+    val expandedProjectIds = expansion?.expandedIds.orEmpty()
     val sections =
-        remember(groups, collapsed, indicators, unreadChatIds) {
-            chatListSections(groups, collapsed, indicators, unreadChatIds)
+        remember(groups, expandedProjectIds, indicators, unreadChatIds, pendingByProject) {
+            chatListSections(
+                groups,
+                expandedProjectIds,
+                indicators,
+                unreadChatIds,
+                pendingByProject,
+            )
         }
     val runningKeys =
         remember(indicators, sections) {
@@ -173,7 +247,6 @@ internal fun ChatListScreen(
     val metadataMissing =
         state.agentsSource == null && state.agentsPhase == ChatReadPhase.Failed ||
             state.projectsSource == null && state.projectsPhase == ChatReadPhase.Failed
-    val knownProjects = remember(state.projects) { state.projects.mapTo(hashSetOf()) { it.id } }
     val missingDefault =
         state.agentsPhase == ChatReadPhase.Ready &&
             state.agents.none { it.isDefaultAgent } &&
@@ -201,6 +274,7 @@ internal fun ChatListScreen(
         else state.listReadFailure
     val awaitingFirstList =
         (state.confirmedAt == null || missingUnread) &&
+            pendingByProject.isEmpty() &&
             !state.offline &&
             firstLoadFailure == null &&
             (startupRecovery == null || state.listPhase != ChatReadPhase.Idle)
@@ -213,9 +287,12 @@ internal fun ChatListScreen(
     }
     // Follow changes to refreshed content without turning Project expansion into a scroll action.
     val lastContentKey =
-        remember(groups) {
+        remember(groups, pendingByProject) {
             groups.asReversed().firstNotNullOfOrNull { group ->
-                group.threads.lastOrNull()?.id ?: group.project?.id?.let(::projectRowKey)
+                group.threads.lastOrNull()?.takeIf { it.pinnedAt == null }?.id
+                    ?: pendingByProject[group.project?.id]?.lastOrNull()?.threadId
+                    ?: group.threads.lastOrNull()?.id
+                    ?: group.project?.id?.let(::projectRowKey)
             }
         }
     ChatListViewport(
@@ -235,13 +312,33 @@ internal fun ChatListScreen(
                 PaddingValues(
                     start = listInset,
                     end = listInset,
-                    top = if (inlineControls == null) 4.dp else 0.dp,
+                    top =
+                        if (inlineControls == null && state.filter == ChatListFilter.Inbox) 4.dp
+                        else 0.dp,
                     bottom = bottomSpace,
                 ),
             state = listState,
         ) {
             if (inlineControls != null) item(key = "list_controls") { inlineControls() }
             if (startupRecovery != null) item(key = "workspace_recovery") { startupRecovery() }
+            if (state.filter != ChatListFilter.Inbox) {
+                item(key = "filter_heading") {
+                    Text(
+                        stringResource(state.filter.label()),
+                        Modifier.padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 4.dp)
+                            .semantics { heading() }
+                            .testTag("chat_filter_heading"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style =
+                            MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 13.sp,
+                                lineHeight = 20.sp,
+                                letterSpacing = 0.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            ),
+                    )
+                }
+            }
             if (state.confirmedAt == null || missingUnread) {
                 when {
                     state.offline ->
@@ -275,15 +372,29 @@ internal fun ChatListScreen(
                     ChatAction(R.string.retry, retryIndicators)
                 }
             }
+            if (
+                projectExpansion != null &&
+                    expansion != null &&
+                    (expansion.readFailed || expansion.failedWrites.isNotEmpty())
+            ) {
+                item {
+                    ChatNotice(
+                        if (expansion.readFailed) R.string.chat_project_expansion_read_failed
+                        else R.string.chat_project_expansion_save_failed
+                    )
+                    ChatAction(R.string.retry, projectExpansion::retry)
+                }
+            }
             if (!state.offline && (metadataMissing || missingDefault))
                 item {
                     ChatNotice(R.string.chat_metadata_unavailable)
                     ChatAction(R.string.retry, retryMetadata)
                 }
-            if (state.confirmedAt != null) {
+            if (state.confirmedAt != null || pendingByProject.isNotEmpty()) {
                 sections.forEach { section ->
                     val group = section.group
                     val project = group.project
+                    val pending = section.provisionalChats
                     val foldedStatus = section.foldedStatus
                     if (project != null) {
                         item(key = projectRowKey(project.id)) {
@@ -292,11 +403,13 @@ internal fun ChatListScreen(
                                 activity = section.foldedActivity,
                                 runningFrame = runningFrame,
                                 row = section.firstRow,
-                                toggle = { toggleProject(project.id) },
+                                toggle = {
+                                    projectExpansion?.setExpanded(project.id, foldedStatus != null)
+                                },
                                 newChat = if (newChatEnabled) ({ newChat(project.id) }) else null,
                             )
                         }
-                        if (foldedStatus == null && group.threads.isEmpty()) {
+                        if (foldedStatus == null && group.threads.isEmpty() && pending.isEmpty()) {
                             item(key = "project_actions_${project.id}") {
                                 Column(Modifier.projectChildIndent(outline)) {
                                     if (!newChatEnabled) {
@@ -314,33 +427,58 @@ internal fun ChatListScreen(
                         }
                     }
                     if (foldedStatus == null) {
-                        val pinTail = group.pinnedTailIndex()
-                        itemsIndexed(group.threads, key = { _, thread -> thread.id }) {
-                            index,
-                            thread ->
+                        val pinTail = group.pinnedTailIndex(hasProvisional = pending.isNotEmpty())
+                        val firstPending = pinTail + 1
+                        fun confirmedIndex(index: Int) =
+                            if (index < firstPending) index else index - pending.size
+                        items(
+                            group.threads.size + pending.size,
+                            key = { index ->
+                                pending.getOrNull(index - firstPending)?.threadId
+                                    ?: group.threads[confirmedIndex(index)].id
+                            },
+                        ) { index ->
                             Column(
                                 if (project == null) Modifier
                                 else Modifier.projectChildIndent(outline)
                             ) {
+                                val provisional = pending.getOrNull(index - firstPending)
+                                val threadIndex = confirmedIndex(index)
+                                val thread =
+                                    if (provisional == null) group.threads[threadIndex] else null
+                                val id = provisional?.threadId ?: checkNotNull(thread).id
+                                val unread = thread != null && id in unreadChatIds
                                 ChatRow(
-                                    thread,
-                                    chatRowStatus(
-                                        indicators[thread.id],
-                                        thread.muted == true,
-                                        thread.id in unreadChatIds,
-                                    ),
-                                    unread = thread.id in unreadChatIds,
-                                    isSelected = thread.id == selectedChatId,
+                                    id,
+                                    thread?.title,
+                                    pinned = thread?.pinnedAt != null,
+                                    status =
+                                        if (thread == null) ChatRowStatus.None
+                                        else
+                                            chatRowStatus(
+                                                indicators[id],
+                                                thread.muted == true,
+                                                unread,
+                                            ),
+                                    unread = unread,
+                                    isSelected = id == selectedChatId,
                                     runningFrame = runningFrame,
                                     row = section.firstChatRow + index,
-                                    actions = state.rowActions(thread, group, index),
-                                    pendingAction = state.pendingRowActions[thread.id],
+                                    actions =
+                                        thread
+                                            ?.let { state.rowActions(it, group, threadIndex) }
+                                            .orEmpty(),
+                                    pendingAction = state.pendingRowActions[id],
                                     performAction = { action ->
-                                        if (action == ChatRowAction.Rename) renamingId = thread.id
-                                        else performRowAction(thread.id, action)
+                                        when (action) {
+                                            ChatRowAction.Rename -> renamingId = id
+                                            ChatRowAction.Delete -> deletingId = id
+                                            else -> performRowAction(id, action)
+                                        }
                                     },
                                 ) {
-                                    open(thread)
+                                    if (provisional != null) openProvisional(provisional)
+                                    else open(checkNotNull(thread))
                                 }
                                 if (index == pinTail) {
                                     HorizontalDivider(
@@ -354,6 +492,7 @@ internal fun ChatListScreen(
                 }
                 if (
                     groups.all { it.threads.isEmpty() } &&
+                        pendingByProject.isEmpty() &&
                         metadataUsable &&
                         !missingDefault &&
                         (state.filter != ChatListFilter.Unread || unreadAt != null)
@@ -566,7 +705,9 @@ private fun Modifier.contextMenuInput(openMenu: (() -> Unit)?): Modifier {
 
 @Composable
 private fun ChatRow(
-    thread: ConfirmedChat,
+    threadId: String,
+    title: String?,
+    pinned: Boolean,
     status: ChatRowStatus,
     unread: Boolean,
     isSelected: Boolean,
@@ -578,6 +719,14 @@ private fun ChatRow(
     open: () -> Unit,
 ) {
     var menuOpen by remember(actions) { mutableStateOf(false) }
+    val rowFocus = remember { FocusRequester() }
+    var restoreMenuFocus by remember { mutableStateOf(false) }
+    LaunchedEffect(menuOpen) {
+        if (!menuOpen && restoreMenuFocus) {
+            restoreMenuFocus = false
+            rowFocus.requestFocus()
+        }
+    }
     val openMenu: (() -> Unit)? =
         if (actions.isNotEmpty() && pendingAction == null) ({ menuOpen = true }) else null
     val labels =
@@ -585,7 +734,7 @@ private fun ChatRow(
             status.label(),
             if (status == ChatRowStatus.Running && unread) stringResource(R.string.chat_unread)
             else null,
-            if (thread.pinnedAt != null) stringResource(R.string.chat_pinned) else null,
+            if (pinned) stringResource(R.string.chat_pinned) else null,
             pendingAction?.let {
                 stringResource(
                     if (it.updatesChat) R.string.chat_row_action_pending
@@ -611,12 +760,13 @@ private fun ChatRow(
                 .clip(shape)
                 .background(if (isSelected) colors.secondaryContainer else colors.background)
                 .contextMenuInput(openMenu)
+                .focusRequester(rowFocus)
                 .combinedClickable(
                     onClick = open,
                     onLongClick = openMenu,
                     onLongClickLabel = stringResource(R.string.chat_actions),
                 )
-                .testTag("chat_${thread.id}")
+                .testTag("chat_$threadId")
                 .semantics {
                     if (isSelected) selected = true
                     if (labels.isNotEmpty()) stateDescription = labels.joinToString()
@@ -625,7 +775,7 @@ private fun ChatRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                thread.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
+                title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
                 Modifier.weight(1f),
                 color = if (isSelected) colors.onSecondaryContainer else colors.onSurface,
                 maxLines = 1,
@@ -636,24 +786,25 @@ private fun ChatRow(
             Spacer(Modifier.width(8.dp))
             ChatStatusGlyph(status, runningFrame, row)
         }
-        if (actions.isNotEmpty()) {
-            DropdownMenu(
-                expanded = menuOpen && pendingAction == null,
-                onDismissRequest = { menuOpen = false },
-            ) {
-                for (action in actions) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(action.label())) },
-                        leadingIcon = {
-                            Icon(painterResource(action.icon()), contentDescription = null)
-                        },
-                        onClick = {
+        if (menuOpen && pendingAction == null) {
+            WorkspaceMenu(
+                items =
+                    actions.map { action ->
+                        WorkspaceMenuItem(
+                            stringResource(action.label()),
+                            action.icon(),
+                            destructive = action == ChatRowAction.Delete,
+                        ) {
                             menuOpen = false
                             performAction(action)
-                        },
-                    )
-                }
-            }
+                        }
+                    },
+                close = {
+                    restoreMenuFocus = true
+                    menuOpen = false
+                },
+                title = title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
+            )
         }
     }
 }
@@ -674,6 +825,7 @@ internal fun ChatRowAction.label(): Int =
         ChatRowAction.Unmute -> R.string.chat_unmute
         ChatRowAction.Archive -> R.string.chat_archive
         ChatRowAction.Unarchive -> R.string.chat_unarchive
+        ChatRowAction.Delete -> R.string.chat_delete
         ChatRowAction.Rename -> R.string.chat_rename
         ChatRowAction.Pin -> R.string.chat_pin
         ChatRowAction.Unpin -> R.string.chat_unpin
@@ -690,6 +842,7 @@ private fun ChatRowAction.icon(): Int =
         ChatRowAction.Unmute -> R.drawable.ic_notifications
         ChatRowAction.Archive -> R.drawable.ic_archive
         ChatRowAction.Unarchive -> R.drawable.ic_unarchive
+        ChatRowAction.Delete -> R.drawable.ic_delete
         ChatRowAction.Rename -> R.drawable.ic_edit
         ChatRowAction.Pin -> R.drawable.ic_keep
         ChatRowAction.Unpin -> R.drawable.ic_keep_off

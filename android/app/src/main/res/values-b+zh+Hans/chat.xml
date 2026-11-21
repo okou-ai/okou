@@ -22,7 +22,6 @@
         <item quantity="other">已将 %1$d 条聊天标为已读</item>
     </plurals>
     <string name="chat_filter">筛选</string>
-    <string name="chat_filter_subtitle">筛选 · %1$s</string>
     <string name="chat_back_to_inbox">返回收件箱</string>
     <string name="chat_more_actions">更多操作</string>
     <string name="chat_unread">未读</string>
@@ -52,4 +51,8 @@
     <string name="chat_title_field">聊天标题</string>
     <string name="chat_rename_confirm">重命名</string>
     <string name="chat_rename_cancel">取消</string>
+    <string name="chat_delete">删除聊天</string>
+    <string name="chat_delete_title">删除聊天？</string>
+    <string name="chat_delete_description">这将永久删除该聊天。聊天中正在运行的任务会立即停止，关联的自动化会被暂停。此操作无法撤销。</string>
+    <string name="chat_delete_confirm">删除</string>
 </resources>

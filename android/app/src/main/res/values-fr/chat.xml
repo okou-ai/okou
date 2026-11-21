@@ -24,7 +24,6 @@
         <item quantity="other">%1$d discussions marquées comme lues.</item>
     </plurals>
     <string name="chat_filter">Filtrer</string>
-    <string name="chat_filter_subtitle">Filtre · %1$s</string>
     <string name="chat_back_to_inbox">Retour à la boîte de réception</string>
     <string name="chat_more_actions">Plus d’actions</string>
     <string name="chat_unread">Non lues</string>
@@ -54,4 +53,8 @@
     <string name="chat_title_field">Titre de la discussion</string>
     <string name="chat_rename_confirm">Renommer</string>
     <string name="chat_rename_cancel">Annuler</string>
+    <string name="chat_delete">Supprimer la discussion</string>
+    <string name="chat_delete_title">Supprimer la discussion ?</string>
+    <string name="chat_delete_description">Cela supprimera définitivement cette discussion. Toute tâche en cours dans cette discussion sera arrêtée immédiatement. Toutes les automatisations liées seront mises en pause. Cette action est irréversible.</string>
+    <string name="chat_delete_confirm">Supprimer</string>
 </resources>

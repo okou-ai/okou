@@ -24,7 +24,6 @@
         <item quantity="other">%1$d chat segnate come lette.</item>
     </plurals>
     <string name="chat_filter">Filtra</string>
-    <string name="chat_filter_subtitle">Filtro · %1$s</string>
     <string name="chat_back_to_inbox">Torna alla posta in arrivo</string>
     <string name="chat_more_actions">Altre azioni</string>
     <string name="chat_unread">Non lette</string>
@@ -54,4 +53,8 @@
     <string name="chat_title_field">Titolo della chat</string>
     <string name="chat_rename_confirm">Rinomina</string>
     <string name="chat_rename_cancel">Annulla</string>
+    <string name="chat_delete">Elimina la chat</string>
+    <string name="chat_delete_title">Eliminare la chat?</string>
+    <string name="chat_delete_description">Ciò eliminerà definitivamente questa chat. Qualsiasi attività attualmente in esecuzione in questa chat verrà interrotta immediatamente. Tutte le automazioni collegate verranno messe in pausa. Questa azione non può essere annullata.</string>
+    <string name="chat_delete_confirm">Elimina</string>
 </resources>

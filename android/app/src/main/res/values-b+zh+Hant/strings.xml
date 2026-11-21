@@ -123,14 +123,17 @@
     <string name="updates_check">檢查更新</string>
     <string name="updates_view">查看更新</string>
     <string name="updates_toolbar">更新</string>
-    <string name="updates_install_toolbar">安裝</string>
+    <string name="updates_download">下載更新</string>
+    <string name="updates_retry_download">重試下載</string>
+    <string name="updates_download_failed">下載失敗</string>
+    <string name="updates_retry_check">重試檢查</string>
+    <string name="updates_required_short">需要更新</string>
     <string name="updates_ready">繼續安裝</string>
     <string name="updates_later">稍後</string>
     <string name="updates_allow_install">允許安裝更新</string>
     <string name="updates_permission">請在 Android 設定中允許 Okou 安裝應用程式。授權後回到這裡，繼續安裝已下載的更新。</string>
     <string name="updates_required">更新後繼續使用 Okou</string>
     <string name="updates_required_description">目前版本已不受支援。請更新至新版本以繼續工作。</string>
-    <string name="updates_target">更新至 %1$s</string>
     <string name="updates_downloading">更新中 · %1$s</string>
     <string name="updates_new_version">有新版本</string>
     <string name="updates_package_size">安裝套件 %1$s</string>
@@ -152,4 +155,6 @@
     <string name="realtime_connecting">正在連線即時更新…</string>
     <string name="realtime_unavailable">即時更新暫時無法使用，你仍可手動重新整理。</string>
     <string name="settings_account">帳戶</string>
+    <string name="chat_project_expansion_read_failed">無法載入此裝置上的專案展開狀態。</string>
+    <string name="chat_project_expansion_save_failed">無法在此裝置上儲存專案展開狀態。</string>
 </resources>

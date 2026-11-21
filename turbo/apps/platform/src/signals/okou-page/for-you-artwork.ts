@@ -1,4 +1,4 @@
-import { command, computed } from "ccstate";
+import { command, computed, state } from "ccstate";
 import {
   DEFAULT_FOR_YOU_COVER_ID,
   forYouCovers,
@@ -26,6 +26,24 @@ export const selectForYouCover$ = command(({ set }, id: string) => {
     return;
   }
   set(coverStorage.set$, id);
+});
+
+// The header's colors follow the cover that is on screen. The banner keeps
+// showing the previous artwork until the new one loads, so the header waits
+// for that load instead of switching to the new cover's colors early.
+const paintedCoverId$ = state<string | null>(null);
+
+export const forYouPaintedCover$ = computed((get) => {
+  const painted = get(paintedCoverId$);
+  return (
+    forYouCovers.find((cover) => {
+      return cover.id === painted;
+    }) ?? get(forYouCover$)
+  );
+});
+
+export const markForYouCoverPainted$ = command(({ set }, id: string) => {
+  set(paintedCoverId$, id);
 });
 
 // A store lives for the page load. Card navigation, feedback and route changes

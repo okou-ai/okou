@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.33.0](https://github.com/okou-ai/okou/compare/android-v0.32.6...android-v0.33.0) (2026-11-21)
+
+
+### Features
+
+* **android:** add chat row swipe actions and undo ([#49625](https://github.com/okou-ai/okou/issues/49625)) ([19e7a95](https://github.com/okou-ai/okou/commit/19e7a955d1aeb05c5e815e83968d20b2bc74bcdb))
+* **android:** add optimistic chat deletion ([#49706](https://github.com/okou-ai/okou/issues/49706)) ([4375917](https://github.com/okou-ai/okou/commit/437591750cd6953237fd3e7e185ce92aefeda8ac))
+
+
+### Bug Fixes
+
+* **android:** persist project expansion locally ([#49667](https://github.com/okou-ai/okou/issues/49667)) ([0895f10](https://github.com/okou-ai/okou/commit/0895f10a66429d203d74cb13b340e78f93a05d98))
+* **ci:** bound android release stack retracing ([#49688](https://github.com/okou-ai/okou/issues/49688)) ([aabe345](https://github.com/okou-ai/okou/commit/aabe345c74d1344a89265367d4e96e1c4de7f296))
+
+
+### Performance Improvements
+
+* **android:** scope shallow dependency verification ([#49710](https://github.com/okou-ai/okou/issues/49710)) ([98e7b30](https://github.com/okou-ai/okou/commit/98e7b306c78fcc7f25b8b87e0cb79c4db29750e8))
+
 ## [0.32.6](https://github.com/okou-ai/okou/compare/android-v0.32.5...android-v0.32.6) (2026-11-21)
 
 

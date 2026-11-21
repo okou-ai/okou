@@ -111,7 +111,6 @@ import {
   queuedChatThreadPublicationPlan,
   type PublishedChatThreadLease,
 } from "./queued-chat-thread.service";
-import { mcpClientDisplayName } from "./mcp-client-display-name.service";
 import {
   measureChatEnqueue,
   ChatEnqueueTimingCollector,
@@ -158,13 +157,12 @@ import {
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
 import {
-  officialWorkflowThreadCondition,
   OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE,
   isOfficialWorkflowThread$,
 } from "./official-workflow-policy.service";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
-import { pgBooleanDecoder } from "../../lib/db-structured-result";
+import type { ExistingSendThreadRow } from "./execution-org-member-context.signals";
 import {
   agentRunSourceTitleSnapshot,
   hasAgentRunSourceAnnotation,
@@ -851,44 +849,6 @@ const resolveIncomingAttachFileMetadata$ = command(
     return resolved.value;
   },
 );
-const loadExistingSendThreadRow$ = command(
-  async (
-    { get },
-    args: Pick<NormalSendArgs, "orgId" | "userId">,
-    threadId: string,
-    signal: AbortSignal,
-  ) => {
-    const db = get(db$);
-    const [thread] = await db
-      .select({
-        id: chatThreads.id,
-        selectedModel: chatThreads.selectedModel,
-        modelSettings: chatThreads.modelSettings,
-        codexServiceTier: chatThreads.codexServiceTier,
-        computerUseHostId: chatThreads.computerUseHostId,
-        cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-        isOfficialWorkflowThread: officialWorkflowThreadCondition({
-          threadId,
-          orgId: args.orgId,
-          userId: args.userId,
-        }).mapWith(pgBooleanDecoder),
-      })
-      .from(chatThreads)
-      .where(
-        and(
-          eq(chatThreads.id, threadId),
-          eq(chatThreads.userId, args.userId),
-          chatThreadOrganizationCondition(args.orgId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    return thread;
-  },
-);
-type ExistingSendThreadRow = NonNullable<
-  Awaited<ReturnType<(typeof loadExistingSendThreadRow$)["write"]>>
->;
 /**
  * The thread's requested settings. The input captures its effective model at
  * enqueue; the pick launches that model after its credit admission.
@@ -1390,9 +1350,6 @@ function normalSendUserMessage(
             type: "source",
             kind: "mcp",
             clientId: args.auth.clientId,
-            ...(args.auth.clientName === undefined
-              ? {}
-              : { clientName: args.auth.clientName }),
           },
         ],
       };
@@ -2118,11 +2075,10 @@ const appendNormalSendInput$ = command(
   },
 );
 
-const prepareNormalSend$ = command(
+const authorizeNormalSend$ = command(
   async (
-    { get },
+    _context,
     args: NormalSendArgs & {
-      readonly context: AgentRunContextSignals;
       readonly existing: ExistingSendThreadRow | undefined;
       readonly agentRunSource: NormalSendAgentRunSourceRead;
     },
@@ -2131,7 +2087,6 @@ const prepareNormalSend$ = command(
     | {
         readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
         readonly sourceAutonomyBudget: number | null;
-        readonly catalog: ModelCatalog;
       }
     | NormalSendFailure
     | CreatedChatEventResponse
@@ -2155,19 +2110,9 @@ const prepareNormalSend$ = command(
     if (invalidTemplate) {
       return invalidTemplate;
     }
-    const catalog = (await get(args.context.modelFacts$)).catalog;
-    signal.throwIfAborted();
-    if (
-      typeof args.body.model === "string" &&
-      args.body.model !== AUTO_SELECTED_MODEL &&
-      resolveRunSelectionModel(catalog, args.body.model) === null
-    ) {
-      return badRequestMessage(`Unknown model "${args.body.model}"`);
-    }
     return {
       agentRunSource: source.source,
       sourceAutonomyBudget: source.sourceAutonomyBudget,
-      catalog,
     };
   },
 );
@@ -2309,6 +2254,40 @@ const publishEnqueuedNormalSend$ = command(
     }
   },
 );
+const readNormalSendAttachments$ = command(
+  (
+    { get, set },
+    args: Pick<NormalSendArgs, "userId" | "orgId" | "enqueueTiming"> & {
+      readonly context: AgentRunContextSignals;
+    },
+    attachmentRecords: IncomingAttachmentRecords | undefined,
+    signal: AbortSignal,
+  ) => {
+    return settleIncludingAbort(async () => {
+      if (attachmentRecords) {
+        // Capture member settings before object I/O can delay the send.
+        await get(args.context.memberMetadata$);
+        signal.throwIfAborted();
+      }
+      return measureChatEnqueue(args.enqueueTiming, "attachments", () => {
+        return set(
+          resolveIncomingAttachFileMetadata$,
+          {
+            userId: args.userId,
+            orgId: args.orgId,
+            enqueueTiming: args.enqueueTiming,
+            attachmentRecords,
+          },
+          signal,
+        );
+      });
+    });
+  },
+);
+type NormalSendAttachmentRead = ReturnType<
+  (typeof readNormalSendAttachments$)["write"]
+>;
+
 const prepareNormalSendInput$ = command(
   async (
     { set },
@@ -2320,27 +2299,11 @@ const prepareNormalSendInput$ = command(
       readonly catalog: ModelCatalog;
       readonly orgPlanCapabilities: OrgPlanCapabilities | null | undefined;
       readonly modelBootstrap: ModelSelectionBootstrap;
-      readonly attachmentRecords: IncomingAttachmentRecords | undefined;
+      readonly attachments: NormalSendAttachmentRead;
       readonly enqueueTiming?: ChatEnqueueTimingCollector;
     },
     signal: AbortSignal,
   ) => {
-    const attachments = measureChatEnqueue(
-      args.enqueueTiming,
-      "attachments",
-      async () => {
-        return await set(
-          resolveIncomingAttachFileMetadata$,
-          {
-            userId: args.userId,
-            orgId: args.orgId,
-            attachmentRecords: args.attachmentRecords,
-            enqueueTiming: args.enqueueTiming,
-          },
-          signal,
-        );
-      },
-    );
     const model = measureChatEnqueue(
       args.enqueueTiming,
       "model_capture",
@@ -2360,8 +2323,17 @@ const prepareNormalSendInput$ = command(
         );
       },
     );
-    const [attachFileMetadata, modelSelection] = await joinAllInOrder(
-      [attachments, model],
+    const [attachments, modelSelection] = await joinAllInOrder(
+      [
+        (async () => {
+          const attachments = await args.attachments;
+          if (!attachments.ok) {
+            throw attachments.error;
+          }
+          return attachments.value;
+        })(),
+        model,
+      ],
       signal,
     );
     signal.throwIfAborted();
@@ -2369,7 +2341,7 @@ const prepareNormalSendInput$ = command(
       return modelSelection;
     }
     return {
-      attachFileMetadata,
+      attachFileMetadata: attachments,
       modelSelection,
       thread: withCapturedModelReplacement(
         args.catalog,
@@ -2480,16 +2452,7 @@ const prepareNormalSendContext$ = command(
     // Shared input and template reads match PostgreSQL's canonical UUID form.
     const inputId = request.body.clientEventId?.toLowerCase() ?? randomUUID();
     const templates = projectUserMessage(request.body.userMessage).templates;
-    const existingRead =
-      request.body.threadId === undefined
-        ? undefined
-        : set(
-            loadExistingSendThreadRow$,
-            request,
-            request.body.threadId,
-            signal,
-          );
-    const context = createAgentRunContextSignals(
+    const { context, existingThread$ } = createAgentRunContextSignals(
       {
         userId: request.userId,
         orgId: request.orgId,
@@ -2503,6 +2466,8 @@ const prepareNormalSendContext$ = command(
         userTemplateIds: selectedUserTemplateIds(templates),
       },
     );
+    const existingRead =
+      request.body.threadId === undefined ? undefined : get(existingThread$);
     const args = request;
     const models = settle(set(prepareNormalSendModels$, context, signal));
     waitUntil(models);
@@ -2521,16 +2486,7 @@ const prepareNormalSendContext$ = command(
       ),
     );
     waitUntil(agentRunSource);
-    const existing = await existingRead;
-    signal.throwIfAborted();
-    if (request.body.threadId !== undefined && !existing) {
-      return notFound("Chat thread not found");
-    }
-    // Start the remaining reads before authorization and reuse the same context in the picker.
-    set(preloadAgentRunContext$, context, signal);
-    waitUntil(settle(get(context.executionPackageSources$)));
-    // Start the passive attachment read in this batch. Only a validated send
-    // consumes it and asks storage to verify an object.
+    // Only a validated send consumes these records and verifies the objects.
     const attachmentRecords = set(
       startIncomingAttachmentRecords$,
       args.body.userMessage,
@@ -2539,28 +2495,61 @@ const prepareNormalSendContext$ = command(
     if (attachmentRecords) {
       waitUntil(attachmentRecords.rows);
     }
+    // Package sources only depend on the authenticated member.
+    waitUntil(settle(get(context.executionPackageSources$)));
+    const existing = await existingRead;
+    signal.throwIfAborted();
+    if (request.body.threadId !== undefined && !existing) {
+      return notFound("Chat thread not found");
+    }
+    set(preloadAgentRunContext$, context, signal);
     const prepared = await set(
-      prepareNormalSend$,
-      { ...args, context, existing, agentRunSource },
+      authorizeNormalSend$,
+      { ...args, existing: existing ?? undefined, agentRunSource },
       signal,
     );
     if ("status" in prepared) {
       return prepared;
     }
-    const capturedModels = await models;
-    signal.throwIfAborted();
-    if (!capturedModels.ok) {
-      throw capturedModels.error;
-    }
     return {
       ...prepared,
-      ...capturedModels.value,
+      models,
       args,
       context,
       existing,
       inputId,
       attachmentRecords,
     };
+  },
+);
+type AuthorizedNormalSendContext = Exclude<
+  Awaited<ReturnType<(typeof prepareNormalSendContext$)["write"]>>,
+  { readonly status: number }
+>;
+
+const captureSendModels$ = command(
+  async (
+    { get },
+    authorized: AuthorizedNormalSendContext,
+    attachments: NormalSendAttachmentRead,
+    signal: AbortSignal,
+  ) => {
+    const catalog = (await get(authorized.context.modelFacts$)).catalog;
+    signal.throwIfAborted();
+    const model = authorized.args.body.model;
+    if (
+      typeof model === "string" &&
+      model !== AUTO_SELECTED_MODEL &&
+      resolveRunSelectionModel(catalog, model) === null
+    ) {
+      return badRequestMessage(`Unknown model "${model}"`);
+    }
+    const capturedModels = await authorized.models;
+    signal.throwIfAborted();
+    if (!capturedModels.ok) {
+      throw capturedModels.error;
+    }
+    return { ...authorized, ...capturedModels.value, catalog, attachments };
   },
 );
 
@@ -2649,105 +2638,153 @@ const resolveFailedNormalSend$ = command(
   },
 );
 
+const prepareNormalSendPublicationInput$ = command(
+  async ({ set }, request: NormalSendRequest, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    let unusedAttachmentRead: NormalSendAttachmentRead | undefined;
+    const result = await settleIncludingAbort(async () => {
+      const prepared = await measureChatEnqueue(
+        request.enqueueTiming,
+        "context_ready",
+        async () => {
+          const authorized = await set(
+            prepareNormalSendContext$,
+            request,
+            signal,
+          );
+          signal.throwIfAborted();
+          if ("status" in authorized) {
+            return authorized;
+          }
+          const attachments = set(
+            readNormalSendAttachments$,
+            {
+              orgId: request.orgId,
+              userId: request.userId,
+              enqueueTiming: request.enqueueTiming,
+              context: authorized.context,
+            },
+            authorized.attachmentRecords,
+            signal,
+          );
+          unusedAttachmentRead = authorized.attachmentRecords && attachments;
+          return set(captureSendModels$, authorized, attachments, signal);
+        },
+      );
+      signal.throwIfAborted();
+      if ("status" in prepared) {
+        return prepared;
+      }
+      const { args, existing, catalog, orgModels, modelBootstrap, context } =
+        prepared;
+      const resolvedThread = await measureChatEnqueue(
+        args.enqueueTiming,
+        "thread_selection",
+        async () => {
+          return await set(
+            resolveSendThread$,
+            {
+              ...args,
+              orgPlanCapabilities: orgModels.capabilities,
+              catalog,
+              modelBootstrap,
+              context,
+              existing: existing ? { thread: existing } : undefined,
+            },
+            signal,
+          );
+        },
+      );
+      signal.throwIfAborted();
+      if ("status" in resolvedThread) {
+        return resolvedThread;
+      }
+      const revocation = await measureChatEnqueue(
+        args.enqueueTiming,
+        "followup_validation",
+        async () => {
+          return await set(
+            validateSendThreadRevocation$,
+            args,
+            resolvedThread,
+            signal,
+          );
+        },
+      );
+      signal.throwIfAborted();
+      if (revocation && "status" in revocation) {
+        return revocation;
+      }
+      const input = await set(
+        prepareNormalSendInput$,
+        {
+          ...args,
+          thread: resolvedThread,
+          orgPlanCapabilities: orgModels.capabilities,
+          catalog,
+          modelBootstrap,
+          attachments: prepared.attachments,
+        },
+        signal,
+      );
+      unusedAttachmentRead = undefined;
+      if ("status" in input) {
+        return input;
+      }
+      const { attachFileMetadata, modelSelection, thread } = input;
+      const event = preparedNormalSendEvent(
+        args,
+        thread.threadId,
+        modelSelection,
+        prepared.agentRunSource,
+        prepared.inputId,
+      );
+      return {
+        args,
+        thread,
+        publication: {
+          input: {
+            thread,
+            event,
+            attachFileMetadata,
+            agentRunSource: prepared.agentRunSource,
+            sourceAutonomyBudget: prepared.sourceAutonomyBudget,
+            replacementTarget: revocation?.replacementTarget,
+          },
+          context,
+        },
+      };
+    });
+    signal.throwIfAborted();
+    if (unusedAttachmentRead) {
+      waitUntil(unusedAttachmentRead);
+    }
+    if (!result.ok) {
+      throw result.error;
+    }
+    return result.value;
+  },
+);
+
 export const sendNormalEvent$ = command(
   async (
     { set },
     request: NormalSendRequest,
     signal: AbortSignal,
   ): Promise<CreatedChatEventResponse | NormalSendFailure> => {
-    signal.throwIfAborted();
-    const prepared = await measureChatEnqueue(
-      request.enqueueTiming,
-      "context_ready",
-      async () => {
-        return await set(prepareNormalSendContext$, request, signal);
-      },
+    const prepared = await set(
+      prepareNormalSendPublicationInput$,
+      request,
+      signal,
     );
     signal.throwIfAborted();
     if ("status" in prepared) {
       return prepared;
     }
-    const { args, existing, catalog, orgModels, modelBootstrap, context } =
-      prepared;
-    const resolvedThread = await measureChatEnqueue(
-      args.enqueueTiming,
-      "thread_selection",
-      async () => {
-        return await set(
-          resolveSendThread$,
-          {
-            ...args,
-            orgPlanCapabilities: orgModels.capabilities,
-            catalog,
-            modelBootstrap,
-            context,
-            existing: existing ? { thread: existing } : undefined,
-          },
-          signal,
-        );
-      },
-    );
-    signal.throwIfAborted();
-    if ("status" in resolvedThread) {
-      return resolvedThread;
-    }
-    const revocation = await measureChatEnqueue(
-      args.enqueueTiming,
-      "followup_validation",
-      async () => {
-        return await set(
-          validateSendThreadRevocation$,
-          args,
-          resolvedThread,
-          signal,
-        );
-      },
-    );
-    signal.throwIfAborted();
-    if (revocation && "status" in revocation) {
-      return revocation;
-    }
-    const input = await set(
-      prepareNormalSendInput$,
-      {
-        ...args,
-        thread: resolvedThread,
-        orgPlanCapabilities: orgModels.capabilities,
-        catalog,
-        modelBootstrap,
-        attachmentRecords: prepared.attachmentRecords,
-      },
-      signal,
-    );
-    if ("status" in input) {
-      return input;
-    }
-    const { attachFileMetadata, modelSelection, thread } = input;
-    const event = preparedNormalSendEvent(
-      args,
-      thread.threadId,
-      modelSelection,
-      prepared.agentRunSource,
-      prepared.inputId,
-    );
+    const { args, thread, publication } = prepared;
     const enqueued = await settle(
       measureChatEnqueue(args.enqueueTiming, "publication", async () => {
-        return await set(
-          publishPreparedNormalSend$,
-          args,
-          {
-            input: {
-              thread,
-              event,
-              attachFileMetadata,
-              agentRunSource: prepared.agentRunSource,
-              sourceAutonomyBudget: prepared.sourceAutonomyBudget,
-              replacementTarget: revocation?.replacementTarget,
-            },
-            context,
-          },
-          signal,
-        );
+        return await set(publishPreparedNormalSend$, args, publication, signal);
       }),
       signal,
     );
@@ -3331,16 +3368,6 @@ export const handleSendChatEvent$ = command(
     if (!isNormalSendBody(body)) {
       return badRequestMessage("Prompt is required");
     }
-    const clientName =
-      auth.tokenType === "oauth"
-        ? await measureChatEnqueue(
-            get(chatEnqueueTiming$),
-            "mcp_attribution",
-            () => {
-              return mcpClientDisplayName(auth.clientId, signal);
-            },
-          )
-        : undefined;
     signal.throwIfAborted();
     const timing = get(chatEnqueueTiming$);
     const result = await set(
@@ -3350,7 +3377,7 @@ export const handleSendChatEvent$ = command(
         projectId,
         projectReferences,
         body,
-        auth: auth.tokenType === "oauth" ? { ...auth, clientName } : auth,
+        auth,
         userId: auth.userId,
         orgId: auth.orgId,
         requestReceivedAt: get(apiStartTime$),

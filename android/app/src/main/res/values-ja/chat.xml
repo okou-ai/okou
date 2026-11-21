@@ -22,7 +22,6 @@
         <item quantity="other">%1$d 件のチャットを既読にしました。</item>
     </plurals>
     <string name="chat_filter">フィルター</string>
-    <string name="chat_filter_subtitle">フィルター · %1$s</string>
     <string name="chat_back_to_inbox">受信トレイに戻る</string>
     <string name="chat_more_actions">その他の操作</string>
     <string name="chat_unread">未読</string>
@@ -52,4 +51,8 @@
     <string name="chat_title_field">チャットのタイトル</string>
     <string name="chat_rename_confirm">名前の変更</string>
     <string name="chat_rename_cancel">キャンセル</string>
+    <string name="chat_delete">チャットを削除する</string>
+    <string name="chat_delete_title">チャットを削除しますか?</string>
+    <string name="chat_delete_description">これにより、このチャットは完全に削除されます。このチャットで現在実行中のタスクはすぐに停止されます。リンクされている自動化は一時停止されます。この操作は元に戻すことができません。</string>
+    <string name="chat_delete_confirm">削除</string>
 </resources>

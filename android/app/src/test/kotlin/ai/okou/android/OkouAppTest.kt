@@ -38,6 +38,8 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -49,6 +51,7 @@ import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelectable
+import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -233,6 +236,7 @@ class OkouAppTest {
                                 models.first.first,
                                 models.first.second,
                                 controls,
+                                projectExpansion = null,
                                 settingsContent = { _, _ ->
                                     SettingsScreen(
                                         workspacePreferences = {
@@ -265,23 +269,36 @@ class OkouAppTest {
 
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun updateToolbarKeepsTheLabelReadableWithLargerText() {
-        render(fontScale = 1.3f, updateState = { availableUpdate })
+    fun updateToolbarKeepsThePercentageReadableWithLargerText() {
+        val percent = "50%"
+        render(
+            fontScale = 2f,
+            updateState = {
+                availableUpdate.copy(
+                    transfer = UpdateTransfer.Downloading(release, release.size / 2)
+                )
+            },
+        )
         val layouts = mutableListOf<TextLayoutResult>()
-        val action = compose.onNodeWithText("Update").assertWidthIsEqualTo(104.dp)
+        val action =
+            compose
+                .onNodeWithContentDescription(
+                    compose.activity.getString(R.string.updates_downloading, percent)
+                )
+                .assertWidthIsEqualTo(48.dp)
         val bounds = action.getUnclippedBoundsInRoot()
         assertTrue(bounds.bottom - bounds.top >= 48.dp)
-        compose.onNodeWithText("Update", useUnmergedTree = true).performSemanticsAction(
+        compose.onNodeWithText(percent, useUnmergedTree = true).performSemanticsAction(
             SemanticsActions.GetTextLayoutResult
         ) {
             it(layouts)
         }
         val layout = layouts.single()
         assertEquals(1, layout.lineCount)
-        assertEquals("Update".length, layout.getLineEnd(0, visibleEnd = true))
+        assertEquals(percent.length, layout.getLineEnd(0, visibleEnd = true))
         assertFalse(layout.didOverflowHeight || layout.isLineEllipsized(0))
         assertTrue(
-            "Update glyphs at ${layout.getLineLeft(0)}..${layout.getLineRight(0)} exceed ${layout.size.width}px",
+            "Progress glyphs at ${layout.getLineLeft(0)}..${layout.getLineRight(0)} exceed ${layout.size.width}px",
             layout.getLineLeft(0) >= -1f && layout.getLineRight(0) <= layout.size.width + 1f,
         )
     }
@@ -292,19 +309,26 @@ class OkouAppTest {
     fun updateToolbarKeepsItsBoundsAcrossLocalizedActionsWithLargeText() {
         val update = mutableStateOf(availableUpdate.copy(transfer = UpdateTransfer.Failed))
         render(fontScale = 2f, updateState = { update.value })
-        val retry = compose.onNodeWithText("Erneut versuchen").assertIsDisplayed()
+        val retry =
+            compose
+                .onNodeWithContentDescription(
+                    compose.activity.getString(R.string.updates_retry_download)
+                )
+                .assertIsDisplayed()
         val actionBounds = retry.getUnclippedBoundsInRoot()
         val listBounds = compose.onNodeWithTag("chat_list").getUnclippedBoundsInRoot()
         val percent = NumberFormat.getPercentInstance(Locale.GERMANY).format(0.5)
         listOf(
-                UpdateTransfer.Idle to "Update",
-                UpdateTransfer.Downloading(release) to "Vorbereitung…",
-                UpdateTransfer.Downloading(release, release.size / 2) to percent,
-                UpdateTransfer.Ready(release) to "Installieren",
+                UpdateTransfer.Idle to compose.activity.getString(R.string.updates_toolbar),
+                UpdateTransfer.Downloading(release) to
+                    compose.activity.getString(R.string.updates_preparing),
+                UpdateTransfer.Downloading(release, release.size / 2) to
+                    compose.activity.getString(R.string.updates_downloading, percent),
+                UpdateTransfer.Ready(release) to compose.activity.getString(R.string.updates_ready),
             )
             .forEach { (transfer, label) ->
                 compose.runOnIdle { update.value = availableUpdate.copy(transfer = transfer) }
-                val action = compose.onNodeWithText(label).assertIsDisplayed()
+                val action = compose.onNodeWithContentDescription(label).assertIsDisplayed()
                 assertEquals(actionBounds, action.getUnclippedBoundsInRoot())
                 assertEquals(
                     listBounds,
@@ -352,12 +376,15 @@ class OkouAppTest {
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Appearance").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
-        compose.onNodeWithText("Filter · Archived").assertIsDisplayed()
+        compose.onNodeWithTag("chat_filter_heading").assertIsDisplayed().assert(hasText("Archived"))
         compose.onNodeWithText("New chat").assertIsDisplayed()
+        compose
+            .onNodeWithContentDescription("Filter")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Archived"))
         compose.onNodeWithContentDescription("Filter").performClick()
-        compose.onNodeWithText("Archived").assertIsSelected()
+        compose.onNode(hasText("Archived").and(isSelected())).assertIsDisplayed()
         compose.onNodeWithText("Inbox").performClick()
-        compose.onNodeWithText("Filter · Archived").assertDoesNotExist()
+        compose.onNodeWithTag("chat_filter_heading").assertDoesNotExist()
     }
 
     @Test
@@ -368,17 +395,20 @@ class OkouAppTest {
         compose
             .onNodeWithTag("workspace_popup")
             .assertWidthIsEqualTo(244.dp)
-            .assertHeightIsEqualTo(158.dp)
+            .assertHeightIsEqualTo(110.dp)
         compose.onNodeWithText("Filter").performClick()
         compose.onNodeWithText("Inbox").assertIsSelected()
         compose.onNodeWithText("Mark all as read").assertIsNotEnabled()
         compose.onNodeWithText("Muted").performClick()
-        compose.onNodeWithText("Filter · Muted").assertIsDisplayed()
+        compose.onNodeWithTag("chat_filter_heading").assertIsDisplayed().assert(hasText("Muted"))
+        compose
+            .onNodeWithContentDescription("More actions")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Muted"))
         compose.onNodeWithContentDescription("More actions").performClick()
         compose.onNodeWithText("Filter").performClick()
-        compose.onNodeWithText("Muted").assertIsSelected()
+        compose.onNode(hasText("Muted").and(isSelected())).assertIsDisplayed()
         compose.onNodeWithText("Inbox").performClick()
-        compose.onNodeWithText("Filter · Muted").assertDoesNotExist()
+        compose.onNodeWithTag("chat_filter_heading").assertDoesNotExist()
     }
 
     @Test
@@ -611,6 +641,9 @@ class OkouAppTest {
         }
         compose.onNodeWithContentDescription("Filter").assertIsDisplayed().performClick()
         compose.onNodeWithText("Archiviert").assertIsDisplayed().performClick()
-        compose.onNodeWithText("Filter · Archiviert").assertExists()
+        compose
+            .onNodeWithTag("chat_filter_heading")
+            .assertIsDisplayed()
+            .assert(hasText("Archiviert"))
     }
 }

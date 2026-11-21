@@ -207,6 +207,7 @@ class ChatReplayTest {
         val unreadProject = chatListGroups(state.copy(filter = ChatListFilter.Unread)).first()
         assertEquals(listOf(CHAT_IN_PROJECT), unreadProject.threads.map { it.id })
         assertEquals(-1, unreadProject.pinnedTailIndex())
+        assertEquals(0, unreadProject.pinnedTailIndex(hasProvisional = true))
     }
 
     @Test
@@ -354,14 +355,19 @@ class ChatReplayTest {
                 ChatListUiState(threads = threads, agents = agents(), projects = listOf(project))
             )
         val indicators = mapOf(CHAT_IN_PROJECT to IndicatorsThreadsValue.ACTIVE)
+        val provisional =
+            mapOf<String?, List<ProvisionalChat>>(
+                project.id to listOf(ProvisionalChat("pending", project.id))
+            )
 
-        val (open, afterOpen) = chatListSections(groups, emptyList(), indicators, emptySet())
+        val (open, afterOpen) =
+            chatListSections(groups, setOf(project.id), indicators, emptySet(), provisional)
         assertEquals(0, open.firstRow)
         assertEquals(1, open.firstChatRow)
-        assertEquals(3, afterOpen.firstChatRow)
+        assertEquals(4, afterOpen.firstChatRow)
 
         val (folded, afterFolded) =
-            chatListSections(groups, listOf(project.id), indicators, emptySet())
+            chatListSections(groups, emptySet(), indicators, emptySet(), provisional)
         assertEquals(ChatRowStatus.Running, folded.foldedStatus)
         assertEquals(1, afterFolded.firstChatRow)
     }
