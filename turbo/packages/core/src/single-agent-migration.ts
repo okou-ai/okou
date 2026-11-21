@@ -24,7 +24,9 @@ export function staffWorkflowCopyId(sourceId: string): string {
 /**
  * Only the deterministic same-workspace copy can share immutable content.
  * The attachment upload remains independently owned by its source Workflow.
- * Retire after copied Workflows own their descriptors and old Runs have drained.
+ * Retire with delete_workflow_rows once staff and external copies own their
+ * attachment descriptors and old Runs have drained.
+ * https://github.com/okou-ai/okou/issues/46783
  */
 export function isMigratedWorkflowAttachment(input: {
   readonly orgId: string;

@@ -1510,6 +1510,7 @@ export function createThreadClaimRunObjects(
         // Staff migration retains queued event bytes while reassigning the live
         // Automation. Resolve its new execution name without rewriting history.
         // Remove after every pre-cutover queued input has drained.
+        // https://github.com/okou-ai/okou/issues/46783
         workflowName:
           target.workflow.orgId === STAFF_SINGLE_AGENT_ORG_ID
             ? target.workflow.name

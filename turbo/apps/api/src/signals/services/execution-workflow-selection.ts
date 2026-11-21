@@ -110,6 +110,7 @@ export function resolveOrdinaryAutomationWorkflowName(
   }
   // Pre-cutover queued input can still mount the authorized legacy winner
   // after its Automation has been moved to that Workflow's stable copy.
+  // https://github.com/okou-ai/okou/issues/46783
   if (scope.orgId !== STAFF_SINGLE_AGENT_ORG_ID) {
     return null;
   }

@@ -350,7 +350,9 @@ fn run_manifest_with_files_in_runtime(
     }
     // Temporary migration reader: shared immutable packages retain their source
     // names/layout. Normalize only the materialized Workflow, never the cache.
-    // Retire after copied Workflows have canonical packages and old readers drain.
+    // Retire once staff and external copies declare their own names in SKILL.md
+    // and old readers have drained.
+    // https://github.com/okou-ai/okou/issues/46783
     match workflow_document::apply(&manifest.storages) {
         Ok(()) => true,
         Err(error) => {
