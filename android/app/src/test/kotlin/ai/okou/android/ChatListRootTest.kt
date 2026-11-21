@@ -285,25 +285,31 @@ class ChatListRootTest {
     @Test
     fun selectedConversationKeepsNavigationUsableAndOnlyVisibleConfirmedContentMarksRead() {
         val app = compose.activity.application as ChatListApplication
+        val fixture = app.fixture
         val historyRequested = CountDownLatch(1)
         val gate = CountDownLatch(1)
-        val indicatorsGate = CountDownLatch(1)
-        val indicatorReads = java.util.concurrent.atomic.AtomicInteger()
-        app.fixture.indicators = {
-            if (indicatorReads.incrementAndGet() == 1) {
-                indicatorsGate.await()
+        val indicatorReads = AtomicInteger()
+        fixture.indicators = {
+            indicatorReads.incrementAndGet()
+            if (fixture.readRequests.get() == 0) {
                 jsonResponse(
                     """{"agents":{},"threads":{"$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}"""
                 )
             } else jsonResponse("""{"agents":{},"threads":{},"unreadAt":{}}""")
         }
-        app.fixture.beforeHistoryResponse = { request ->
-            // Both a cold open and a prewarmed history read the current event tail.
-            val path = request.requestUrl?.pathSegments.orEmpty()
-            if (path.getOrNull(2) == CHAT_IN_PROJECT && path.lastOrNull() == "event-rows") {
-                historyRequested.countDown()
-                gate.await()
-            }
+        val snapshotResponse = fixture.historySnapshot
+        val rowsResponse = fixture.historyRows
+        fun awaitHistoryResponse() {
+            historyRequested.countDown()
+            gate.await()
+        }
+        fixture.historySnapshot = {
+            awaitHistoryResponse()
+            snapshotResponse()
+        }
+        fixture.historyRows = { request ->
+            awaitHistoryResponse()
+            rowsResponse(request)
         }
         try {
             app.responseGate.countDown()
@@ -313,6 +319,9 @@ class ChatListRootTest {
             compose.onNodeWithText("Project chat").performClick()
             compose.waitUntil(10_000) { historyRequested.count == 0L }
             compose.onNodeWithTag("conversation").assertExists()
+            compose
+                .onNodeWithTag("conversation")
+                .performScrollToNode(hasText("Loading conversation…"))
             compose.onNodeWithText("Loading conversation…").assertExists()
             compose.onNodeWithContentDescription("Settings").performClick()
             compose.onNodeWithText("Appearance").assertExists()
@@ -354,7 +363,6 @@ class ChatListRootTest {
                 }
             }
             org.junit.Assert.assertTrue(indicatorReads.get() >= 2)
-            indicatorsGate.countDown()
             compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
             compose.onNodeWithTag("conversation").assertDoesNotExist()
             compose.onNodeWithTag("chat_list").assertExists()
@@ -365,8 +373,8 @@ class ChatListRootTest {
             compose.onNodeWithText("Project chat").assertExists()
         } finally {
             gate.countDown()
-            indicatorsGate.countDown()
-            app.fixture.beforeHistoryResponse = {}
+            fixture.historyRows = rowsResponse
+            fixture.historySnapshot = snapshotResponse
         }
     }
 
