@@ -37,7 +37,6 @@ function referencedThread(
 ): ChatThreadSnapshotProjection {
   return {
     id,
-    agentId: AGENT_ID,
     title,
     sortAt: CREATED_AT,
     createdAt: CREATED_AT,

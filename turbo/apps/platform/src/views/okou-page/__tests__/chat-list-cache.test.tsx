@@ -202,7 +202,6 @@ test("The unread filter applies to cached conversations", async () => {
   installChatListAgent(context);
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: { [CHAT_LIST_AGENT_ID]: "unread" },
       threads: { [unread.id]: "unread" },
       unreadAt: {},
     });

@@ -332,7 +332,6 @@ test("Filter unread conversations using indicator timestamps", async () => {
   });
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: { [AGENT_ID]: "unread" },
       threads: {
         [AUTOMATION_THREAD_ID]: "unread",
         [INCIDENT_THREAD_ID]: "unread",
@@ -395,7 +394,6 @@ test("Filter chats by Inbox, Unread, or Archived", async () => {
   ]);
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: { [AGENT_ID]: "unread" },
       threads: { [INCIDENT_THREAD_ID]: "unread" },
       unreadAt: { [INCIDENT_THREAD_ID]: "2026-03-10T00:05:00Z" },
     });
@@ -522,7 +520,6 @@ test("Mute and unmute a chat without hiding or reordering it", async () => {
 function mockUnreadThreads(threadIds: readonly string[]): void {
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: { [AGENT_ID]: "unread" },
       threads: Object.fromEntries(
         threadIds.map((threadId) => {
           return [threadId, "unread"] as const;
@@ -1277,7 +1274,6 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
   const markedAgentIds: string[] = [];
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: hasUnread ? { [AGENT_ID]: "unread" } : {},
       threads: hasUnread ? { [INCIDENT_THREAD_ID]: "unread" } : {},
       unreadAt: hasUnread
         ? { [INCIDENT_THREAD_ID]: "2026-03-10T00:05:00Z" }
@@ -1408,7 +1404,6 @@ async function setupReadUnreadSidebar() {
       unreadIndicatorsRefreshed.resolve();
     }
     return respond(200, {
-      agents: unreads.length > 0 ? { [AGENT_ID]: "unread" } : {},
       threads: Object.fromEntries(
         unreads.map(({ threadId }) => {
           return [threadId, "unread" as const];

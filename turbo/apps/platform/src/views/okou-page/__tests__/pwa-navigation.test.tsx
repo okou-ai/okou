@@ -596,9 +596,10 @@ test("Step back to Me from the pages it opens", async () => {
 test("Show the Chats tab unread indicator across all Chats", async () => {
   mockDisplayMode({ standalone: false, desktop: false });
   const researchAgentId = "c7000000-0000-4000-a000-000000000003";
+  const thread = continuityThread(80, 1, "Launch planning");
   const workspace = installContinuityWorkspace(context, {
     caseId: 80,
-    threads: [continuityThread(80, 1, "Launch planning")],
+    threads: [thread],
   });
   const listAgent: AgentResponse = {
     agentId: CHAT_LIST_AGENT_ID,
@@ -629,9 +630,8 @@ test("Show the Chats tab unread indicator across all Chats", async () => {
   });
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: { [researchAgentId]: "unread" },
-      threads: {},
-      unreadAt: {},
+      threads: { [thread.id]: "unread" },
+      unreadAt: { [thread.id]: thread.updatedAt },
     });
   });
 

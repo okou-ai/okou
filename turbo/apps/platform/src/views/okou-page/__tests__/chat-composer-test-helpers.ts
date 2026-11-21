@@ -316,7 +316,6 @@ export function createChatComposerHelpers(context: TestContext) {
     });
     context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
       return respond(200, {
-        agents: {},
         threads:
           options?.activeRunIds && options.activeRunIds.length > 0
             ? { [THREAD_ID]: "active" }

@@ -21,8 +21,7 @@ function inspectFile(): File {
   const meta: Partial<LogDetail> = {
     id: "b0000000-0000-4000-a000-000000000777",
     sessionId: "session-inspect",
-    agentId: "c0000000-0000-4000-a000-000000000001",
-    displayName: "Imported Analysis",
+
     framework: "claude-code",
     modelProvider: null,
     selectedModel: null,
@@ -159,8 +158,7 @@ function codexInspectFile(): File {
   const meta: Partial<LogDetail> = {
     id: "b0000000-0000-4000-a000-000000000778",
     sessionId: "codex-inspect-session",
-    agentId: "c0000000-0000-4000-a000-000000000002",
-    displayName: "Imported Codex Adapter Log",
+
     framework: "codex",
     modelProvider: null,
     selectedModel: null,
@@ -274,8 +272,7 @@ function codexThreadItemsInspectFile(): File {
   const meta: Partial<LogDetail> = {
     id: "b0000000-0000-4000-a000-000000000779",
     sessionId: "codex-thread-items-session",
-    agentId: "c0000000-0000-4000-a000-000000000003",
-    displayName: "Imported Codex Thread Items",
+
     framework: "codex",
     modelProvider: null,
     selectedModel: null,
@@ -463,9 +460,7 @@ test("A user can inspect steps, context, and network details from an exported lo
   expect(fileInput).toHaveValue("");
 
   await waitFor(() => {
-    expect(
-      screen.getByRole("heading", { name: "Imported Analysis" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Okou" })).toBeInTheDocument();
   });
   expect(screen.getByText("Done")).toBeInTheDocument();
   expect(screen.getByText("5.0s")).toBeInTheDocument();
@@ -660,9 +655,7 @@ test("An imported log does not expose debug diagnostics when debug access is dis
   await user.upload(getFileInput(), inspectFile());
 
   await waitFor(() => {
-    expect(
-      screen.getByRole("heading", { name: "Imported Analysis" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Okou" })).toBeInTheDocument();
   });
 
   expect(
@@ -680,7 +673,7 @@ test("Imported activities preserve their trigger source", async () => {
   await setupPage({ context, path: "/activities/inspect" });
   await screen.findByText("No log loaded");
   await user.upload(getFileInput(), inspectFile());
-  await screen.findByRole("heading", { name: "Imported Analysis" });
+  await screen.findByRole("heading", { name: "Okou" });
   expect(screen.getByText("Source")).toBeInTheDocument();
   expect(screen.getByText("Test")).toBeInTheDocument();
 });
@@ -699,9 +692,7 @@ test("The inspector presents exported Codex events as readable activity steps", 
   await user.upload(getFileInput(), codexInspectFile());
 
   await waitFor(() => {
-    expect(
-      screen.getByRole("heading", { name: "Imported Codex Adapter Log" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Okou" })).toBeInTheDocument();
   });
 
   expect(screen.getByText("Failed")).toBeInTheDocument();
@@ -762,9 +753,7 @@ test("The activity inspector explains Codex collaboration events", async () => {
   await user.upload(getFileInput(), codexThreadItemsInspectFile());
 
   await waitFor(() => {
-    expect(
-      screen.getByRole("heading", { name: "Imported Codex Thread Items" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Okou" })).toBeInTheDocument();
   });
 
   expect(screen.getAllByTestId("tool-summary")).toHaveLength(2);

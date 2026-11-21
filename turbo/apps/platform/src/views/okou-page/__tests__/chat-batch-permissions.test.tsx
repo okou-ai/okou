@@ -134,7 +134,6 @@ function installConversation(url: string): void {
   context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
     return respond(200, {
       id: params.id,
-      agentId: CAPABILITY_AGENT_ID,
       title: "Capability conversation",
       selectedModel: null,
       modelSettings: {},

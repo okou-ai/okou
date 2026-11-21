@@ -105,7 +105,6 @@ function installResources({
   context.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
     return respond(200, {
       id: THREAD_ID,
-      agentId: AGENT_ID,
       title: "Review",
       selectedModel: "claude-sonnet-5",
       modelSettings: {},
@@ -286,7 +285,6 @@ test.each(["dismissed", "continued"] as const)(
     context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
       return respond(200, {
         id: params.id,
-        agentId: params.id === nextThreadId ? nextAgentId : AGENT_ID,
         title: "Review",
         selectedModel: null,
         modelSettings: {},
