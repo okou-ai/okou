@@ -42,12 +42,14 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.LongState
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -210,31 +212,31 @@ internal fun ChatListScreen(
         LaunchedEffect(renamingId) { renamingId = null }
     }
     val unreadAt = state.displayUnreadAt
+    val pendingByProject =
+        remember(state.threads, state.filter, provisionalChats) {
+            if (state.filter != ChatListFilter.Inbox || provisionalChats.isEmpty()) emptyMap()
+            else {
+                val confirmedIds = state.threads.mapTo(hashSetOf()) { it.id }
+                provisionalChats.filterNot { it.threadId in confirmedIds }.groupBy { it.projectId }
+            }
+        }
     val groups =
         remember(
             state.threads,
             state.projects,
-            state.agents,
             state.filter,
             unreadAt,
             state.readIntents,
+            pendingByProject.keys,
         ) {
-            chatListGroups(state)
+            chatListGroups(state, provisionalProjectIds = pendingByProject.keys)
         }
     val indicators = state.indicators?.threads.orEmpty()
     val unreadChatIds = remember(unreadAt, state.readIntents) { state.unreadChatIds() }
     val knownProjects = remember(state.projects) { state.projects.mapTo(hashSetOf()) { it.id } }
     val renameRejection = state.projectRenameRejection
-    val pendingByProject =
-        remember(state.threads, state.filter, provisionalChats, knownProjects) {
-            if (state.filter != ChatListFilter.Inbox || provisionalChats.isEmpty()) emptyMap()
-            else {
-                val confirmedIds = state.threads.mapTo(hashSetOf()) { it.id }
-                provisionalChats
-                    .filterNot { it.threadId in confirmedIds }
-                    .groupBy { it.projectId?.takeIf(knownProjects::contains) }
-            }
-        }
+    val renameNoticeIds =
+        state.unconfirmedProjectRenames + listOfNotNull(renameRejection?.projectId)
     val expansion = projectExpansion?.state?.collectAsStateWithLifecycle()?.value
     val expandedProjectIds = expansion?.expandedIds.orEmpty()
     val sections =
@@ -279,7 +281,7 @@ internal fun ChatListScreen(
     val missingDefault =
         state.agentsPhase == ChatReadPhase.Ready &&
             state.agents.none { it.isDefaultAgent } &&
-            state.threads.any { it.hidden != true && it.projectId !in knownProjects }
+            state.threads.any { it.hidden != true && it.projectId == null }
     val listLabel = stringResource(R.string.chat_list_title)
     val widthDp = currentWindowSizeDp().width
     val largeCompact = widthDp >= 600
@@ -313,7 +315,7 @@ internal fun ChatListScreen(
         remember(groups, pendingByProject) {
             groups.asReversed().firstNotNullOfOrNull { group ->
                 group.threads.lastOrNull()?.takeIf { it.pinnedAt == null }?.id
-                    ?: pendingByProject[group.project?.id]?.lastOrNull()?.threadId
+                    ?: pendingByProject[group.projectId]?.lastOrNull()?.threadId
                     ?: group.threads.lastOrNull()?.id
                     ?: group.project?.id?.let(::projectRowKey)
             }
@@ -327,6 +329,97 @@ internal fun ChatListScreen(
         newChat = { newChat(null) },
         feedback = feedback,
     ) { bottomSpace, inlineControls ->
+        val leadingItems =
+            buildList<Pair<String, @Composable () -> Unit>> {
+                fun row(key: String, content: @Composable () -> Unit) {
+                    add(key to content)
+                }
+                if (inlineControls != null) row("list_controls", inlineControls)
+                if (startupRecovery != null) row("workspace_recovery", startupRecovery)
+                if (state.filter != ChatListFilter.Inbox) {
+                    row("filter_heading") {
+                        Text(
+                            stringResource(state.filter.label()),
+                            Modifier.padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 4.dp)
+                                .semantics { heading() }
+                                .testTag("chat_filter_heading"),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style =
+                                MaterialTheme.typography.bodySmall.copy(
+                                    fontSize = 13.sp,
+                                    lineHeight = 20.sp,
+                                    letterSpacing = 0.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                ),
+                        )
+                    }
+                }
+                // A concurrent removal can leave no Project row to attach the failure to.
+                if (renameRejection != null && renameRejection.projectId !in knownProjects) {
+                    row("project_rename_${renameRejection.projectId}") {
+                        ProjectRenameRejectionNotice(Modifier.padding(start = 12.dp)) {
+                            dismissProjectRenameRejection(renameRejection)
+                        }
+                    }
+                }
+                if (state.confirmedAt == null || missingUnread) {
+                    when {
+                        state.offline ->
+                            row("list_offline") {
+                                ChatContentLoadNotice(R.string.chat_list_load_when_online)
+                            }
+                        firstLoadFailure != null ->
+                            row("list_first_load_failure") {
+                                ChatContentLoadNotice(
+                                    R.string.chat_list_first_load_failed,
+                                    retry =
+                                        (if (missingUnread) retryIndicators else retryList).takeIf {
+                                            firstLoadFailure == ChatListReadFailure.NeedsRetry
+                                        },
+                                    retryEnabled =
+                                        missingUnread || state.listPhase != ChatReadPhase.Loading,
+                                )
+                            }
+                        skeletonVisible -> row("list_skeleton") { ChatListSkeleton() }
+                    }
+                }
+                if (state.cacheUnavailable || state.projectCacheUnavailable)
+                    row("list_cache_unavailable") { ChatNotice(R.string.chat_cache_unavailable) }
+                if (
+                    state.confirmedAt != null &&
+                        state.filter == ChatListFilter.Unread &&
+                        !missingUnread &&
+                        !state.offline &&
+                        state.indicators == null &&
+                        state.indicatorsPhase == ChatReadPhase.Failed
+                ) {
+                    row("list_indicators_unavailable") {
+                        ChatNotice(R.string.chat_refresh_failed)
+                        ChatAction(R.string.retry, retryIndicators)
+                    }
+                }
+                if (
+                    projectExpansion != null &&
+                        expansion != null &&
+                        (expansion.readFailed || expansion.failedWrites.isNotEmpty())
+                ) {
+                    row("list_expansion_unavailable") {
+                        ChatNotice(
+                            if (expansion.readFailed) R.string.chat_project_expansion_read_failed
+                            else R.string.chat_project_expansion_save_failed
+                        )
+                        ChatAction(R.string.retry, projectExpansion::retry)
+                    }
+                }
+                if (!state.offline && (metadataMissing || missingDefault))
+                    row("list_metadata_unavailable") {
+                        ChatNotice(R.string.chat_metadata_unavailable)
+                        ChatAction(R.string.retry, retryMetadata)
+                    }
+            }
+        KeepChatListProjectAnchor(listState, knownProjects) { key, offset ->
+            sections.findScrollAnchor(key, offset, leadingItems.size, renameNoticeIds)
+        }
         LazyColumn(
             Modifier.widthIn(max = 720.dp).fillMaxSize().testTag("chat_list").semantics {
                 contentDescription = listLabel
@@ -342,86 +435,7 @@ internal fun ChatListScreen(
                 ),
             state = listState,
         ) {
-            if (inlineControls != null) item(key = "list_controls") { inlineControls() }
-            if (startupRecovery != null) item(key = "workspace_recovery") { startupRecovery() }
-            if (state.filter != ChatListFilter.Inbox) {
-                item(key = "filter_heading") {
-                    Text(
-                        stringResource(state.filter.label()),
-                        Modifier.padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 4.dp)
-                            .semantics { heading() }
-                            .testTag("chat_filter_heading"),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style =
-                            MaterialTheme.typography.bodySmall.copy(
-                                fontSize = 13.sp,
-                                lineHeight = 20.sp,
-                                letterSpacing = 0.sp,
-                                fontWeight = FontWeight.SemiBold,
-                            ),
-                    )
-                }
-            }
-            // A concurrent removal can leave no Project row to attach the failure to.
-            if (renameRejection != null && renameRejection.projectId !in knownProjects) {
-                item(key = "project_rename_${renameRejection.projectId}") {
-                    ProjectRenameRejectionNotice(Modifier.padding(start = 12.dp)) {
-                        dismissProjectRenameRejection(renameRejection)
-                    }
-                }
-            }
-            if (state.confirmedAt == null || missingUnread) {
-                when {
-                    state.offline ->
-                        item { ChatContentLoadNotice(R.string.chat_list_load_when_online) }
-                    firstLoadFailure != null ->
-                        item {
-                            ChatContentLoadNotice(
-                                R.string.chat_list_first_load_failed,
-                                retry =
-                                    (if (missingUnread) retryIndicators else retryList).takeIf {
-                                        firstLoadFailure == ChatListReadFailure.NeedsRetry
-                                    },
-                                retryEnabled =
-                                    missingUnread || state.listPhase != ChatReadPhase.Loading,
-                            )
-                        }
-                    skeletonVisible -> item { ChatListSkeleton() }
-                }
-            }
-            if (state.cacheUnavailable || state.projectCacheUnavailable)
-                item { ChatNotice(R.string.chat_cache_unavailable) }
-            if (
-                state.confirmedAt != null &&
-                    state.filter == ChatListFilter.Unread &&
-                    !missingUnread &&
-                    !state.offline &&
-                    state.indicators == null &&
-                    state.indicatorsPhase == ChatReadPhase.Failed
-            ) {
-                item {
-                    ChatNotice(R.string.chat_refresh_failed)
-                    ChatAction(R.string.retry, retryIndicators)
-                }
-            }
-            if (
-                projectExpansion != null &&
-                    expansion != null &&
-                    (expansion.readFailed || expansion.failedWrites.isNotEmpty())
-            ) {
-                item {
-                    ChatNotice(
-                        if (expansion.readFailed) R.string.chat_project_expansion_read_failed
-                        else R.string.chat_project_expansion_save_failed
-                    )
-                    ChatAction(R.string.retry, projectExpansion::retry)
-                }
-            }
-            if (!state.offline && (metadataMissing || missingDefault))
-                item {
-                    ChatNotice(R.string.chat_metadata_unavailable)
-                    ChatAction(R.string.retry, retryMetadata)
-                }
+            items(leadingItems.size, key = { leadingItems[it].first }) { leadingItems[it].second() }
             if (state.confirmedAt != null || pendingByProject.isNotEmpty()) {
                 sections.forEach { section ->
                     val group = section.group
@@ -462,7 +476,7 @@ internal fun ChatListScreen(
                                 }
                             }
                         }
-                        if (foldedStatus == null && group.threads.isEmpty() && pending.isEmpty()) {
+                        if (section.showsEmptyProjectAction) {
                             item(key = "project_actions_${project.id}") {
                                 Column(Modifier.projectChildIndent(outline)) {
                                     if (!newChatEnabled) {
@@ -480,7 +494,7 @@ internal fun ChatListScreen(
                         }
                     }
                     if (foldedStatus == null) {
-                        val pinTail = group.pinnedTailIndex(hasProvisional = pending.isNotEmpty())
+                        val pinTail = section.pinTail
                         val firstPending = pinTail + 1
                         fun confirmedIndex(index: Int) =
                             if (index < firstPending) index else index - pending.size
@@ -492,7 +506,7 @@ internal fun ChatListScreen(
                             },
                         ) { index ->
                             Column(
-                                if (project == null) Modifier
+                                if (group.projectId == null) Modifier
                                 else Modifier.projectChildIndent(outline)
                             ) {
                                 val provisional = pending.getOrNull(index - firstPending)
@@ -573,6 +587,76 @@ internal fun ChatListScreen(
             }
         }
     }
+}
+
+private data class ChatListScrollAnchor(val index: Int, val offset: Int)
+
+private class ChatListProjectIds(var ids: Set<String>)
+
+@Composable
+private fun KeepChatListProjectAnchor(
+    listState: LazyListState,
+    projectIds: Set<String>,
+    findAnchor: (Any, Int) -> ChatListScrollAnchor?,
+) {
+    val previous = remember(listState) { ChatListProjectIds(projectIds) }
+    if (previous.ids == projectIds) return
+    // A folded Project can move a chat beyond Compose's nearby-key index.
+    val anchor =
+        Snapshot.withoutReadObservation {
+            if (
+                listState.isScrollInProgress ||
+                    (listState.canScrollBackward && !listState.canScrollForward)
+            ) {
+                null
+            } else {
+                listState.layoutInfo.visibleItemsInfo
+                    .firstOrNull { it.index == listState.firstVisibleItemIndex }
+                    ?.let { findAnchor(it.key, listState.firstVisibleItemScrollOffset) }
+            }
+        }
+    SideEffect {
+        previous.ids = projectIds
+        if (anchor != null && !listState.isScrollInProgress) {
+            listState.requestScrollToItem(anchor.index, anchor.offset)
+        }
+    }
+}
+
+private fun List<ChatListSection>.findScrollAnchor(
+    key: Any,
+    offset: Int,
+    leadingItemCount: Int,
+    renameNoticeIds: Set<String>,
+): ChatListScrollAnchor? {
+    var row = leadingItemCount
+    for (section in this) {
+        val project = section.group.project
+        val header = row
+        if (project != null) {
+            if (key == projectRowKey(project.id)) return ChatListScrollAnchor(row, offset)
+            row += if (project.id in renameNoticeIds) 2 else 1
+        }
+        val threads = section.group.threads
+        val pending = section.provisionalChats
+        val threadIndex = threads.indexOfFirst { it.id == key }
+        val pendingIndex = pending.indexOfFirst { it.threadId == key }
+        if (threadIndex >= 0 || pendingIndex >= 0) {
+            if (section.foldedActivity != null) return ChatListScrollAnchor(header, 0)
+            val firstPending = section.pinTail + 1
+            val chatIndex =
+                when {
+                    pendingIndex >= 0 -> firstPending + pendingIndex
+                    threadIndex >= firstPending -> threadIndex + pending.size
+                    else -> threadIndex
+                }
+            return ChatListScrollAnchor(row + chatIndex, offset)
+        }
+        if (section.foldedActivity == null) {
+            row += if (section.showsEmptyProjectAction) 1 else threads.size + pending.size
+        }
+    }
+    return null
 }
 
 private fun Modifier.projectChildIndent(color: Color): Modifier =

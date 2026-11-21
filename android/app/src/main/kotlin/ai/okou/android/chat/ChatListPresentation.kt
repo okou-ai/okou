@@ -2,7 +2,11 @@ package ai.okou.android.chat
 
 import ai.okou.android.api.generated.IndicatorsThreadsValue
 
-data class ChatListGroup(val project: ConfirmedProject?, val threads: List<ConfirmedChat>)
+data class ChatListGroup(
+    val project: ConfirmedProject?,
+    val threads: List<ConfirmedChat>,
+    val projectId: String? = project?.id,
+)
 
 data class ProvisionalChat(val threadId: String, val projectId: String?)
 
@@ -64,11 +68,8 @@ internal fun ChatListGroup.pinNeighbor(index: Int, step: Int): ConfirmedChat? =
     threads.getOrNull(index + step)?.takeIf { it.pinnedAt != null }
 
 /** Hidden and archived pins retain their canonical place within the group. */
-internal fun ChatListGroup.rankScope(state: ChatListUiState): List<ConfirmedChat> {
-    if (project != null) return state.threads.filter { it.projectId == project.id }
-    val known = state.projects.mapTo(hashSetOf()) { it.id }
-    return state.threads.filter { it.projectId !in known }
-}
+internal fun ChatListGroup.rankScope(state: ChatListUiState): List<ConfirmedChat> =
+    state.threads.filter { it.projectId == projectId }
 
 internal data class ChatListSection(
     val group: ChatListGroup,
@@ -81,6 +82,16 @@ internal data class ChatListSection(
 
     val firstChatRow: Int
         get() = if (group.project == null) firstRow else firstRow + 1
+
+    val pinTail: Int
+        get() = group.pinnedTailIndex(hasProvisional = provisionalChats.isNotEmpty())
+
+    val showsEmptyProjectAction: Boolean
+        get() =
+            group.project != null &&
+                foldedActivity == null &&
+                group.threads.isEmpty() &&
+                provisionalChats.isEmpty()
 }
 
 internal fun chatListSections(
@@ -96,7 +107,7 @@ internal fun chatListSections(
             if (group.project != null && group.project.id !in expandedProjectIds) {
                 collapsedProjectActivity(group.threads, indicators, unreadChatIds)
             } else null
-        val provisional = provisionalByProject[group.project?.id].orEmpty()
+        val provisional = provisionalByProject[group.projectId].orEmpty()
         val section = ChatListSection(group, row, foldedActivity, provisional)
         row =
             section.firstChatRow +
@@ -105,12 +116,12 @@ internal fun chatListSections(
     }
 }
 
-/** Known Projects group member threads; other threads share the workspace inbox. */
+/** The chat stream owns membership. Project metadata supplies the header when available. */
 fun chatListGroups(
     state: ChatListUiState,
     filter: ChatListFilter = state.filter,
+    provisionalProjectIds: Set<String?> = emptySet(),
 ): List<ChatListGroup> {
-    val visible = state.threads.filter { it.hidden != true }
     val matches: (ConfirmedChat) -> Boolean = { row ->
         when (filter) {
             ChatListFilter.Inbox -> !row.archived
@@ -121,13 +132,20 @@ fun chatListGroups(
     }
     val projects = state.projects
     val known = projects.mapTo(hashSetOf()) { it.id }
-    val byProject = visible.groupBy { it.projectId }
-    val groups =
-        projects.mapNotNull { project ->
-            val rows = byProject[project.id].orEmpty().filter(matches)
-            if (rows.isEmpty() && filter != ChatListFilter.Inbox) null
-            else ChatListGroup(project, rows)
+    val byProject =
+        state.threads.filter { it.hidden != true && matches(it) }.groupBy { it.projectId }
+    return buildList {
+        for (project in projects) {
+            val rows = byProject[project.id].orEmpty()
+            if (rows.isNotEmpty() || filter == ChatListFilter.Inbox) {
+                add(ChatListGroup(project, rows))
+            }
         }
-    val outside = visible.filter { it.projectId !in known && matches(it) }
-    return groups + ChatListGroup(null, outside)
+        for (id in byProject.keys + provisionalProjectIds) {
+            if (id != null && id !in known) {
+                add(ChatListGroup(null, byProject[id].orEmpty(), id))
+            }
+        }
+        add(ChatListGroup(null, byProject[null].orEmpty()))
+    }
 }

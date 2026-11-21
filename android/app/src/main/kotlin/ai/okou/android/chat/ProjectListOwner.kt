@@ -72,10 +72,13 @@ internal class ProjectListOwner(
         projectInvalidations.trySend(Unit)
     }
 
-    fun restore() {
+    fun restore(afterChatCache: Job) {
         projectsRestoreJob =
             scope.launch {
                 try {
+                    // Both cache reads use the store mutex. Give first chat display priority.
+                    afterChatCache.join()
+                    requireCurrent()
                     val saved = cache.loadProjects() ?: return@launch
                     requireCurrent()
                     confirmedProjects = saved
