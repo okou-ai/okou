@@ -19,6 +19,8 @@ Original test `Keep forwarding suggestions isolated during preview navigation`. 
 - **When** The user navigates the menu with Arrow Up and previews the Document template by hovering it.
 - **Then** The Document template is marked pressed while the dialog and draft remain unchanged. Focus stays in the forwarding composer, and the original composer retains its existing notes.
 
+Batch 35 disposition. The frozen registration uses Forward and selects a named destination. #49556 removed the target picker and its switch. In the current Router, selecting the passage offered Fork and opened the personal Okou composer directly. Arrow Up and Document hover preserved the personal draft, its focus and the source notes. The selected-destination prerequisite remains unverified under this ID.
+
 ## chat-capability-voice-forwarding-003
 
 Original test `Keep forwarding suggestions isolated during IME composition`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-forwarding.test.tsx#L183).
@@ -27,6 +29,8 @@ Original test `Keep forwarding suggestions isolated during IME composition`. [Re
 - **When** The user begins an IME composition and presses Enter while composing, then ends composition.
 - **Then** The suggestions menu remains open during composition, and the forwarding dialog and draft remain intact afterward. Focus stays in the forwarding composer, and the original composer retains its existing notes.
 
+Batch 35 disposition. The frozen registration uses Forward and selects a named destination. #49556 removed the target picker and its switch. In the current Router, selecting the passage offered Fork and opened the personal Okou composer directly. Composing Enter retained suggestions and the personal draft, focus and source notes. The selected-destination prerequisite remains unverified under this ID.
+
 ## chat-capability-voice-forwarding-004
 
 Original test `Keep forwarding suggestions isolated during dismissal`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-forwarding.test.tsx#L201).
@@ -34,6 +38,8 @@ Original test `Keep forwarding suggestions isolated during dismissal`. [Registra
 - **Given** A user is forwarding a selected passage with “Forward draft /” typed and the slash suggestions menu open.
 - **When** The user presses Escape.
 - **Then** The suggestions menu closes without closing the dialog or changing the forwarding draft. Focus stays in the forwarding composer, and the original composer retains its existing notes.
+
+Batch 35 disposition. The frozen registration uses Forward and selects a named destination. #49556 removed the target picker and its switch. In the current Router, selecting the passage offered Fork and opened the personal Okou composer directly. Escape closed suggestions and preserved the personal draft, its focus and source notes. The selected-destination prerequisite remains unverified under this ID.
 
 ## chat-capability-voice-forwarding-005
 
