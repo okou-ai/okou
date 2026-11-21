@@ -24,9 +24,9 @@ import {
   acceptedOfficialWorkflowRevisionReadPlan,
 } from "../services/official-workflow-catalog-read.service";
 import { resolveOfficialWorkflowBlueprintForReconciliation } from "../services/official-workflow-installation.service";
-import {
-  type WorkflowRow,
-  type WorkflowMember,
+import type {
+  WorkflowRow,
+  WorkflowMember,
 } from "../services/workflow-data.service";
 import { visibleWorkflowCondition } from "../services/workflow-visibility";
 

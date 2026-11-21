@@ -43,6 +43,7 @@ import { settle, tapError } from "../utils";
 import { waitUntil } from "../context/wait-until";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
+import { executionAgentId } from "./execution-agent";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import {
   pickEnqueuedChatThread$,
@@ -584,18 +585,24 @@ const finishUnconnectedFeishuIngress$ = command(
       readonly ingressId: string;
       readonly message: CanonicalFeishuInboundMessage;
       readonly botName: string | null;
+      readonly hasSharedExecutor: boolean;
     },
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
-    await set(
-      replyToUnconnectedFeishuMessage$,
-      {
-        message: args.message,
-        botName: args.botName,
-      },
-      signal,
-    );
+    if (args.hasSharedExecutor) {
+      await set(
+        replyToUnconnectedFeishuMessage$,
+        { message: args.message, botName: args.botName },
+        signal,
+      );
+    } else {
+      await set(
+        replyFeishuAgentUnavailable$,
+        { message: args.message, status: "not_found" },
+        signal,
+      );
+    }
     signal.throwIfAborted();
     const processedIngressDb = db;
     const processedIngressId = args.ingressId;
@@ -665,6 +672,7 @@ const loadFeishuIngressDispatchContext$ = command(
           platform: feishuOrgInstallations.platform,
           installationType: feishuOrgInstallations.installationType,
           setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
+          sharedExecutorId: executionAgentId(feishuOrgInstallations.orgId),
           botName: feishuOrgInstallations.botName,
           messageReceivedAt: feishuOrgInstallations.messageReceivedAt,
         })
@@ -891,6 +899,7 @@ const processClaimedIngress$ = command(
           ingressId: ingress.ingressId,
           message,
           botName: installation.botName,
+          hasSharedExecutor: ingress.sharedExecutorId !== null,
         },
         signal,
       );

@@ -20,7 +20,7 @@ import {
 } from "../../lib/error";
 import { maxAutonomyBudget$ } from "../autonomy-budget-limit";
 import { childAutonomyBudget } from "../services/autonomy-budget.service";
-import { type WorkflowMember } from "../services/workflow-data.service";
+import type { WorkflowMember } from "../services/workflow-data.service";
 import { visibleWorkflowCondition } from "../services/workflow-visibility";
 import {
   createWorkflowAutomation$,

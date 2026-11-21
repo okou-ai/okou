@@ -532,7 +532,7 @@ test("manages workspace Workflows before an execution profile exists", async () 
         return workflow.id;
       })
       .sort(),
-  ).toEqual([created.body.id, copied.body.id].sort());
+  ).toStrictEqual([created.body.id, copied.body.id].sort());
   await accept(detail().get({ headers: headers(foreign), params }), [404]);
   await accept(
     detail().get({

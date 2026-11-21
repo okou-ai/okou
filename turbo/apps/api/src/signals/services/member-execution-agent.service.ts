@@ -11,7 +11,9 @@ export const memberExecutionAgentId$ = computed(async (get) => {
   const [executor] = await get(db$)
     .select()
     .from(selectedExecutionAgent(auth.orgId, auth.userId));
-  if (!executor) throw new Error("Member executor is unavailable");
+  if (!executor) {
+    throw new Error("Member executor is unavailable");
+  }
   return executor.id;
 });
 

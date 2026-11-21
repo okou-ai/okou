@@ -1,3 +1,4 @@
+import { visibleAgentIdentityCondition } from "../services/agent-data.service";
 import { executionAgentId } from "../services/execution-agent";
 import {
   normalizeSkillImportName,
@@ -23,7 +24,7 @@ import { workflows } from "@okouai/db/schema/workflow";
 import { randomUUID } from "node:crypto";
 import { win32 } from "node:path";
 import { command, computed } from "ccstate";
-import { and, asc, count, eq, isNull, or } from "drizzle-orm";
+import { and, asc, count, eq, isNull } from "drizzle-orm";
 
 import { apiBackendUrl } from "../../lib/api-backend-url";
 import { badRequestMessage } from "../../lib/error";
@@ -361,6 +362,27 @@ const createImportedSkill$ = command(
   },
 );
 
+// Tokens issued by the previous API carried an additional executor restriction.
+function importTargetVisible(session: SkillImportAuth) {
+  return computed(async (get) => {
+    if (session.agentId === undefined) {
+      return true;
+    }
+    const [target] = await get(db$)
+      .select({ id: agents.id })
+      .from(agents)
+      .where(
+        visibleAgentIdentityCondition({
+          orgId: session.orgId,
+          userId: session.userId,
+          agentId: session.agentId,
+        }),
+      )
+      .limit(1);
+    return target !== undefined;
+  });
+}
+
 const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const session = resolveSession(get(authorization$));
   if (!session) {
@@ -369,25 +391,12 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
 
-  // Tokens issued by the previous API carried an executor restriction.
-  if (session.agentId !== undefined) {
-    const [legacyTarget] = await get(db$)
-      .select({ id: agents.id })
-      .from(agents)
-      .where(
-        and(
-          eq(agents.orgId, session.orgId),
-          eq(agents.id, session.agentId),
-          or(eq(agents.owner, session.userId), eq(agents.visibility, "public")),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!legacyTarget) {
-      return sessionInvalid(
-        "Skill import session is no longer valid; request a new import link",
-      );
-    }
+  const visible = await get(importTargetVisible(session));
+  signal.throwIfAborted();
+  if (!visible) {
+    return sessionInvalid(
+      "Skill import session is no longer valid; request a new import link",
+    );
   }
   const payloadError = await set(validatePayloadBytes$, signal);
   if (payloadError) {
