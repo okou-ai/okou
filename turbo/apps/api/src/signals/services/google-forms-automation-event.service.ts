@@ -1,3 +1,5 @@
+import { executionAgentId } from "./execution-agent";
+import { agents } from "@okouai/db/schema/agent";
 import { GoogleFormsSourceTransitionChangedError } from "./workflow-google-forms-queue.service";
 import {
   googleFormsResponseSubmittedEventConfigSchema,
@@ -206,14 +208,30 @@ const loadGoogleFormsEventAutomations$ = command(
     const rows = await db
       .select({
         automation: workflowAutomationColumns(),
-        agentId: workflows.agentId,
+        agentId: agents.id,
         workflowName: workflows.name,
         workflowDisplayName: workflows.displayName,
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
         cursor: googleFormsAutomationCursors.lastSeenSubmittedTime,
       })
       .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .innerJoin(
+        workflows,
+        and(
+          eq(workflowAutomations.workflowId, workflows.id),
+          eq(workflows.orgId, workflowAutomations.orgId),
+        ),
+      )
+      .innerJoin(
+        agents,
+        eq(
+          agents.id,
+          executionAgentId(
+            workflowAutomations.orgId,
+            workflowAutomations.ownerUserId,
+          ),
+        ),
+      )
       .innerJoin(
         googleFormsAutomationCursors,
         eq(googleFormsAutomationCursors.automationId, workflowAutomations.id),

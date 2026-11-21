@@ -1,3 +1,4 @@
+import { selectedExecutionAgent } from "./execution-agent";
 import {
   getAgentPhoneConversationParticipants,
   isAgentPhoneApiError,
@@ -7,9 +8,8 @@ import { agentphoneMessageVisibility } from "@okouai/db/schema/agentphone-messag
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { whatsappUserLinks } from "@okouai/db/schema/whatsapp";
 import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
-import { eq, inArray, sql } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 
 import { nowDate } from "../../lib/time";
@@ -416,13 +416,11 @@ export function markdownToImessagePlain(markdown: string): string {
 }
 
 export const resolveOrgDefaultComposeId$ = command(
-  async ({ get }, orgId: string): Promise<string | null> => {
+  async ({ get }, orgId: string, userId: string): Promise<string | null> => {
     const db = get(db$);
     const [metadata] = await db
-      .select({ defaultAgentId: orgMetadata.defaultAgentId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, orgId))
-      .limit(1);
-    return metadata?.defaultAgentId ?? null;
+      .select()
+      .from(selectedExecutionAgent(orgId, userId));
+    return metadata?.id ?? null;
   },
 );

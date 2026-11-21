@@ -1,3 +1,4 @@
+import { executionAgentId } from "./execution-agent";
 import type { WorkflowAttachments } from "@okouai/db/jsonb-contracts/workflow";
 import { agents } from "@okouai/db/schema/agent";
 import { workflows } from "@okouai/db/schema/workflow";
@@ -11,6 +12,7 @@ import type {
 
 import { db$ } from "../external/db";
 import {
+  workflowExecutionProfileColumns,
   visibleWorkflowCondition,
   workflowSummary,
   type WorkflowMember,
@@ -62,16 +64,13 @@ export const workflowDetail$ = command(
     const [visible] = await db
       .select({
         workflow: workflows,
-        agent: {
-          id: agents.id,
-          owner: agents.owner,
-          visibility: agents.visibility,
-          name: agents.name,
-          displayName: agents.displayName,
-        },
+        agent: workflowExecutionProfileColumns(),
       })
       .from(workflows)
-      .innerJoin(agents, eq(workflows.agentId, agents.id))
+      .leftJoin(
+        agents,
+        eq(agents.id, executionAgentId(workflows.orgId, args.member.userId)),
+      )
       .where(
         and(
           eq(workflows.orgId, args.orgId),

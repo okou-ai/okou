@@ -170,7 +170,6 @@ export const authorizeUserExportPage$ = command(
         const visible = await db
           .select({ id: workflows.id })
           .from(workflows)
-          .innerJoin(agents, eq(agents.id, workflows.agentId))
           .where(
             and(
               inArray(workflows.id, workflowIds),
@@ -305,7 +304,6 @@ function userExportPublicationChecks(
     readable: db
       .select({ id: workflows.id })
       .from(workflows)
-      .innerJoin(agents, eq(agents.id, workflows.agentId))
       .where(
         and(
           inArray(workflows.id, workflowIds),

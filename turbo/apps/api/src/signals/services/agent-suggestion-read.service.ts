@@ -16,7 +16,6 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import { agents } from "@okouai/db/schema/agent";
 import { feedItems } from "@okouai/db/schema/feed-item";
 import { workflows } from "@okouai/db/schema/workflow";
 import {
@@ -159,7 +158,7 @@ const feedAutomationDescriptions$ = command(
         )`.mapWith(nullableDriverValueDecoder(pgTextDecoder)),
       })
       .from(workflows)
-      .innerJoin(agents, eq(agents.id, workflows.agentId))
+
       .leftJoin(
         officialWorkflowCatalogState,
         and(isNotNull(workflows.officialDefinitionName), catalog.condition),

@@ -3,8 +3,6 @@ import { loadProactiveWorkflowsEligibility$ } from "./proactive-workflows-eligib
 import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
 import { nowDate } from "../../lib/time";
 import {
-  canUseAgent,
-  loadAgent$,
   loadAutomationOwnerTimezone$,
   loadAutomationWorkflowRunTarget$,
   loadOwnedAutomation$,
@@ -62,6 +60,7 @@ export const runOwnedWorkflowAutomationNow$ = command(
       {
         orgId: args.orgId,
         workflowId: automation.workflowId,
+        userId: automation.ownerUserId,
       },
       signal,
     );
@@ -95,28 +94,6 @@ export const runOwnedWorkflowAutomationNow$ = command(
         };
       }
     }
-    const agent = await set(
-      loadAgent$,
-      {
-        orgId: args.orgId,
-        agentId: target.agentId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!agent) {
-      return {
-        kind: "conflict",
-        message: "Cannot run: the workflow's agent no longer exists.",
-      };
-    }
-    if (!canUseAgent(agent, args.member)) {
-      return {
-        kind: "forbidden",
-        message: "You do not have access to the workflow's agent",
-      };
-    }
-
     const currentTime = nowDate();
     const ownerTimezone = await set(
       loadAutomationOwnerTimezone$,

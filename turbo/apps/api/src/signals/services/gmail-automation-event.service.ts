@@ -1,3 +1,5 @@
+import { executionAgentId } from "./execution-agent";
+import { agents } from "@okouai/db/schema/agent";
 import {
   gmailLabelAppliedEventConfigSchema,
   gmailNewMessageEventConfigSchema,
@@ -643,13 +645,29 @@ const loadGmailEventAutomations$ = command(
     const automationRows = await db
       .select({
         automation: workflowAutomationColumns(),
-        agentId: workflows.agentId,
+        agentId: agents.id,
         workflowName: workflows.name,
         workflowDisplayName: workflows.displayName,
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
       })
       .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .innerJoin(
+        workflows,
+        and(
+          eq(workflowAutomations.workflowId, workflows.id),
+          eq(workflows.orgId, workflowAutomations.orgId),
+        ),
+      )
+      .innerJoin(
+        agents,
+        eq(
+          agents.id,
+          executionAgentId(
+            workflowAutomations.orgId,
+            workflowAutomations.ownerUserId,
+          ),
+        ),
+      )
       .leftJoin(
         workflowUserAutomationThreads,
         and(

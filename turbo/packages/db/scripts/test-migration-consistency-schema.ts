@@ -89,6 +89,7 @@ import { validateCustomConnectorCloudflareStorage } from "./test-custom-connecto
 import { validatePermanentStorageLineage } from "./test-storage-lineage-permanent";
 import { validatePermanentNativeVncStorage } from "./test-vnc-native-storage-permanent";
 import { validateTeamsIdentityRetirement } from "./test-teams-identity-retirement";
+import { validateWorkspaceWorkflowIdentity } from "./test-workspace-workflow-identity";
 import { validatePermanentWorkflowNameScopes } from "./test-workflow-name-scopes-permanent";
 import { validateXResourceUsageSchema } from "./test-x-resource-usage";
 
@@ -1388,7 +1389,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "80d63df57c2cf7e352b6f691c40d30f8",
+    bodyHash: "ab54d46da8f18943c84251db98afb734",
   },
   {
     schemaName: "public",
@@ -1399,7 +1400,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "276d29ce4338e19f10fae30624787723",
+    bodyHash: "92c17b395a82669b0ed147c68a59ae5e",
   },
   {
     schemaName: "public",
@@ -2955,6 +2956,7 @@ async function main(): Promise<void> {
     await validateInactiveWorkflowAttachmentDeletion(dbUrl1);
     await validateConnectorSkillBundleSchema(dbUrl1);
     await validateChatConnectorAccessSchema(dbUrl1);
+    await validateWorkspaceWorkflowIdentity(dbUrl1);
     await validatePermanentWorkflowNameScopes(dbUrl1);
     await validateOfficialAutomationBindingSchema(dbUrl1);
     await validateCanonicalChatEventTypes(dbUrl1);

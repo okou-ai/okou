@@ -4579,6 +4579,17 @@ describe("okou workflow automations", () => {
         await bdd.readOnboardingStatus(member);
         await bdd.completeOnboarding(member);
         await runs.ensurePersonalSubscriptionModel(member);
+        const personal = await bdd.createAgent(member, {
+          visibility: "private",
+        });
+        const visible = await accept(
+          detailClient().get({
+            headers: authHeaders(),
+            params: { workflowId },
+          }),
+          [200],
+        );
+        expect(visible.body.agentId).toBe(personal.agentId);
         const memberRun = await createAndRun(workflowId);
         expect(memberRun.chatThreadId).not.toBe(first.chatThreadId);
         const memberEvents = await readThreadLifecycleEvents();

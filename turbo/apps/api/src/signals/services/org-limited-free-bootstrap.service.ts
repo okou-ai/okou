@@ -5,14 +5,13 @@ import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { db$, writeDb$ } from "../external/db";
-import { defaultAgentJoinCondition } from "./agent-data.service";
+import { sharedExecutorCondition } from "./agent-data.service";
 import { logOnboardingCreditsAlreadyGranted } from "./onboarding-credit-grants.service";
 import {
   orgLimitedFreeBootstrapPublicationRow,
@@ -79,34 +78,19 @@ const reserveBootstrapAgent$ = command(
 
     // Preparation stays committed if a later ordinary lookup fails.
     const db = get(db$);
-    const [orgRow] = await db
-      .select({ defaultAgentId: orgMetadata.defaultAgentId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, args.orgId))
+    const [existing] = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(sharedExecutorCondition(args.orgId))
       .limit(1);
     signal.throwIfAborted();
-    if (orgRow?.defaultAgentId) {
-      const [existing] = await db
-        .select({ id: agents.id })
-        .from(agents)
-        .where(
-          defaultAgentReferenceCondition(args.orgId, orgRow.defaultAgentId),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (existing) {
-        return { status: "skipped", agentId: existing.id };
-      }
-      throw new Error("The workspace default Agent reference is invalid");
+    if (existing) {
+      return { status: "skipped", agentId: existing.id };
     }
 
     return { status: "reserved", agentId: args.agentId };
   },
 );
-
-function defaultAgentReferenceCondition(orgId: string, agentId: string) {
-  return and(eq(agents.orgId, orgId), eq(agents.id, agentId));
-}
 
 function completedBootstrapResult(
   args: EnsureOrgLimitedFreeBootstrapArgs,
@@ -175,9 +159,8 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
       // adopting an unbound same-name Agent or adding another publication.
       const [published] = await writeDb
         .select({ id: agents.id })
-        .from(orgMetadata)
-        .innerJoin(agents, defaultAgentJoinCondition())
-        .where(eq(orgMetadata.orgId, args.orgId))
+        .from(agents)
+        .where(sharedExecutorCondition(args.orgId))
         .limit(1);
       signal.throwIfAborted();
       if (!published) {

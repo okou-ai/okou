@@ -5,7 +5,6 @@ import { db$, writeDb$ } from "../external/db";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   copySourcePlans,
-  requireCopyTarget,
   requireCopySource,
   requireCopyDefinition,
   requireCopyRevision,
@@ -40,12 +39,6 @@ export const readWorkflowCopySnapshot$ = command(
     const db = get(db$);
     const snapshotPromise = (async () => {
       const p = copySourcePlans(args);
-      const parents = await db.select().from(p.parents);
-      const target = parents.find((row) => {
-        return row.id === args.targetAgentId;
-      });
-      signal.throwIfAborted();
-      requireCopyTarget(target, args.member);
       const [source] = await db.select().from(p.source);
       signal.throwIfAborted();
       const sourceRow = requireCopySource(source?.workflow, p.official);
@@ -88,9 +81,6 @@ export const readWorkflowCopySnapshot$ = command(
         webhooks,
         observation: {
           workflowXmin: source.observedXmin,
-          parents: parents.map(({ id, xmin }) => {
-            return { id, xmin };
-          }),
           automations: rows.map((row) => {
             return { id: row.id, xmin: row.observedXmin };
           }),

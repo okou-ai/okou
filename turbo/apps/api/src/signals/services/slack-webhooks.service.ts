@@ -1,10 +1,10 @@
+import { selectedExecutionAgent } from "./execution-agent";
 import { rootSignal$ } from "../context/root";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { userCache } from "@okouai/db/schema/user-cache";
@@ -476,11 +476,9 @@ const resolveSlackRouteCompose$ = command(
       await (async (): Promise<EffectiveComposeResolution> => {
         const defaultAgentId = await (async () => {
           const [row] = await routeDb
-            .select({ defaultAgentId: orgMetadata.defaultAgentId })
-            .from(orgMetadata)
-            .where(eq(orgMetadata.orgId, routeOrg))
-            .limit(1);
-          return row?.defaultAgentId ?? null;
+            .select()
+            .from(selectedExecutionAgent(routeOrg, routeUser));
+          return row?.id ?? null;
         })();
         if (!defaultAgentId) {
           return { status: "not_configured" };
@@ -913,11 +911,9 @@ const refreshOrgAppHome$ = command(
         await (async (): Promise<EffectiveComposeResolution> => {
           const defaultAgentId = await (async () => {
             const [row] = await homeDb
-              .select({ defaultAgentId: orgMetadata.defaultAgentId })
-              .from(orgMetadata)
-              .where(eq(orgMetadata.orgId, orgId))
-              .limit(1);
-            return row?.defaultAgentId ?? null;
+              .select()
+              .from(selectedExecutionAgent(orgId, userId));
+            return row?.id ?? null;
           })();
           if (!defaultAgentId) {
             return { status: "not_configured" };
@@ -1231,11 +1227,9 @@ const handleMessagesTabOpened$ = command(
       const orgId = installation.orgId;
       const composeId = await (async () => {
         const [row] = await db
-          .select({ defaultAgentId: orgMetadata.defaultAgentId })
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, orgId))
-          .limit(1);
-        return row?.defaultAgentId ?? null;
+          .select()
+          .from(selectedExecutionAgent(orgId, connection.userId));
+        return row?.id ?? null;
       })();
       let agent: WorkspaceAgentSummary | undefined;
       if (composeId) {

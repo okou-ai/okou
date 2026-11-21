@@ -1,3 +1,4 @@
+import { selectedExecutionAgent } from "./execution-agent";
 import {
   publishChatThreadMessageCreated$,
   projectCommittedChatThreadSearch$,
@@ -14,7 +15,6 @@ import type {
 } from "@okouai/db/jsonb-contracts/chat-teams-context";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { teamsOrgConnections } from "@okouai/db/runtime/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 import { command } from "ccstate";
@@ -1961,11 +1961,9 @@ export const dispatchTeamsMessageToAgent$ = command(
     const effectiveCompose =
       await (async (): Promise<EffectiveComposeResolution> => {
         const [metadata] = await composeDb
-          .select({ defaultAgentId: orgMetadata.defaultAgentId })
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, orgId))
-          .limit(1);
-        const defaultAgentId = metadata?.defaultAgentId ?? null;
+          .select()
+          .from(selectedExecutionAgent(orgId, userId));
+        const defaultAgentId = metadata?.id ?? null;
         if (!defaultAgentId) {
           return { status: "not_configured" };
         }

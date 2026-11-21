@@ -12,7 +12,6 @@ import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { command } from "ccstate";
 import { and, asc, eq, inArray, lt, or } from "drizzle-orm";
@@ -176,7 +175,6 @@ type ClaimedFeishuIngress = Pick<
     | "messageReceivedAt"
   > & {
     ingressId: typeof feishuChatIngress.$inferSelect.id;
-    defaultAgentId: typeof orgMetadata.$inferSelect.defaultAgentId;
   };
 
 function parseMatchingMessage(
@@ -667,7 +665,6 @@ const loadFeishuIngressDispatchContext$ = command(
           platform: feishuOrgInstallations.platform,
           installationType: feishuOrgInstallations.installationType,
           setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
-          defaultAgentId: orgMetadata.defaultAgentId,
           botName: feishuOrgInstallations.botName,
           messageReceivedAt: feishuOrgInstallations.messageReceivedAt,
         })
@@ -675,10 +672,6 @@ const loadFeishuIngressDispatchContext$ = command(
         .innerJoin(
           feishuOrgInstallations,
           eq(feishuOrgInstallations.id, feishuChatIngress.installationId),
-        )
-        .leftJoin(
-          orgMetadata,
-          eq(orgMetadata.orgId, feishuOrgInstallations.orgId),
         )
         .where(
           and(
@@ -709,14 +702,10 @@ const loadFeishuIngressDispatchContext$ = command(
       throw new Error("Lark integration is not enabled");
     }
     const message = parseMatchingMessage(ingress);
-    if (ingress.defaultAgentId === null) {
-      return { ingress, message, installation: null, connection: null };
-    }
     const installation: FeishuDispatchInstallation = {
       orgId: ingress.orgId,
       platform: ingress.platform,
       ownerUserId: ingress.ownerUserId,
-      defaultAgentId: ingress.defaultAgentId,
       botName: ingress.botName,
       messageReceivedAt: ingress.messageReceivedAt,
     };
@@ -895,18 +884,6 @@ const processClaimedIngress$ = command(
       args.ingressId,
       signal,
     );
-    if (!installation) {
-      await set(
-        finishUnavailableAgentFeishuIngress$,
-        {
-          ingressId: ingress.ingressId,
-          message,
-          status: "not_found",
-        },
-        signal,
-      );
-      return null;
-    }
     if (!connection) {
       await set(
         finishUnconnectedFeishuIngress$,

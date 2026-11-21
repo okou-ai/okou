@@ -328,7 +328,7 @@ test("lists workspace Workflows and restricts member writes to the default execu
   );
 });
 
-test("rejects a member copy if its default target changes during publication", async () => {
+test("keeps a member copy valid when the execution profile description changes", async () => {
   const { admin, alice, defaultAgentId, source, s3 } = await fixture();
   const entered = createDeferredPromise<void>(context.signal);
   const released = createDeferredPromise<void>(context.signal);
@@ -352,7 +352,7 @@ test("rejects a member copy if its default target changes during publication", a
     description: "Updated default executor",
   });
   released.resolve();
-  await accept(copying, [409]);
+  const copied = await accept(copying, [201]);
   const visible = await accept(
     collection().list({ headers: headers(alice) }),
     [200],
@@ -361,7 +361,7 @@ test("rejects a member copy if its default target changes during publication", a
     visible.body.filter((row) => {
       return row.name === source.name && row.visibility === "private";
     }),
-  ).toStrictEqual([]);
+  ).toMatchObject([{ id: copied.body.id, ownerUserId: alice.userId }]);
 });
 
 test("applies the same member Workflow permissions when a send includes a legacy Agent ID", async () => {
@@ -468,4 +468,52 @@ test("applies the same member Workflow permissions when a send includes a legacy
       );
     });
   });
+});
+
+test("manages workspace Workflows before an execution profile exists", async () => {
+  const alice = bdd.user({ orgRole: "org:admin" });
+  const bob = bdd.user({ orgId: alice.orgId, orgRole: "org:member" });
+  const foreign = bdd.user({ orgRole: "org:admin" });
+  installWorkflowVolumeS3Fixture(context);
+  const created = await accept(
+    collection().create({
+      headers: headers(alice),
+      body: {
+        name: "workspace-procedure",
+        visibility: "public",
+        instruction: "Shared steps",
+      },
+    }),
+    [201],
+  );
+  const params = { workflowId: created.body.id };
+  expect(created.body).toMatchObject({ agentId: null, visibility: "public" });
+  const copied = await accept(
+    detail().copy({ headers: headers(bob), params, body: {} }),
+    [201],
+  );
+  expect(copied.body).toMatchObject({
+    agentId: null,
+    ownerUserId: bob.userId,
+    visibility: "private",
+  });
+  const listed = await accept(
+    collection().list({ headers: headers(bob) }),
+    [200],
+  );
+  expect(
+    listed.body
+      .map((workflow) => {
+        return workflow.id;
+      })
+      .sort(),
+  ).toEqual([created.body.id, copied.body.id].sort());
+  await accept(detail().get({ headers: headers(foreign), params }), [404]);
+  await accept(
+    detail().get({
+      headers: headers(alice),
+      params: { workflowId: copied.body.id },
+    }),
+    [404],
+  );
 });

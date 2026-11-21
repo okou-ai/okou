@@ -899,7 +899,6 @@ const collectWorkflow$ = command(
       .select({
         id: workflows.id,
         orgId: workflows.orgId,
-        agentId: workflows.agentId,
         name: workflows.name,
         displayName: workflows.displayName,
         description: workflows.description,
@@ -963,7 +962,6 @@ const collectWorkflow$ = command(
       jsonEntry(`workflows/${workflow.id}.json`, record, {
         sourceKind: "workflow",
         workflowId: workflow.id,
-        agentId: workflow.agentId,
         orgId: workflow.orgId,
       }),
     ]);

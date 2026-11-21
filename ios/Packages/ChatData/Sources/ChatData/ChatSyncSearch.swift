@@ -34,7 +34,7 @@ extension ChatSync {
 public struct ChatSearchWorkflow: Decodable, Equatable, Identifiable, Sendable {
   public struct Official: Decodable, Equatable, Sendable {}
   public let id: String
-  public let agentId: String
+  public let agentId: String?
   public let name: String
   public let displayName: String?
   public let description: String?
@@ -42,7 +42,7 @@ public struct ChatSearchWorkflow: Decodable, Equatable, Identifiable, Sendable {
   public let official: Official?
 
   public init(
-    id: String, agentId: String, name: String, displayName: String? = nil,
+    id: String, agentId: String?, name: String, displayName: String? = nil,
     description: String? = nil
   ) {
     self.id = id

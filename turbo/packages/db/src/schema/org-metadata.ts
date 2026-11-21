@@ -2,18 +2,15 @@ import {
   bigint,
   boolean,
   check,
-  foreignKey,
   index,
   integer,
   pgTable,
   text,
   timestamp,
   uniqueIndex,
-  uuid,
   varchar,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { agents } from "./agent";
 
 function orgMetadataColumnsBeforeFirstPartySource() {
   return {
@@ -23,7 +20,6 @@ function orgMetadataColumnsBeforeFirstPartySource() {
     // default to materialise a grant.
     credits: bigint("credits", { mode: "number" }).notNull().default(0),
     tier: text("tier").notNull().default("limited-free-1"),
-    defaultAgentId: uuid("default_agent_id"),
     onboardingPaymentPending: boolean("onboarding_payment_pending")
       .notNull()
       .default(false),
@@ -106,7 +102,7 @@ export function orgMetadataCanonicalColumns() {
 
 /**
  * org_metadata — stores per-org data that is owned by the platform (not Clerk).
- * Holds credit balance, tier, default agent configuration, and Stripe billing fields.
+ * Holds credit balance, tier, and Stripe billing fields.
  * Clerk remains source of truth for slug and membership only.
  */
 export const orgMetadata = pgTable(
@@ -136,11 +132,6 @@ export const orgMetadata = pgTable(
         "chk_org_metadata_pending_target_not_custom",
         sql`${table.pendingSubscriptionTargetTier} IS NULL OR ${table.pendingSubscriptionTargetTier} <> 'custom'`,
       ),
-      foreignKey({
-        name: "org_metadata_default_agent_id_agents_id_fk",
-        columns: [table.defaultAgentId],
-        foreignColumns: [agents.id],
-      }).onDelete("restrict"),
       uniqueIndex("uq_org_stripe_customer").on(table.stripeCustomerId),
       index("idx_org_metadata_acquisition_campaign_id").on(
         table.acquisitionCampaignId,

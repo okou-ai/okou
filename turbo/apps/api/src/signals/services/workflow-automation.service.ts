@@ -1,3 +1,4 @@
+import { executionAgentId } from "./execution-agent";
 import { projectCommittedChatThreadSearch$ } from "./chat-event-publication.service";
 import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-queue-revocation.service";
 import { db$, rawSqlReadDb$, writeDb$ } from "../external/db";
@@ -176,6 +177,8 @@ import {
   type WorkflowAutomationAccountConnectorSlug,
 } from "./workflow-automation-account-classification.service";
 import {
+  workflowExecutionProfileColumns,
+  loadVisibleWorkflowById$,
   visibleWorkflowCondition,
   workflowSummary,
   type WorkflowMember,
@@ -1035,67 +1038,6 @@ const rowToPublicSummary$ = command(
   },
 );
 
-const readAutomationVisibleWorkflow$ = command(
-  async (
-    { get },
-    args: {
-      readonly orgId: string;
-      readonly member: WorkflowMember;
-      readonly workflowId: string;
-      readonly includeInstallingOfficial?: boolean;
-    },
-    signal: AbortSignal,
-  ): Promise<{
-    workflow: WorkflowRow;
-    agent: {
-      readonly id: string;
-      readonly orgId: string;
-      readonly owner: string;
-      readonly visibility: "public" | "private";
-      readonly name: string;
-      readonly displayName: string | null;
-    };
-  } | null> => {
-    const db = get(db$);
-    const [row] = await db
-      .select({
-        workflow: workflows,
-        agent: {
-          id: agents.id,
-          orgId: agents.orgId,
-          owner: agents.owner,
-          visibility: agents.visibility,
-          name: agents.name,
-          displayName: agents.displayName,
-        },
-      })
-      .from(workflows)
-      .innerJoin(agents, eq(workflows.agentId, agents.id))
-      .where(
-        and(
-          eq(workflows.orgId, args.orgId),
-          eq(workflows.id, args.workflowId),
-          args.includeInstallingOfficial
-            ? or(
-                visibleWorkflowCondition(args.member),
-                and(
-                  eq(workflows.ownerUserId, args.member.userId),
-                  eq(workflows.officialInstallationState, "installing"),
-                ),
-              )
-            : visibleWorkflowCondition(args.member),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-
-    if (!row) {
-      return null;
-    }
-    return { workflow: row.workflow, agent: row.agent };
-  },
-);
-
 const readAutomationChatThreadId$ = command(
   async (
     { get },
@@ -1117,53 +1059,13 @@ const readAutomationChatThreadId$ = command(
   },
 );
 
-interface UsableAgent {
-  readonly id: string;
-  readonly owner: string;
-  readonly visibility: "public" | "private";
-}
-export const loadAgent$ = command(
-  async (
-    { get },
-    args: {
-      readonly orgId: string;
-      readonly agentId: string;
-    },
-    signal: AbortSignal,
-  ): Promise<UsableAgent | null> => {
-    const db = get(db$);
-
-    const [agent] = await db
-      .select({
-        id: agents.id,
-        owner: agents.owner,
-        visibility: agents.visibility,
-      })
-      .from(agents)
-      .where(and(eq(agents.orgId, args.orgId), eq(agents.id, args.agentId)))
-      .limit(1);
-    signal.throwIfAborted();
-    return agent ?? null;
-  },
-);
-
-/**
- * An automation run executes as its owner, so the owner must be able to run the
- * workflow's owning agent: public agents are runnable by any member, private
- * agents only by their owner. This is a "use" gate, not the agent "manage" gate.
- */
-export function canUseAgent(
-  agent: UsableAgent,
-  member: WorkflowMember,
-): boolean {
-  return agent.visibility === "public" || agent.owner === member.userId;
-}
 export const loadAutomationWorkflowRunTarget$ = command(
   async (
     { get },
     args: {
       readonly orgId: string;
       readonly workflowId: string;
+      readonly userId: string;
     },
     signal: AbortSignal,
   ): Promise<{
@@ -1175,13 +1077,21 @@ export const loadAutomationWorkflowRunTarget$ = command(
 
     const [workflow] = await db
       .select({
-        agentId: workflows.agentId,
+        agentId: agents.id,
         workflowName: workflows.name,
         workflowDisplayName: workflows.displayName,
       })
       .from(workflows)
+      .innerJoin(
+        agents,
+        eq(agents.id, executionAgentId(workflows.orgId, args.userId)),
+      )
       .where(
-        and(eq(workflows.orgId, args.orgId), eq(workflows.id, args.workflowId)),
+        and(
+          eq(workflows.orgId, args.orgId),
+          eq(workflows.id, args.workflowId),
+          visibleWorkflowCondition({ userId: args.userId, role: "member" }),
+        ),
       )
       .limit(1);
     signal.throwIfAborted();
@@ -1316,18 +1226,21 @@ export const listWorkspaceWorkflowAutomations$ = command(
       .select({
         automation: workflowAutomationColumns(),
         workflow: workflows,
-        agent: {
-          id: agents.id,
-          owner: agents.owner,
-          visibility: agents.visibility,
-          name: agents.name,
-          displayName: agents.displayName,
-        },
+        agent: workflowExecutionProfileColumns(),
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
       })
       .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
-      .innerJoin(agents, eq(agents.id, workflows.agentId))
+      .innerJoin(
+        workflows,
+        and(
+          eq(workflows.id, workflowAutomations.workflowId),
+          eq(workflows.orgId, workflowAutomations.orgId),
+        ),
+      )
+      .leftJoin(
+        agents,
+        eq(agents.id, executionAgentId(workflows.orgId, args.member.userId)),
+      )
       .leftJoin(
         workflowUserAutomationThreads,
         and(
@@ -1346,6 +1259,7 @@ export const listWorkspaceWorkflowAutomations$ = command(
         and(
           eq(workflowAutomations.orgId, args.orgId),
           eq(workflowAutomations.ownerUserId, args.member.userId),
+          eq(workflows.orgId, args.orgId),
           visibleWorkflowCondition(args.member),
         ),
       )
@@ -1403,6 +1317,7 @@ export const listWorkspaceWorkflowAutomations$ = command(
 
 function chatThreadAutomationFromSummary(args: {
   readonly workflow: WorkflowRow;
+  readonly agentId: string | null;
   readonly summary: WorkflowAutomationSummary | null;
   readonly chatThreadId: string | null;
 }): readonly ChatThreadWorkflowAutomation[] {
@@ -1416,7 +1331,7 @@ function chatThreadAutomationFromSummary(args: {
       chatThreadId,
       workflow: {
         id: workflow.id,
-        agentId: workflow.agentId,
+        agentId: args.agentId,
         name: workflow.name,
         displayName: workflow.displayName,
         description: workflow.description,
@@ -1445,6 +1360,7 @@ export const listThreadBoundWorkflowAutomations$ = command(
       .select({
         automation: workflowAutomationColumns(),
         workflow: workflows,
+        agentId: executionAgentId(workflows.orgId, args.userId),
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
       })
       .from(workflowAutomations)
@@ -1462,10 +1378,18 @@ export const listThreadBoundWorkflowAutomations$ = command(
           ),
         ),
       )
-      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .innerJoin(
+        workflows,
+        and(
+          eq(workflowAutomations.workflowId, workflows.id),
+          eq(workflows.orgId, workflowAutomations.orgId),
+        ),
+      )
       .where(
         and(
           eq(workflowAutomations.orgId, args.orgId),
+          eq(workflows.orgId, args.orgId),
+          visibleWorkflowCondition({ userId: args.userId, role: "member" }),
           eq(workflowAutomations.ownerUserId, args.userId),
           eq(workflowUserAutomationThreads.chatThreadId, args.threadId),
           or(
@@ -1478,7 +1402,7 @@ export const listThreadBoundWorkflowAutomations$ = command(
     signal.throwIfAborted();
 
     const summaries = await Promise.all(
-      rows.map(async ({ automation, workflow, chatThreadId }) => {
+      rows.map(async ({ automation, workflow, agentId, chatThreadId }) => {
         const summary = await set(
           rowToPublicSummary$,
           automation,
@@ -1488,7 +1412,7 @@ export const listThreadBoundWorkflowAutomations$ = command(
           signal,
         );
         signal.throwIfAborted();
-        return { workflow, summary, chatThreadId };
+        return { workflow, agentId, summary, chatThreadId };
       }),
     );
     signal.throwIfAborted();
@@ -1526,7 +1450,7 @@ export const getWorkflowAutomation$ = command(
       return null;
     }
     const visible = await set(
-      readAutomationVisibleWorkflow$,
+      loadVisibleWorkflowById$,
       {
         orgId: args.orgId,
         member: args.member,
@@ -1570,7 +1494,7 @@ export const revealWorkflowWebhookSecret$ = command(
       return null;
     }
     const visible = await set(
-      readAutomationVisibleWorkflow$,
+      loadVisibleWorkflowById$,
       {
         orgId: args.orgId,
         member: args.member,
@@ -2237,10 +2161,10 @@ function webhookTierCapabilityColumns() {
 
 function webhookCreationAccessFailure(
   args: WebhookAutomationCreateArgs,
-  agent: UsableAgent | undefined,
+  agent: { readonly id: string } | undefined,
   workflow: WorkflowRow | undefined,
 ): AutomationActionFailure | null {
-  if (!agent || !workflow || workflow.agentId !== agent.id) {
+  if (!agent || !workflow) {
     return { kind: "not-found" };
   }
   const official = args.input.officialInstallation;
@@ -2248,9 +2172,7 @@ function webhookCreationAccessFailure(
   const available =
     workflow.officialDefinitionName === null ||
     workflow.officialInstallationState === "installed";
-  const visible =
-    owned ||
-    (workflow.visibility === "public" && canUseAgent(agent, args.input.member));
+  const visible = owned || workflow.visibility === "public";
   const installing =
     official !== undefined &&
     owned &&
@@ -2271,12 +2193,6 @@ function webhookCreationAccessFailure(
     return {
       kind: "conflict",
       message: OFFICIAL_WORKFLOW_AUTOMATION_READ_ONLY_MESSAGE,
-    };
-  }
-  if (!canUseAgent(agent, args.input.member)) {
-    return {
-      kind: "forbidden",
-      message: "You do not have access to the workflow's agent",
     };
   }
   return null;
@@ -2390,30 +2306,20 @@ function createdWebhookAutomationResult(
   };
 }
 
-function webhookCreationAgentColumns() {
-  return { id: agents.id, owner: agents.owner, visibility: agents.visibility };
-}
-
 function webhookCreationAccessCondition(
   args: WebhookAutomationCreateArgs,
-  agent: ReturnType<typeof webhookCreationAdmissionPlan>["agent"],
   workflow: ReturnType<typeof webhookCreationAdmissionPlan>["workflow"],
 ) {
   const owned = eq(workflow.ownerUserId, args.input.member.userId);
-  const usable = or(
-    eq(agent.visibility, "public"),
-    eq(agent.owner, args.input.member.userId),
-  );
   const official = args.input.officialInstallation;
   return and(
-    eq(workflow.agentId, agent.id),
     or(
       and(
         or(
           isNull(workflow.officialDefinitionName),
           eq(workflow.officialInstallationState, "installed"),
         ),
-        or(owned, and(eq(workflow.visibility, "public"), usable)),
+        or(owned, eq(workflow.visibility, "public")),
       ),
       official === undefined
         ? sql`false`
@@ -2429,7 +2335,6 @@ function webhookCreationAccessCondition(
             official.installationState ?? "installing",
           ),
         ),
-    usable,
   );
 }
 
@@ -2439,11 +2344,15 @@ function webhookCreationAdmissionPlan(args: WebhookAutomationCreateArgs) {
   const entitlement = enabledAutomationEntitlementPlan(args.input.orgId, true);
   const agent = query.$with("webhook_creation_agent").as(
     query
-      .select(webhookCreationAgentColumns())
+      .select({ id: agents.id })
       .from(agents)
       .where(
         and(
           eq(agents.id, args.agentId),
+          eq(
+            agents.id,
+            executionAgentId(args.input.orgId, args.input.member.userId),
+          ),
           eq(agents.orgId, args.input.orgId),
           entitlement.eligible,
         ),
@@ -2516,8 +2425,8 @@ function webhookBindingSource(
         .as("updated_at"),
     })
     .from(source)
-    .innerJoin(agent, eq(source.agentId, agent.id))
-    .where(webhookCreationAccessCondition(args, agent, source));
+    .crossJoin(agent)
+    .where(webhookCreationAccessCondition(args, source));
 }
 
 function webhookBindingConflict(
@@ -2587,7 +2496,7 @@ function webhookCreationPublicationResult(
           readonly missingEntitlement: boolean;
           readonly invalidRestriction: boolean;
         };
-        readonly webhook_creation_agent: UsableAgent | null;
+        readonly webhook_creation_agent: { readonly id: string } | null;
         readonly webhook_creation_workflow: WorkflowRow | null;
         readonly accepted_binding: {
           readonly chatThreadId: string | null;
@@ -4363,7 +4272,7 @@ export const createWorkflowAutomation$ = command(
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
     const visible = await set(
-      readAutomationVisibleWorkflow$,
+      loadVisibleWorkflowById$,
       {
         orgId: args.orgId,
         member: args.member,
@@ -4396,27 +4305,11 @@ export const createWorkflowAutomation$ = command(
         message: OFFICIAL_WORKFLOW_AUTOMATION_READ_ONLY_MESSAGE,
       };
     }
-    // The owning agent is derived from the workflow row (hard 1:N). The automation
-    // owner must be able to run that agent for the scheduled run to fire.
-    const agent = await set(
-      loadAgent$,
-      {
-        orgId: args.orgId,
-        agentId: workflow.agentId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
+    const agent = visible.agent;
     if (!agent) {
       return {
         kind: "bad-request",
-        message: `Agent not found: ${workflow.agentId}`,
-      };
-    }
-    if (!canUseAgent(agent, args.member)) {
-      return {
-        kind: "forbidden",
-        message: "You do not have access to the workflow's agent",
+        message: "Member executor is unavailable",
       };
     }
     if (!automationCreateInputIsSchedule(args)) {
@@ -4981,7 +4874,7 @@ export const loadOwnedAutomation$ = command(
       return { kind: "not-found" };
     }
     const visible = await set(
-      readAutomationVisibleWorkflow$,
+      loadVisibleWorkflowById$,
       {
         orgId: args.orgId,
         member: args.member,
@@ -7209,15 +7102,19 @@ const readWorkflowAutomationEnableTarget$ = command(
     const [row] = await db
       .select({
         automation: workflowAutomationColumns(),
-        agent: {
-          id: agents.id,
-          owner: agents.owner,
-          visibility: agents.visibility,
-        },
       })
       .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
-      .innerJoin(agents, eq(agents.id, workflows.agentId))
+      .innerJoin(
+        workflows,
+        and(
+          eq(workflows.id, workflowAutomations.workflowId),
+          eq(workflows.orgId, workflowAutomations.orgId),
+        ),
+      )
+      .innerJoin(
+        agents,
+        eq(agents.id, executionAgentId(workflows.orgId, args.member.userId)),
+      )
       .where(
         and(
           eq(workflowAutomations.id, args.automationId),
@@ -7240,12 +7137,6 @@ const readWorkflowAutomationEnableTarget$ = command(
       return {
         kind: "forbidden",
         message: "Only the automation owner can manage this automation",
-      };
-    }
-    if (!canUseAgent(row.agent, args.member)) {
-      return {
-        kind: "forbidden",
-        message: "You do not have access to the workflow's agent",
       };
     }
     return { automation: row.automation };

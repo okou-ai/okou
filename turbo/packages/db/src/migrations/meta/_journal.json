@@ -3725,6 +3725,13 @@
       "when": 1795292457882,
       "tag": "1610_contract_chat_run_agent_storage",
       "breakpoints": true
+    },
+    {
+      "idx": 1611,
+      "version": "7",
+      "when": 1795299232423,
+      "tag": "1611_workspace_workflow_identity",
+      "breakpoints": true
     }
   ]
 }

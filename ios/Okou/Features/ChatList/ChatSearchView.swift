@@ -230,7 +230,7 @@ private struct ChatSearchContent: View {
                 .foregroundStyle(OkouColor.mutedForeground)
               VStack(alignment: .leading, spacing: OkouSpace.xs) {
                 Text(workflow.title).lineLimit(1)
-                Text(workflow.description ?? agentName(workflow.agentId))
+                Text(workflow.description ?? workflow.agentId.map(agentName) ?? "/\(workflow.name)")
                   .font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
                   .lineLimit(1)
               }

@@ -6,7 +6,6 @@ import {
   exists,
   gt,
   inArray,
-  ne,
   notInArray,
   or,
   sql,
@@ -137,7 +136,6 @@ const disableInactiveProactiveWorkflows$ = command(
           ]),
           eligible && agentId !== null
             ? or(
-                ne(workflows.agentId, agentId),
                 notInArray(
                   workflows.officialDefinitionName,
                   kinds.map((kind) => {
@@ -280,13 +278,13 @@ export const ensureProactiveWorkflows$ = command(
         installedSchema,
         await database.execute(sql`
       WITH installed AS (
-        INSERT INTO workflows (org_id, agent_id, owner_user_id, name, visibility, instruction, display_name, description,
+        INSERT INTO workflows (org_id, owner_user_id, name, visibility, instruction, display_name, description,
           official_definition_name, official_installation_state, created_by, updated_by, created_at, updated_at)
-        SELECT ${owner.orgId}, ${eligibility.agentId}::uuid, ${owner.userId}, ${definition.name}, 'private', NULL, NULL, NULL,
+        SELECT ${owner.orgId}, ${owner.userId}, ${definition.name}, 'private', NULL, NULL, NULL,
           ${definition.name}, 'installed', ${owner.userId}, ${owner.userId}, ${at}, ${at}
         WHERE ${proactiveWorkflowOwnerEnabledSql(owner, eligibility.agentId)}
           AND EXISTS (SELECT 1 FROM official_workflow_catalog_state WHERE accepted_release_id = ${catalog.releaseId})
-        ON CONFLICT (org_id, agent_id, owner_user_id, official_definition_name) WHERE official_definition_name IS NOT NULL
+        ON CONFLICT (org_id, owner_user_id, official_definition_name) WHERE official_definition_name IS NOT NULL
         DO UPDATE SET updated_at = EXCLUDED.updated_at
         RETURNING id
       ), scheduled AS (

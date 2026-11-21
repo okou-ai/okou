@@ -174,7 +174,7 @@ const prepareDebugMorningBrief$ = command(
     if (
       state.kind !== "installed" ||
       !state.automation.enabled ||
-      state.installation.agentId !== defaultAgentId
+      defaultAgentId === null
     ) {
       return {
         kind: "error" as const,
@@ -220,7 +220,7 @@ const prepareDebugMorningBrief$ = command(
       selectDueMorningBriefWorkflow$,
       {
         automation: target.automation,
-        agentId: state.installation.agentId,
+        agentId: defaultAgentId,
         workflowName: target.name,
       },
       signal,
