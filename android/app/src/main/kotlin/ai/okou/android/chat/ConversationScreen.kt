@@ -76,11 +76,12 @@ fun ConversationRoute(
     val messages = transcript?.withOutput(output, threadId).orEmpty()
     val previews = localMessages.filterNot { it.eventId in transcript?.persistedIds.orEmpty() }
     val hasContent = transcript != null || previews.isNotEmpty()
-    val firstReadFailed = !hasContent && thread != null && state.phase == HistoryPhase.Failed
+    val firstReadFailed = !hasContent && thread != null && state.initialReadFailed
     val waitingForHistory =
         historyAvailable &&
             !list.offline &&
             !hasContent &&
+            !firstReadFailed &&
             (thread == null || state.phase == HistoryPhase.Loading)
     val showSkeleton = key(threadId) { rememberChatWaitIndicator(waitingForHistory) }
     val showSync =
@@ -95,7 +96,10 @@ fun ConversationRoute(
     val showRealtimeConnecting =
         key(threadId) {
             rememberChatWaitIndicator(
-                realtimePhase == RealtimePhase.Connecting && !waitingForHistory && !list.offline,
+                realtimePhase == RealtimePhase.Connecting &&
+                    !waitingForHistory &&
+                    !firstReadFailed &&
+                    !list.offline,
                 delayMillis = HistoryFeedbackDelayMillis,
             )
         }
@@ -166,7 +170,9 @@ fun ConversationRoute(
                             ChatContentLoadNotice(
                                 R.string.chat_list_first_load_failed,
                                 horizontalPadding = 0.dp,
-                                retry = if (reconnect == null) model::refresh else null,
+                                retry = reconnect?.let { it::retry } ?: model::refresh,
+                                retryEnabled =
+                                    reconnect != null || state.phase != HistoryPhase.Loading,
                             )
                             return@item
                         }
@@ -262,7 +268,8 @@ fun ConversationRoute(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 // Reconnecting invalidates the history through the workspace owner too.
-                reconnect != null -> RealtimeNotice(reconnect, RealtimePhase.Unavailable)
+                reconnect != null && !firstReadFailed ->
+                    RealtimeNotice(reconnect, RealtimePhase.Unavailable)
                 historyNotice != null ->
                     ChatContentLoadNotice(
                         historyNotice,

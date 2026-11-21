@@ -19,6 +19,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
@@ -37,6 +38,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -209,6 +211,30 @@ class ConversationRouteTest {
             hasText(initialFailure) and hasAnyAncestor(hasTestTag("conversation")),
             5_000,
         )
+        val retryRequested = CountDownLatch(1)
+        val allowRetryResponse = CountDownLatch(1)
+        fixture.historyRows = {
+            retryRequested.countDown()
+            allowRetryResponse.await()
+            MockResponse().setResponseCode(503)
+        }
+        try {
+            compose.runOnIdle {
+                realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_IN_PROJECT)))
+            }
+            compose.waitUntil(5_000) { compose.runOnIdle { retryRequested.count == 0L } }
+            compose.mainClock.advanceTimeBy(160)
+            compose.onNodeWithText(initialFailure).assertExists()
+            compose.onNodeWithText(retryLabel).assertIsNotEnabled()
+            compose
+                .onNode(hasContentDescription(compose.activity.getString(R.string.history_loading)))
+                .assertDoesNotExist()
+        } finally {
+            allowRetryResponse.countDown()
+        }
+        compose.waitUntil(5_000) {
+            compose.runOnIdle { model.history.uiState.value.phase == HistoryPhase.Failed }
+        }
         fixture.historyRows = historyRows
         fixture.historyMarkRead = { MockResponse().setResponseCode(503) }
         compose.onNodeWithText(retryLabel).performClick()
