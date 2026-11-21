@@ -324,7 +324,7 @@ function canonicalRouteCreationWrites(): SQL {
     RETURNING last_seq_id
   ), created_event AS (
     INSERT INTO ${e} (
-      user_id, org_id, seq_id, chat_thread_id, kind, agent_id,
+      user_id, org_id, seq_id, chat_thread_id, kind, event_executor_id,
       title, pin_order, muted, selected_model, model_settings, model_settings_patch,
       service_tier, computer_use_host_id, cloud_browser_enabled, created_at
     )
