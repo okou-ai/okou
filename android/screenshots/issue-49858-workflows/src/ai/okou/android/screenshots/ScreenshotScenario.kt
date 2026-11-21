@@ -14,6 +14,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import java.util.UUID
@@ -84,8 +85,25 @@ class ScreenshotScenario {
                 text(fixture.ruleTitle)
                 text("已暂停 · 需连接")
                 ScreenshotCapture.capture("workflows-phone-automations.png")
+
+                text("运行记录").click()
+                text("最近自动化运行")
+                ScreenshotCapture.capture("workflows-phone-history.png")
+                text(fixture.ruleTitle).click()
+                text("Personal chat")
+                back()
+                text("最近自动化运行")
+                checkNotNull(
+                        device.wait(Until.findObject(By.pkg(app.packageName).text("自动化")), 10_000)
+                    )
+                    .click()
+                text("已暂停 · 需连接")
+
                 text("在聊天中使用").click()
                 text("/release-review 保留原有草稿")
+                assertTrue(
+                    device.wait(Until.gone(By.pkg(app.packageName).textContains("正在同步草稿")), 10_000)
+                )
                 assertFalse(
                     fixture.requests.any {
                         it.method == "POST" &&
@@ -106,11 +124,22 @@ class ScreenshotScenario {
 
                 device.executeShellCommand("wm size 900x450")
                 device.executeShellCommand("settings put system font_scale 2.0")
+                assertTrue(
+                    device.wait(Until.gone(By.pkg(app.packageName).textContains("搜索工作流")), 10_000)
+                )
                 text("在聊天中使用")
                 scenario.onActivity { activity ->
                     assertTrue(activity.resources.configuration.fontScale >= 2f)
                     assertTrue(activity.resources.configuration.screenHeightDp < 480)
                 }
+                checkNotNull(
+                        device.wait(
+                            Until.findObject(By.pkg(app.packageName).scrollable(true)),
+                            10_000,
+                        )
+                    )
+                    .scroll(Direction.DOWN, 0.85f)
+                text(fixture.ruleTitle)
                 ScreenshotCapture.capture("workflows-short-large-text.png")
             }
         } finally {

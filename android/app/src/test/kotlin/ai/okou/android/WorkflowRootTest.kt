@@ -61,7 +61,8 @@ class WorkflowRootTest {
 
     @After
     fun tearDown() {
-        app.gate.countDown()
+        val application = app
+        application.gate.countDown()
         val jobs =
             compose.activity.let { activity ->
                 compose.runOnIdle {
@@ -81,7 +82,7 @@ class WorkflowRootTest {
             }
         compose.activityRule.scenario.close()
         runBlocking { withTimeout(10_000) { jobs.forEach { it.join() } } }
-        app.fixture.close()
+        application.fixture.close()
     }
 
     @Test
@@ -91,17 +92,14 @@ class WorkflowRootTest {
         compose.onNodeWithTag("workflow_query").assertIsDisplayed()
         app.gate.countDown()
         waitFor("Release checklist")
-        assertTrue(
-            compose
-                .onNodeWithTag("workflow_row_$WORKFLOW_RELEASE")
-                .getUnclippedBoundsInRoot()
-                .height >= 80.dp
-        )
+        val row = compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").getUnclippedBoundsInRoot()
+        assertTrue(row.bottom - row.top >= 80.dp)
         compose.onNodeWithText("Workspace shared").performClick()
         compose.onNodeWithText("Release checklist").assertDoesNotExist()
         compose.onNodeWithTag("workflow_row_$WORKFLOW_SHARED").performClick()
         waitForTag("workflow_detail_title")
-        assertTrue(compose.onNodeWithTag("workflow_use").getUnclippedBoundsInRoot().height >= 48.dp)
+        val use = compose.onNodeWithTag("workflow_use").getUnclippedBoundsInRoot()
+        assertTrue(use.bottom - use.top >= 48.dp)
         compose.onNodeWithText("Edit instructions").assertDoesNotExist()
         back()
         compose.onNodeWithText("All").performClick()
