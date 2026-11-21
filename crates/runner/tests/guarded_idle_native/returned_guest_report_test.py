@@ -15,7 +15,7 @@ import report
 import report_test
 import returned_guest_report as returned
 import snapshot_report as startup
-from progress_report_fixture import foreground_heartbeat
+from progress_report_fixture import foreground_heartbeat, joined_observer
 
 
 class ReturnedGuestTests(unittest.TestCase):
@@ -60,8 +60,7 @@ class ReturnedGuestTests(unittest.TestCase):
                       for i, label in enumerate(returned.STAGES[:returned.STAGES.index(stage)+1])]
             actual = {"created": created, "stages": stages, "cleanup": None}
             def observer(ms):
-                return {"started_ns": clock(ms), "completed_ns": clock(ms+5), "available_bytes": 32*1024**3,
-                        "age_ns": 2, "read_duration_ns": 1, "joined": True}
+                return joined_observer(clock(ms), clock(ms+5))
             completion = {"sandbox_id": sandbox_id, "backing_generation": backing, "positive_backing_wait": True,
                           "workspace": str(pathlib.PurePosixPath(path).parent), "workspace_absent": True,
                           "last_home": copy.deepcopy(home), "cleanup_ns": clock(750),

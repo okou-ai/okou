@@ -15,7 +15,7 @@ import cleanup_report as cleanup
 import report
 import report_test
 import status_failure_report_test as failure_test
-from progress_report_fixture import foreground_heartbeat
+from progress_report_fixture import foreground_heartbeat, joined_observer
 
 
 class ReplacementReportTests(unittest.TestCase):
@@ -68,8 +68,7 @@ class ReplacementReportTests(unittest.TestCase):
                 {"insertion_started_ns":at(6),"revision":2,"original_exit_confirmed":True,
                  "receiver_polled_pending":True,"coverage":coverage},
                 {"pool_held_ns":at(13),"heartbeat_pending_ns":at(14),"heartbeat_polled_pending":True,
-                 "observer":{"started_ns":at(15),"completed_ns":at(16),"available_bytes":32*1024**3,
-                    "age_ns":2,"read_duration_ns":1,"joined":True},"coverage":coverage},
+                 "observer":joined_observer(at(15), at(16)),"coverage":coverage},
                 {"pool_released_ns":at(19),"heartbeat":foreground_heartbeat(runner, 1, at(20), at(21), (4, 8192)),
                  "receiver_polled_pending":True,"coverage":coverage},
                 {"io_released_ns":at(24),"retirement_joined_ns":at(27),"home_cache_promoted":True,

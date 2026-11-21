@@ -15,7 +15,7 @@ import cleanup_report as cleanup
 import fixed_restore_report as fixed
 import report
 import report_test
-from progress_report_fixture import foreground_heartbeat
+from progress_report_fixture import foreground_heartbeat, joined_observer
 
 
 class FixedRestoreReportTests(unittest.TestCase):
@@ -83,7 +83,7 @@ class FixedRestoreReportTests(unittest.TestCase):
             {"lost_ns":at(8),"observer_unwound":False,"state":"Uncertain","commit_refused":True,"repark_refused":True,
              "incoming_refused":True,"original_metadata_preserved":True,"pool_empty":True,"original_exit_polled_pending":True}|fixed.LEASE,
             {"pool_held_ns":at(10),"status_held_ns":at(11),"heartbeat_pending_ns":at(12),
-             "observer":{"started_ns":at(13),"completed_ns":at(14),"available_bytes":32*1024**3,"age_ns":2,"read_duration_ns":1,"joined":True},
+             "observer":joined_observer(at(13), at(14)),
              "pool_released_ns":at(15),"heartbeat":heartbeat,"status_released_ns":at(18),"sample_after_ns":at(18)+2,"p1_sample_ns":at(19),
              "status_wait_polled_ns":at(11)+1,"status_waits_before":0,"status_waits_after":1,"status_published_ns":at(18)+1,
              "selected_delivery_withheld":True,"additional_full_profile_refused":True}|fixed.LEASE,
