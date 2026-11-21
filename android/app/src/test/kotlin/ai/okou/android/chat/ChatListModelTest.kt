@@ -687,34 +687,31 @@ class ChatListModelTest {
         }
     }
 
+    private fun tiedPinEvents(vararg threads: String): List<String> {
+        fun id(seq: Long) = "${seq.toString().padStart(8, '0')}-0000-4000-8000-000000000000"
+        return threads.flatMapIndexed { index, thread ->
+            val created = 17L + 2 * index
+            val pinned = created + 1
+            listOf(
+                chatEventWire(id = id(created), seq = created, thread = thread),
+                chatEventWire(
+                    id = id(pinned),
+                    seq = pinned,
+                    thread = thread,
+                    kind = "pinned",
+                    extra = ""","pinOrder":"a0"""",
+                ),
+            )
+        }
+    }
+
     @Test
     fun rejectedPinReorderKeepsTheSubmittedStepAndDiscardsTheUnsentStep() = runTest {
         val moved = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
         val next = CHAT_IN_PROJECT
         val rejected = "33333333-3333-4333-8333-333333333333"
         val submitted = CHAT_PERSONAL
-        val threads = listOf(moved, next, rejected, submitted)
-        fun id(seq: Long) = "${seq.toString().padStart(8, '0')}-0000-4000-8000-000000000000"
-        val events =
-            buildList {
-                    threads.forEachIndexed { index, thread ->
-                        val seq = 17L + index
-                        add(chatEventWire(id = id(seq), seq = seq, thread = thread))
-                    }
-                    threads.forEachIndexed { index, thread ->
-                        val seq = 21L + index
-                        add(
-                            chatEventWire(
-                                id = id(seq),
-                                seq = seq,
-                                thread = thread,
-                                kind = "pinned",
-                                extra = ""","pinOrder":"a0"""",
-                            )
-                        )
-                    }
-                }
-                .toMutableList()
+        val events = tiedPinEvents(moved, next, rejected, submitted).toMutableList()
         val hold = CompletableDeferred<Unit>()
         val readback = CompletableDeferred<Unit>()
         val requested = mutableListOf<String>()
@@ -770,7 +767,7 @@ class ChatListModelTest {
 
             events.add(
                 chatEventWire(
-                    id = id(26),
+                    id = HISTORY_LAST_EVENT,
                     seq = 26,
                     thread = submitted,
                     kind = "sort_touched",
@@ -781,6 +778,60 @@ class ChatListModelTest {
             runCurrent()
             assertTrue(model.uiState.value.pendingRowActions.isEmpty())
             assertEquals("a4", model.uiState.value.threads.single { it.id == submitted }.pinOrder)
+        }
+    }
+
+    @Test
+    fun unconfirmedPinReorderCanRecoverWhenExplicitRefreshFailsTemporarily() = runTest {
+        val moved = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+        val submitted = CHAT_PERSONAL
+        val events = tiedPinEvents(moved, CHAT_IN_PROJECT, submitted)
+        val attempted = mutableListOf<String>()
+        var readUnavailable = false
+        val source =
+            object : Service() {
+                override suspend fun chatEvents(since: Long?): ChatEvents {
+                    if (since != null && readUnavailable)
+                        throw ApiFailure.Http(503, null, null, null)
+                    return page(events)
+                }
+
+                override suspend fun reorderPinnedThread(
+                    threadId: String,
+                    pinOrder: String,
+                    eventId: String,
+                ) {
+                    attempted.add(threadId)
+                    throw ApiFailure.Network(IOException("Response lost"))
+                }
+            }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            assertTrue(model.performRowAction(moved, ChatRowAction.MovePinDown))
+            runCurrent()
+            val partial = model.uiState.value
+            val failure = checkNotNull(partial.failedRowAction)
+            assertEquals(ChatRowAction.MovePinDown, failure.action)
+            assertFalse(failure.rejected)
+            assertEquals("a0", partial.threads.single { it.id == moved }.pinOrder)
+            assertEquals("a2", partial.threads.single { it.id == submitted }.pinOrder)
+
+            readUnavailable = true
+            model.reloadAfterRowActionFailure()
+            model.dismissRowActionFailure(failure)
+            runCurrent()
+            val retrying = model.uiState.value
+            assertEquals(ChatListReadFailure.Retrying, retrying.listReadFailure)
+            assertEquals("a2", retrying.threads.single { it.id == submitted }.pinOrder)
+
+            readUnavailable = false
+            advanceTimeBy(5_000)
+            runCurrent()
+            val recovered = model.uiState.value
+            assertEquals(ChatReadPhase.Ready, recovered.listPhase)
+            assertTrue(recovered.threads.all { it.pinOrder == "a0" })
+            assertEquals(listOf(submitted), attempted)
         }
     }
 

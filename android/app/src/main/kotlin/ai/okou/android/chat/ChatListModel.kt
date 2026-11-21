@@ -351,6 +351,7 @@ class ChatListModel(
     )
 
     private var pendingListRead: ListReadBatch? = null
+    private val rowDiscardsAfterRead = mutableSetOf<String>()
     private val acceptedChatsToVerify = mutableSetOf<String>()
     private val verifyingAcceptedChats = mutableSetOf<String>()
     internal var onAcceptedChatMissing: ((String) -> Unit)? = null
@@ -867,7 +868,6 @@ class ChatListModel(
                                 action,
                                 edits.takeLast(submittedEdits),
                                 missingDeleteTarget,
-                                reportUnconfirmed = !rolledBack,
                             )
                         if (confirmed && !rolledBack) recordConfirmedUndo(threadId, undo)
                     }
@@ -1198,7 +1198,6 @@ class ChatListModel(
         action: ChatRowAction,
         edits: List<ChatRowEdit>,
         missingDeleteTarget: String?,
-        reportUnconfirmed: Boolean,
     ): Boolean {
         requireCurrent()
         if (!requiresListRead(edits, missingDeleteTarget)) return true
@@ -1220,7 +1219,7 @@ class ChatListModel(
             return deleted
         }
         val confirmedEdits = projection.confirmEdits(edits)
-        if (!confirmedEdits && reportUnconfirmed)
+        if (!confirmedEdits)
             mutable.value =
                 mutable.value.copy(failedRowAction = ChatRowActionFailure(action, edits = edits))
         return confirmedEdits
@@ -1283,6 +1282,8 @@ class ChatListModel(
         requireCurrent()
         if (!hasWriteReadback && (mutable.value.offline || generation != connectivityGeneration))
             return
+        // Keep the exact IDs selected by an explicit refresh until a read succeeds.
+        rowDiscardsAfterRead.addAll(batch.discardOnSuccess)
         val reportingFilterGeneration =
             filterGeneration.takeIf {
                 (!hasWriteReadback || batch.refresh) &&
@@ -1299,7 +1300,8 @@ class ChatListModel(
                 if (reconciliation != null) projection.completedOutgoingAttempts() else emptyMap()
             val result = sync.synchronize(confirmed?.checkpoint)
             val retrying = mutable.value.listReadFailure == ChatListReadFailure.Retrying
-            publishList(result, batch.discardOnSuccess, finishedActivity = finishedActivity)
+            publishList(result, rowDiscardsAfterRead, finishedActivity = finishedActivity)
+            rowDiscardsAfterRead.clear()
             if (completedActivityReconciliation === reconciliation)
                 completedActivityReconciliation = null
             if (retrying) refreshFailedListDependencies()
