@@ -1344,6 +1344,61 @@ class ChatListModelTest {
     }
 
     @Test
+    fun replacementDuringDetailReadRechecksAnUnmatchedAcceptedChat() = runTest {
+        val previousDetail = CompletableDeferred<ThreadDetail>()
+        val replacementDetail = CompletableDeferred<ThreadDetail>()
+        val preview = ProvisionalChat(CHAT_IN_PROJECT, CHAT_PROJECT)
+        var replacement: ChatSnapshot? = null
+        var detailReads = 0
+        val service =
+            object : Service() {
+                override suspend fun chatSnapshot() = replacement ?: super.chatSnapshot()
+
+                override suspend fun chatArchive(url: String) = ChatArchive(emptyList())
+
+                override suspend fun chatEvents(since: Long?) =
+                    when (since) {
+                        null -> page()
+                        17L -> throw ApiFailure.Http(410, null, null, null)
+                        40L -> page(emptyList())
+                        else -> error("Unexpected cursor $since")
+                    }
+
+                override suspend fun threadDetail(threadId: String): ThreadDetail {
+                    assertEquals(preview.threadId, threadId)
+                    return if (++detailReads == 1) previousDetail.await()
+                    else replacementDetail.await()
+                }
+            }
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            runCurrent()
+            assertEquals(listOf(CHAT_PERSONAL), model.uiState.value.threads.map { it.id })
+            model.retainAcceptedNewChats(listOf(preview), restored = true)
+            runCurrent()
+            assertEquals(1, detailReads)
+
+            replacement =
+                ChatSnapshotVariant1("https://fixture.test/archive", 60, HISTORY_LAST_EVENT, 40)
+            model.refreshList()
+            runCurrent()
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertTrue(model.uiState.value.threads.isEmpty())
+            assertEquals(listOf(preview), model.uiState.value.acceptedNewChats)
+            assertEquals(1, detailReads)
+
+            previousDetail.complete(ThreadDetail(null, false))
+            runCurrent()
+            assertEquals(listOf(preview), model.uiState.value.acceptedNewChats)
+            assertEquals(2, detailReads)
+
+            replacementDetail.completeExceptionally(ApiFailure.Http(404, null, null, null))
+            runCurrent()
+            assertTrue(model.uiState.value.acceptedNewChats.isEmpty())
+        }
+    }
+
+    @Test
     fun createAndDeleteInOneCatchUpRetireTheAcceptedPreview() = runTest {
         val service = Service().apply { listRead = { page(listOf(chatEventWire())) } }
         withCatchUpModel(service) { model ->

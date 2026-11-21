@@ -930,34 +930,45 @@ class ChatListModel(
             if (id !in acceptedChatsToVerify || !verifyingAcceptedChats.add(id)) continue
             viewModelScope.launch {
                 try {
-                    service.threadDetail(id)
-                    requireCurrent()
-                    acceptedChatsToVerify.remove(id)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    requireCurrent()
-                    if (error is ApiFailure.Http && error.status == 404) {
-                        acceptedChatsToVerify.remove(id)
-                        val state = mutable.value
-                        if (state.acceptedNewChats.any { it.threadId == id }) {
-                            mutable.value =
-                                state.copy(
-                                    acceptedNewChats =
-                                        state.acceptedNewChats.filterNot { it.threadId == id }
-                                )
-                            onAcceptedChatMissing?.invoke(id)
-                        }
-                    } else if (
-                        error is ApiFailure.Unauthenticated ||
-                            error is ApiFailure.UpdateRequired ||
-                            error is ApiFailure.Http && error.status == 401
-                    ) {
-                        onFailure(error)
-                    }
+                    verifyAcceptedChat(id)
                 } finally {
                     verifyingAcceptedChats.remove(id)
                 }
+            }
+        }
+    }
+
+    private suspend fun verifyAcceptedChat(id: String) {
+        // Consume the current request before reading so a newer snapshot can request another read.
+        while (acceptedChatsToVerify.remove(id)) {
+            requireCurrent()
+            if (mutable.value.acceptedNewChats.none { it.threadId == id }) return
+            try {
+                service.threadDetail(id)
+                requireCurrent()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                requireCurrent()
+                if (error is ApiFailure.Http && error.status == 404) {
+                    acceptedChatsToVerify.remove(id)
+                    val state = mutable.value
+                    val remaining = state.acceptedNewChats.filterNot { it.threadId == id }
+                    if (remaining.size < state.acceptedNewChats.size) {
+                        mutable.value = state.copy(acceptedNewChats = remaining)
+                        onAcceptedChatMissing?.invoke(id)
+                    }
+                    return
+                }
+                if (
+                    error is ApiFailure.Unauthenticated ||
+                        error is ApiFailure.UpdateRequired ||
+                        error is ApiFailure.Http && error.status == 401
+                ) {
+                    onFailure(error)
+                }
+                // Wait for another list publication unless newer verification is already queued.
+                if (acceptedChatsToVerify.add(id)) return
             }
         }
     }
