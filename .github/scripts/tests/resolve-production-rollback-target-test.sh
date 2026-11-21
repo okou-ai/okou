@@ -188,6 +188,8 @@ case "${1:-}" in
       fi
     elif [ "${3:-}" = "625c4607ccdcd2d46a5c7227f61419928035e13f" ]; then
       [ "${MOCK_PAIR_FREE_DISK_WRITER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "4f5de2f6f8f7f61b0470bdaca4af99a7e3ce2aea" ]; then
+      [ "${MOCK_NATIVE_CUSTOM_CONNECTOR_SKILL_READER_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "e01702c7d762b5d2a76d557db77ccaf19c4f95c8" ]; then
       [ "${MOCK_STRUCTURED_DISK_READER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "968063848aea8cf54acd6f56facdf7cdcbd79051" ]; then
@@ -1035,6 +1037,14 @@ assert_failure "Rollback target predates the model execution capture writer" \
 [ ! -s "${tmp_dir}/model-execution-capture-floor.output" ] || fail "pre-capture writer must not publish rollback outputs"
 if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
   fail "pre-capture writer must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the native custom Connector Skill reader" \
+  run_resolver "${tmp_dir}/custom-connector-skill-reader.output" MOCK_NATIVE_CUSTOM_CONNECTOR_SKILL_READER_VALID=0
+[ ! -s "${tmp_dir}/custom-connector-skill-reader.output" ] || fail "legacy Skill reader must not publish rollback outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "legacy Skill reader must fail before artifact or host access"
 fi
 
 : >"${tmp_dir}/boundaries.log"

@@ -33,7 +33,7 @@ describe("custom connector auth storage schema", () => {
         "chk_org_custom_connectors_mcp",
         "chk_org_custom_connectors_storage_version_positive",
         "chk_org_custom_connectors_skill_size",
-        "chk_org_custom_connectors_skill_version_pair",
+        "chk_org_custom_connectors_skill_publication_pair",
       ]),
     );
     const authModeCheck = connectorConfig.checks.find((check) => {

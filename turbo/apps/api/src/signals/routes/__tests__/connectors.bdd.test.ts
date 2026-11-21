@@ -6965,23 +6965,33 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         "Unknown custom connector permission bundle",
       );
 
+      const definition = {
+        displayName: permissionBundleCleared.displayName,
+        prefixTemplates: permissionBundleCleared.prefixTemplates,
+        fields: permissionBundleCleared.fields,
+        headerInjections: permissionBundleCleared.headerInjections,
+        queryInjections: permissionBundleCleared.queryInjections,
+        authMode: permissionBundleCleared.authMode,
+      };
       const skillCleared = await connectorsApi.updateCustomConnector(
         admin,
         created.id,
-        {
-          displayName: permissionBundleCleared.displayName,
-          prefixTemplates: permissionBundleCleared.prefixTemplates,
-          fields: permissionBundleCleared.fields,
-          headerInjections: permissionBundleCleared.headerInjections,
-          queryInjections: permissionBundleCleared.queryInjections,
-          authMode: permissionBundleCleared.authMode,
-          skillMarkdown: null,
-        },
+        { ...definition, skillMarkdown: null },
       );
       expect(skillCleared.skillMarkdown).toBeNull();
       await expect(
         observeCustomSkill(fixture, created.id),
       ).resolves.toBeUndefined();
+
+      await connectorsApi.updateCustomConnector(admin, created.id, {
+        ...definition,
+        skillMarkdown: skillUpdated.skillMarkdown,
+      });
+      await expect(
+        observeCustomSkill(fixture, created.id),
+      ).resolves.toMatchObject({
+        sha256: updatedHead.sha256,
+      });
 
       await connectorsApi.deleteCustomConnector(admin, created.id);
       await expect(

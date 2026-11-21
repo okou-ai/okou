@@ -200,14 +200,8 @@ export const orgCustomConnectors = pgTable(
         ) IS TRUE`,
       ),
       check(
-        "chk_org_custom_connectors_skill_version_pair",
-        sql`(
-          (${table.skillMarkdown} IS NULL AND ${table.skillStorageVersionId} IS NULL)
-          OR (
-            ${table.skillMarkdown} IS NOT NULL
-            AND ${table.skillStorageVersionId} IS NOT NULL
-          )
-        )`,
+        "chk_org_custom_connectors_skill_publication_pair",
+        sql`(${table.skillMarkdown} IS NULL) = (${table.skillContentBundleSourceVersionId} IS NULL)`,
       ),
     ];
   },
