@@ -12,7 +12,6 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
-import { agents } from "./agent";
 import { chatThreads } from "./chat-thread";
 
 export const linkWalletConnections = pgTable(
@@ -21,13 +20,8 @@ export const linkWalletConnections = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
-    // Legacy grants only. Workspace/user grants have no agent dependency.
-    agentId: uuid("agent_id").references(
-      () => {
-        return agents.id;
-      },
-      { onDelete: "cascade" },
-    ),
+    // Retired connections remain linked to historical spends for reconciliation.
+    retiredAt: timestamp("retired_at", { withTimezone: true }),
     // Identifies the actual OAuth authorization, not a refresh coordination lease.
     authorizationId: uuid("authorization_id").notNull(),
     // The authorization request snapshot, preserved across token refreshes.
@@ -43,14 +37,9 @@ export const linkWalletConnections = pgTable(
   },
   (table) => {
     return [
-      uniqueIndex("idx_link_wallet_connections_owner_agent").on(
-        table.orgId,
-        table.userId,
-        table.agentId,
-      ),
       uniqueIndex("idx_link_wallet_connections_owner")
         .on(table.orgId, table.userId)
-        .where(sql`${table.agentId} IS NULL`),
+        .where(sql`${table.retiredAt} IS NULL`),
     ];
   },
 );
@@ -89,12 +78,6 @@ export const linkWalletSpends = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
-    agentId: uuid("agent_id").references(
-      () => {
-        return agents.id;
-      },
-      { onDelete: "cascade" },
-    ),
     connectionId: uuid("connection_id")
       .notNull()
       .references(() => {
@@ -131,12 +114,6 @@ export const linkWalletSpends = pgTable(
   },
   (table) => {
     return [
-      uniqueIndex("idx_link_wallet_spends_intent").on(
-        table.orgId,
-        table.userId,
-        table.agentId,
-        table.intentId,
-      ),
       uniqueIndex("idx_link_wallet_spends_member_intent").on(
         table.orgId,
         table.userId,

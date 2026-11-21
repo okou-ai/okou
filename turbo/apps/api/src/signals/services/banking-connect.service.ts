@@ -505,7 +505,6 @@ export const saveBankingAgentGrant$ = command(
       .values({
         orgId: args.owner.orgId,
         userId: args.owner.userId,
-        agentId: args.body.agentId,
         connectionId: connection.id,
         accountProviderIds: accountRows.map((account) => {
           return account.providerAccountId;
@@ -520,7 +519,6 @@ export const saveBankingAgentGrant$ = command(
         target: [
           bankingAgentEnablements.orgId,
           bankingAgentEnablements.userId,
-          bankingAgentEnablements.agentId,
           bankingAgentEnablements.connectionId,
         ],
         set: {
@@ -563,7 +561,6 @@ export const revokeBankingAgentGrant$ = command(
           and(
             eq(bankingAgentEnablements.orgId, args.owner.orgId),
             eq(bankingAgentEnablements.userId, args.owner.userId),
-            eq(bankingAgentEnablements.agentId, args.agentId),
             eq(bankingAgentEnablements.connectionId, connection.id),
             isNull(bankingAgentEnablements.revokedAt),
           ),
