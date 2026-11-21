@@ -27,12 +27,6 @@ export const startChatGreetingVisit$ = command(({ get, set }): boolean => {
   return shouldAnimate;
 });
 
-/** Restore the first entrance when the requested agent cannot be opened. */
-export const releaseChatGreetingVisit$ = command(({ set }) => {
-  set(internalChatGreetingHasEntered$, false);
-  set(internalChatGreetingShouldAnimate$, false);
-});
-
 export const finishChatGreetingEntrance$ = command(({ set }) => {
   set(internalChatGreetingShouldAnimate$, false);
 });

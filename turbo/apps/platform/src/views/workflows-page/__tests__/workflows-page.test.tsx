@@ -4182,7 +4182,7 @@ test("Make private copy uses the workspace default without a destination or remo
     workflowsDetailContract.copy,
     ({ body, params, respond }) => {
       expect(params.workflowId).toBe(SALES_WORKFLOW_ID);
-      expect(body).toEqual({});
+      expect(body).toStrictEqual({});
       const personal: WorkflowDetailResponse = {
         ...shared,
         id: COPIED_WORKFLOW_ID,

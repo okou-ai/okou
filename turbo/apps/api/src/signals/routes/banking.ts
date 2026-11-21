@@ -8,12 +8,16 @@ import {
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { command } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { request$ } from "../context/hono";
-import { bodyResultOf, pathParamsOf } from "../context/request";
+import {
+  bodyResultOf,
+  pathParamsOf,
+  type BodyResult,
+} from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import {
   bankingAccounts$,
@@ -169,9 +173,24 @@ function createAccessRequestStatus(workspace: boolean) {
   });
 }
 
+function workspaceBankingBody<T extends object>(
+  body$: Computed<Promise<BodyResult<T>>>,
+) {
+  return computed(async (get): Promise<BodyResult<T & { agentId: string }>> => {
+    const body = await get(body$);
+    if (!body.ok) {
+      return body;
+    }
+    const agentId = await get(workspaceWorkflowNamespace$);
+    return { ok: true, data: { ...body.data, agentId } };
+  });
+}
+
 function createConnectSession(workspace: boolean) {
   const readBody$ = workspace
-    ? bodyResultOf(bankingWorkspaceContract.createConnectSession)
+    ? workspaceBankingBody(
+        bodyResultOf(bankingWorkspaceContract.createConnectSession),
+      )
     : connectSessionBody$;
   return command(async ({ get, set }, signal: AbortSignal) => {
     if (!(await set(bankingEnabled$))) {
@@ -192,13 +211,7 @@ function createConnectSession(workspace: boolean) {
       startBankingConnectSession$,
       {
         owner: { orgId: auth.orgId, userId: auth.userId },
-        body: {
-          ...body.data,
-          agentId:
-            "agentId" in body.data
-              ? body.data.agentId
-              : await get(workspaceWorkflowNamespace$),
-        },
+        body: body.data,
         redirectOrigin,
         webhookOrigin,
       },
@@ -209,7 +222,7 @@ function createConnectSession(workspace: boolean) {
 
 function createSaveGrant(workspace: boolean) {
   const readBody$ = workspace
-    ? bodyResultOf(bankingWorkspaceContract.saveGrant)
+    ? workspaceBankingBody(bodyResultOf(bankingWorkspaceContract.saveGrant))
     : saveGrantBody$;
   return command(async ({ get, set }) => {
     if (!(await set(bankingEnabled$))) {
@@ -222,20 +235,14 @@ function createSaveGrant(workspace: boolean) {
     const auth = get(organizationAuthContext$);
     return await set(saveBankingAgentGrant$, {
       owner: { orgId: auth.orgId, userId: auth.userId },
-      body: {
-        ...body.data,
-        agentId:
-          "agentId" in body.data
-            ? body.data.agentId
-            : await get(workspaceWorkflowNamespace$),
-      },
+      body: body.data,
     });
   });
 }
 
 function createRevokeGrant(workspace: boolean) {
   const readBody$ = workspace
-    ? bodyResultOf(bankingWorkspaceContract.revokeGrant)
+    ? workspaceBankingBody(bodyResultOf(bankingWorkspaceContract.revokeGrant))
     : revokeGrantBody$;
   return command(async ({ get, set }) => {
     if (!(await set(bankingEnabled$))) {
@@ -248,10 +255,7 @@ function createRevokeGrant(workspace: boolean) {
     const auth = get(organizationAuthContext$);
     return await set(revokeBankingAgentGrant$, {
       owner: { orgId: auth.orgId, userId: auth.userId },
-      agentId:
-        "agentId" in body.data
-          ? body.data.agentId
-          : await get(workspaceWorkflowNamespace$),
+      agentId: body.data.agentId,
     });
   });
 }
