@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.storage.workspaceStorageKey
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
@@ -17,6 +18,15 @@ import org.junit.rules.TemporaryFolder
 
 class ProjectExpansionStoreTest {
     @get:Rule val temporary = TemporaryFolder()
+
+    @Test
+    fun workspaceKeyRemainsCompatibleWithExistingStores() {
+        val identity = WorkspaceIdentity("https://API.OKOU.AI:443", "user-a", "session-b", "org-a")
+        assertEquals(
+            "53fd36a588b01d6a38441a57568d165634bbeea2877f6fc9dda790ba85b9ee16",
+            identity.workspaceStorageKey(),
+        )
+    }
 
     @Test
     fun choicesSurviveReopeningAndStayWithTheirAccountWorkspaceAndOrigin() = runTest {

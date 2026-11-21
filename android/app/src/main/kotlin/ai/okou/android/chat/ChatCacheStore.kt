@@ -6,6 +6,7 @@ import ai.okou.android.api.generated.ChatEventsEventsItem
 import ai.okou.android.api.generated.ProjectArchive
 import ai.okou.android.api.generated.ProjectEventsEventsItem
 import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.storage.workspaceStorageKey
 import android.content.Context
 import android.util.AtomicFile
 import android.util.Log
@@ -18,7 +19,6 @@ import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
-import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -32,12 +32,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
-import okhttp3.HttpUrl.Companion.toHttpUrl
-
-fun chatScopeHash(parts: List<String>): String =
-    MessageDigest.getInstance("SHA-256")
-        .digest(parts.joinToString("") { "${it.length}:$it" }.toByteArray(Charsets.UTF_8))
-        .joinToString("") { "%02x".format(it) }
 
 data class CachedChats(
     val checkpoint: ChatCheckpoint,
@@ -93,8 +87,7 @@ internal constructor(
     }
 
     fun open(identity: WorkspaceIdentity, authorized: () -> Boolean): Lease {
-        val origin = identity.apiOrigin.toHttpUrl().toString()
-        val key = chatScopeHash(listOf(origin, identity.userId, identity.workspaceId))
+        val key = identity.workspaceStorageKey()
         val replacement = Lease(key, identity.authorizationScope, authorized)
         active.getAndSet(replacement)?.retired = true
         return replacement

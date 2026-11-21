@@ -4,7 +4,7 @@ import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.auth.WorkspaceIdentity
-import ai.okou.android.chat.chatScopeHash
+import ai.okou.android.storage.workspaceStorageKey
 import android.util.AtomicFile
 import android.util.Log
 import java.io.File
@@ -18,7 +18,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
-import okhttp3.HttpUrl.Companion.toHttpUrl
 
 @Serializable
 data class MemberAppearance(
@@ -64,17 +63,8 @@ class MemberAppearanceCache(
             }
         }
 
-    private fun file(identity: WorkspaceIdentity): AtomicFile {
-        val key =
-            chatScopeHash(
-                listOf(
-                    identity.apiOrigin.toHttpUrl().toString(),
-                    identity.userId,
-                    identity.workspaceId,
-                )
-            )
-        return AtomicFile(directory().resolve("$key.json"))
-    }
+    private fun file(identity: WorkspaceIdentity): AtomicFile =
+        AtomicFile(directory().resolve("${identity.workspaceStorageKey()}.json"))
 
     private fun read(file: AtomicFile): MemberAppearance? =
         try {

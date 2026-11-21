@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.storage.workspaceStorageKey
 import android.content.Context
 import android.util.AtomicFile
 import java.io.File
@@ -20,7 +21,6 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.encodeToStream
-import okhttp3.HttpUrl.Companion.toHttpUrl
 
 enum class ComposerCommit {
     Committed,
@@ -51,10 +51,7 @@ class ComposerJournalStore(
         explicitNulls = true
     }
 
-    private fun key(identity: WorkspaceIdentity) =
-        chatScopeHash(
-            listOf(identity.apiOrigin.toHttpUrl().toString(), identity.userId, identity.workspaceId)
-        )
+    private fun key(identity: WorkspaceIdentity) = identity.workspaceStorageKey()
 
     internal fun attach(identity: WorkspaceIdentity, connection: ChatComposerOwner.Connection) =
         editors

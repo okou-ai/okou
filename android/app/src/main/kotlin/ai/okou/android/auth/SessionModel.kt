@@ -12,13 +12,13 @@ import ai.okou.android.chat.ProjectExpansionModel
 import ai.okou.android.chat.ProjectExpansionStore
 import ai.okou.android.chat.RunControlJournalStore
 import ai.okou.android.chat.RunControlsModel
-import ai.okou.android.chat.chatScopeHash
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.instructions.PersonalInstructionsModel
 import ai.okou.android.preferences.MemberAppearance
 import ai.okou.android.preferences.MemberAppearanceCache
 import ai.okou.android.preferences.MemberPreferencesModel
 import ai.okou.android.preferences.appearance
+import ai.okou.android.storage.scopeHash
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -226,7 +226,7 @@ class SessionModel(
                     val identity =
                         initialIdentity.copy(
                             authorizationScope =
-                                chatScopeHash(
+                                scopeHash(
                                     listOf(role) +
                                         refreshedAccess
                                             ?.let {

@@ -372,7 +372,7 @@ class SessionModelTest {
             runCurrent()
             assertEquals(SessionStage.Ready, model.uiState.value.stage)
             assertEquals(
-                ai.okou.android.chat.chatScopeHash(listOf("org:member", "org:member", "known")),
+                ai.okou.android.storage.scopeHash(listOf("org:member", "org:member", "known")),
                 resources.single().identity.authorizationScope,
             )
             assertEquals(auth.available, model.uiState.value.memberships)

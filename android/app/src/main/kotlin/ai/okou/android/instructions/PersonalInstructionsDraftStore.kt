@@ -2,7 +2,7 @@ package ai.okou.android.instructions
 
 import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.auth.WorkspaceIdentity
-import ai.okou.android.chat.chatScopeHash
+import ai.okou.android.storage.workspaceStorageKey
 import android.content.Context
 import android.util.AtomicFile
 import java.io.File
@@ -23,7 +23,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.encodeToStream
-import okhttp3.HttpUrl.Companion.toHttpUrl
 
 @Serializable
 data class InstructionsDraft(
@@ -64,10 +63,7 @@ class PersonalInstructionsDraftStore(
         explicitNulls = true
     }
 
-    private fun key(identity: WorkspaceIdentity) =
-        chatScopeHash(
-            listOf(identity.apiOrigin.toHttpUrl().toString(), identity.userId, identity.workspaceId)
-        )
+    private fun key(identity: WorkspaceIdentity) = identity.workspaceStorageKey()
 
     // Presentation controllers attach on Main. Only attached identities retain a shared editor.
     internal fun attach(

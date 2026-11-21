@@ -23,8 +23,8 @@ import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.HistoryCursor
 import ai.okou.android.chat.HistoryEvent
 import ai.okou.android.chat.HistoryPage
-import ai.okou.android.chat.chatScopeHash
 import ai.okou.android.chat.cursor
+import ai.okou.android.storage.scopeHash
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -136,7 +136,7 @@ class PendingWorkspaceApplication : TestOkouApplication() {
                 "user-a",
                 "session-a",
                 "org-a",
-                chatScopeHash(listOf("org:member")),
+                scopeHash(listOf("org:member")),
             )
         runBlocking {
             chatCache

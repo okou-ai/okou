@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.storage.workspaceStorageKey
 import android.content.Context
 import android.util.AtomicFile
 import java.io.File
@@ -19,7 +20,6 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.encodeToStream
-import okhttp3.HttpUrl.Companion.toHttpUrl
 
 data class RestoredRunControls(val journal: RunControlJournal, val durable: Boolean)
 
@@ -42,10 +42,7 @@ class RunControlJournalStore(
     private val json = Json { encodeDefaults = false }
     private var closed = false
 
-    private fun key(identity: WorkspaceIdentity) =
-        chatScopeHash(
-            listOf(identity.apiOrigin.toHttpUrl().toString(), identity.userId, identity.workspaceId)
-        )
+    private fun key(identity: WorkspaceIdentity) = identity.workspaceStorageKey()
 
     internal fun attach(identity: WorkspaceIdentity, connection: RunControlsOwner.Connection) =
         controls
