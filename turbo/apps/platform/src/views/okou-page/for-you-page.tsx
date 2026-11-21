@@ -388,6 +388,15 @@ function ForYouCover() {
   );
 }
 
+// The header follows the cover, not the color scheme: its ink is fixed rather
+// than a theme token, which would flip in dark mode.
+function headerColors(cover: (typeof forYouCovers)[number]): CSSProperties {
+  return {
+    "--for-you-scrim": cover.tint,
+    "--for-you-ink": cover.tone === "dark" ? "255 255 255" : "36 36 36",
+  } as CSSProperties;
+}
+
 function ForYouHeader() {
   const proactiveInMyOkou = useLastResolved(proactiveSettingsInMyOkou$);
   const { t } = useTranslation();
@@ -409,14 +418,7 @@ function ForYouHeader() {
   return (
     <header
       data-tone={cover.tone}
-      style={
-        {
-          "--for-you-scrim": cover.tint,
-          // Fixed ink, not theme tokens: the header follows the cover, not
-          // the color scheme.
-          "--for-you-ink": cover.tone === "dark" ? "255 255 255" : "36 36 36",
-        } as CSSProperties
-      }
+      style={headerColors(cover)}
       className="group/header absolute inset-x-0 top-0 z-10 grid h-14 grid-flow-col grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 px-4 sm:h-15 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8 sm:px-8"
     >
       <div
