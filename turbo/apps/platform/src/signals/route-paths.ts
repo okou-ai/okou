@@ -11,8 +11,6 @@ export const ROUTES = {
   home: "/",
   forYou: "/for-you",
   agents: "/agents",
-  agentChat: "/agents/:agentId/chat",
-  agentPermissions: "/agents/:agentId/permissions",
   workflows: "/workflows",
   workflowDetail: "/workflows/:workflowId",
   workflowDetailAutomations: "/workflows/:workflowId/automations",

@@ -56,7 +56,6 @@ interface ChatThreadEventState {
 
 export interface ThreadMeta {
   readonly id: string;
-  readonly agentId?: string;
   readonly title: string | null;
   readonly pinnedAt: string | null;
   readonly archived: boolean;
@@ -381,7 +380,6 @@ const canonicalThreadMetaMap$ = computed((get) => {
   for (const thread of get(allEventDrivenChatThreads$)) {
     metaById.set(thread.id, {
       id: thread.id,
-      agentId: thread.agentId,
       title: thread.title,
       pinnedAt: thread.pinnedAt,
       archived: thread.archived,
@@ -450,7 +448,6 @@ export function threadComputerAccessVersion(threadId: string) {
 function threadMetaFromMetadata(metadata: ChatThreadMetadata): ThreadMeta {
   return {
     id: metadata.id,
-    agentId: metadata.agentId,
     title: metadata.title,
     pinnedAt: metadata.pinnedAt,
     archived: metadata.archived,

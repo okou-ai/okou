@@ -133,11 +133,7 @@ const listWorkspaceAutomationsInner$ = command(
     return {
       status: 200 as const,
       body: entries.filter((entry) => {
-        return (
-          !namespace ||
-          entry.workflow.official !== null ||
-          entry.workflow.agentId === namespace
-        );
+        return !namespace || entry.workflow.agentId === namespace;
       }),
     };
   },

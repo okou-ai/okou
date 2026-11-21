@@ -5,8 +5,7 @@ import { createElement } from "react";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { AgentChatPage } from "../../views/okou-page/agent-chat-page.tsx";
-import { defaultAgentId$ } from "../agent.ts";
-import { setChatAgentId$ } from "../agent-chat.ts";
+
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { ensureAgentDraft$ } from "../okou-page/agent-draft.ts";
@@ -29,14 +28,12 @@ import { hydrateProjects$, projects$ } from "./projects.ts";
 export const setupProjectPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const projectId = get(selectedProjectId$);
-    const agentId = await get(defaultAgentId$);
     signal.throwIfAborted();
-    if (!projectId || !agentId) {
+    if (!projectId) {
       throw new Error("A Project page requires a Project and a default Agent");
     }
-    set(setChatAgentId$, agentId);
     const agentDraft = await set(ensureAgentDraft$, signal);
-    set(setAgentComposerContext$, { agentId, agentDraft, projectId });
+    set(setAgentComposerContext$, { agentDraft, projectId });
     set(get(agentChatComposerSignals$).setup$, signal);
     set(setTalkDraft$, agentDraft.draft);
     set(resetChatPageModelSelection$);

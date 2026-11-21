@@ -482,7 +482,6 @@ function useComposerMentionSuggestions(
   const result =
     chatThreadRange &&
     chatThreadResult &&
-    chatThreadResult.agentId === composer.agentId &&
     chatThreadResult.query === chatThreadRange.query
       ? chatThreadResult
       : null;

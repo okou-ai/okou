@@ -392,7 +392,7 @@ const ROUTE_CONFIG = [
     setup: setupPwaMeRoute$,
   },
   {
-    path: ROUTES.agentChat,
+    path: "/agents/:id/chat",
     setup: setupAuthPageWrapper(setupAgentChatPage$),
   },
   {
@@ -402,14 +402,6 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.connectorPermissionsBatch,
     setup: setupAuthPageWrapper(setupPermissionBatchPage$),
-  },
-  {
-    path: "/agents/:agentId/permissions/batch",
-    setup: setupAuthPageWrapper(setupPermissionBatchPage$),
-  },
-  {
-    path: ROUTES.agentPermissions,
-    setup: setupAuthPageWrapper(setupPermissionAllowPage$),
   },
   {
     path: ROUTES.workflowDetail,
@@ -600,10 +592,6 @@ const ROUTE_CONFIG = [
     setup: setupAuthSidebarPageWrapper(redirectLegacyAgentDetail$),
   },
   { path: "/agents/:id/ideas", setup: redirectTo(ROUTES.ideas) },
-  {
-    path: "/firewall-allow/:id",
-    setup: redirectWithId(ROUTES.agentPermissions, "agentId", true),
-  },
   {
     path: "/activity/:id",
     setup: redirectWithId(ROUTES.activityDetail, "activityRunId"),

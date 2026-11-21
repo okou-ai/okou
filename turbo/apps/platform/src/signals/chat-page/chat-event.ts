@@ -222,10 +222,7 @@ export const setChatThreadPinned$ = command(
       pinned && existingThread
         ? firstChatThreadPinOrder(
             threads.filter((thread) => {
-              return (
-                thread.agentId === existingThread.agentId &&
-                thread.id !== threadId
-              );
+              return thread.id !== threadId;
             }),
           )
         : undefined;

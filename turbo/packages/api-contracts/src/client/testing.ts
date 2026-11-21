@@ -44,11 +44,13 @@ import {
   bankingContract as OriginalBankingContract,
   bankingPublicContract as OriginalBankingPublicContract,
   bankingUserContract as OriginalBankingUserContract,
+  bankingWorkspaceContract as OriginalBankingWorkspaceContract,
 } from "../contracts/banking";
 import {
   bankingContract,
   bankingPublicContract,
   bankingUserContract,
+  bankingWorkspaceContract,
 } from "./banking";
 import {
   billingAutoRechargeContract as OriginalBillingAutoRechargeContract,
@@ -825,6 +827,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [bankingContract, OriginalBankingContract],
   [bankingPublicContract, OriginalBankingPublicContract],
   [bankingUserContract, OriginalBankingUserContract],
+  [bankingWorkspaceContract, OriginalBankingWorkspaceContract],
   [billingAutoRechargeContract, OriginalBillingAutoRechargeContract],
   [billingCheckoutContract, OriginalBillingCheckoutContract],
   [

@@ -2,15 +2,15 @@ import type { BrowserClerk } from "@clerk/shared/types";
 import { computed } from "ccstate";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/client/chat-threads";
 import { accept } from "../../lib/accept.ts";
-import { agentById } from "../agent.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { authenticatedSessionKey$, clerk$, currentOrgInfo$ } from "../auth.ts";
 import { chatActionIdMatches } from "../chat-page/chat-action-context.ts";
 import type { PermissionActionOwner } from "../chat-page/permission-action-owner.ts";
 
-type MemberOwner = Extract<PermissionActionOwner, { kind: "member" }>;
-
-function assertPermissionMember(clerk: BrowserClerk, owner: MemberOwner) {
+function assertPermissionMember(
+  clerk: BrowserClerk,
+  owner: PermissionActionOwner,
+) {
   if (
     !clerk.session ||
     clerk.user?.id !== owner.userId ||
@@ -24,7 +24,7 @@ function assertPermissionMember(clerk: BrowserClerk, owner: MemberOwner) {
 
 export function memberPermissionClientOptions(
   clerk: BrowserClerk,
-  owner: MemberOwner,
+  owner: PermissionActionOwner,
 ) {
   return {
     getTokenGuard: () => {
@@ -61,17 +61,6 @@ export function permissionActionTarget(
     get(authenticatedSessionKey$);
     if (threadId) {
       await verifyPermissionCallbackThread(get(apiClient$), threadId);
-    }
-    if (owner.kind === "agent") {
-      const agent = await get(agentById(owner.agentId));
-      if (agent.agentId.toLowerCase() !== owner.agentId.toLowerCase()) {
-        throw new Error("Permission agent does not match");
-      }
-      return {
-        id: owner.agentId,
-        displayName: agent.displayName ?? owner.agentId,
-        avatarUrl: agent.avatarUrl ?? null,
-      };
     }
     const [clerk, org] = await Promise.all([get(clerk$), get(currentOrgInfo$)]);
     assertPermissionMember(clerk, owner);

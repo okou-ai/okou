@@ -225,7 +225,6 @@ function ensurePass(
       continue;
     }
     const plan = chatEventTreePlan(event, {
-      agentId: "c0000000-0000-4000-a000-000000000001",
       threadId: THREAD_ID,
     });
     if (plan === null) {

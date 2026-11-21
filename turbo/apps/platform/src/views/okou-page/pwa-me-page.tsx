@@ -30,7 +30,6 @@ import {
   Settings,
   type LucideIcon,
 } from "lucide-react";
-import { defaultAgentName$ } from "../../signals/agent.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 import { isOrgAdmin$ } from "../../signals/org.ts";
 import { handleAccountAction$ } from "../../signals/okou-page/nav.ts";
@@ -217,8 +216,6 @@ function MeNavigation({
 
   const subscriptionEntry = useSubscriptionLinkingEntry();
   const slackScopeMismatch = useLastResolved(slackOrgScopeMismatch$) ?? false;
-  const defaultDisplayName =
-    useLastResolved(defaultAgentName$) ?? assistantName;
 
   return (
     <div className={surfaceVariants({ className: "flex flex-col gap-1 p-1" })}>
@@ -258,7 +255,7 @@ function MeNavigation({
           ($) => {
             return $.appShell.sidebar.navigation.works;
           },
-          { agentName: defaultDisplayName },
+          { agentName: assistantName },
         )}
       </MeLink>
       {profile.labEnabled && (

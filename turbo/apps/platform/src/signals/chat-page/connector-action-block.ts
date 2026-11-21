@@ -170,15 +170,6 @@ function parseConnectorActionCallback(
   url: URL,
   context: ChatActionContext,
 ): ChatActionCallback | null {
-  // Saved links from the legacy CLI still identify the Chat's Agent. Remove
-  // this reader after old Runners drain and retained links are retired (#45476).
-  const legacyAgentId = url.searchParams.get("agentId");
-  if (legacyAgentId !== null) {
-    return context.agentId &&
-      chatActionIdMatches(legacyAgentId, context.agentId)
-      ? chatActionCallbackFromUrl(url, context)
-      : null;
-  }
   const threadId = url.searchParams.get("threadId");
   if (!threadId || !chatActionIdMatches(threadId, context.threadId)) {
     return null;

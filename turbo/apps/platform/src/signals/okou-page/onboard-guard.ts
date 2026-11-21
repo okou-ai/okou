@@ -13,8 +13,6 @@ import {
 const ONBOARDING_GUARDED_PATHS = [
   ROUTES.activityDetail,
   ROUTES.activityInspect,
-  ROUTES.agentChat,
-  ROUTES.agentPermissions,
   ROUTES.agents,
   ROUTES.artifacts,
   ROUTES.browser,

@@ -39,7 +39,6 @@ const L = logger("ChatPanes");
 
 interface ChatThreadTarget {
   readonly threadId: string;
-  readonly agentId?: string;
   readonly draftOwner: ThreadDraftOwner;
 }
 
@@ -70,7 +69,6 @@ function createChatThreadPaneSignals(
     return target
       ? createChatPanelSignals(
           target.threadId,
-          target.agentId,
           target.draftOwner.draft,
           get(target.draftOwner.persistence$),
         )
@@ -82,10 +80,7 @@ function createChatThreadPaneSignals(
       // screen (a side pane, a mail or sidebar parameter, an event link). The
       // pane keeps the panel it already shows; another thread gets a new one.
       const current = get(internalThread$);
-      if (
-        current?.threadId !== target.threadId ||
-        current.agentId !== target.agentId
-      ) {
+      if (current?.threadId !== target.threadId) {
         set(internalThread$, target);
       }
       const thread = get(panel$);
@@ -199,7 +194,6 @@ const setupPaneThread$ = command(
     L.debug("setupPaneThread$ start", { threadId });
     const thread = set(pane.loadThread$, {
       threadId,
-      agentId: meta.agentId,
       draftOwner: set(ensureThreadDraft$, threadId),
     });
     set(thread.mail.prepareLocation$);

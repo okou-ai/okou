@@ -1,4 +1,4 @@
-import { bankingUserContract } from "@okouai/api-contracts/contracts/banking";
+import { bankingWorkspaceContract } from "@okouai/api-contracts/contracts/banking";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { setupPage } from "../../../__tests__/page-helper.ts";
@@ -11,19 +11,22 @@ const REASON = "Review quarterly subscription expenses";
 
 test("Duplicate banking cards update together on events and recover after a continuity gap", async () => {
   const chat = createMarkdownChatFixture(context);
-  const url = new URL(`https://app.okou.ai/agents/${AGENT_ID}/banking`);
+  const url = new URL(`https://app.okou.ai/banking/access`);
   url.searchParams.set("reason", REASON);
   url.searchParams.set("threadId", context.resourceId);
   url.searchParams.set("callbackPrompt", "Continue the expense review");
   let name = "Finance Assistant";
-  context.mocks.api(bankingUserContract.accessRequestStatus, ({ respond }) => {
-    return respond(200, {
-      agent: { id: AGENT_ID, name },
-      connection: null,
-      session: null,
-      grant: null,
-    });
-  });
+  context.mocks.api(
+    bankingWorkspaceContract.accessRequestStatus,
+    ({ respond }) => {
+      return respond(200, {
+        agent: { id: AGENT_ID, name },
+        connection: null,
+        session: null,
+        grant: null,
+      });
+    },
+  );
   chat.install({
     rows: () => {
       return [

@@ -101,8 +101,6 @@ import { HoverScrollTitle } from "./hover-scroll-title.tsx";
 import { ForYouChatListRow, OkouChatListRow } from "./sidebar-okou-row.tsx";
 import { useTitleReveal } from "./use-title-reveal.ts";
 import {
-  currentChatAgentScope$,
-  currentChatAgentId$,
   currentChatThreadId$,
   hasCurrentChatThread$,
 } from "../../signals/agent-chat.ts";
@@ -113,8 +111,8 @@ import {
   selectChatThreadFilter$,
   type ChatThreadFilter,
 } from "../../signals/okou-page/chat-thread-filter-selection.ts";
-import { currentChatAgentHasUnread$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
-import { markAgentThreadsRead$ } from "../../signals/chat-page/sidebar-unread-threads.ts";
+import { workspaceHasUnreadChats$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
+import { markWorkspaceThreadsRead$ } from "../../signals/chat-page/sidebar-unread-threads.ts";
 import {
   closeRenameChatThreadDialog$,
   pendingDeleteThreadId$,
@@ -1190,53 +1188,36 @@ function ChatThreadsListMenuTooltip() {
 }
 
 function useNewChatAction() {
-  const currentChatAgentId = useLastResolved(currentChatAgentId$) ?? null;
   const createNewChat = useSet(createNewChatThread$);
   const rootSignal = useGet(rootSignal$);
   const newChatDisabled = useGet(newChatThreadDisabled$);
 
   function onSelect(pane: NewChatThreadPane) {
-    if (!currentChatAgentId) {
-      return;
-    }
-    detach(
-      createNewChat({ agentId: currentChatAgentId }, pane, rootSignal),
-      Reason.DomCallback,
-    );
+    detach(createNewChat({}, pane, rootSignal), Reason.DomCallback);
   }
 
   return {
-    disabled: !currentChatAgentId || newChatDisabled,
+    disabled: newChatDisabled,
     onSelect,
   };
 }
 
 function useMarkAllReadMenuAction(showMarkAllRead: boolean) {
-  const currentChatAgentId = useLastResolved(currentChatAgentId$) ?? null;
-  const currentAgentHasUnread =
-    useLastResolved(currentChatAgentHasUnread$) ?? false;
-  const [markReadLoadable, markAgentThreadsRead] = useLoadableSet(
-    markAgentThreadsRead$,
+  const hasUnread = useLastResolved(workspaceHasUnreadChats$) ?? false;
+  const [markReadLoadable, markWorkspaceThreadsRead] = useLoadableSet(
+    markWorkspaceThreadsRead$,
   );
   const pageSignal = useGet(pageSignal$);
-  const markingRead = markReadLoadable.state === "loading";
-  const visible = showMarkAllRead && currentChatAgentId !== null;
-  // Keep the item mounted and toggle availability so the menu layout does
-  // not jump when the unread state changes.
-  const hasUnread = currentChatAgentId !== null && currentAgentHasUnread;
 
   function onSelect() {
-    if (!currentChatAgentId) {
-      return;
-    }
-    detach(
-      markAgentThreadsRead(currentChatAgentId, pageSignal),
-      Reason.DomCallback,
-      "markAgentThreadsRead",
-    );
+    detach(markWorkspaceThreadsRead(pageSignal), Reason.DomCallback);
   }
 
-  return { disabled: markingRead || !hasUnread, onSelect, visible };
+  return {
+    disabled: markReadLoadable.state === "loading" || !hasUnread,
+    onSelect,
+    visible: showMarkAllRead,
+  };
 }
 
 function MarkAllReadMenuItem({
@@ -1733,17 +1714,13 @@ export function ChatThreadsSection({
   /** False when the surrounding header already carries the title actions. */
   showTitle?: boolean;
 }) {
-  const agentScope = useGet(currentChatAgentScope$);
   const mainStylesheetLoaded = useLastResolved(mainStylesheetLoaded$);
 
   return (
     <div className={cn("flex min-h-0 flex-1 flex-col", showTitle && "mt-4")}>
       {showTitle ? (
         <div className={contentClassName}>
-          <ChatThreadsTitle
-            key={agentScope ?? "no-agent"}
-            showMarkAllRead={showMarkAllRead}
-          />
+          <ChatThreadsTitle showMarkAllRead={showMarkAllRead} />
         </div>
       ) : null}
       {/* Okou's entry leads the list and stays outside its scroll viewport,

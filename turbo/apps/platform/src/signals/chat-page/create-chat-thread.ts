@@ -369,9 +369,6 @@ function createThreadMetadata(threadMeta$: Computed<ThreadMeta | null>) {
   const threadExists$ = computed((get) => {
     return get(threadMeta$) !== null;
   });
-  const threadAgentId$ = computed((get) => {
-    return get(threadMeta$)?.agentId ?? null;
-  });
   const threadTitle$ = computed((get): string | null => {
     return get(threadMeta$)?.title ?? null;
   });
@@ -386,7 +383,6 @@ function createThreadMetadata(threadMeta$: Computed<ThreadMeta | null>) {
   });
   return {
     threadExists$,
-    threadAgentId$,
     threadTitle$,
     threadTitleEmoji$,
     threadTitleText$,
@@ -3640,7 +3636,6 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
 
 interface CreateChatThreadComposerSignalsOptions {
   readonly chatEvents: ChatEventSignals;
-  readonly agentId?: string;
   readonly draft: DraftSignals;
   readonly loadDraft$: Command<Promise<void>, [AbortSignal]>;
   readonly queueDraftSync$: Command<Promise<void>, [AbortSignal]>;
@@ -3661,7 +3656,6 @@ interface ChatThreadComposerContext {
   readonly threadMeta$: Computed<ThreadMeta | null>;
   /** A dialog composer that leaves the thread's saved draft untouched. */
   readonly inPlace?: boolean;
-  readonly agentId?: string;
   readonly cancellationRecoveryPending$: Computed<Promise<boolean>>;
   readonly forward?: ChatForwardContext;
   readonly onOptimisticSend?: (submission: ComposerSubmission) => void;
@@ -3762,7 +3756,6 @@ function createChatThreadComposerSignals(
     },
   );
   return createComposerSignals({
-    agentId: options.agentId,
     connector: options.connector,
     draft: {
       signals: options.draft,
@@ -3846,7 +3839,6 @@ function createThreadComposerSignalsWithContext(
   });
   return createChatThreadComposerSignals({
     chatEvents,
-    agentId: context.agentId,
     draft,
     loadDraft$,
     queueDraftSync$,
@@ -3868,7 +3860,6 @@ function createThreadComposerSignalsWithContext(
  */
 export function createThreadComposerSignals(
   threadId: string,
-  agentId: string | undefined,
   chatEvents: ChatEventSignals,
   options: {
     readonly forward?: ChatForwardContext;
@@ -3885,7 +3876,6 @@ export function createThreadComposerSignals(
     chatEvents,
     {
       threadMeta$,
-      agentId,
       cancellationRecoveryPending$: cancellationRecovery.pending$,
       forward: options.forward,
       onOptimisticSend: options.onOptimisticSend,
@@ -3906,7 +3896,6 @@ const createChatForwardComposerSignals: ChatForwardComposerFactory = (
   projectId?: string,
 ) => {
   const composer = createForwardAgentComposerSignals(
-    target.id,
     forward,
     onOptimisticSend,
     projectId,
@@ -3929,11 +3918,10 @@ const createChatForwardComposerSignals: ChatForwardComposerFactory = (
  */
 export function createInPlaceThreadComposerSignals(
   threadId: string,
-  agentId: string | undefined,
   onOptimisticSend: (submission: ComposerSubmission) => void,
 ) {
   const chatEvents = createChatEventSignals(threadId);
-  const composer = createThreadComposerSignals(threadId, agentId, chatEvents, {
+  const composer = createThreadComposerSignals(threadId, chatEvents, {
     onOptimisticSend,
     inPlace: true,
   });
@@ -3972,7 +3960,6 @@ function publicChatThreadScrollSignals(scroll: ChatThreadScrollSignals) {
 
 export function createChatPanelSignals(
   threadId: string,
-  agentId: string | undefined,
   draft: DraftSignals,
   persistence: ThreadDraftPersistence,
 ): ChatPanelSignals {
@@ -3997,7 +3984,6 @@ export function createChatPanelSignals(
     chatEvents,
     {
       threadMeta$,
-      agentId,
       cancellationRecoveryPending$: cancellationRecovery.pending$,
     },
     draft,
@@ -4017,7 +4003,7 @@ export function createChatPanelSignals(
     );
   });
   const messagePipeline = createChatThreadMessagePipeline({
-    chatActionContext: { threadId, agentId },
+    chatActionContext: { threadId },
     chatEvents,
     connector: composer.connector,
     driveAccountRevision$,
@@ -4061,7 +4047,6 @@ export function createChatPanelSignals(
   const relations = createChatRelationSignals(threadId, messagePipeline);
   return {
     threadId,
-    agentId,
     threadDraft$,
     threadMeta$,
     optimisticCreateUnsettled$,

@@ -71,7 +71,6 @@ import { prepareUserMessageFromDraft$ } from "./resolve-draft-attachments.ts";
 export type NewChatThreadPane = "main" | "sidebar";
 
 interface NewChatThreadTarget {
-  readonly agentId: string;
   readonly projectId?: string;
 }
 
@@ -85,7 +84,6 @@ export const newChatThreadDisabled$ = computed(() => {
 });
 
 interface SendNewThreadMessageRequest {
-  agentId: string;
   /** A prepared title skips automatic title generation. */
   title?: string;
   /** The Project the new thread starts in. */
@@ -358,7 +356,6 @@ const mintOptimisticThreadWithEvent$ = command(
     args: {
       readonly threadId: string;
       readonly eventId: string;
-      readonly agentId: string;
       readonly projectId?: string;
       readonly title?: string;
       readonly selectedModel: string | null;
@@ -372,13 +369,11 @@ const mintOptimisticThreadWithEvent$ = command(
     signal.throwIfAborted();
     L.debug("optimistic thread minted", {
       threadId: args.threadId,
-      agentId: args.agentId,
     });
     set(registerOptimisticChatThreadEvent$, {
       id: args.eventId,
       kind: "created",
       chatThreadId: args.threadId,
-      agentId: args.agentId,
       projectId: args.projectId,
       title: args.title ?? null,
       selectedModel: args.selectedModel,
@@ -498,7 +493,7 @@ const startNewChatThreadCreate$ = command(
     readonly threadId: string;
     readonly createResult: Promise<void>;
   }> => {
-    const { agentId, projectId } = target;
+    const { projectId } = target;
     const threadId = crypto.randomUUID();
     const eventId = crypto.randomUUID();
     const models = await get(availableRunModels$);
@@ -521,7 +516,6 @@ const startNewChatThreadCreate$ = command(
       {
         threadId,
         eventId,
-        agentId,
         projectId,
         selectedModel: modelSelection.selectedModel,
         modelSettings: modelSelection.modelSettings ?? {},
@@ -596,11 +590,7 @@ const mintNewThreadSubmission$ = command(
     { set },
     request: Pick<
       SendNewThreadMessageRequest,
-      | "agentId"
-      | "projectId"
-      | "title"
-      | "computerUseHostId"
-      | "cloudBrowserEnabled"
+      "projectId" | "title" | "computerUseHostId" | "cloudBrowserEnabled"
     >,
     identity: Omit<PendingThreadIdentity, "intent">,
     submission: {
@@ -626,7 +616,6 @@ const mintNewThreadSubmission$ = command(
       {
         threadId: identity.threadId,
         eventId: identity.chatThreadEventId,
-        agentId: request.agentId,
         projectId: request.projectId,
         title: request.title,
         selectedModel: modelSelection.selectedModel,
@@ -685,7 +674,6 @@ const reserveNewThreadSubmissionIdentity$ = command(
     const identity = customDirection
       ? await customDirectionIdentity(
           JSON.stringify({
-            agentId: request.agentId,
             userMessage: {
               ...userMessage,
               parts: userMessage.parts.filter((part) => {
@@ -697,7 +685,6 @@ const reserveNewThreadSubmissionIdentity$ = command(
       : set(
           draft.reserveThreadIdentity$,
           JSON.stringify({
-            agentId: request.agentId,
             projectId: request.projectId,
             title: request.title,
             userMessage,

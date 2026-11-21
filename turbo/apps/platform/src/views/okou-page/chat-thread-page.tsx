@@ -3521,8 +3521,7 @@ function ChatThreadNotFound() {
 
 function ChatThreadFeedbackSlot({ thread }: { thread: ChatPanelSignals }) {
   const sharingPhase = useGet(thread.sharing.phase$);
-  const agentId = useGet(thread.threadAgentId$);
-  if (sharingPhase !== "idle" || agentId === null) {
+  if (sharingPhase !== "idle") {
     return null;
   }
   return <ChatFeedbackSelection feedback={thread.feedback} />;

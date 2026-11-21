@@ -1817,7 +1817,7 @@
       "repair": "Repair",
       "repairRequired": "{{institution}} needs repair",
       "revoke": "Revoke",
-      "revokeConfirm": "Revoke this Agent's banking access?",
+      "revokeConfirm": "Revoke banking access for this workspace?",
       "selectAccounts": "Select accounts",
       "sevenDays": "7 days",
       "thirtyDays": "30 days",

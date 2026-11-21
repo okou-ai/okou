@@ -48,7 +48,7 @@ import { VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS } from "@okouai/api-contra
 import type { VoiceIoEditorContext } from "@okouai/api-contracts/contracts/voice-io-transcribe";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { splitPlainTextUrls } from "../../lib/plain-text-urls.ts";
-import { currentChatAgentRecordId$ } from "../agent-chat.ts";
+
 import { createRecentWorkflowIds } from "./recent-workflows.ts";
 import { detach, onRef, Reason, resetSignal } from "../utils.ts";
 import type { DraftInputSyncTarget, DraftSignals } from "./chat-draft.ts";
@@ -92,7 +92,6 @@ import type { OpenTemplatePickerDialogCommand } from "./chat-composer.ts";
 import { reloadWorkflowData$ } from "../workflows-page/workflow-reload.ts";
 import { i18n } from "../../i18n/index.ts";
 
-type AgentIdValue = string | null | Promise<string | null>;
 type WorkflowNamesSyncCommand = Command<
   Promise<void>,
   [AbortSignal, AbortSignal]
@@ -235,7 +234,6 @@ export interface WorkflowComposerSignals {
   readonly chatThreadSuggestions$: Computed<
     Promise<ComposerChatThreadSuggestionResult>
   >;
-  readonly agentId$: Computed<Promise<string | null>>;
   /** Null while the draft has no text. */
   readonly workflows$: Computed<Promise<readonly ComposerWorkflow[]> | null>;
   readonly reloadWorkflows$: Command<Promise<void>, [AbortSignal]>;
@@ -319,14 +317,10 @@ export interface ComposerTemplateAttachment {
   readonly previewImageUrl?: string;
 }
 
-function createComposerAgentResources<T extends AgentIdValue>(
+function createComposerWorkflowResources(
   editor: Editor,
-  agentIdSource$: Computed<T>,
   hasInput$: Computed<boolean>,
 ) {
-  const agentId$ = computed(async (get): Promise<string | null> => {
-    return await get(agentIdSource$);
-  });
   const allWorkflows$ = composerWorkflows$;
   // Empty drafts do not need workflows. The underlying computed retains its
   // request and result when the draft is cleared and later edited again.
@@ -346,7 +340,7 @@ function createComposerAgentResources<T extends AgentIdValue>(
     },
   );
   const workflowNames: ComposerWorkflowNames = { sync$, syncForInput$ };
-  return { agentId$, workflows$, workflowNames };
+  return { workflows$, workflowNames };
 }
 
 function connectComposerFeedback(
@@ -3329,12 +3323,9 @@ function createSlashExpansionSignals(
   };
 }
 
-export function createWorkflowComposerSignals<
-  T extends AgentIdValue = Promise<string | null>,
->(
+export function createWorkflowComposerSignals(
   draft: DraftSignals,
   openDialog$: OpenTemplatePickerDialogCommand,
-  agentIdSource$: Computed<T> = currentChatAgentRecordId$ as Computed<T>,
   options: WorkflowComposerOptions = {},
   feedback: ComposerFeedbackModel = createComposerFeedbackModel(),
 ): WorkflowComposerSignals {
@@ -3359,9 +3350,8 @@ export function createWorkflowComposerSignals<
     previewSuggestionIndexState$,
   );
   connectComposerFeedback(feedback, editor);
-  const { agentId$, workflows$, workflowNames } = createComposerAgentResources(
+  const { workflows$, workflowNames } = createComposerWorkflowResources(
     editor,
-    agentIdSource$,
     draft.hasInput$,
   );
   const templates = createTemplateSignals(editor, draft, openDialog$);
@@ -3381,7 +3371,6 @@ export function createWorkflowComposerSignals<
   );
   const chatThreadSuggestions$ = createComposerChatThreadSuggestions(
     activeChatThreadSuggestionRange$,
-    agentId$,
   );
   const closeSuggestionMenu$ = createCloseSuggestionMenuCommand(
     editor,
@@ -3433,7 +3422,6 @@ export function createWorkflowComposerSignals<
     activeSlashRange$,
     activeChatThreadSuggestionRange$,
     chatThreadSuggestions$,
-    agentId$,
     workflows$,
     reloadWorkflows$: reloadMountedComposerWorkflows$,
     ...createSuggestionSelectionSignals(
