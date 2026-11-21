@@ -136,7 +136,9 @@ const disableInactiveProactiveWorkflows$ = command(
           eligible
             ? notInArray(
                 workflows.officialDefinitionName,
-                kinds.map((kind) => PROACTIVE_WORKFLOW_DEFINITIONS[kind].name),
+                kinds.map((kind) => {
+                  return PROACTIVE_WORKFLOW_DEFINITIONS[kind].name;
+                }),
               )
             : undefined,
         ),
