@@ -158,8 +158,8 @@ class ConversationHistoryModel(
         }
     }
 
-    internal fun stopAutomaticRead(threadId: String): Job? =
-        if (mutable.value.thread?.id == threadId) visit?.stopAutomaticRead() else null
+    internal fun readSessionFor(threadId: String): ConversationReadSession? =
+        visit?.takeIf { mutable.value.thread?.id == threadId }
 
     fun refresh() {
         refreshHistory()

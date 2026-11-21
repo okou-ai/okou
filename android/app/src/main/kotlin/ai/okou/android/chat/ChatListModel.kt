@@ -750,8 +750,9 @@ class ChatListModel(
             )
                 ChatRowUndo(threadId, action, ++undoSequence)
             else null
-        val acknowledgement =
-            if (action == ChatRowAction.MarkUnread) history.stopAutomaticRead(threadId) else null
+        val readSession =
+            if (action == ChatRowAction.MarkUnread) history.readSessionFor(threadId) else null
+        val acknowledgement = readSession?.pendingAutomaticRead
         val intent =
             if (!action.updatesChat) {
                 ChatReadIntent(action, state.displayUnreadAt?.get(threadId))
@@ -835,6 +836,9 @@ class ChatListModel(
                                 latest.copy(readIntents = latest.readIntents + (threadId to intent))
                         }
                     }
+                    // New acknowledgements wait behind this write. Stop the original visit only
+                    // once the inverse is going to be sent.
+                    readSession?.stopAutomaticRead()
                     if (edits.isNotEmpty()) {
                         projection.addEdits(edits)
                         publishRows()
@@ -918,7 +922,25 @@ class ChatListModel(
                             state.copy(pendingRowActions = state.pendingRowActions - threadId)
                     }
                 }
-                if (undoRequest == null && confirmation?.receiptCoversIntent == true)
+                requireCurrent()
+                val confirmedRead = confirmation?.receiptCoversIntent
+                val settledRead = intent != null && (confirmation == null || confirmedRead == true)
+                val rejectedEdit = writeRejected && projection.hasUnsettledEdits(edits)
+                if (undoRequest != null && (settledRead || rejectedEdit)) {
+                    // A definitive write response settles Undo independently of background reads.
+                    if (rejectedEdit) {
+                        projection.discardEdits(edits)
+                        publishRows()
+                        refreshList()
+                    }
+                    completeRowUndo(
+                        undoRequest,
+                        if (confirmedRead == true) null else ChatUndoPhase.Failed,
+                    )
+                    invalidateIndicators()
+                    return@launch
+                }
+                if (undoRequest == null && confirmedRead == true)
                     recordConfirmedUndo(threadId, undo)
                 val confirmedEdits = coroutineScope {
                     if (archiveAction) invalidateIndicators()
@@ -938,20 +960,11 @@ class ChatListModel(
                 requireCurrent()
                 when {
                     undoRequest != null -> {
-                        if (writeRejected && projection.hasUnsettledEdits(edits)) {
-                            projection.discardEdits(edits)
-                            publishRows()
-                        }
-                        val phase =
-                            when {
-                                confirmedEdits ||
-                                    confirmation?.receiptCoversIntent == true ||
-                                    confirmation?.observedUnread == true -> null
-                                writeRejected || !action.updatesChat && confirmation == null ->
-                                    ChatUndoPhase.Failed
-                                else -> ChatUndoPhase.Unconfirmed
-                            }
-                        completeRowUndo(undoRequest, phase)
+                        completeRowUndo(
+                            undoRequest,
+                            if (confirmedEdits || confirmation?.observedUnread == true) null
+                            else ChatUndoPhase.Unconfirmed,
+                        )
                     }
                     confirmation?.receiptCoversIntent == false &&
                         readConfirmations[threadId] === confirmation &&
