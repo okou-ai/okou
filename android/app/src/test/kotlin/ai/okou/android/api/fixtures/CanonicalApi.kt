@@ -18,7 +18,10 @@ internal interface CanonicalApi {
     ): Response<ChatEvents>
 
     @GET("/api/indicators")
-    suspend fun `indicators`(@Header("Authorization") token: String): Response<Indicators>
+    suspend fun `indicators`(
+        @Header("Authorization") token: String,
+        @Query("includeActiveUnread") `queryIncludeActiveUnread`: String? = null,
+    ): Response<Indicators>
 
     @GET("/api/agents")
     suspend fun `agents`(@Header("Authorization") token: String): Response<Agents>

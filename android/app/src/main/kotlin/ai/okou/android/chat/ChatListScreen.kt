@@ -312,13 +312,33 @@ internal fun ChatListScreen(
                 PaddingValues(
                     start = listInset,
                     end = listInset,
-                    top = if (inlineControls == null) 4.dp else 0.dp,
+                    top =
+                        if (inlineControls == null && state.filter == ChatListFilter.Inbox) 4.dp
+                        else 0.dp,
                     bottom = bottomSpace,
                 ),
             state = listState,
         ) {
             if (inlineControls != null) item(key = "list_controls") { inlineControls() }
             if (startupRecovery != null) item(key = "workspace_recovery") { startupRecovery() }
+            if (state.filter != ChatListFilter.Inbox) {
+                item(key = "filter_heading") {
+                    Text(
+                        stringResource(state.filter.label()),
+                        Modifier.padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 4.dp)
+                            .semantics { heading() }
+                            .testTag("chat_filter_heading"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style =
+                            MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 13.sp,
+                                lineHeight = 20.sp,
+                                letterSpacing = 0.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            ),
+                    )
+                }
+            }
             if (state.confirmedAt == null || missingUnread) {
                 when {
                     state.offline ->

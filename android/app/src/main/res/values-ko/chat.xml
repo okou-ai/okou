@@ -22,7 +22,6 @@
         <item quantity="other">채팅 %1$d개를 읽음으로 표시했습니다.</item>
     </plurals>
     <string name="chat_filter">필터</string>
-    <string name="chat_filter_subtitle">필터 · %1$s</string>
     <string name="chat_back_to_inbox">받은편지함으로 돌아가기</string>
     <string name="chat_more_actions">추가 작업</string>
     <string name="chat_unread">읽지 않음</string>

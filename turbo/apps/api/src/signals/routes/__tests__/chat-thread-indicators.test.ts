@@ -282,7 +282,7 @@ describe("GET /api/indicators", () => {
     expect(unreads).toStrictEqual(expect.arrayContaining([toggled, untouched]));
   });
 
-  it("reports a finished thread with a new active Run as active instead of unread", async () => {
+  it("keeps an archived active thread unread on request until its terminal watermark is acknowledged", async () => {
     await prepareChatRuntime();
     const actor = bdd.user();
     const agentId = await createEntitledAgent(actor, "Rerun indicator agent");
@@ -300,13 +300,16 @@ describe("GET /api/indicators", () => {
       threadId: rerun.threadId,
       prompt: "Follow-up active Run",
     });
+    await chat.markThreadUnread(actor, rerun.threadId);
+    await chat.requestSetThreadArchived(actor, rerun.threadId, true, [204]);
     await seedMembership(actor);
 
+    const headers = {
+      authorization: `Bearer ${indicatorCredentials.token(actor)}`,
+    };
     const indicators = await accept(
       client().indicators({
-        headers: {
-          authorization: `Bearer ${indicatorCredentials.token(actor)}`,
-        },
+        headers,
       }),
       [200],
     );
@@ -318,25 +321,72 @@ describe("GET /api/indicators", () => {
       },
       unreadAt: { [unread.threadId]: unread.unreadAt },
     });
+    await expect(
+      accept(
+        client().indicators({
+          headers,
+          query: { includeActiveUnread: "ignored" },
+        }),
+        [200],
+      ),
+    ).resolves.toMatchObject({ body: indicators.body });
+
+    const currentIndicators = async () => {
+      const response = await accept(
+        client().indicators({
+          headers,
+          query: { includeActiveUnread: "true" },
+        }),
+        [200],
+      );
+      return response.body;
+    };
+    await expect(currentIndicators()).resolves.toStrictEqual({
+      ...indicators.body,
+      unreadAt: {
+        [unread.threadId]: unread.unreadAt,
+        [rerun.threadId]: rerun.unreadAt,
+      },
+    });
+
+    await expect(
+      chat.markThreadRead(actor, rerun.threadId),
+    ).resolves.toStrictEqual({
+      lastReadAt: rerun.unreadAt,
+    });
+    await expect(currentIndicators()).resolves.toStrictEqual(indicators.body);
+
+    await chat.markThreadUnread(actor, rerun.threadId);
+    await chat.requestSetThreadMuted(actor, rerun.threadId, true, [204]);
+    await expect(currentIndicators()).resolves.toStrictEqual(indicators.body);
   });
 
-  it("returns the 50 most recent active threads owned by this member", async () => {
+  it("keeps the 50 most recent active threads independent of unread state", async () => {
     await prepareChatRuntime();
     // Every send must start a Run (runs, not waiting inputs, feed the active
     // indicator), so lift the organization concurrency limit.
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");
     const actor = bdd.user();
     const peer = bdd.user({ orgId: orgIdOf(actor) });
-    await createEntitledAgent(actor, "Visible active indicator agent");
+    const agentId = await createEntitledAgent(
+      actor,
+      "Visible active indicator agent",
+    );
     const hiddenAgent = await bdd.createAgent(peer, {
       displayName: "Hidden active indicator agent",
       visibility: "public",
     });
-    const visible = await chat.sendAndLaunch(actor, {
-      prompt: "Visible active indicator",
+    const older = await createCancelledThread({
+      actor,
+      agentId,
+      prompt: "Older unread reply",
     });
-
-    await indicatorCredentials.executionInput(actor, visible.runId);
+    const restarted = await chat.sendAndLaunch(actor, {
+      threadId: older.threadId,
+      prompt: "Oldest active Run",
+    });
+    await chat.markThreadUnread(actor, older.threadId);
+    await indicatorCredentials.executionInput(actor, restarted.runId);
 
     const recent: Record<string, string> = {};
     for (let index = 0; index < 50; index += 1) {
@@ -350,18 +400,36 @@ describe("GET /api/indicators", () => {
     });
     await seedMembership(actor);
 
-    const indicators = await accept(
-      client().indicators({
-        headers: {
-          authorization: `Bearer ${indicatorCredentials.token(actor)}`,
-        },
-      }),
-      [200],
-    );
+    const headers = {
+      authorization: `Bearer ${indicatorCredentials.token(actor)}`,
+    };
+    const indicators = await accept(client().indicators({ headers }), [200]);
     expect(indicators.body).toStrictEqual({
       agents: {},
       threads: recent,
       unreadAt: {},
     });
+
+    const readIndependentIndicators = async () => {
+      const response = await accept(
+        client().indicators({
+          headers,
+          query: { includeActiveUnread: "true" },
+        }),
+        [200],
+      );
+      return response.body;
+    };
+    await expect(readIndependentIndicators()).resolves.toStrictEqual({
+      agents: {},
+      threads: { ...recent, [older.threadId]: "unread" },
+      unreadAt: { [older.threadId]: older.unreadAt },
+    });
+    await expect(
+      chat.markThreadRead(actor, older.threadId),
+    ).resolves.toStrictEqual({ lastReadAt: older.unreadAt });
+    await expect(readIndependentIndicators()).resolves.toStrictEqual(
+      indicators.body,
+    );
   }, 180_000);
 });
