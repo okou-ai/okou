@@ -29,7 +29,6 @@ import { workflowUserAutomationThreadOwnerCondition } from "./workflow-user-auto
 
 interface MorningBriefInstallation {
   readonly id: string;
-  readonly agentId: string;
   readonly installationState: "installing" | "installed" | null;
 }
 
@@ -149,7 +148,6 @@ const loadMorningBriefInstallations$ = command(
       .select({
         id: workflows.id,
         installationState: workflows.officialInstallationState,
-        agentId: workflows.agentId,
       })
       .from(workflows)
       .where(

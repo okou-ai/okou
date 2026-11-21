@@ -643,7 +643,6 @@ export const executeDueWorkflowAutomations$ = command(
           selectDueMorningBriefWorkflow$,
           {
             automation: row.automation,
-            agentId: row.agentId,
             workflowName: row.workflowName,
           },
           signal,

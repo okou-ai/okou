@@ -263,10 +263,7 @@ const createMorningBriefFromPreference$ = command(
     }
     const definitionName = await set(
       selectedMorningBriefDefinition$,
-      {
-        ...identity,
-        agentId,
-      },
+      identity,
       signal,
     );
     const installed = await set(

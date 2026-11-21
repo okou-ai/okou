@@ -166,7 +166,9 @@ describe("workflow schema physical identity", () => {
         indexes: [
           "idx_workflows_agent",
           "idx_workflows_import_session",
+          "idx_workflows_morning_brief_member",
           "idx_workflows_morning_brief_owner_agent_unique",
+          "idx_workflows_official_member_definition",
           "idx_workflows_official_owner_agent_definition_unique",
           "idx_workflows_ordinary_private_owner_agent_name_unique",
           "idx_workflows_org",

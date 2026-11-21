@@ -4,56 +4,37 @@ import {
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
   isMorningBriefDefinitionName,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { officialWorkflowCatalogState } from "@okouai/db/schema/official-workflow-catalog";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, eq, exists, isNotNull } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import {
   readAcceptedOfficialWorkflowCatalog$,
   readAcceptedOfficialWorkflowRevision$,
 } from "./official-workflow-catalog-read.service";
 import { observedWorkflowAutomationCondition } from "./workflow-automation-snapshot";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
-import { loadProactiveWorkflowsEligibility$ } from "./proactive-workflows-eligibility.service";
+import {
+  loadProactivePreferences$,
+  type ProactiveWorkflowOwner,
+} from "./proactive-workflows-eligibility.service";
 
 // Temporary AgentSuggestion rollout (#39591). At GA, move the test instructions
 // into morning-brief, converge installations back to that definition, retire
 // internal-test-morning-brief, and remove these selection commands and callers.
 export const selectedMorningBriefDefinition$ = command(
   async (
-    { get, set },
-    owner: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly agentId: string;
-    },
+    { set },
+    owner: ProactiveWorkflowOwner,
     signal: AbortSignal,
   ): Promise<string> => {
-    const [[org], features] = await Promise.all([
-      get(db$)
-        .select({ defaultAgentId: orgMetadata.defaultAgentId })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, owner.orgId))
-        .limit(1),
-      set(loadUserFeatureSwitchContext$, owner.orgId, owner.userId, signal),
-    ]);
+    const proactive = await set(loadProactivePreferences$, owner, signal);
     signal.throwIfAborted();
-    const proactive = await set(
-      loadProactiveWorkflowsEligibility$,
-      owner,
-      signal,
-    );
-    return proactive.suggestions.active &&
-      org?.defaultAgentId === owner.agentId &&
-      isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, features)
+    return proactive.suggestions.active
       ? INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME
       : MORNING_BRIEF_OFFICIAL_DEFINITION_NAME;
   },
@@ -65,7 +46,6 @@ export const selectDueMorningBriefWorkflow$ = command(
     { set },
     args: {
       readonly automation: AutomationRow;
-      readonly agentId: string;
       readonly workflowName: string;
     },
     signal: AbortSignal,
@@ -84,7 +64,6 @@ export const selectDueMorningBriefWorkflow$ = command(
       {
         orgId: automation.orgId,
         userId: automation.ownerUserId,
-        agentId: args.agentId,
       },
       signal,
     );
@@ -140,7 +119,6 @@ export const selectDueMorningBriefWorkflow$ = command(
                     eq(workflows.id, automation.workflowId),
                     eq(workflows.orgId, automation.orgId),
                     eq(workflows.ownerUserId, automation.ownerUserId),
-                    eq(workflows.agentId, args.agentId),
                     eq(workflows.officialDefinitionName, args.workflowName),
                     eq(workflows.officialInstallationState, "installed"),
                   ),

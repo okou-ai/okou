@@ -22,14 +22,15 @@ export async function validatePermanentWorkflowNameScopes(databaseUrl: string) {
       [orgId, agentId, name, visibility, definition, state],
     );
   };
-  const duplicate = (constraint: string) => {
+  const duplicate = (...constraints: string[]) => {
     return (error: unknown): boolean => {
       return (
         error instanceof Error &&
         "code" in error &&
         error.code === "23505" &&
         "constraint" in error &&
-        error.constraint === constraint
+        typeof error.constraint === "string" &&
+        constraints.includes(error.constraint)
       );
     };
   };
@@ -56,7 +57,10 @@ export async function validatePermanentWorkflowNameScopes(databaseUrl: string) {
     for (const state of ["installing", "installed"] as const) {
       await assert.rejects(
         insert("ordinary-first", "private", "ordinary-first", state),
-        duplicate("idx_workflows_official_owner_agent_definition_unique"),
+        duplicate(
+          "idx_workflows_official_member_definition",
+          "idx_workflows_official_owner_agent_definition_unique",
+        ),
       );
     }
     assert.equal(

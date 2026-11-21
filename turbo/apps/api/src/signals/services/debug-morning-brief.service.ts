@@ -16,10 +16,7 @@ import { db$, writeDb$ } from "../external/db";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { canonicalChatEventAppendCtes } from "./chat-event-append.service";
 import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
-import {
-  loadMorningBriefDefaultAgentId$,
-  loadMorningBriefState$,
-} from "./morning-brief-state.service";
+import { loadMorningBriefState$ } from "./morning-brief-state.service";
 import { selectDueMorningBriefWorkflow$ } from "./morning-brief-workflow-selection.service";
 import { observedWorkflowAutomationCondition } from "./workflow-automation-snapshot";
 import { workflowAutomationQueueEventPlan } from "./workflow-automation-enqueue.service";
@@ -165,17 +162,8 @@ const prepareDebugMorningBrief$ = command(
     signal: AbortSignal,
   ) => {
     const state = await set(loadMorningBriefState$, owner, signal);
-    const defaultAgentId = await set(
-      loadMorningBriefDefaultAgentId$,
-      owner,
-      signal,
-    );
     signal.throwIfAborted();
-    if (
-      state.kind !== "installed" ||
-      !state.automation.enabled ||
-      state.installation.agentId !== defaultAgentId
-    ) {
+    if (state.kind !== "installed" || !state.automation.enabled) {
       return {
         kind: "error" as const,
         response: conflict(
@@ -220,7 +208,6 @@ const prepareDebugMorningBrief$ = command(
       selectDueMorningBriefWorkflow$,
       {
         automation: target.automation,
-        agentId: state.installation.agentId,
         workflowName: target.name,
       },
       signal,
