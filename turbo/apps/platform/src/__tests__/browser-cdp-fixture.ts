@@ -41,6 +41,7 @@ export function mockBrowserCdp(
   cdpUrl: string,
   options: {
     readonly autoOpen?: boolean;
+    readonly onConnecting?: (url: string, socket: { open(): void }) => void;
     readonly streaming?: boolean;
     readonly targets?: readonly BrowserTarget[];
     readonly unavailableTargets?: readonly string[];
@@ -50,12 +51,13 @@ export function mockBrowserCdp(
     readonly nativeBase64?: boolean;
     readonly endpointAliases?: readonly string[];
     readonly enforceFrameWindow?: boolean;
+    readonly onVersionProbe?: (connectionId: number) => void;
   } = {},
 ) {
   context.mocks.browser.nativeTextInsertion();
   const endpoints = new Set([cdpUrl, ...(options.endpointAliases ?? [])]);
   const connectionEndpoints = new Map<number, string>();
-  context.mocks.browser.canvasRendering();
+  const canvas = context.mocks.browser.canvasRendering();
   context.mocks.browser.uint8ArrayFromBase64(options.nativeBase64 ?? true);
   const bitmap =
     options.streaming === false
@@ -160,7 +162,7 @@ export function mockBrowserCdp(
     }
   }
 
-  function frame(data: string, sessionId?: string) {
+  function frame(data: string, sessionId?: string, rasterWidth?: number) {
     sessionId ??= [...capturing].reverse().find((id) => {
       return sessionTargets.get(id) === "example-page";
     });
@@ -171,17 +173,20 @@ export function mockBrowserCdp(
       return candidate.targetId === sessionTargets.get(sessionId);
     });
     if (target && crashedTargets.has(target.targetId)) {
-      return;
+      return false;
     }
     if (target && windowStates.get(target.windowId ?? 0) === "minimized") {
-      return;
+      return false;
     }
     const window = frameWindows.get(sessionId);
     if (options.enforceFrameWindow && window) {
       if (window.outstanding >= window.limit) {
-        return;
+        return false;
       }
       window.outstanding++;
+    }
+    if (rasterWidth !== undefined) {
+      bitmap?.resize(rasterWidth, viewport.height);
     }
     event(
       "Page.screencastFrame",
@@ -200,6 +205,7 @@ export function mockBrowserCdp(
       },
       sessionId,
     );
+    return true;
   }
 
   function addTarget(url: string, windowId?: number) {
@@ -745,7 +751,10 @@ export function mockBrowserCdp(
     return { result: {} };
   }
 
-  const socketOptions = { autoOpen: options.autoOpen };
+  const socketOptions = {
+    autoOpen: options.autoOpen,
+    onConnecting: options.onConnecting,
+  };
   const socket = context.mocks.browser.webSocket((data, url, peer) => {
     if (!endpoints.has(url)) {
       throw new Error("Unexpected viewer endpoint");
@@ -756,6 +765,9 @@ export function mockBrowserCdp(
       connectionId: peer.id,
     };
     requests.push(request);
+    if (request.method === "Browser.getVersion") {
+      options.onVersionProbe?.(peer.id);
+    }
     if (request.id === undefined) {
       return null;
     }
@@ -817,6 +829,7 @@ export function mockBrowserCdp(
 
   return {
     event,
+    canvas,
     crash(
       targetId: string,
       notification: "session" | "target" | "both" | "none" = "both",
@@ -1021,9 +1034,16 @@ export function mockBrowserCdp(
         get received() {
           return response.promise.then((reply) => reply.message);
         },
-        async release() {
+        async release(result?: unknown) {
           const reply = await response.promise;
-          reply.peer.receive(reply.message);
+          if (result === undefined) {
+            reply.peer.receive(reply.message);
+          } else {
+            const { id } = object({ id: number() }).parse(
+              JSON.parse(reply.message),
+            );
+            reply.peer.receive(JSON.stringify({ id, result }));
+          }
         },
       };
     },

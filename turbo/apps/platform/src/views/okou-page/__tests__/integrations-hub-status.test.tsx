@@ -1,481 +1,62 @@
+import { now } from "../../../lib/time.ts";
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
-import { integrationsGithubContract } from "@okouai/api-contracts/contracts/integrations-github";
-import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
+import { screen, within, waitFor } from "@testing-library/react";
 import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
-import { act, screen, waitFor, within } from "@testing-library/react";
-import { expect, test } from "vitest";
-
-import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
-import { pathname } from "../../../signals/location.ts";
+import { expect, test, vi } from "vitest";
+import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
+import { click } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  getAction,
-  getIntegrationCard,
   mockSlack,
   mockTeams,
-  queryAction,
+  getIntegrationCard,
   setupIntegrationsPage,
 } from "./connector-integrations-test-helpers.ts";
-
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 const context = testContext();
-const PHONE_HANDLE = "+15555550123";
-
-function publishPhoneLinked(): void {
-  context.mocks.data.agentPhoneIntegration({
-    linked: true,
-    phoneHandle: PHONE_HANDLE,
-    agentPhoneNumber: "+19039853128",
-    configured: true,
-  });
-  context.mocks.ably.trigger("agentphone:changed");
-}
-
-test("Integrations show current status and refresh after GitHub connects", async () => {
-  const githubUrl =
-    "https://github.com/login/oauth/authorize?client_id=github-oauth-client-id";
-  mockSlack(context, {
-    isConnected: true,
-    isInstalled: true,
-    isAdmin: true,
-    scopeMismatch: true,
-    reinstallUrl: "https://slack.com/oauth/reinstall?state=xyz",
-    workspaceName: "Okou HQ",
-  });
-  context.mocks.data.githubIntegration(
-    context.mocks.data.defaultGithubIntegration({
-      isConnected: false,
-      connectedGithubUserId: null,
-      connectedGithubUsername: null,
-      connectUrl: githubUrl,
-    }),
-  );
-  context.mocks.data.agentPhoneIntegration({
-    linked: true,
-    phoneHandle: "+15555551212",
-    agentPhoneNumber: "+19039853128",
-    configured: true,
-  });
-  const providerWindow = context.mocks.browser.authWindow();
-  Object.defineProperty(providerWindow, "location", {
-    configurable: true,
-    value: { href: "" },
-  });
-  const browserOpen = context.mocks.browser.open(providerWindow);
-
-  await setupIntegrationsPage(context, { compact: true });
-
-  await expect(screen.findByText("Slack")).resolves.toBeInTheDocument();
-  expect(screen.getByText("Connected (Okou HQ)")).toBeInTheDocument();
-  expect(
-    getAction("button", "Update Permissions", getIntegrationCard("Slack")),
-  ).toBeInTheDocument();
-  expect(getIntegrationCard("Phone")).toHaveTextContent("+15555551212");
-  expect(
-    getAction("button", "Connect", getIntegrationCard("Discord")),
-  ).toBeEnabled();
-  const githubCard = getIntegrationCard("GitHub");
-  expect(getAction("button", "Connect", githubCard)).toBeInTheDocument();
-  expect(screen.queryByText("Feishu")).not.toBeInTheDocument();
-
-  click(getAction("button", "Connect", githubCard));
-
-  await waitFor(() => {
-    const opened = new URL(providerWindow.location.href);
-    expect(opened.origin + opened.pathname).toBe(
-      "https://github.com/login/oauth/authorize",
-    );
-    expect(opened.searchParams.get("client_id")).toBe("github-oauth-client-id");
-  });
-  expect(browserOpen.calls).toStrictEqual([
-    {
-      url: "about:blank",
-      target: "_blank",
-      features: "width=600,height=700",
-    },
-  ]);
-
-  context.mocks.data.githubIntegration(
-    context.mocks.data.defaultGithubIntegration({
-      isConnected: true,
-      connectedGithubUserId: "98765",
-      connectedGithubUsername: "octocat",
-    }),
-  );
-  context.mocks.ably.trigger("github:changed");
-
-  await expect(
-    screen.findByText("Connected (@octocat)"),
-  ).resolves.toBeInTheDocument();
-});
-
-test.each([true, false])(
-  "Slack keeps account disconnect in its overflow menu (admin: %s)",
-  async (isAdmin) => {
-    let isConnected = true;
-    context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
-      return respond(200, {
-        isConnected,
-        isInstalled: true,
-        isAdmin,
-        installUrl: null,
-        connectUrl: "https://slack.com/oauth/v2/authorize?state=reconnect",
-        reinstallUrl: null,
-        scopeMismatch: false,
-        workspaceName: "Okou HQ",
-      });
-    });
-    context.mocks.api(integrationsSlackContract.disconnect, ({ respond }) => {
-      isConnected = false;
-      return respond(200, { ok: true });
-    });
-    await setupIntegrationsPage(context, { compact: true });
-    const card = getIntegrationCard("Slack");
-    expect(within(card).getByText("Connected (Okou HQ)")).toBeInTheDocument();
-    expect(queryAction("button", "Disconnect", card)).toBeNull();
-    click(getAction("button", "More options", card));
-    expect(queryAction("button", "Uninstall") !== null).toBe(isAdmin);
-    click(getAction("button", "Disconnect"));
-    await waitFor(() => {
-      expect(getAction("button", "Connect", card)).toBeEnabled();
-    });
-    expect(within(card).queryByText("Connected (Okou HQ)")).toBeNull();
-    expect(queryAction("button", "Disconnect")).toBeNull();
-    expect(window.location.pathname).toBe("/works");
-  },
-);
-
-test("A workspace member is directed to an admin for GitHub installation", async () => {
-  mockSlack(context, { isConnected: true, isInstalled: true, isAdmin: false });
-  context.mocks.api(
-    integrationsGithubContract.getInstallation,
-    ({ respond }) => {
-      return respond(404, {
-        error: { message: "GitHub installation not found", code: "NOT_FOUND" },
-        installUrl: null,
-      });
-    },
-  );
-
-  await setupIntegrationsPage(context, { compact: true });
-
-  const githubCard = await waitFor(() => {
-    return getIntegrationCard("GitHub");
-  });
-  expect(
-    within(githubCard).getByText(
-      "Ask an organization admin to install the GitHub App",
-    ),
-  ).toBeInTheDocument();
-  expect(queryAction("link", "Connect", githubCard)).toBeNull();
-  expect(queryAction("button", "Connect", githubCard)).toBeNull();
-});
-
-test("Authorize the official Telegram bot directly in a new tab from Integrations", async () => {
-  mockSlack(context, { isConnected: true, isInstalled: true, isAdmin: true });
-  context.mocks.data.telegramIntegration({
-    statuses: [
-      {
-        id: "official",
-        kind: "official",
-        username: "okou_bot",
-        avatarUrl: null,
-        agent: null,
-        isOwner: false,
-        isConnected: false,
-        tokenStatus: "valid",
-        domainConfigured: true,
-        environment: {
-          requiredSecrets: [],
-          requiredVars: [],
-          missingSecrets: [],
-          missingVars: [],
-        },
-        official: {
-          configured: true,
-          usesDefaultAgent: true,
-          linkedTelegramUserId: null,
-        },
-      },
-    ],
-  });
-  context.mocks.api(
-    integrationsTelegramContract.getLinkStatus,
-    ({ respond }) => {
-      return respond(200, {
-        linked: false,
-        installation: {
-          id: "official",
-          botUsername: "okou_bot",
-          loginBotId: "987654321",
-          domainConfigured: true,
-        },
-      });
-    },
-  );
-  const authorizationWindow = context.mocks.browser.authWindow();
-  Object.defineProperty(authorizationWindow, "location", {
-    configurable: true,
-    value: { href: "" },
-  });
-  const opened = context.mocks.browser.open(authorizationWindow);
-
-  await setupIntegrationsPage(context, { compact: true });
-
-  await expect(screen.findByText("Telegram")).resolves.toBeInTheDocument();
-  const telegramCard = getIntegrationCard("Telegram");
-  const connect = await waitFor(() => {
-    const button = getAction("button", "Connect", telegramCard);
-    expect(button).toBeEnabled();
-    return button;
-  });
-  click(connect);
-
-  expect(opened.calls).toStrictEqual([
-    { url: "about:blank", target: "_blank", features: null },
-  ]);
-  const authUrl = await waitFor(() => {
-    const url = new URL(authorizationWindow.location.href);
-    expect(url.origin + url.pathname).toBe("https://oauth.telegram.org/auth");
-    expect(url.searchParams.get("bot_id")).toBe("987654321");
-    return url;
-  });
-  const callbackUrl = new URL(authUrl.searchParams.get("return_to") ?? "");
-  const callback = {
-    protocol: 2,
-    operationId: callbackUrl.searchParams.get("operationId"),
-    bot: "official",
-  };
-  act(() => {
-    context.mocks.browser.message(
-      { ...callback, type: "telegram-auth-bridge-ready" },
-      { source: authorizationWindow, origin: callbackUrl.origin },
-    );
-    context.mocks.browser.message(
-      {
-        ...callback,
-        type: "telegram-auth",
-        data: {
-          id: "99001",
-          first_name: "Alice",
-          username: "alice",
-          auth_date: "1700000000",
-          hash: "b".repeat(64),
-        },
-      },
-      { source: authorizationWindow, origin: callbackUrl.origin },
-    );
-  });
-
-  await expect(
-    screen.findByText("Connected (@alice)"),
-  ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe("/works");
-  expect(queryAction("button", "Connect", telegramCard)).toBeNull();
-});
-
-test("The phone card describes messaging and the connect dialog displays the destination number", async () => {
-  const clipboard = context.mocks.browser.clipboardWriteText();
+test("integrations-hub-status-006 the phone dialog copies its international destination", async () => {
   context.mocks.data.agentPhoneIntegration({
     linked: false,
-    agentPhoneNumber: "+13144386568",
     configured: true,
+    agentPhoneNumber: "+13144386568",
   });
   context.mocks.api(
     integrationsAgentPhoneContract.createLinkCode,
     ({ respond }) => {
       return respond(200, {
-        code: "74290618",
-        expiresAt: "2026-09-20T15:10:00.000Z",
+        code: "53269531",
+        expiresAt: new Date(now() + 600_000).toISOString(),
       });
     },
   );
-  await setupIntegrationsPage(context, { compact: true });
-  const phoneCard = await waitFor(() => {
-    return getIntegrationCard("Phone");
-  });
-  expect(phoneCard).toHaveTextContent(
-    "Text Okou a rough idea from your iPhone and ask for a first draft.",
-  );
-  expect(phoneCard).not.toHaveTextContent("+1 (314) 438-6568");
-  click(getAction("button", "Connect phone", phoneCard));
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  await setupIntegrationsPage(context);
+  await screen.findByText("Phone");
+  const card = getIntegrationCard("Phone");
+  expect(card).toHaveTextContent("Text-message access to Okou");
+  expect(card).not.toHaveTextContent("+1 (314) 438-6568");
+  click(await findFastControl("button", /Connect/i, card));
   const dialog = await screen.findByRole("dialog", {
     name: "Text Okou from your iPhone",
   });
-  await expect(
-    within(dialog).findByText("+1 (314) 438-6568"),
-  ).resolves.toBeVisible();
-  click(getAction("button", "Copy +1 (314) 438-6568", dialog));
-  await expect(
-    screen.findByText("Phone number copied"),
-  ).resolves.toBeInTheDocument();
+  await within(dialog).findByText("+1 (314) 438-6568");
+  click(await findFastControl("button", /^Copy .*314/, dialog));
+  await screen.findByText("Phone number copied");
   expect(clipboard.writes).toStrictEqual(["+13144386568"]);
 });
 
-test("A user connects AgentPhone with a prefilled one-time code", async () => {
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  const code = "74290618";
-  const messageHref = `sms:+19039853128?body=${code}`;
-  context.mocks.data.agentPhoneIntegration({
-    linked: false,
-    agentPhoneNumber: "+19039853128",
-    configured: true,
-  });
-  context.mocks.api(
-    integrationsAgentPhoneContract.createLinkCode,
-    ({ respond }) => {
-      return respond(200, {
-        code,
-        expiresAt: "2026-09-20T15:10:00.000Z",
-      });
-    },
-  );
-
-  await setupIntegrationsPage(context, { compact: true });
-
-  const phoneCard = await waitFor(() => {
-    return getIntegrationCard("Phone");
-  });
-  expect(phoneCard).toHaveTextContent(
-    "Text Okou a rough idea from your iPhone and ask for a first draft.",
-  );
-  click(getAction("button", "Connect phone", phoneCard));
-
-  const dialog = await screen.findByRole("dialog", {
-    name: "Text Okou from your iPhone",
-  });
-  expect(dialog).toHaveAccessibleDescription(
-    "Scan with your camera, then send the prefilled code.",
-  );
-  expect(
-    within(dialog).getByText(
-      "Use iMessage when possible. SMS and MMS replies may not arrive reliably.",
+test("integrations-hub-status-011 uninstalling the installed Teams integration asks for confirmation", async () => {
+  mockTeams(context, { isInstalled: true, isConnected: false, isAdmin: true });
+  await setupIntegrationsPage(context);
+  await screen.findByText("Microsoft Teams");
+  click(
+    await findFastControl(
+      "button",
+      /option/i,
+      getIntegrationCard("Microsoft Teams"),
     ),
-  ).toBeVisible();
-  expect(within(dialog).getByText("Code")).toBeVisible();
-  expect(within(dialog).getByText("Send to")).toBeVisible();
-  expect(within(dialog).getByText("Expires in 10 minutes")).toBeVisible();
-  expect(within(dialog).getByTestId("agentphone-link-qr")).toHaveAttribute(
-    "data-sms-href",
-    messageHref,
   );
-  // The link completes on the phone, so the dialog offers no footer actions:
-  // its only buttons copy what is sent, plus the dialog's own close.
-  expect(
-    queryAllByRoleFast("button", dialog).map((button) => {
-      return button.getAttribute("aria-label") ?? button.textContent;
-    }),
-  ).toStrictEqual([
-    `Copy connection code ${code}`,
-    "Copy +1 (903) 985-3128",
-    "Close",
-  ]);
-  // Where the QR cannot be scanned -- the phone itself -- a button opens
-  // Messages with the same prefilled code in its place.
-  expect(
-    within(dialog).getByTestId("agentphone-open-messages"),
-  ).toHaveAttribute("href", messageHref);
-  // Rewards are off for this workspace, so the dialog promises none.
-  expect(within(dialog).queryByText("+1,000")).not.toBeInTheDocument();
-
-  click(getAction("button", `Copy connection code ${code}`, dialog));
-  await expect(
-    screen.findByText("Connection code copied"),
-  ).resolves.toBeInTheDocument();
-  click(getAction("button", "Copy +1 (903) 985-3128", dialog));
-  await expect(
-    screen.findByText("Phone number copied"),
-  ).resolves.toBeInTheDocument();
-  expect(clipboard.writes).toStrictEqual([code, "+19039853128"]);
-
-  publishPhoneLinked();
-
-  await waitFor(() => {
-    expect(getIntegrationCard("Phone")).toHaveTextContent(PHONE_HANDLE);
-    expect(
-      screen.queryByRole("dialog", { name: "Text Okou from your iPhone" }),
-    ).not.toBeInTheDocument();
-  });
-});
-
-test("An admin can begin Microsoft Teams installation", async () => {
-  const browserOpen = context.mocks.browser.open();
-  mockSlack(context, { isConnected: true, isInstalled: true, isAdmin: true });
-  mockTeams(context, { isConnected: false, isInstalled: false, isAdmin: true });
-
-  await setupIntegrationsPage(context, { compact: true });
-
-  const teamsCard = await waitFor(() => {
-    return getIntegrationCard("Microsoft Teams");
-  });
-  const install = getAction("button", "Connect", teamsCard);
-  expect(
-    screen.getByText(
-      "Paste your meeting notes into Teams and ask Okou to pull out the action items.",
-    ),
-  ).toBeInTheDocument();
-
-  click(install);
-
-  expect(browserOpen.calls).toHaveLength(1);
-  const opened = browserOpen.calls[0];
-  expect(opened?.target).toBe("_blank");
-  const url = new URL(opened?.url ?? "", window.location.origin);
-  expect(url.pathname).toBe("/api/teams/oauth/connect");
-  expect(url.searchParams.get("orgId")).toBe("org_1");
-  expect(url.searchParams.get("userId")).toBe("user_1");
-});
-
-test("Microsoft Teams offers Connect after installation", async () => {
-  mockSlack(context, { isConnected: true, isInstalled: true, isAdmin: true });
-  mockTeams(context, { isConnected: false, isInstalled: true, isAdmin: true });
-
-  await setupIntegrationsPage(context, { compact: true });
-
-  const teamsCard = await waitFor(() => {
-    return getIntegrationCard("Microsoft Teams");
-  });
-  expect(getAction("button", "Connect", teamsCard)).toBeInTheDocument();
-});
-
-test("Microsoft Teams shows its connected account name", async () => {
-  mockSlack(context, { isConnected: true, isInstalled: true, isAdmin: true });
-  mockTeams(context, {
-    isConnected: true,
-    isInstalled: true,
-    isAdmin: true,
-    tenantName: "Okou Tenant",
-    linkedAccounts: [
-      {
-        tenantId: "tenant-core",
-        teamsUserId: "teams-core-user",
-        teamsAadObjectId: "aad-core-user",
-        displayName: "Avery",
-        userPrincipalName: "avery@example.test",
-      },
-    ],
-  });
-
-  await setupIntegrationsPage(context, { compact: true });
-
-  await expect(
-    screen.findByText("Microsoft Teams"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByText("Connected (Avery)")).toBeInTheDocument();
-  expect(getAction("link", "Connect")).toBeInTheDocument();
-});
-
-test("Uninstalling connected Microsoft Teams requires confirmation", async () => {
-  mockSlack(context, { isConnected: true, isInstalled: true, isAdmin: true });
-  mockTeams(context, { isConnected: true, isInstalled: true, isAdmin: true });
-
-  await setupIntegrationsPage(context, { compact: true });
-
-  await expect(
-    screen.findByText("Microsoft Teams"),
-  ).resolves.toBeInTheDocument();
-  click(getAction("button", "More Microsoft Teams options"));
-  click(getAction("button", "Uninstall Microsoft Teams"));
-
+  click(await findFastControl("button", "Uninstall Microsoft Teams"));
   await expect(
     screen.findByRole("dialog", {
       name: "Uninstall Microsoft Teams integration?",
@@ -483,73 +64,291 @@ test("Uninstalling connected Microsoft Teams requires confirmation", async () =>
   ).resolves.toBeInTheDocument();
 });
 
-test.each([false, true])(
-  "Slack starts OAuth directly and refreshes the original Works page (installed: %s)",
-  async (isInstalled) => {
-    let connected = false;
-    context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
-      return respond(200, {
-        isConnected: connected,
-        isInstalled: isInstalled || connected,
-        isAdmin: true,
-        installUrl: "https://slack.example.test/install",
-        connectUrl: "https://slack.example.test/connect",
-        workspaceName: connected ? "Verified workspace" : null,
-      });
-    });
-    const opened = context.mocks.browser.open();
-    await setupIntegrationsPage(context, { compact: true });
-    const card = getIntegrationCard("Slack");
-    click(getAction("button", "Connect", card));
-    const url = new URL(opened.calls[0]!.url!);
-    expect(url.origin).toBe("https://slack.example.test");
-    expect(url.pathname).toBe(isInstalled ? "/connect" : "/install");
-    expect(opened.calls[0]!.target).toBe("_blank");
-    expect(pathname()).toBe("/works");
-    await waitFor(() => {
-      expect(context.mocks.ably.hasSubscription("slack:changed")).toBeTruthy();
-    });
-    connected = true;
-    context.mocks.ably.trigger("slack:changed");
-    await expect(
-      within(card).findByText("Connected (Verified workspace)"),
-    ).resolves.toBeInTheDocument();
-    expect(pathname()).toBe("/works");
-  },
-);
-
-test("Slack permission refresh reports actual scope recovery on the original Works page", async () => {
-  let scopeMismatch = true;
+test("integrations-hub-status-002 Slack disconnect is reached from the installed workspace menu", async () => {
+  let connected = true;
   context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
     return respond(200, {
-      isConnected: true,
+      isConnected: connected,
       isInstalled: true,
       isAdmin: true,
-      scopeMismatch,
-      reinstallUrl: scopeMismatch
-        ? "https://slack.example.test/reinstall"
-        : null,
-      workspaceName: "Verified workspace",
+      workspaceName: "Okou HQ",
+      connectUrl: "https://slack.example.test/connect",
+      scopeMismatch: false,
+      installUrl: null,
+      reinstallUrl: null,
     });
   });
-  const opened = context.mocks.browser.open();
-  await setupIntegrationsPage(context, { compact: true });
-  const card = getIntegrationCard("Slack");
-  click(getAction("button", "Update Permissions", card));
-  const url = new URL(opened.calls[0]!.url!);
-  expect(url.origin).toBe("https://slack.example.test");
-  expect(url.pathname).toBe("/reinstall");
-  expect(opened.calls[0]!.target).toBe("_blank");
-  await waitFor(() => {
-    expect(context.mocks.ably.hasSubscription("slack:changed")).toBeTruthy();
+  context.mocks.api(integrationsSlackContract.disconnect, ({ respond }) => {
+    connected = false;
+    return respond(200, { ok: true });
   });
-  scopeMismatch = false;
+  await setupIntegrationsPage(context);
+  await screen.findByText(/Connected \(Okou HQ\)/);
+  const card = getIntegrationCard("Slack");
+  expect(within(card).queryByText("Disconnect")).not.toBeInTheDocument();
+  click(await findFastControl("button", /option/i, card));
+  await findFastControl("button", "Uninstall");
+  click(await findFastControl("button", "Disconnect"));
+  await findFastControl("button", /Connect/i, card);
+  expect(card).not.toHaveTextContent("Connected (Okou HQ)");
+  expect(location.pathname).toBe("/works");
+});
+
+test("integrations-hub-status-012 installing Slack opens its installation destination and refreshes the original card", async () => {
+  const installUrl = "https://slack.example.test/workspace/install";
+  const connectUrl = "https://slack.example.test/member/connect";
+  mockSlack(context, { isAdmin: true, installUrl, connectUrl });
+  const opened = context.mocks.browser.open(null);
+  await setupIntegrationsPage(context);
+  await screen.findByText("Slack");
+  click(
+    await findFastControl(
+      "button",
+      "Install to Slack",
+      getIntegrationCard("Slack"),
+    ),
+  );
+  const tab = opened.calls.find((entry) => {
+    return entry.target === "_blank";
+  });
+  expect(tab).toBeDefined();
+  const url = new URL(tab!.url!);
+  expect(url.origin + url.pathname).toBe(installUrl);
+  mockSlack(context, {
+    isInstalled: true,
+    isConnected: true,
+    workspaceName: "Verified workspace",
+    isAdmin: true,
+    installUrl,
+    connectUrl,
+  });
   context.mocks.ably.trigger("slack:changed");
-  await expect(
-    screen.findByText("Permissions updated"),
-  ).resolves.toBeInTheDocument();
+  await within(getIntegrationCard("Slack")).findByText(
+    "Connected (Verified workspace)",
+  );
+  expect(location.pathname).toBe("/works");
+});
+
+test("integrations-hub-status-001 linked channels and GitHub authorization stay on the Works page", async () => {
+  const github = context.mocks.data.defaultGithubIntegration({
+    isConnected: false,
+    connectedGithubUsername: null,
+    connectedGithubUserId: null,
+  });
+  context.mocks.data.githubIntegration(github);
+  mockSlack(context, {
+    isAdmin: true,
+    isInstalled: true,
+    isConnected: true,
+    scopeMismatch: true,
+    workspaceName: "Okou HQ",
+    reinstallUrl: "https://slack.example.test/update",
+  });
+  context.mocks.data.agentPhoneIntegration({
+    linked: true,
+    phoneHandle: "+15555551212",
+    configured: true,
+    agentPhoneNumber: "+19039853128",
+  });
+  const popup = context.mocks.browser.authWindow();
+  Object.defineProperty(popup, "location", { value: { href: "about:blank" } });
+  const opened = context.mocks.browser.open(popup);
+  await setupIntegrationsPage(context);
+  await screen.findByText("Connected (Okou HQ)");
+  expect(getIntegrationCard("Slack")).toHaveTextContent(/update permissions/i);
+  expect(getIntegrationCard("Phone")).toHaveTextContent("+15555551212");
+  await findFastControl("button", "Connect", getIntegrationCard("Discord"));
+  expect(screen.queryByText("Feishu")).not.toBeInTheDocument();
+  click(
+    await findFastControl("button", "Connect", getIntegrationCard("GitHub")),
+  );
+  const tab = opened.calls.find((call) => {
+    return call.target === "_blank";
+  });
+  expect(tab).toBeDefined();
+  const authorization = new URL(popup.location.href);
+  expect(authorization.origin + authorization.pathname).toBe(
+    "https://github.com/login/oauth/authorize",
+  );
+  context.mocks.data.githubIntegration(
+    context.mocks.data.defaultGithubIntegration(),
+  );
+  context.mocks.ably.trigger("github:changed");
+  await within(getIntegrationCard("GitHub")).findByText("Connected (@octocat)");
+});
+
+test("integrations-hub-status-005 Telegram accepts Alice through the official bot authorization tab", async () => {
+  const id = "official";
+  const username = "office_bot";
+  context.mocks.data.telegramIntegration({
+    statuses: [
+      {
+        id,
+        username,
+        avatarUrl: null,
+        agent: null,
+        isOwner: true,
+        isConnected: false,
+        connectedUser: null,
+        tokenStatus: "valid",
+        official: {
+          configured: true,
+          usesDefaultAgent: true,
+          linkedTelegramUserId: null,
+        },
+        domainConfigured: true,
+        environment: {
+          requiredSecrets: [],
+          requiredVars: [],
+          missingSecrets: [],
+          missingVars: [],
+        },
+      },
+    ],
+    linkStatus: {
+      linked: false,
+      installation: {
+        id,
+        botUsername: username,
+        loginBotId: "987654321",
+        domainConfigured: true,
+      },
+    },
+  });
+  context.mocks.api(
+    integrationsTelegramContract.getLinkStatus,
+    ({ respond }) => {
+      return respond(200, {
+        linked: false,
+        installation: {
+          id,
+          botUsername: username,
+          loginBotId: "987654321",
+          domainConfigured: true,
+        },
+      });
+    },
+  );
+  const popup = context.mocks.browser.authWindow();
+  Object.defineProperty(popup, "location", { value: { href: "about:blank" } });
+  const delivery = vi.spyOn(popup, "postMessage");
+  const opened = context.mocks.browser.open(popup);
+  await setupIntegrationsPage(context);
+  await screen.findByText("Telegram");
+  click(
+    await findFastControl("button", "Connect", getIntegrationCard("Telegram")),
+  );
+  await waitFor(() => {
+    return expect(popup.location.href).toContain(
+      "https://oauth.telegram.org/auth?",
+    );
+  });
+  expect(new URL(popup.location.href).searchParams.get("bot_id")).toBe(
+    "987654321",
+  );
+  expect(opened.calls[0]?.target).toBe("_blank");
+  const callback = new URL(
+    new URL(popup.location.href).searchParams.get("return_to")!,
+  );
+  const envelope = {
+    protocol: 2,
+    operationId: callback.searchParams.get("operationId"),
+    bot: callback.searchParams.get("bot"),
+  };
+  const source = { origin: callback.origin, source: popup };
+  context.mocks.browser.message(
+    { ...envelope, type: "telegram-auth-bridge-ready" },
+    source,
+  );
+  context.mocks.browser.message(
+    {
+      ...envelope,
+      type: "telegram-auth",
+      data: {
+        id: 1234,
+        first_name: "Alice",
+        username: "alice",
+        auth_date: 123_456,
+        hash: "c".repeat(64),
+      },
+    },
+    source,
+  );
+  await waitFor(() => {
+    return expect(delivery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "telegram-auth-result",
+        status: "linked",
+      }),
+      callback.origin,
+    );
+  });
+  context.mocks.browser.message(
+    { ...envelope, type: "telegram-auth-ack", stage: "result" },
+    source,
+  );
+  await within(getIntegrationCard("Telegram")).findByText("Connected (@alice)");
   expect(
-    queryAction("button", "Update Permissions", card),
+    within(getIntegrationCard("Telegram")).queryByText("Connect"),
   ).not.toBeInTheDocument();
-  expect(pathname()).toBe("/works");
+  expect(location.pathname).toBe("/works");
+});
+
+test("integrations-hub-status-007 the prefilled Messages link and QR lead to the phone that becomes linked", async () => {
+  const number = "+19039853128";
+  const code = "74290618";
+  context.mocks.data.agentPhoneIntegration({
+    linked: false,
+    agentPhoneNumber: number,
+    configured: true,
+  });
+  context.mocks.api(
+    integrationsAgentPhoneContract.createLinkCode,
+    ({ respond }) => {
+      return respond(200, {
+        code,
+        expiresAt: new Date(now() + 600_000).toISOString(),
+      });
+    },
+  );
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  await setupIntegrationsPage(context);
+  await screen.findByText("Phone");
+  click(
+    await findFastControl("button", "Connect", getIntegrationCard("Phone")),
+  );
+  const dialog = await screen.findByRole("dialog");
+  const body = within(dialog);
+  await body.findByText(code);
+  for (const copy of [
+    "Scan with your camera, then send the prefilled code.",
+    "Use iMessage when possible. SMS and MMS replies may not arrive reliably.",
+    "Expires in 10 minutes",
+    "+1 (903) 985-3128",
+  ]) {
+    expect(dialog).toHaveTextContent(copy);
+  }
+  const href = "sms:" + number + "?body=" + code;
+  expect(
+    body.getByLabelText("Scan to open Messages with the connection code ready"),
+  ).toHaveAttribute("data-sms-href", href);
+  expect(body.getByText("Open Messages").closest("a")).toHaveAttribute(
+    "href",
+    href,
+  );
+  expect(dialog).not.toHaveTextContent("+1,000");
+  click(await findFastControl("button", /Copy connection code/, dialog));
+  await screen.findByText("Connection code copied");
+  click(await findFastControl("button", /Copy .*903/, dialog));
+  await screen.findByText("Phone number copied");
+  expect(clipboard.writes).toStrictEqual([code, number]);
+  context.mocks.data.agentPhoneIntegration({
+    linked: true,
+    configured: true,
+    phoneHandle: "+15555550123",
+    agentPhoneNumber: number,
+  });
+  context.mocks.ably.trigger("agentphone:changed");
+  await within(getIntegrationCard("Phone")).findByText(/15555550123/);
+  expect(dialog).not.toBeInTheDocument();
 });

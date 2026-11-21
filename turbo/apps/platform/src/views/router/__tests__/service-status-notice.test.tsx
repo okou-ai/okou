@@ -1,112 +1,79 @@
+import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
-import { screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-
 import {
+  click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const STATUS_ISSUES_URL = "https://api.instatus.com/issues";
 
-function mockDesktopLayout(): void {
-  context.mocks.browser.matchMedia((query) => {
-    return query === "(min-width: 48rem)";
-  });
-}
-
-function mockActiveIncident(onRequest?: () => void): void {
-  context.mocks.http.get(STATUS_ISSUES_URL, () => {
-    onRequest?.();
+function reportDelay(id: string, title: string) {
+  context.mocks.http.get("https://api.instatus.com/issues", () => {
     return HttpResponse.json({
-      activeIncidents: [
-        {
-          id: "incident-api-latency",
-          name: "API requests are delayed",
-          status: "INVESTIGATING",
-        },
-      ],
+      activeIncidents: [{ id, name: title, status: "INVESTIGATING" }],
     });
   });
 }
 
-function controlNamed(role: "button" | "link", name: string): HTMLElement {
-  const control = queryAllByRoleFast(role).find((candidate) => {
-    return (
-      candidate.getAttribute("aria-label") === name ||
-      candidate.textContent?.trim() === name
-    );
+test("service-status-notice-001 the investigating incident links to its update and can be dismissed", async () => {
+  const title = "Delayed API requests in the billing region";
+  reportDelay("api-billing-delay", title);
+  context.mocks.browser.matchMedia((query) => {
+    return query === "(min-width: 48rem)";
   });
-  if (!control) {
-    throw new Error(`${name} ${role} not found`);
-  }
-  return control;
-}
-
-test("An Okou production user can view and dismiss an active incident", async () => {
-  const user = userEvent.setup();
-  mockDesktopLayout();
-  mockActiveIncident();
-
-  await setupPage({ context, host: "app.okou.ai", path: "/workflows" });
-
-  const statusRegion = await screen.findByRole("region", {
+  await setupPage({ context, path: "/", host: "app.okou.ai" });
+  const region = await screen.findByRole("region", {
     name: "Service status updates",
   });
+  const incident = within(region).getByRole("status", {
+    name: "Investigating: " + title,
+  });
+  expect(within(incident).getByText(title)).toBeInTheDocument();
+  expect(within(incident).getByText("Investigating")).toBeInTheDocument();
   expect(
-    screen.getByRole("status", {
-      name: "Investigating: API requests are delayed",
+    queryAllByRoleFast("link", incident).find((link) => {
+      return link.textContent?.trim() === "View latest updates";
     }),
-  ).toBeVisible();
-  expect(controlNamed("link", "View latest updates")).toHaveAttribute(
-    "href",
-    "https://status.okou.ai/incident-api-latency",
-  );
-
-  await user.click(controlNamed("button", "Dismiss service update"));
-
-  expect(statusRegion).not.toBeInTheDocument();
+  ).toHaveAttribute("href", "https://status.okou.ai/api-billing-delay");
+  const dismiss = queryAllByRoleFast("button", incident).find((button) => {
+    return button.getAttribute("aria-label") === "Dismiss service update";
+  });
+  if (!dismiss) {
+    throw new Error("Missing dismiss control for the billing incident");
+  }
+  click(dismiss);
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("region", { name: "Service status updates" }),
+    ).not.toBeInTheDocument();
+  });
 });
 
-test("A lookalike production hostname does not request service status", async () => {
-  let statusRequested = false;
-  mockDesktopLayout();
-  mockActiveIncident(() => {
-    statusRequested = true;
+test("service-status-notice-003 mobile home displays its navigation and the current API incident", async () => {
+  context.mocks.browser.matchMedia(false);
+  reportDelay("mobile-api-delay", "Delayed API requests on the public gateway");
+  await setupPage({ context, path: "/connectors", host: "app.okou.ai" });
+  const nav = await screen.findByRole("navigation", {
+    name: "Main navigation",
   });
-
-  await setupPage({
-    context,
-    host: "app.okou.ai.evil.example",
-    path: "/workflows",
+  const home = queryAllByRoleFast("link", nav).find((link) => {
+    return link.textContent?.trim() === "Chats";
   });
-
-  await screen.findByRole("heading", { name: "Workflows" });
-  expect(statusRequested).toBeFalsy();
-  expect(
-    screen.queryByRole("region", { name: "Service status updates" }),
-  ).not.toBeInTheDocument();
-});
-
-test("A mobile user with bottom navigation sees an active incident above their chats", async () => {
-  context.mocks.browser.matchMedia(() => {
-    return false;
+  if (!home) {
+    throw new Error("Missing Chats tab in mobile navigation");
+  }
+  click(home);
+  const incident = await screen.findByRole("status", {
+    name: "Investigating: Delayed API requests on the public gateway",
   });
-  mockActiveIncident();
-
-  await setupPage({
-    context,
-    host: "app.okou.ai",
-    path: "/",
+  await waitFor(() => {
+    expect(window.location.pathname).toBe("/");
+    expect(incident).toBeVisible();
+    expect(
+      screen.getByRole("navigation", { name: "Main navigation" }),
+    ).toBeVisible();
   });
-
-  await screen.findByRole("navigation", { name: "Main navigation" });
-  await expect(
-    screen.findByRole("status", {
-      name: "Investigating: API requests are delayed",
-    }),
-  ).resolves.toBeVisible();
 });

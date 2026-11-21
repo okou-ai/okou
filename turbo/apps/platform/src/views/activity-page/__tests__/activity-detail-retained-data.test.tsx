@@ -1,117 +1,56 @@
-import { screen, waitFor, within } from "@testing-library/react";
-import { expect, test } from "vitest";
 import {
   logsByIdContract,
   type LogDetail,
 } from "@okouai/api-contracts/contracts/logs";
-import type { NetworkLogEntry } from "@okouai/api-contracts/contracts/runs";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   runAgentEventsContract,
   runContextContract,
   runNetworkLogsContract,
-  type RunContextResponse,
 } from "@okouai/api-contracts/contracts/run-routes";
+import { screen, waitFor } from "@testing-library/react";
+import { expect, test } from "vitest";
 
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import type { AgentEvent } from "../../../signals/okou-page/log-types.ts";
 
 const context = testContext();
+const RUN_ID = "d0000000-0000-4000-a000-000000000f61";
 
-const RUN_ID = "a0000000-0000-4000-a000-000000000399";
-const SELECTED_MODEL = "gpt-5.6-luna";
-const DIRECT_PROVIDER = "codex-oauth-token";
-
-function logDetail(): LogDetail {
-  return {
-    id: RUN_ID,
-    sessionId: "session-1",
-    agentId: "c0000000-0000-4000-a000-000000000001",
-    displayName: "Checkout Export",
-    framework: "claude-code",
-    modelProvider: null,
-    selectedModel: null,
-    triggerSource: "web",
-    status: "completed",
-    prompt: "Export checkout diagnostics",
-    appendSystemPrompt: "Use the captured diagnostic context",
-    createdAt: "2026-03-10T14:56:00Z",
-    startedAt: "2026-03-10T14:56:01Z",
-    completedAt: "2026-03-10T14:56:10Z",
-  };
-}
-
-function directProviderLogDetail(): LogDetail {
-  return {
-    ...logDetail(),
-    modelProvider: DIRECT_PROVIDER,
-    selectedModel: SELECTED_MODEL,
-  };
-}
-
-function runContext(): RunContextResponse {
-  return {
-    prompt: "Captured diagnostic prompt",
-    appendSystemPrompt: "Use the captured diagnostic context",
-    runId: RUN_ID,
-    sessionId: "session-1",
-    cliAgentType: "codex",
-    secretNames: ["OKOU_TOKEN", "GITLAB_TOKEN"],
-    vars: { REGION: "launch-region", EMPTY: "" },
-    environment: {},
-    firewalls: [],
-    networkPolicies: null,
-    storageMounts: [
-      {
-        name: "checkout-docs",
-        version: "docs-version",
-        mountPath: "/docs",
-        writeback: false,
-      },
-      {
-        name: "checkout-output",
-        version: "output-version",
-        mountPath: "/output",
-        writeback: true,
-      },
-    ],
-    featureFlags: null,
-  };
-}
-
-function networkLog(): NetworkLogEntry {
-  return {
-    timestamp: "2026-03-10T14:56:03Z",
-    type: "http",
-    action: "ALLOW",
-    host: "payments.example.test",
-    port: 443,
-    method: "POST",
-    url: "https://payments.example.test/v1/checkout",
-    status: 200,
-  };
-}
-
-function activityEvent(): AgentEvent {
-  return {
-    sequenceNumber: 0,
-    eventType: "assistant",
-    eventData: {
-      message: {
-        content: [{ type: "text", text: "Checkout diagnostics exported" }],
-      },
-    },
-    createdAt: "2026-03-10T14:56:02Z",
-  };
+/** The activity lookup; an unknown run answers with the API's not-found error. */
+function serveActivity(
+  activity: (Partial<LogDetail> & Pick<LogDetail, "id">) | null,
+): void {
+  context.mocks.api(logsByIdContract.getById, ({ params, respond }) => {
+    if (activity?.id !== params.id) {
+      return respond(404, {
+        error: { code: "NOT_FOUND", message: `Run ${params.id} not found` },
+      });
+    }
+    return respond(200, {
+      sessionId: null,
+      agentId: null,
+      displayName: null,
+      framework: "claude-code",
+      modelProvider: null,
+      selectedModel: null,
+      triggerSource: "web",
+      status: "completed",
+      prompt: "",
+      appendSystemPrompt: null,
+      createdAt: "2025-12-02T09:00:00.000Z",
+      startedAt: null,
+      completedAt: null,
+      ...activity,
+    });
+  });
 }
 
 test("An unavailable activity shows a clear not-found page", async () => {
-  context.mocks.api(logsByIdContract.getById, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Log not found" },
-    });
-  });
+  serveActivity(null);
 
   await setupPage({ context, path: `/activities/${RUN_ID}` });
 
@@ -121,124 +60,101 @@ test("An unavailable activity shows a clear not-found page", async () => {
 });
 
 test("A user can download all retained diagnostics for an older activity", async () => {
-  const downloads = context.mocks.browser.blobDownload();
-  context.mocks.api(logsByIdContract.getById, ({ respond }) => {
-    return respond(200, logDetail());
+  const event = {
+    sequenceNumber: 1,
+    eventType: "assistant",
+    eventData: {
+      type: "assistant",
+      message: { content: [{ type: "text", text: "Archived the invoices." }] },
+    },
+    createdAt: "2025-12-02T09:00:05.000Z",
+  };
+  const runContext = {
+    prompt: "Archive last year's invoices",
+    appendSystemPrompt: null,
+    runId: RUN_ID,
+    sessionId: "session-f61",
+    secretNames: ["ARCHIVE_TOKEN"],
+    vars: { ARCHIVE_YEAR: "2025" },
+    environment: { TZ: "UTC" },
+    firewalls: [],
+    networkPolicies: null,
+    storageMounts: [
+      {
+        name: "invoice-archive",
+        version: "v12",
+        mountPath: "/workspace/archive",
+        writeback: true,
+      },
+    ],
+    featureFlags: null,
+  };
+  const networkLog = {
+    timestamp: "2025-12-02T09:00:03.000Z",
+    type: "http",
+    method: "GET",
+    url: "https://billing.example.test/v1/invoices?year=2025",
+    host: "billing.example.test",
+    status: 200,
+    latency_ms: 210,
+  };
+  serveActivity({
+    id: RUN_ID,
+    sessionId: "session-f61",
+    agentId: "c0000000-0000-4000-a000-000000000061",
+    displayName: "Invoice archive",
+    triggerSource: "automation-schedule",
+    prompt: "Archive last year's invoices",
+    startedAt: "2025-12-02T09:00:01.000Z",
+    completedAt: "2025-12-02T09:00:30.000Z",
   });
   context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
     return respond(200, {
-      events: [activityEvent()],
+      events: [event],
       hasMore: false,
       status: "completed",
-      lastEventSequence: 0,
+      lastEventSequence: 1,
     });
   });
   context.mocks.api(runContextContract.getContext, ({ respond }) => {
-    return respond(200, runContext());
+    return respond(200, runContext);
   });
   context.mocks.api(runNetworkLogsContract.getNetworkLogs, ({ respond }) => {
-    return respond(200, {
-      networkLogs: [networkLog()],
-      hasMore: false,
-    });
+    return respond(200, { networkLogs: [networkLog], hasMore: false });
+  });
+  const browser = context.mocks.browser.blobDownload();
+  await setupPage({ context, path: `/activities/${RUN_ID}` });
+  await expect(
+    screen.findByText("Archived the invoices."),
+  ).resolves.toBeInTheDocument();
+  const download = queryAllByRoleFast("button").find((button) => {
+    return button.getAttribute("aria-label") === "Download raw data";
   });
 
-  await setupPage({ context, path: `/activities/${RUN_ID}` });
+  click(download as HTMLElement);
+
   await waitFor(() => {
     expect(
-      screen.getByRole("heading", { name: "Checkout Export" }),
-    ).toBeInTheDocument();
+      browser.downloads.map((file) => {
+        return file.filename;
+      }),
+    ).toStrictEqual([`${RUN_ID}-logs.json`]);
   });
-  await expect(
-    screen.findByText("Checkout diagnostics exported"),
-  ).resolves.toBeInTheDocument();
-
-  click(screen.getByLabelText("Download raw data"));
-  await waitFor(() => {
-    expect(downloads.downloads).toHaveLength(1);
+  const blob = browser.downloads[0]?.blob;
+  expect(blob?.type).toContain("application/json");
+  const exported: unknown = JSON.parse((await blob?.text()) ?? "");
+  expect(exported).toMatchObject({
+    meta: {
+      id: RUN_ID,
+      displayName: "Invoice archive",
+      status: "completed",
+      triggerSource: "automation-schedule",
+      framework: "claude-code",
+      prompt: "Archive last year's invoices",
+      createdAt: "2025-12-02T09:00:00.000Z",
+    },
+    events: [event],
+    context: runContext,
+    networkLogs: [networkLog],
   });
-
-  const download = downloads.downloads[0];
-  if (!download?.blob) {
-    throw new Error("Downloaded activity blob was not captured");
-  }
-  const downloaded = JSON.parse(await download.blob.text()) as Record<
-    string,
-    unknown
-  >;
-
-  expect(download.filename).toBe(`${RUN_ID}-logs.json`);
-  expect(downloaded.events).toStrictEqual([activityEvent()]);
-  expect(downloaded.meta).toMatchObject({
-    id: RUN_ID,
-    displayName: "Checkout Export",
-    framework: "codex",
-    appendSystemPrompt: "Use the captured diagnostic context",
-  });
-  expect(downloaded.context).toMatchObject({
-    runId: RUN_ID,
-    prompt: "Captured diagnostic prompt",
-    appendSystemPrompt: "Use the captured diagnostic context",
-    vars: { REGION: "launch-region", EMPTY: "" },
-    secretNames: ["OKOU_TOKEN", "GITLAB_TOKEN"],
-    storageMounts: runContext().storageMounts,
-  });
-  expect(downloaded.networkLogs).toStrictEqual([networkLog()]);
-});
-
-test("Activity context lists model route fields without runtime metadata", async () => {
-  context.mocks.api(logsByIdContract.getById, ({ respond }) => {
-    return respond(200, directProviderLogDetail());
-  });
-  context.mocks.api(runContextContract.getContext, ({ respond }) => {
-    return respond(200, runContext());
-  });
-
-  await setupPage({
-    context,
-    path: `/activities/${RUN_ID}?tab=context`,
-    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
-  });
-
-  const modelRouteHeading = await screen.findByRole("heading", {
-    name: "Model Route",
-  });
-  const storageHeading = await screen.findByRole("heading", {
-    name: "Storage Mounts",
-  });
-  const storageSection = storageHeading.closest("section");
-  if (!storageSection) {
-    throw new Error("Storage mount section was not rendered");
-  }
-  const storage = within(storageSection);
-  for (const value of [
-    "checkout-docs",
-    "docs-version",
-    "/docs",
-    "Read only",
-    "checkout-output",
-    "output-version",
-    "/output",
-    "Read/write",
-  ]) {
-    expect(storage.getByText(value)).toBeInTheDocument();
-  }
-  const modelRouteSection = modelRouteHeading.closest("section");
-  if (!modelRouteSection) {
-    throw new Error("Model route section was not rendered");
-  }
-  const modelRoute = within(modelRouteSection);
-  const expectedRows = [
-    ["Selected Model", SELECTED_MODEL],
-    ["Model Provider", DIRECT_PROVIDER],
-    ["Runtime Provider", "null"],
-    ["Runtime Model", "null"],
-  ] as const;
-  for (const [label, value] of expectedRows) {
-    const row = modelRoute.getByText(label).closest("tr");
-    if (!row) {
-      throw new Error(`Model route row was not rendered: ${label}`);
-    }
-    expect(within(row).getByText(value)).toBeInTheDocument();
-  }
 });

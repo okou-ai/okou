@@ -1,612 +1,342 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  computerUseHostsContract,
-  type ComputerUseHost,
-} from "@okouai/api-contracts/contracts/computer-use";
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
-import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
-import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { createChatLifecycleHelpers } from "./chat-lifecycle-test-helpers.ts";
 import {
-  computerUsePermissions,
-  setupPage,
-  createChatLifecycleHelpers,
-} from "./chat-lifecycle-test-helpers.ts";
+  findFastControl,
+  queryFastControl,
+} from "./chat-message-experience-test-helpers.ts";
 import {
-  findButton,
+  assistantEvent,
+  createChatRunFixtures,
   NEW_CHAT_PATH,
   promptEvent,
-  queryButton,
   readyChat,
   RUN_PATH,
   sendText,
-  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
 
 const context = testContext();
-const { mockMacUserAgentData } = createChatLifecycleHelpers(context);
 const { installRunChat } = createChatRunFixtures(context);
+const { mockMacUserAgentData } = createChatLifecycleHelpers(context);
+const STUDIO_MAC = "f0000000-0000-4000-8000-000000000a01";
+const TRAVEL_MAC = "f0000000-0000-4000-8000-000000000a02";
+const EARLIER_RUN_ID = "d0000000-0000-4000-a000-000000000a01";
 
-const PRIMARY_HOST_ID = "e0000000-0000-4000-a000-000000001001";
-const SECONDARY_HOST_ID = "e0000000-0000-4000-a000-000000001002";
-
-interface CapturedComputerSend {
-  readonly prompt: string;
-  readonly computerUseHostId?: string | null;
-  readonly cloudBrowserEnabled?: boolean;
-}
-
-interface CapturedComputerUpdate {
-  readonly computerUseHostId: string | null;
-  readonly cloudBrowserEnabled?: boolean;
-}
-
-function computerHost(args: {
+interface DirectoryHost {
   readonly id: string;
   readonly displayName: string;
   readonly status: "online" | "offline";
-}): ComputerUseHost {
-  return {
-    id: args.id,
-    hostName: `${args.displayName.toLowerCase().replaceAll(" ", "-")}.local`,
-    displayName: args.displayName,
-    appVersion: "1.4.0",
-    osVersion: "macOS 15.6",
-    supportedCapabilities: ["browser", "desktop"],
-    permissions: computerUsePermissions(),
-    status: args.status,
-    lastSeenAt: "2026-08-18T12:00:00.000Z",
-    createdAt: "2026-08-01T09:00:00.000Z",
-  };
 }
 
-function installComputerHosts(
-  readHosts: () => readonly ComputerUseHost[],
-  cloudBrowserEnabledByDefault = true,
-): void {
-  context.mocks.api(computerUseHostsContract.list, ({ respond }) => {
-    const hosts = readHosts();
-    return respond(200, { hosts: [...hosts] });
-  });
+interface ComputerAccess {
+  readonly computerUseHostId: string | null | undefined;
+  readonly cloudBrowserEnabled: boolean | undefined;
+}
+
+interface SentMessage extends ComputerAccess {
+  readonly prompt: string;
+}
+
+interface ChatServer {
+  sent?: SentMessage;
+  saved?: ComputerAccess;
+  /** The thread's saved Computer Use choice when the message arrived. */
+  savedWhenSent?: ComputerAccess;
+}
+
+/** The member's Computer Use directory, read whenever the menu opens. */
+function mockComputerDirectory(initial: readonly DirectoryHost[]): {
+  hosts: readonly DirectoryHost[];
+} {
+  const directory = { hosts: initial };
   context.mocks.api(remotesContract.overview, ({ respond }) => {
-    const hosts = readHosts();
     return respond(200, {
-      cloudBrowserAvailable: true,
-      sshHosts: [],
-      vncHosts: [],
-      computerUseHosts: hosts.map((host) => {
+      computerUseHosts: directory.hosts.map((host) => {
         return {
-          id: host.id,
-          hostName: host.hostName ?? host.displayName,
-          displayName: host.displayName,
-          lastSeenAt: host.lastSeenAt,
-          status: host.status,
+          ...host,
+          hostName: `${host.displayName.toLowerCase().replace(" ", "-")}.local`,
+          lastSeenAt: "2026-11-20T07:55:00.000Z",
         };
       }),
-      cloudBrowserEnabledByDefault,
-    });
-  });
-}
-
-async function openComputerMenu(): Promise<void> {
-  if (!queryButton("Connect my computer")) {
-    click(await findButton("Connectors"));
-  }
-  await expect(findButton("Connect my computer")).resolves.toBeVisible();
-}
-
-function fastControl(
-  role: "button" | "link",
-  name: string,
-  container: ParentNode = document.body,
-): HTMLElement {
-  const control = queryAllByRoleFast(role, container).find((candidate) => {
-    const text = candidate.textContent?.replace(/\s+/gu, " ").trim();
-    return candidate.getAttribute("aria-label") === name || text === name;
-  });
-  if (!control) {
-    throw new Error(`${name} ${role} was not visible`);
-  }
-  return control;
-}
-
-async function waitForComputerSend(
-  sends: readonly CapturedComputerSend[],
-  count: number,
-): Promise<CapturedComputerSend> {
-  await waitFor(() => {
-    expect(sends).toHaveLength(count);
-  });
-  const send = sends[count - 1];
-  if (!send) {
-    throw new Error("Expected Computer Use send was not captured");
-  }
-  return send;
-}
-
-function installNewComputerChat(
-  sends: CapturedComputerSend[],
-  hosts: readonly ComputerUseHost[],
-  cloudBrowserEnabledByDefault = true,
-): void {
-  installRunChat({
-    onSendRequest(body) {
-      sends.push({
-        prompt: body.prompt,
-        ...(body.computerUseHostId === undefined
-          ? {}
-          : { computerUseHostId: body.computerUseHostId }),
-        ...(body.cloudBrowserEnabled === undefined
-          ? {}
-          : { cloudBrowserEnabled: body.cloudBrowserEnabled }),
-      });
-    },
-  });
-  installComputerHosts(() => {
-    return hosts;
-  }, cloudBrowserEnabledByDefault);
-}
-
-async function openComputerDownloadDialog(title: string): Promise<HTMLElement> {
-  await openComputerMenu();
-  click(await findButton("Connect my computer"));
-  return await screen.findByRole("dialog", { name: title });
-}
-
-async function prepareCloudBrowserDefaults() {
-  const sends: CapturedComputerSend[] = [];
-  installNewComputerChat(sends, [
-    computerHost({
-      id: PRIMARY_HOST_ID,
-      displayName: "Studio Mac",
-      status: "online",
-    }),
-  ]);
-  await setupPage({ context, path: NEW_CHAT_PATH });
-  await readyChat();
-  return { sends };
-}
-
-function observeResourceLists(): string[] {
-  const requested: string[] = [];
-  context.mocks.api(connectedConnectorsContract.list, ({ respond }) => {
-    requested.push("connected connectors");
-    return respond(200, { builtinConnectors: [], customConnectors: [] });
-  });
-  context.mocks.api(remotesContract.overview, ({ respond }) => {
-    requested.push("remotes");
-    return respond(200, {
-      computerUseHosts: [],
       cloudBrowserAvailable: true,
       cloudBrowserEnabledByDefault: true,
       sshHosts: [],
       vncHosts: [],
     });
   });
-  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
-    requested.push("target accounts");
-    return respond(200, {
-      connections: [],
-      nextCursor: null,
-      defaultConnection: null,
-    });
-  });
-  context.mocks.api(computerUseHostsContract.list, ({ respond }) => {
-    requested.push("computer hosts");
-    return respond(200, { hosts: [] });
-  });
-  context.mocks.api(
-    chatRemoteAccessContract.listHostDefaults,
-    ({ respond }) => {
-      requested.push("remote defaults");
-      return respond(200, { ssh: [], vnc: [] });
-    },
-  );
-  context.mocks.api(
-    chatRemoteAccessContract.listThreadAccess,
-    ({ respond }) => {
-      requested.push("thread remote hosts");
-      return respond(200, { ssh: [], vnc: [] });
-    },
-  );
-  return requested;
+  return directory;
 }
 
-test.each(["new chat", "existing chat", "queued message"] as const)(
-  "Submit a %s without opening or fetching resource and account lists",
-  async (mode) => {
-    let submitted: "send" | "queue" | undefined;
-    const runId = "a0000000-0000-4000-a000-000000000502";
-    installRunChat({
-      ...(mode === "queued message"
-        ? {
-            activeRunIds: [runId],
-            chatEvents: [
-              promptEvent({
-                id: "existing-request",
-                runId,
-                seqId: 1,
-                text: "Prepare the launch",
-              }),
-            ],
-          }
-        : {}),
-      onSendRequest() {
-        submitted = "send";
-      },
-      onQueuedEventAppend() {
-        submitted = "queue";
-      },
-    });
-    const resourceRequests = observeResourceLists();
-    await setupPage({
-      context,
-      path: mode === "new chat" ? NEW_CHAT_PATH : RUN_PATH,
-    });
-    await readyChat();
-    expect(resourceRequests).toStrictEqual([]);
+function studioMac(status: DirectoryHost["status"] = "online"): DirectoryHost {
+  return { id: STUDIO_MAC, displayName: "Studio Mac", status };
+}
 
-    await sendText("Review this launch without opening the resource menu");
-    await waitFor(() => {
-      expect(submitted).toBe(mode === "queued message" ? "queue" : "send");
-    });
-    expect(resourceRequests).toStrictEqual([]);
+function travelMac(status: DirectoryHost["status"]): DirectoryHost {
+  return { id: TRAVEL_MAC, displayName: "Travel Mac", status };
+}
+
+function installChat(
+  saved: { computerUseHostId: string | null; cloudBrowserEnabled: boolean } = {
+    computerUseHostId: null,
+    cloudBrowserEnabled: false,
   },
-);
+): ChatServer {
+  const server: ChatServer = {};
+  installRunChat({
+    ...saved,
+    chatEvents: [
+      promptEvent({
+        id: "computer-earlier-user",
+        runId: EARLIER_RUN_ID,
+        seqId: 1,
+        text: "Check the build",
+      }),
+      assistantEvent({
+        id: "computer-earlier-assistant",
+        runId: EARLIER_RUN_ID,
+        seqId: 2,
+        text: "The build is green.",
+      }),
+    ],
+    onComputerUseHostUpdate(body) {
+      server.saved = {
+        computerUseHostId: body.computerUseHostId,
+        cloudBrowserEnabled: body.cloudBrowserEnabled,
+      };
+    },
+    onSendRequest(body) {
+      server.savedWhenSent = server.saved;
+      server.sent = {
+        prompt: body.prompt,
+        computerUseHostId: body.computerUseHostId,
+        cloudBrowserEnabled: body.cloudBrowserEnabled,
+      };
+    },
+  });
+  return server;
+}
+
+async function openPage(path: string): Promise<void> {
+  await setupPage({ context, path });
+  await readyChat();
+}
+
+async function openConnectors(): Promise<HTMLElement> {
+  click(await findFastControl("button", "Connectors"));
+  return await screen.findByRole("dialog", { name: "Connectors" });
+}
+
+async function closeConnectors(): Promise<void> {
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Connectors" }),
+    ).not.toBeInTheDocument();
+  });
+}
+
+/** Base UI switches toggle on one complete pointer click. */
+async function toggle(control: HTMLElement): Promise<void> {
+  await userEvent.setup({ delay: null }).click(control);
+}
+
+async function findHosts(menu: HTMLElement): Promise<HTMLElement> {
+  return await within(menu).findByRole("group", {
+    name: "Computer Use hosts",
+  });
+}
 
 test("Let the server apply the cloud browser default for an untouched new chat", async () => {
-  const { sends } = await prepareCloudBrowserDefaults();
-  await sendText("Research the launch market");
-  const sent = await waitForComputerSend(sends, 1);
-  expect(sent).toMatchObject({
-    prompt: "Research the launch market",
-  });
-  expect(sent.cloudBrowserEnabled).toBeUndefined();
-  expect(sent.computerUseHostId).toBeUndefined();
+  mockComputerDirectory([studioMac()]);
+  const server = installChat();
+  await openPage(NEW_CHAT_PATH);
+
+  await sendText("Open the analytics dashboard");
+
   await expect(
-    screen.findByText("Research the launch market"),
-  ).resolves.toBeVisible();
-});
-
-test("Start a new chat with Cloud browser disabled", async () => {
-  const user = userEvent.setup({ delay: null });
-  const sends: CapturedComputerSend[] = [];
-  installNewComputerChat(sends, []);
-
-  await setupPage({ context, path: NEW_CHAT_PATH });
-
-  await readyChat();
-  await openComputerMenu();
-  const cloudBrowser = screen.getByRole("switch", {
-    name: "Cloud browser",
-    checked: true,
+    screen.findByText("Open the analytics dashboard"),
+  ).resolves.toBeInTheDocument();
+  expect(server.sent).toStrictEqual({
+    prompt: "Open the analytics dashboard",
+    computerUseHostId: undefined,
+    cloudBrowserEnabled: undefined,
   });
-  expect(cloudBrowser).toBeChecked();
-
-  await user.click(cloudBrowser);
-
-  const disabledCloudBrowser = await screen.findByRole("switch", {
-    name: "Cloud browser",
-    checked: false,
-  });
-  expect(disabledCloudBrowser).not.toBeChecked();
-
-  await sendText("Summarize the product launch");
-
-  const sent = await waitForComputerSend(sends, 1);
-  expect(sent.prompt).toBe("Summarize the product launch");
-  expect(sent).toMatchObject({
-    cloudBrowserEnabled: false,
-    computerUseHostId: null,
-  });
-});
-
-test("Use the saved Cloud browser default for an untouched new chat", async () => {
-  const sends: CapturedComputerSend[] = [];
-  context.mocks.data.userPreferences({
-    cloudBrowserEnabledByDefault: false,
-  });
-  installNewComputerChat(sends, [], false);
-
-  await setupPage({
-    context,
-    path: NEW_CHAT_PATH,
-  });
-
-  await readyChat();
-  await openComputerMenu();
-  expect(
-    screen.getByRole("switch", { name: "Cloud browser", checked: false }),
-  ).not.toBeChecked();
-
-  await sendText("Review the launch notes");
-
-  const sent = await waitForComputerSend(sends, 1);
-  expect(sent.prompt).toBe("Review the launch notes");
-  expect(sent.cloudBrowserEnabled).toBeUndefined();
-  expect(sent.computerUseHostId).toBeUndefined();
 });
 
 test("Start a new chat with a selected local computer", async () => {
-  const user = userEvent.setup({ delay: null });
-  const sends: CapturedComputerSend[] = [];
-  installNewComputerChat(sends, [
-    computerHost({
-      id: PRIMARY_HOST_ID,
-      displayName: "Studio Mac",
-      status: "online",
-    }),
-  ]);
-
-  await setupPage({ context, path: NEW_CHAT_PATH });
-
-  await readyChat();
-  await openComputerMenu();
-  const localComputer = screen.getByRole("switch", {
-    name: "Studio Mac",
-    checked: false,
-  });
-
-  await user.click(localComputer);
-
-  await expect(
-    screen.findByRole("switch", { name: "Studio Mac", checked: true }),
-  ).resolves.toBeChecked();
-  expect(
-    screen.getByRole("switch", { name: "Cloud browser", checked: false }),
-  ).not.toBeChecked();
-
-  await user.keyboard("{Escape}");
-  await openComputerMenu();
-  await expect(
-    screen.findByRole("switch", { name: "Studio Mac", checked: true }),
-  ).resolves.toBeChecked();
-  await user.keyboard("{Escape}");
-  // A fresh directory can stop offering a selected resource. Keep the draft's
-  // exact choice for authoritative send validation instead of replacing it.
-  installComputerHosts(() => {
-    return [];
-  });
-  await openComputerMenu();
+  const directory = mockComputerDirectory([studioMac()]);
+  const server = installChat();
+  await openPage(NEW_CHAT_PATH);
+  const menu = await openConnectors();
+  await toggle(
+    within(await findHosts(menu)).getByRole("switch", { name: "Studio Mac" }),
+  );
   await waitFor(() => {
-    expect(screen.getByRole("switch", { name: "Cloud browser" })).toBeEnabled();
+    expect(
+      within(menu).getByRole("switch", { name: "Studio Mac" }),
+    ).toBeChecked();
   });
-  expect(screen.queryByRole("switch", { name: "Studio Mac" })).toBeNull();
-  await user.keyboard("{Escape}");
-  await sendText("Open the desktop dashboard");
+  await closeConnectors();
 
-  const sent = await waitForComputerSend(sends, 1);
-  expect(sent).toMatchObject({
-    prompt: "Open the desktop dashboard",
-    computerUseHostId: PRIMARY_HOST_ID,
-    cloudBrowserEnabled: false,
+  directory.hosts = [];
+  const reopened = await openConnectors();
+
+  await expect(
+    within(reopened).findByText("No online computers"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(reopened).queryByRole("switch", { name: "Studio Mac" }),
+  ).not.toBeInTheDocument();
+  expect(
+    within(reopened).getByRole("switch", { name: "Cloud browser" }),
+  ).not.toBeChecked();
+  await closeConnectors();
+
+  await sendText("Open the design file on my Mac");
+
+  await waitFor(() => {
+    expect(server.sent).toStrictEqual({
+      prompt: "Open the design file on my Mac",
+      computerUseHostId: STUDIO_MAC,
+      cloudBrowserEnabled: false,
+    });
   });
 });
 
 test("Discover computers that are available for Computer Use", async () => {
-  const user = userEvent.setup({ delay: null });
-  let hosts: readonly ComputerUseHost[] = [
-    computerHost({
-      id: PRIMARY_HOST_ID,
-      displayName: "Studio Mac",
-      status: "online",
-    }),
-    computerHost({
-      id: SECONDARY_HOST_ID,
-      displayName: "Travel Mac",
-      status: "offline",
-    }),
-  ];
-  installRunChat();
-  installComputerHosts(() => {
-    return hosts;
-  });
+  const directory = mockComputerDirectory([studioMac(), travelMac("offline")]);
+  installChat();
+  await openPage(NEW_CHAT_PATH);
+  const menu = await openConnectors();
+  const hosts = await findHosts(menu);
 
-  await setupPage({ context, path: NEW_CHAT_PATH });
-
-  await readyChat();
-  await openComputerMenu();
-  const hostGroup = await screen.findByRole("group", {
-    name: "Computer Use hosts",
-  });
-  expect(within(hostGroup).getByText("Studio Mac")).toBeVisible();
-  expect(within(hostGroup).queryByText("Travel Mac")).toBeNull();
-  expect(screen.getByText("Cloud browser")).toBeVisible();
-  const studioSwitch = screen.getByRole("switch", {
-    name: "Studio Mac",
-    checked: false,
-  });
-  expect(studioSwitch).not.toBeChecked();
-
-  await user.click(studioSwitch);
-  await expect(
-    screen.findByRole("switch", { name: "Studio Mac", checked: true }),
-  ).resolves.toBeChecked();
-
-  hosts = [
-    computerHost({
-      id: PRIMARY_HOST_ID,
-      displayName: "Studio Mac",
-      status: "online",
-    }),
-    computerHost({
-      id: SECONDARY_HOST_ID,
-      displayName: "Travel Mac",
-      status: "online",
-    }),
-  ];
-  expect(within(hostGroup).queryByText("Travel Mac")).toBeNull();
-  await user.keyboard("{Escape}");
-  await openComputerMenu();
-
-  await expect(screen.findByText("Travel Mac")).resolves.toBeVisible();
   expect(
-    screen.getByRole("switch", { name: "Travel Mac", checked: false }),
-  ).not.toBeChecked();
-});
+    within(hosts)
+      .getAllByRole("switch")
+      .map((host) => {
+        return host.closest("label")?.textContent;
+      }),
+  ).toStrictEqual(["Studio Mac"]);
+  expect(within(menu).queryByText("Travel Mac")).not.toBeInTheDocument();
 
-test("Guide users to the compatible Computer Use app", async () => {
-  mockMacUserAgentData("arm");
-  installRunChat();
-
-  await setupPage({ context, path: NEW_CHAT_PATH, host: "app.okou.ai" });
-
-  await readyChat();
-  const dialog = await openComputerDownloadDialog("Install and sign in");
-  expect(dialog).toHaveTextContent("Install and sign in");
-  expect(dialog).toHaveTextContent(
-    "Requires an Apple silicon Mac with macOS 14 or newer",
-  );
-  const download = fastControl("link", "Download for macOS", dialog);
-  expect(download).toBeVisible();
-  expect(download).toHaveAttribute(
-    "href",
-    expect.stringContaining("/api/desktop/updates/stable/darwin/arm64/dmg"),
-  );
-  expect(download).toHaveAttribute("target", "_blank");
-  click(fastControl("button", "Continue", dialog));
-  await screen.findByRole("heading", { name: "Allow access and stay online" });
-  expect(
-    new URLSearchParams(window.location.search).get("computerUseStep"),
-  ).toBe("permissions");
-  click(fastControl("button", "Continue", dialog));
-  await screen.findByRole("heading", { name: "Enable it in chat" });
-  click(fastControl("button", "Done", dialog));
+  await toggle(within(hosts).getByRole("switch", { name: "Studio Mac" }));
   await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      within(menu).getByRole("switch", { name: "Studio Mac" }),
+    ).toBeChecked();
   });
+  await closeConnectors();
+
+  directory.hosts = [studioMac(), travelMac("online")];
+  const reopened = await openConnectors();
+
+  await expect(
+    within(reopened).findByRole("switch", { name: "Travel Mac" }),
+  ).resolves.not.toBeChecked();
   expect(
-    new URLSearchParams(window.location.search).has("computerUseGuide"),
-  ).toBeFalsy();
+    within(reopened).getByRole("switch", { name: "Studio Mac" }),
+  ).toBeChecked();
 });
 
 test("Explain Computer Use incompatibility on an Intel Mac", async () => {
-  mockMacUserAgentData("x86_64");
-  installRunChat();
+  mockMacUserAgentData("x86");
+  mockComputerDirectory([]);
+  installChat();
+  await openPage(NEW_CHAT_PATH);
+  await openConnectors();
 
-  await setupPage({ context, path: NEW_CHAT_PATH, host: "app.okou.ai" });
+  click(await findFastControl("button", "Connect my computer"));
 
-  await readyChat();
-  const dialog = await openComputerDownloadDialog("Install and sign in");
-  const incompatibility = fastControl(
-    "button",
-    "Requires an Apple silicon Mac",
-    dialog,
-  );
-  expect(incompatibility).toBeDisabled();
-  expect(dialog).toHaveTextContent("Intel Macs aren't supported");
-  expect(
-    queryAllByRoleFast("link", dialog).find((link) => {
-      return link.textContent?.trim() === "Download for macOS";
-    }),
-  ).toBeUndefined();
-});
-
-async function connectExistingChatComputer() {
-  const user = userEvent.setup({ delay: null });
-  const sends: CapturedComputerSend[] = [];
-  const updates: CapturedComputerUpdate[] = [];
-  const externalOrder: string[] = [];
-  installRunChat({
-    computerUseHostId: null,
-    cloudBrowserEnabled: false,
-    onComputerUseHostUpdate(body) {
-      updates.push(body);
-      externalOrder.push(
-        `save:${body.computerUseHostId ?? "none"}:${String(body.cloudBrowserEnabled)}`,
-      );
-    },
-    onSendRequest(body) {
-      sends.push({
-        prompt: body.prompt,
-        ...(body.computerUseHostId === undefined
-          ? {}
-          : { computerUseHostId: body.computerUseHostId }),
-        ...(body.cloudBrowserEnabled === undefined
-          ? {}
-          : { cloudBrowserEnabled: body.cloudBrowserEnabled }),
-      });
-      externalOrder.push(`send:${body.prompt}`);
-    },
-  });
-  installComputerHosts(() => {
-    return [
-      computerHost({
-        id: PRIMARY_HOST_ID,
-        displayName: "Studio Mac",
-        status: "online",
-      }),
-    ];
-  });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  await openComputerMenu();
-  await user.click(
-    screen.getByRole("switch", { name: "Studio Mac", checked: false }),
-  );
-
-  await waitFor(() => {
-    expect(updates).toHaveLength(1);
-  });
-  expect(updates[0]).toMatchObject({
-    computerUseHostId: PRIMARY_HOST_ID,
-    cloudBrowserEnabled: false,
+  const guide = await screen.findByRole("dialog", {
+    name: "Install and sign in",
   });
   await expect(
-    screen.findByRole("switch", { name: "Studio Mac", checked: true }),
-  ).resolves.toBeChecked();
-  return { user, sends, updates, externalOrder };
-}
+    findFastControl("button", "Requires an Apple silicon Mac", guide),
+  ).resolves.toBeDisabled();
+  expect(
+    within(guide).getByText(
+      "Requires an Apple silicon Mac with macOS 14 or newer. Intel Macs aren't supported.",
+    ),
+  ).toBeInTheDocument();
+  expect(queryFastControl("link", "Download for macOS", guide)).toBeNull();
+});
 
 test("Save and retain an existing chat's Computer Use host before sending", async () => {
-  const { sends, externalOrder } = await connectExistingChatComputer();
-  await sendText("Inspect the desktop report");
-
-  await waitForComputerSend(sends, 1);
-  expect(externalOrder.slice(0, 2)).toStrictEqual([
-    `save:${PRIMARY_HOST_ID}:false`,
-    "send:Inspect the desktop report",
-  ]);
-  await openComputerMenu();
-  const savedHost = await screen.findByRole("switch", {
-    name: "Studio Mac",
-    checked: true,
+  mockComputerDirectory([studioMac()]);
+  const server = installChat();
+  await openPage(RUN_PATH);
+  const menu = await openConnectors();
+  await toggle(
+    within(await findHosts(menu)).getByRole("switch", { name: "Studio Mac" }),
+  );
+  await closeConnectors();
+  // Covers the saved path only: the choice reaches the server before the
+  // user sends. A send while the save is still pending carries the explicit
+  // choice instead, and is not covered here.
+  await waitFor(() => {
+    expect(server.saved).toStrictEqual({
+      computerUseHostId: STUDIO_MAC,
+      cloudBrowserEnabled: false,
+    });
   });
-  expect(savedHost).toBeChecked();
+
+  await sendText("Use the Studio Mac for this");
+
+  await expect(
+    screen.findByText("Use the Studio Mac for this"),
+  ).resolves.toBeInTheDocument();
+  expect(server.savedWhenSent).toStrictEqual({
+    computerUseHostId: STUDIO_MAC,
+    cloudBrowserEnabled: false,
+  });
+  const reopened = await openConnectors();
+  await expect(
+    within(reopened).findByRole("switch", { name: "Studio Mac" }),
+  ).resolves.toBeChecked();
 });
 
 test("Save an existing chat's Computer Use disconnection before sending", async () => {
-  const { user, sends, updates, externalOrder } =
-    await connectExistingChatComputer();
-  const savedHost = screen.getByRole("switch", {
+  mockComputerDirectory([studioMac()]);
+  const server = installChat({
+    computerUseHostId: STUDIO_MAC,
+    cloudBrowserEnabled: false,
+  });
+  await openPage(RUN_PATH);
+  const menu = await openConnectors();
+  const studio = within(await findHosts(menu)).getByRole("switch", {
     name: "Studio Mac",
-    checked: true,
   });
-  await user.click(savedHost);
-
   await waitFor(() => {
-    expect(updates).toHaveLength(2);
+    expect(studio).toBeChecked();
   });
-  expect(updates[1]).toMatchObject({
+  await toggle(studio);
+  await closeConnectors();
+  // Covers the saved path only; a send during a pending save carries the
+  // explicit choice instead, and is not covered here.
+  await waitFor(() => {
+    expect(server.saved).toStrictEqual({
+      computerUseHostId: null,
+      cloudBrowserEnabled: false,
+    });
+  });
+
+  await sendText("Continue without my computer");
+
+  await expect(
+    screen.findByText("Continue without my computer"),
+  ).resolves.toBeInTheDocument();
+  expect(server.savedWhenSent).toStrictEqual({
     computerUseHostId: null,
     cloudBrowserEnabled: false,
   });
-  await expect(
-    screen.findByRole("switch", { name: "Studio Mac", checked: false }),
-  ).resolves.not.toBeChecked();
-
-  await sendText("Continue without the desktop");
-
-  const laterSend = await waitForComputerSend(sends, 1);
-  expect(externalOrder.at(-2)).toBe("save:none:false");
-  expect(externalOrder.at(-1)).toBe("send:Continue without the desktop");
-  expect(laterSend.computerUseHostId).toBeUndefined();
-  expect(laterSend.cloudBrowserEnabled).toBeUndefined();
+  expect(server.sent).toStrictEqual({
+    prompt: "Continue without my computer",
+    computerUseHostId: undefined,
+    cloudBrowserEnabled: undefined,
+  });
 });

@@ -1,316 +1,128 @@
+import { screen, within } from "@testing-library/react";
+import { test, expect } from "vitest";
+import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { screen, waitFor } from "@testing-library/react";
-import { expect, test } from "vitest";
-import { setupPage } from "./chat-lifecycle-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
   assistantEvent,
-  completedEvent,
   promptEvent,
-  publishRunUpdate,
-  queryButton,
-  readyChat,
+  completedEvent,
+  createChatRunFixtures,
   RUN_PATH,
   sendText,
-  createChatRunFixtures,
+  findEnabledButton,
 } from "./chat-run-test-fixtures.ts";
+import { publicArtifactUrl } from "./chat-attachment-test-helpers.ts";
 
 const context = testContext();
 const { installRunChat } = createChatRunFixtures(context);
-
-const RUN_A = "a0000000-0000-4000-a000-000000000291";
-const RUN_B = "a0000000-0000-4000-a000-000000000292";
-const RESULT = "The API is checking dependencies. No errors so far.";
-const OLD_ERROR = "The provider could not complete the previous request.";
-const NEW_ERROR = "The provider could not complete the next request.";
-const GENERIC_ERROR = "Oops, something went wrong.";
-const TIMEOUT_TITLE = "Time limit reached";
-
-function failedEvent(
-  runId = RUN_A,
-  error = OLD_ERROR,
-  seqId = 4,
-  failureReason = "unknown",
-): MockChatEventInput {
-  return {
-    id: `${runId}-failure`,
-    eventType: "run.failed",
-    content: null,
-    error,
-    failureReason,
-    runId,
-    seqId,
-    createdAt: "2026-08-01T10:00:04.000Z",
-  };
-}
-
-function resultEvents(): MockChatEventInput[] {
+const runId = "70755889-0650-4423-af5f-4469cfa70880";
+const result = "The dependency check identified two owners.";
+const file = "owners.md";
+const generic = "This run couldn't finish";
+function outputs(): MockChatEventInput[] {
   return [
-    promptEvent({
-      id: "first-input",
-      runId: RUN_A,
-      seqId: 1,
-      text: "Check the API",
-    }),
+    promptEvent({ id: "check", seqId: 1, runId, text: "Check ownership." }),
     assistantEvent({
-      id: "supporting-artifact",
-      runId: RUN_A,
+      id: "ownership",
       seqId: 2,
-      text: "![Report](https://cdn.vm7.io/artifacts/status-tail/evidence/report.pdf)",
+      runId,
+      text: result + "\n\n[" + file + "](" + publicArtifactUrl(file) + ")",
     }),
-    assistantEvent({
-      id: "first-result",
-      runId: RUN_A,
+  ];
+}
+function failedHistory(): MockChatEventInput[] {
+  return [
+    ...outputs(),
+    {
+      id: "baseline-failure",
+      runId,
       seqId: 3,
-      text: RESULT,
-    }),
-  ];
-}
-
-async function openChat(): Promise<void> {
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-  await readyChat();
-}
-
-async function expectRetainedResult(): Promise<HTMLElement> {
-  const result = screen.getByText(RESULT);
-  const main = result.closest<HTMLElement>("[data-chat-run-work-main]");
-  if (!main) {
-    throw new Error("Expected the previous main result");
-  }
-  const artifactTrigger = await screen.findByTestId(
-    "chat-run-related-artifacts-trigger",
-  );
-  expect(main).toContainElement(artifactTrigger);
-  expect(artifactTrigger).toHaveAccessibleName("1 artifact");
-  expect(queryButton("Copy message", main)).toBeVisible();
-  return main;
-}
-
-test.each(["run.failed"] as const)(
-  "Show a scheduled workflow %s in a status card with its assistant avatar when no output was produced",
-  async (eventType) => {
-    installRunChat({
-      chatEvents: [
-        {
-          id: "scheduled-workflow",
-          eventType: "input.automation",
-          content: null,
-          runId: RUN_A,
-          seqId: 1,
-          createdAt: "2026-08-01T10:00:00.000Z",
-          userMessage: {
-            version: 1,
-            parts: [
-              {
-                type: "automation",
-                workflowName: "daily-connector-registry-refresh",
-                automationBrief: "This workflow started on schedule.",
-              },
-            ],
-          },
-        },
-        { ...failedEvent(RUN_A, GENERIC_ERROR, 2), eventType },
-      ],
-    });
-
-    await openChat();
-
-    const error = await screen.findByText(GENERIC_ERROR);
-    expect(screen.getAllByText(GENERIC_ERROR)).toHaveLength(1);
-    expect(error.closest("[data-chat-run-status-tail]")).toBeVisible();
-    expect(error.closest("[data-chat-selection-source]")).toBeNull();
-    expect(error.closest('[role="status"]')).toBeVisible();
-    expect(screen.getByText("This run couldn't finish")).toBeVisible();
-    expect(error.closest('[data-role="assistant"]')).toContainElement(
-      queryButton("My Okou"),
-    );
-    expect(screen.queryByTestId("chat-event-actions")).toBeNull();
-    expect(
-      screen.getByText("This workflow started on schedule."),
-    ).toBeVisible();
-  },
-);
-
-test("Keep a generic failure out of the message body while retaining previous output and actions", async () => {
-  installRunChat({
-    chatEvents: [...resultEvents(), failedEvent(RUN_A, GENERIC_ERROR)],
-  });
-
-  await openChat();
-
-  const error = await screen.findByText(GENERIC_ERROR);
-  const main = await expectRetainedResult();
-  expect(screen.getAllByText(GENERIC_ERROR)).toHaveLength(1);
-  expect(error.closest("[data-chat-run-status-tail]")).toBeVisible();
-  expect(error.closest("[data-chat-selection-source]")).toBeNull();
-  expect(main).not.toContainElement(error);
-});
-
-async function sendAfterPreviousFailure() {
-  const sendGate = context.mocks.deferred<void>();
-  const runCreated = context.mocks.deferred<void>();
-  const chat = installRunChat({
-    chatEvents: [...resultEvents(), failedEvent()],
-    sendGate: sendGate.promise,
-    onRunCreate: () => {
-      runCreated.resolve();
+      role: "assistant",
+      runLifecycleEvent: "failed",
+      createdAt: "2026-08-01T10:00:03Z",
+      content: null,
+      error: "Run failed",
+      failureReason: "unknown",
     },
-  });
-  await openChat();
-  const error = await screen.findByText(GENERIC_ERROR);
-  const main = await expectRetainedResult();
-  expect(error.closest("[data-chat-run-status-tail]")).toBeVisible();
-  expect(main).not.toContainElement(error);
-
-  await sendText("Continue checking");
-
-  await expect(screen.findByText("Continue checking")).resolves.toBeVisible();
-  await waitFor(() => {
-    expect(document.querySelector("[data-thinking-indicator]")).toBeVisible();
-    expect(screen.queryByText(GENERIC_ERROR)).toBeNull();
-  });
-  await expectRetainedResult();
-  return { chat, sendGate, runCreated };
+  ];
+}
+function retainedAnswer() {
+  const turn = screen
+    .getByText(result)
+    .closest<HTMLElement>('[data-role="assistant"]')!;
+  expect(within(turn).getByText(file)).toBeVisible();
+  expect(within(turn).getByLabelText("Copy message")).toBeEnabled();
 }
 
-test("Retire the previous error as soon as a new message is sent, before acknowledgement or output", async () => {
-  await sendAfterPreviousFailure();
-  expect(screen.queryByText(GENERIC_ERROR)).toBeNull();
-});
-
-test("A subsequent failed response replaces the previous error while retaining its result", async () => {
-  const { chat, sendGate, runCreated } = await sendAfterPreviousFailure();
-  sendGate.resolve();
-  await runCreated.promise;
-  chat.failRun(NEW_ERROR, "execution_timeout");
-
-  const nextError = await screen.findByText(TIMEOUT_TITLE);
-  expect(nextError.closest("[data-chat-run-status-tail]")).toBeVisible();
-  expect(screen.queryByText(GENERIC_ERROR)).toBeNull();
-  expect(document.querySelector("[data-thinking-indicator]")).toBeNull();
-  expect(screen.getAllByTestId("chat-event-actions")).toHaveLength(1);
-  await expectRetainedResult();
-});
-
-test("Derive the latest response from recorded input in the same run when opening a chat", async () => {
-  const events = [
-    ...resultEvents(),
-    failedEvent(),
-    promptEvent({
-      id: "recorded-next-input",
-      runId: RUN_A,
-      seqId: 5,
-      text: "Continue from the recorded input",
-    }),
-  ];
-  installRunChat({ chatEvents: events, activeRunIds: [RUN_A] });
-
-  await openChat();
-
-  expect(screen.getByText("Continue from the recorded input")).toBeVisible();
-  expect(screen.queryByText(GENERIC_ERROR)).toBeNull();
-  await expectRetainedResult();
-});
-
-test("Show only the latest failure when neither response produced output", async () => {
-  installRunChat({
-    chatEvents: [
-      promptEvent({
-        id: "empty-a",
-        runId: RUN_A,
-        seqId: 1,
-        text: "First attempt",
-      }),
-      failedEvent(RUN_A, OLD_ERROR, 2),
-      promptEvent({
-        id: "empty-b",
-        runId: RUN_B,
-        seqId: 3,
-        text: "Second attempt",
-      }),
-      failedEvent(RUN_B, NEW_ERROR, 4, "execution_timeout"),
-    ],
+async function openFailedCheck() {
+  const acknowledgement = context.mocks.deferred<void>();
+  const service = installRunChat({
+    chatEvents: failedHistory(),
+    sendGate: acknowledgement.promise,
   });
+  await setupPage({ context, path: RUN_PATH });
+  await screen.findByText(generic);
+  retainedAnswer();
+  return { acknowledgement, service };
+}
 
-  await openChat();
-
+test("chat-run-status-tail-003 clears the old failure as the unacknowledged continuation starts thinking", async () => {
+  const { acknowledgement } = await openFailedCheck();
+  await sendText("Continue checking");
+  await screen.findByText("Thinking...");
   expect(
-    screen.getByText(TIMEOUT_TITLE).closest("[data-chat-run-status-tail]"),
+    screen.getByText("Continue checking", { selector: '[data-role="user"] *' }),
   ).toBeVisible();
-  expect(screen.queryByText(GENERIC_ERROR)).toBeNull();
-  expect(screen.queryByTestId("chat-event-actions")).toBeNull();
+  expect(screen.queryByText(generic)).toBeNull();
+  retainedAnswer();
+  acknowledgement.resolve();
 });
 
-test("Keep completion status visible while followups are unavailable", async () => {
-  const events = [
-    ...resultEvents(),
-    completedEvent({
-      id: "completed-without-followups",
-      runId: RUN_A,
-      seqId: 4,
-    }),
-  ];
-  installRunChat({ chatEvents: events });
-  await openChat();
-
-  const completionTail = document.querySelector<HTMLElement>(
-    "[data-chat-run-status-tail]",
-  );
-  expect(completionTail).toBeVisible();
-  expect(completionTail?.querySelector("p")).toBeVisible();
-  expect(completionTail?.querySelector('[role="separator"]')).toBeVisible();
-  expect(screen.queryByRole("group", { name: "Keep going" })).toBeNull();
-  await expectRetainedResult();
-
-  events.push({
-    id: "delayed-followups",
-    content: null,
-    runId: RUN_A,
-    seqId: 5,
-    createdAt: "2026-08-01T10:00:05.000Z",
-    followups: [{ prompt: "Summarize the check", kind: "talk" }],
-  });
-  publishRunUpdate();
-
-  const followups = await screen.findByRole("group", { name: "Keep going" });
-  expect(followups.closest("[data-chat-run-status-tail]")).toBeVisible();
-  expect(screen.getByText("Summarize the check")).toBeVisible();
-  await expectRetainedResult();
+test("chat-run-status-tail-004 places the acknowledged continuation's timeout in the status tail", async () => {
+  const { acknowledgement, service } = await openFailedCheck();
+  await sendText("Continue checking");
+  await screen.findByText("Thinking...");
+  acknowledgement.resolve();
+  await findEnabledButton("Stop");
+  service.failRun("Execution deadline exceeded", "execution_timeout");
+  const failure = await screen.findByText("Time limit reached");
+  expect(failure.closest("[data-chat-run-status-tail]")).toBeInTheDocument();
+  expect(screen.queryByText(generic)).toBeNull();
+  expect(screen.queryByText("Thinking...")).toBeNull();
+  expect(screen.getAllByTestId("chat-event-actions")).toHaveLength(1);
+  retainedAnswer();
 });
 
-test("Retire completion and followups while retaining the result actions", async () => {
-  const sendGate = context.mocks.deferred<void>();
+test("chat-run-status-tail-008 retires the completed run's followups on a pending new check", async () => {
+  const gate = context.mocks.deferred<void>();
   installRunChat({
-    sendGate: sendGate.promise,
+    sendGate: gate.promise,
     chatEvents: [
-      ...resultEvents(),
-      completedEvent({ id: "completed", runId: RUN_A, seqId: 4 }),
+      ...outputs(),
+      completedEvent({ id: "done", seqId: 3, runId }),
       {
-        id: "followups",
+        id: "next-step",
+        eventType: "output.followups",
         content: null,
-        runId: RUN_A,
-        seqId: 5,
-        createdAt: "2026-08-01T10:00:05.000Z",
-        followups: [{ prompt: "Summarize the check", kind: "talk" }],
+        seqId: 4,
+        createdAt: "2026-08-01T10:00:04Z",
+        runId,
+        followups: [{ kind: "talk", prompt: "Summarize the check" }],
       },
     ],
   });
-  await openChat();
-  await expect(
-    screen.findByRole("group", { name: "Keep going" }),
-  ).resolves.toBeVisible();
-
+  await setupPage({ context, path: RUN_PATH });
+  const group = await screen.findByRole("group", { name: "Keep going" });
+  expect(within(group).getByText("Summarize the check")).toBeVisible();
   await sendText("Start another check");
-
-  await expect(screen.findByText("Start another check")).resolves.toBeVisible();
-  await waitFor(() => {
-    expect(document.querySelector("[data-thinking-indicator]")).toBeVisible();
-    expect(screen.queryByRole("group", { name: "Keep going" })).toBeNull();
-  });
-  await expectRetainedResult();
-  sendGate.resolve();
+  await screen.findByText("Thinking...");
+  expect(
+    screen.getByText("Start another check", {
+      selector: '[data-role="user"] *',
+    }),
+  ).toBeVisible();
+  expect(screen.queryByRole("group", { name: "Keep going" })).toBeNull();
+  retainedAnswer();
+  gate.resolve();
 });

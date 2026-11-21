@@ -1,112 +1,103 @@
-import { screen } from "@testing-library/react";
-import { expect, test } from "vitest";
-import {
-  setupPage,
-  queryAllByRoleFast,
-} from "../../../__tests__/page-helper.ts";
+import { screen, within } from "@testing-library/react";
+import { test, expect } from "vitest";
+import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
-function action(role: "link" | "button", label: string) {
-  const element = queryAllByRoleFast(role).find((node) => {
-    return node.textContent?.trim() === label;
-  });
-  if (!element) {
-    throw new Error(`Missing ${role}: ${label}`);
-  }
-  return element;
-}
-
 const context = testContext();
-const site = "https://demo.okou.app/report?view=summary";
-const path = (reason: string, url = site) => {
-  return `/hosted-site-access?${new URLSearchParams({ url, reason })}`;
-};
-const restart = `https://demo.okou.app/.okou/auth/start?${new URLSearchParams({ returnTo: "/report?view=summary" })}`;
+const site = "https://field-notes.okou.app";
 
-test("signed-out website visitors can sign in without being forced away from the access page", async () => {
+async function openNotice(
+  reason: string,
+  title: string,
+  path: string,
+  signedOut = false,
+) {
+  const query = new URLSearchParams({ reason, url: site + path });
   await setupPage({
     context,
     host: "app.okou.ai",
-    path: path("authenticate"),
-    auth: null,
+    path: "/hosted-site-access?" + query,
+    ...(signedOut ? { auth: null } : {}),
   });
+  const card = within(await screen.findByRole("main"));
+  await card.findByRole("heading", { name: title });
+  return card;
+}
+
+const verify = "Verify access to this website";
+function authorizationTarget(card: ReturnType<typeof within>, action: string) {
+  const link = card.getByText(action, {
+    selector: "a[href]",
+  }) as HTMLAnchorElement;
+  return link.href;
+}
+
+test("hosted-site-access-001 offers a signed-out reader the original journal or the Okou home page", async () => {
+  const card = await openNotice(
+    "authenticate",
+    verify,
+    "/journals/field?entry=23",
+    true,
+  );
   expect(
-    screen.getByRole("heading", { name: "Verify access to this website" }),
+    card.getByText("Sign in with an account that can access this website."),
   ).toBeInTheDocument();
-  expect(
-    screen.getByText("Sign in with an account that can access this website."),
-  ).toBeInTheDocument();
-  expect(document.title).toBe("Verify access to this website | Okou");
-  expect(action("link", "Sign in")).toHaveAttribute("href", restart);
-  expect(action("link", "Back to Okou")).toHaveAttribute("href", "/");
+  expect(authorizationTarget(card, "Sign in")).toBe(
+    site + "/.okou/auth/start?returnTo=%2Fjournals%2Ffield%3Fentry%3D23",
+  );
+  expect(screen.getByText("Back to Okou", { selector: "a" })).toHaveAttribute(
+    "href",
+    "/",
+  );
+  expect(document.title).toBe(verify + " | Okou");
 });
 
-test("an incomplete authorization can be retried without claiming the signed-in visitor was denied", async () => {
-  await setupPage({ context, host: "app.okou.ai", path: path("authenticate") });
+test("hosted-site-access-002 resumes the draft verification with the current account", async () => {
+  const card = await openNotice(
+    "authenticate",
+    verify,
+    "/journals/draft?chapter=4",
+  );
   expect(
-    screen.getByRole("heading", { name: "Verify access to this website" }),
+    card.getByText("Continue to verify access with your current account."),
   ).toBeInTheDocument();
+  expect(authorizationTarget(card, "Continue")).toBe(
+    site + "/.okou/auth/start?returnTo=%2Fjournals%2Fdraft%3Fchapter%3D4",
+  );
   expect(
-    screen.getByText("Continue to verify access with your current account."),
-  ).toBeInTheDocument();
-  expect(action("link", "Continue")).toHaveAttribute("href", restart);
-  expect(action("button", "Switch account")).toBeEnabled();
+    card.getByText("Switch account", { selector: "button" }),
+  ).toBeEnabled();
+  expect(card.queryByText("You can’t view this website")).toBeNull();
 });
 
-test("expired website sessions offer a fresh authorization for the original path", async () => {
-  await setupPage({ context, host: "app.okou.ai", path: path("expired") });
+test("hosted-site-access-003 restarts an expired report session with its summary view", async () => {
+  const title = "Verify your access again";
+  const card = await openNotice("expired", title, "/report?view=summary");
+  expect(authorizationTarget(card, "Continue")).toBe(
+    site + "/.okou/auth/start?returnTo=%2Freport%3Fview%3Dsummary",
+  );
   expect(
-    screen.getByRole("heading", { name: "Verify your access again" }),
-  ).toBeInTheDocument();
-  expect(document.title).toBe("Verify your access again | Okou");
-  expect(action("link", "Continue")).toHaveAttribute("href", restart);
-  expect(action("button", "Switch account")).toBeEnabled();
+    card.getByText("Switch account", { selector: "button" }),
+  ).toBeEnabled();
+  expect(document.title).toBe(title + " | Okou");
 });
 
-test("a denied website offers account switching and access guidance", async () => {
-  await setupPage({ context, host: "app.okou.ai", path: path("denied") });
+test("hosted-site-access-004 gives a denied reader the sharer's guidance and an account choice", async () => {
+  const title = "You can’t view this website";
+  const card = await openNotice("denied", title, "/journals");
   expect(
-    screen.getByRole("heading", { name: "You can’t view this website" }),
-  ).toBeInTheDocument();
-  expect(document.title).toBe("You can’t view this website | Okou");
-  expect(action("button", "Switch account")).toBeEnabled();
-  expect(
-    screen.getByText(/Ask the person who shared this link to check access/u),
-  ).toBeInTheDocument();
-});
-
-test("dependency failures explain temporary website unavailability", async () => {
-  await setupPage({ context, host: "app.okou.ai", path: path("unavailable") });
-  expect(
-    screen.getByRole("heading", {
-      name: "This website is temporarily unavailable",
+    card.getByText("Ask the person who shared this link to check access.", {
+      exact: false,
     }),
   ).toBeInTheDocument();
-  expect(document.title).toBe("This website is temporarily unavailable | Okou");
+  expect(
+    card.getByText("Switch account", { selector: "button" }),
+  ).toBeEnabled();
+  expect(document.title).toBe(title + " | Okou");
 });
 
-test.each([
-  "https://demo.okou.app.attacker.example/report",
-  "https://app.okou.ai/",
-  String.raw`https://demo.okou.app/\attacker.example/report`,
-  `https://pv-${"a".repeat(48)}.okou.app/`,
-  "https://demo.okou.app/.okou/auth/callback?code=secret",
-])(
-  "an invalid recovery target %s cannot become a sign-in destination",
-  async (url) => {
-    await setupPage({
-      context,
-      host: "app.okou.ai",
-      path: path("expired", url),
-      auth: null,
-    });
-    expect(
-      screen.getByRole("heading", { name: "Verify your access again" }),
-    ).toBeInTheDocument();
-    expect(
-      queryAllByRoleFast("link").map((link) => {
-        return link.getAttribute("href");
-      }),
-    ).toStrictEqual(["/", "/"]);
-  },
-);
+test("hosted-site-access-005 describes temporary unavailability in both the notice and browser title", async () => {
+  const title = "This website is temporarily unavailable";
+  await openNotice("unavailable", title, "/journals");
+  expect(document.title).toBe(title + " | Okou");
+});

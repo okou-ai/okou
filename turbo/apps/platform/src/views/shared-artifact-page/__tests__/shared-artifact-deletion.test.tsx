@@ -1,317 +1,269 @@
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import {
   artifactCatalogContract,
   type ArtifactDetail,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
-import {
-  artifactReferencePath,
-  artifactReferencesContract,
-} from "@okouai/api-contracts/contracts/artifact-references";
-import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { act, screen, waitFor } from "@testing-library/react";
-import { beforeEach, expect, test } from "vitest";
-
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import userEvent from "@testing-library/user-event";
+import { test, expect } from "vitest";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { mockClerkSessionTransitioning } from "../../../__tests__/mock-auth.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { emitMockedClerkEvent } from "../../../__tests__/mock-auth.ts";
+import {
+  artifact,
+  getButtonByName,
+  queryButtonByName,
+} from "../../artifacts-page/__tests__/artifact-catalog-test-helpers.ts";
+import { fileArtifactDetail } from "../../okou-page/__tests__/chat-navigation-artifact-test-helpers.ts";
+import { findNamedButton } from "../../okou-page/__tests__/chat-attachment-test-helpers.ts";
+import {
+  sharedThread,
+  SHARED_THREAD_ID,
+} from "../../shared-thread-page/__tests__/shared-thread-test-helpers.ts";
 
 const context = testContext();
-const sourceId = "f0000000-0000-4000-a000-000000000910";
-const catalogId = "a0000000-0000-4000-a000-000000000910";
-const filename = "launch.png";
-const title = "Launch plan";
-const url = "https://files.example.test/launch.png";
-type PageKind = "file" | "html" | "shared-thread";
-
-beforeEach(() => {
-  context.mocks.api(artifactReferencesContract.ownerArtifact, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Artifact unavailable" },
-    });
-  });
-  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Artifact unavailable" },
-    });
-  });
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, { artifacts: [], nextCursor: null });
-  });
-});
-
-function button(name: string, container: ParentNode = document.body) {
-  const result = queryAllByRoleFast("button", container).find((candidate) => {
-    return (
-      candidate.getAttribute("aria-label") === name ||
-      candidate.textContent?.trim() === name
-    );
-  });
-  if (!result) {
-    throw new Error(`Missing button: ${name}`);
-  }
-  return result;
+const catalogId = "30000000-0000-4000-9000-000000000023";
+const fileId = "40000000-0000-4000-9000-000000000023";
+const filePath = "/artifacts/survey0023.png";
+const threadPath = `/share/threads/${SHARED_THREAD_ID}`;
+const title = "Coastal survey";
+function missing() {
+  return { error: { code: "NOT_FOUND", message: "Resource unavailable" } };
 }
-
-function detail(kind: PageKind): ArtifactDetail {
-  const summary = {
-    id: catalogId,
-    title,
-    thumbnail: null,
-    createdAt: "2026-10-01T00:00:00Z",
-    updatedAt: "2026-10-01T00:00:00Z",
-  };
-  if (kind === "shared-thread") {
-    return {
-      ...summary,
-      kind,
-      sharedThreadId: sourceId,
-      sharedThread: { id: sourceId },
-    };
-  }
-  if (kind === "html") {
-    return {
-      ...summary,
-      kind: "hosted-site",
-      site: {
-        id: "b0000000-0000-4000-a000-000000000910",
-        slug: "launch",
-        publicSlug: "launch",
-        url: "https://launch.okou.app",
-        deploymentVersion: 1,
-        entrypoint: "index.html",
-        spaFallback: false,
-      },
-    };
-  }
-  return {
-    ...summary,
-    kind: "file",
-    file: {
-      id: sourceId,
-      filename,
-      contentType: "image/png",
-      size: 12,
-      url,
-      previewImageUrl: null,
-    },
-  };
-}
-
-function mockPage(kind: PageKind, snapshot = false) {
-  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
-    return respond(200, { id: sourceId, title, messages: [] });
-  });
+function serveImage() {
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
-    if (kind === "html") {
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "Artifact unavailable" },
-      });
-    }
     return respond(200, {
-      url,
-      downloadUrl: url,
-      expiresAt: "2099-01-01T00:00:00Z",
-      filename,
+      url: "https://media.example.test/survey.png",
+      downloadUrl: "https://media.example.test/survey.download",
+      filename: title + ".png",
       contentType: "image/png",
-      target: { kind: "file", id: sourceId },
-      ...(snapshot ? { sharedThreadSnapshot: true } : {}),
+      expiresAt: "2099-01-01T00:00:00Z",
+      target: { kind: "file", id: fileId },
     });
   });
-  context.mocks.api(artifactReferencesContract.publicUrl, ({ respond }) => {
-    return respond(200, {
-      url,
-      downloadUrl: url,
-      preview: {
-        filename,
-        contentType: kind === "html" ? "text/html" : "image/png",
-      },
-    });
-  });
-  return kind === "shared-thread"
-    ? `/share/threads/${sourceId}`
-    : artifactReferencePath(sourceId, filename);
 }
-
-function mockOwner(kind: PageKind) {
-  context.mocks.api(
-    artifactReferencesContract.ownerArtifact,
-    ({ params, respond }) => {
-      expect(params.reference.split(".")[0]).toBe(sourceId.replaceAll("-", ""));
-      return respond(200, { artifactId: catalogId });
-    },
-  );
+function serveOwnedArtifact(kind: "file" | "thread") {
+  const summary = artifact({ title, id: catalogId });
+  let detail: ArtifactDetail;
+  if (kind === "file") {
+    serveImage();
+    context.mocks.api(
+      artifactReferencesContract.ownerArtifact,
+      ({ params, respond }) => {
+        return params.reference === "survey0023.png"
+          ? respond(200, { artifactId: catalogId })
+          : respond(404, missing());
+      },
+    );
+    detail = fileArtifactDetail(summary, {
+      fileId,
+      filename: title + ".png",
+      contentType: "image/png",
+      url: "https://media.example.test/survey.png",
+    });
+  } else {
+    context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+      return respond(200, sharedThread({ title }));
+    });
+    detail = {
+      ...summary,
+      kind: "shared-thread",
+      sharedThreadId: SHARED_THREAD_ID,
+      sharedThread: { id: SHARED_THREAD_ID },
+    };
+  }
   context.mocks.api(
     artifactCatalogContract.get,
     ({ params, query, respond }) => {
-      expect(params.artifactId).toBe(
-        kind === "shared-thread" ? sourceId : catalogId,
-      );
-      expect(query.sourceKind).toBe(
-        kind === "shared-thread" ? kind : undefined,
-      );
-      return respond(200, detail(kind));
+      const matches =
+        kind === "file"
+          ? params.artifactId === catalogId
+          : params.artifactId === SHARED_THREAD_ID &&
+            query.sourceKind === "shared-thread";
+      return matches ? respond(200, detail) : respond(404, missing());
     },
   );
+  const catalog = { deleted: false };
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, {
+      artifacts: catalog.deleted ? [] : [detail],
+      nextCursor: null,
+    });
+  });
+  return catalog;
+}
+function openConfirmation() {
+  return screen.findByRole("dialog", { name: `Delete ${title}?` });
 }
 
-async function openDeletion() {
-  await waitFor(() => {
-    expect(button("Delete")).toBeInTheDocument();
-  });
-  const trigger = button("Delete");
-  click(trigger);
-  const dialog = await screen.findByRole("dialog", {
-    name: `Delete ${title}?`,
-  });
-  return { dialog, trigger };
-}
+const pages = [
+  { kind: "file", id: "001", refresh: "006", path: filePath },
+  { kind: "thread", id: "004", refresh: "007", path: threadPath },
+] as const;
 
-test.each([
-  ["file", false],
-  ["file", true],
-  ["html", false],
-  ["shared-thread", false],
-] as const)(
-  "the owner can cancel and delete a %s from its shared page (legacy=%s)",
-  async (kind, legacy) => {
-    const referencePath = mockPage(kind);
-    const path = legacy ? `/share/artifacts/${sourceId}` : referencePath;
-    mockOwner(kind);
+test.each(pages)(
+  "shared-artifact-deletion-$id cancels then removes the owned $kind",
+  async ({ kind, path }) => {
+    const catalog = serveOwnedArtifact(kind);
     const finish = context.mocks.deferred<void>();
     context.mocks.api(
       artifactCatalogContract.delete,
       async ({ params, respond }) => {
-        expect(params.artifactId).toBe(catalogId);
+        if (params.artifactId !== catalogId) {
+          return respond(404, missing());
+        }
         await finish.promise;
+        catalog.deleted = true;
         return respond(200, { deleted: true });
       },
     );
-    await setupPage({
-      context,
-      path,
-      host: "app.okou.ai",
-    });
-    const { dialog: cancelled, trigger } = await openDeletion();
-    click(button("Cancel", cancelled));
+    await setupPage({ context, path });
+    const trigger = await findNamedButton("Delete");
+    click(trigger);
+    const first = await openConfirmation();
+    expect(first).toHaveTextContent(
+      kind === "thread"
+        ? "Its shared link will stop working."
+        : "This removes the artifact and disables its Okou links.",
+    );
+    click(getButtonByName("Cancel", first));
     await waitFor(() => {
-      expect(cancelled).not.toBeInTheDocument();
       expect(trigger).toHaveFocus();
     });
-    expect(window.location.pathname).toBe(path);
-    const { dialog } = await openDeletion();
-    expect(dialog).toHaveTextContent(
-      kind === "shared-thread"
-        ? /Its shared link will stop working/
-        : /Copies .* will remain/,
-    );
-    click(button("Delete", dialog));
+    expect(first).not.toBeInTheDocument();
+    expect(location.pathname).toBe(path);
+    click(trigger);
+    const second = await openConfirmation();
+    click(getButtonByName("Delete", second));
     await waitFor(() => {
-      expect(button("Deleting…", dialog)).toBeDisabled();
+      expect(getButtonByName("Deleting…", second)).toBeDisabled();
     });
-    expect(button("Cancel", dialog)).toBeDisabled();
+    expect(getButtonByName("Cancel", second)).toBeDisabled();
     finish.resolve();
     await expect(
       screen.findByText("No artifacts found"),
     ).resolves.toBeInTheDocument();
-    expect(window.location.pathname).toBe("/artifacts");
+    expect(location.pathname).toBe("/artifacts");
   },
 );
 
-test("a failed deletion keeps the shared page and allows retry", async () => {
-  const path = mockPage("file");
-  mockOwner("file");
-  let unavailable = true;
-  context.mocks.api(artifactCatalogContract.delete, ({ respond }) => {
-    if (unavailable) {
-      unavailable = false;
+test("shared-artifact-deletion-005 retries an unavailable deletion from its open confirmation", async () => {
+  const catalog = serveOwnedArtifact("file");
+  let available = false;
+  context.mocks.api(artifactCatalogContract.delete, ({ params, respond }) => {
+    if (!available) {
       return respond(503, {
-        error: { code: "NOT_CONFIGURED", message: "Could not delete artifact" },
+        error: {
+          code: "SERVICE_UNAVAILABLE",
+          message: "Could not delete artifact",
+        },
       });
     }
+    if (params.artifactId !== catalogId) {
+      return respond(404, missing());
+    }
+    catalog.deleted = true;
     return respond(200, { deleted: true });
   });
-  await setupPage({
-    context,
-    path,
-  });
-  const { dialog } = await openDeletion();
-  click(button("Delete", dialog));
+  await setupPage({ context, path: filePath });
+  click(await findNamedButton("Delete"));
+  const dialog = await openConfirmation();
+  click(getButtonByName("Delete", dialog));
   await expect(
     screen.findByText("Could not delete artifact"),
   ).resolves.toBeInTheDocument();
-  expect(window.location.pathname).toBe(path);
-  expect(dialog).toBeInTheDocument();
-  expect(button("Delete", dialog)).toBeEnabled();
-  click(button("Delete", dialog));
+  const retry = getButtonByName("Delete", dialog);
+  expect(retry).toBeEnabled();
+  expect(location.pathname).toBe(filePath);
+  available = true;
+  click(retry);
   await expect(
     screen.findByText("No artifacts found"),
   ).resolves.toBeInTheDocument();
-  expect(window.location.pathname).toBe("/artifacts");
+  expect(location.pathname).toBe("/artifacts");
 });
 
-test.each(["file", "shared-thread"] as const)(
-  "cancelling %s deletion after a token refresh restores the owner action's focus",
-  async (kind) => {
-    const path = mockPage(kind);
-    mockOwner(kind);
+test.each(pages)(
+  "shared-artifact-deletion-$refresh restores keyboard deletion after the same $kind owner renews their session token",
+  async ({ kind, path }) => {
+    const catalog = serveOwnedArtifact(kind);
+    context.mocks.api(
+      artifactCatalogContract.delete,
+      ({ request, params, respond }) => {
+        if (
+          params.artifactId !== catalogId ||
+          request.headers.get("authorization") !== "Bearer renewed"
+        ) {
+          return respond(403, missing());
+        }
+        catalog.deleted = true;
+        return respond(200, { deleted: true });
+      },
+    );
+    const user = { id: "coast-owner", fullName: "Survey owner" };
+    const sessionId = "survey-session";
     await setupPage({
       context,
       path,
+      auth: { user, session: { id: sessionId, token: "original" } },
     });
-    const { dialog } = await openDeletion();
-    const finish = context.mocks.deferred<void>();
-    context.mocks.api(artifactCatalogContract.get, async ({ respond }) => {
-      await finish.promise;
-      return respond(200, detail(kind));
+    click(await findNamedButton("Delete"));
+    const dialog = await openConfirmation();
+    act(() => {
+      mockClerkSessionTransitioning(true);
     });
-    await act(() => {
-      emitMockedClerkEvent();
-    });
-    click(button("Cancel", dialog));
+    click(getButtonByName("Cancel", dialog));
     await waitFor(() => {
       expect(dialog).not.toBeInTheDocument();
     });
-    finish.resolve();
+    act(() => {
+      context.mocks.clerk().user(user, { id: sessionId, token: "renewed" });
+      mockClerkSessionTransitioning(false);
+    });
     await waitFor(() => {
-      expect(button("Delete")).toHaveFocus();
+      expect(getButtonByName("Delete")).toHaveFocus();
     });
-  },
-);
-
-test.each(["file", "shared-thread"] as const)(
-  "a read-only recipient cannot delete a %s",
-  async (kind) => {
-    const path = mockPage(kind);
-    context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "Artifact not found" },
-      });
-    });
-    await setupPage({
-      context,
-      path,
-    });
-    expect(button("Share")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Delete")).not.toBeInTheDocument();
-  },
-);
-
-test.each(["signed-out", "snapshot"] as const)(
-  "the %s artifact viewer does not offer deletion",
-  async (scenario) => {
-    const path = mockPage("file", scenario === "snapshot");
-    await setupPage({
-      context,
-      path,
-      ...(scenario === "signed-out" ? { auth: null } : {}),
-    });
+    await userEvent.keyboard("{Enter}");
+    const reopened = await openConfirmation();
+    click(getButtonByName("Delete", reopened));
     await expect(
-      screen.findByTestId("attachment-lightbox-image"),
+      screen.findByText("No artifacts found"),
     ).resolves.toBeInTheDocument();
-    expect(screen.queryByLabelText("Delete")).not.toBeInTheDocument();
   },
 );
+
+test("shared-artifact-deletion-008 withdraws Delete when an owner becomes a read-only recipient", async () => {
+  serveOwnedArtifact("file");
+  const denied = context.mocks.deferred<void>();
+  const pending = context.mocks.deferred<void>();
+  context.mocks.api(
+    artifactReferencesContract.ownerArtifact,
+    async ({ request, respond }) => {
+      if (request.headers.get("authorization") === "Bearer recipient") {
+        if (!pending.settled()) {
+          pending.resolve();
+        }
+        await denied.promise;
+        return respond(404, missing());
+      }
+      return respond(200, { artifactId: catalogId });
+    },
+  );
+  await setupPage({ context, path: filePath });
+  await expect(findNamedButton("Delete")).resolves.toBeEnabled();
+  const clerk = context.mocks.clerk();
+  act(() => {
+    clerk.user(
+      { id: "reader", fullName: "Reader" },
+      { id: "reader-session", token: "recipient" },
+    );
+    clerk.stateChanged();
+  });
+  await pending.promise;
+  denied.resolve();
+  await waitFor(() => {
+    expect(queryButtonByName("Delete")).toBeUndefined();
+  });
+  await expect(findNamedButton("Share")).resolves.toBeEnabled();
+});

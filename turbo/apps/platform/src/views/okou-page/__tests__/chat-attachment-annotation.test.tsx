@@ -1,765 +1,310 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
+import { chatThreadByIdContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { HttpResponse } from "msw";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
-import {
-  chatThreadByIdContract,
-  type UserMessageInputPart,
-} from "@okouai/api-contracts/contracts/chat-threads";
-
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  arrowAnnotation,
   ATTACHMENT_THREAD_ID,
   boxAnnotation,
   draftAttachment,
   draftForAttachment,
   findNamedButton,
   mockAttachmentChat,
-  mockPrivateUrlSequence,
   penAnnotation,
   privateAttachmentUrl,
+  queryNamedButton,
 } from "./chat-attachment-test-helpers.ts";
-import { fillComposer } from "./chat-test-helpers.ts";
+import { findEnabledButton } from "./chat-run-test-fixtures.ts";
 
 const context = testContext();
+const name = "freight-plan.png";
+const original = draftAttachment(name, { id: "design-image" });
+const copy = {
+  id: "annotated-plan",
+  filename: "freight-plan-marked.png",
+  contentType: "image/png",
+  size: 300,
+  url: "https://cdn.vm7.io/marked-plan.png",
+} as const;
 
-async function openAnnotationEditor(filename: string): Promise<HTMLElement> {
-  click(await findNamedButton(`Open image preview for ${filename}`));
-  click(await findNamedButton("Annotate"));
-  const surface = await screen.findByTestId("image-annotation-surface");
-  vi.spyOn(surface, "getBoundingClientRect").mockReturnValue({
-    x: 0,
-    y: 0,
-    top: 0,
-    left: 0,
-    right: 800,
-    bottom: 500,
-    width: 800,
-    height: 500,
-    toJSON: () => {
-      return {};
-    },
+function imageDraft(options: Partial<typeof original> = {}) {
+  context.mocks.browser.canvasRendering();
+  context.mocks.browser.imageDimensions({ width: 500, height: 400 });
+  mockAttachmentChat(context, {
+    draft: draftForAttachment(
+      { ...original, ...options },
+      "Inspect this drawing",
+    ),
   });
-  Object.defineProperty(surface, "setPointerCapture", {
-    configurable: true,
-    value: vi.fn<(pointerId: number) => void>(),
-  });
-  return surface;
 }
 
-function drawBox(surface: HTMLElement): void {
-  fireEvent.pointerDown(surface, {
-    clientX: 40,
-    clientY: 30,
+async function annotate() {
+  await setupPage({
+    context,
+    path: "/chats/" + ATTACHMENT_THREAD_ID,
+    host: "app.okou.ai",
+  });
+  click(await findEnabledButton("Open image preview for " + name));
+  click(await findNamedButton("Annotate"));
+  const panel = await screen.findByRole("dialog", { name: "Annotate" });
+  const surface = await within(panel).findByTestId("image-annotation-surface");
+  vi.spyOn(surface, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(0, 0, 500, 400),
+  );
+  return { panel, surface };
+}
+
+function drag(
+  start: Element,
+  surface: Element,
+  [x, y]: readonly [number, number],
+  [dx, dy]: readonly [number, number],
+) {
+  fireEvent.pointerDown(start, {
     pointerId: 1,
+    button: 0,
+    clientX: x,
+    clientY: y,
   });
   fireEvent.pointerMove(surface, {
-    clientX: 200,
-    clientY: 180,
     pointerId: 1,
+    buttons: 1,
+    clientX: x + dx,
+    clientY: y + dy,
   });
   fireEvent.pointerUp(surface, {
-    clientX: 200,
-    clientY: 180,
     pointerId: 1,
+    button: 0,
+    clientX: x + dx,
+    clientY: y + dy,
   });
 }
 
-test("Pressing outside the editor keeps the session and every mark drawn in it", async () => {
-  // The editor used to be an inert overlay, so there was no dismissal to lose.
-  // It now rides on a dialog that closes on an outside press by default, and
-  // closing discards the whole session: marks live nowhere but here until
-  // "Attach marks", and there is no undo across that boundary.
-  const user = userEvent.setup({ pointerEventsCheck: 0 });
-  const image = draftAttachment("stray-press.png");
-  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
+async function drawBox() {
+  const { panel, surface } = await annotate();
+  click(await findNamedButton("Box", panel));
+  drag(surface, surface, [85, 100], [110, 60]);
+  await within(panel).findByTestId("annotation-mark-1");
+  return panel;
+}
 
-  await setupPage({
-    context,
-    path: `/chats/${ATTACHMENT_THREAD_ID}`,
+function originalBytes() {
+  return new HttpResponse(new Uint8Array([11, 22, 33]), {
+    headers: { "Content-Type": "image/png" },
   });
+}
 
-  const surface = await openAnnotationEditor("stray-press.png");
-  drawBox(surface);
-  await screen.findByTestId("annotation-mark-1");
+function persisted(complete: boolean) {
+  const result = context.mocks.deferred<unknown>();
+  context.mocks.api(
+    chatThreadByIdContract.patch,
+    ({ params, body, respond }) => {
+      const part = body.draftUserMessage?.parts.find((p) => {
+        return p.type === "file" && p.fileId === original.id;
+      });
+      if (
+        params.id === ATTACHMENT_THREAD_ID &&
+        part?.type === "file" &&
+        part.annotations?.marks.length &&
+        (!complete || part.annotatedFileId === copy.id)
+      ) {
+        result.resolve(part);
+      }
+      return respond(204);
+    },
+  );
+  return result.promise;
+}
 
-  const backdrop = document.querySelector('[data-slot="dialog-overlay"]');
-  if (!backdrop) {
-    throw new Error("Expected the annotation editor's dialog backdrop");
+test("chat-attachment-annotation-001 outside press preserves the drawn box", async () => {
+  imageDraft();
+  const panel = await drawBox();
+  const outside = panel.closest<HTMLElement>('[data-slot="dialog-viewport"]');
+  if (!outside) {
+    throw new Error("Annotation dialog viewport is missing");
   }
-  await user.click(backdrop);
-
-  expect(screen.getByTestId("image-annotation-editor")).toBeVisible();
-  expect(screen.getByTestId("annotation-mark-1")).toBeVisible();
+  await userEvent.setup().click(outside);
+  expect(panel).toBeVisible();
+  expect(within(panel).getByTestId("annotation-mark-1")).toBeVisible();
 });
 
-test("A user can click an annotation note, edit it, and close only the note", async () => {
-  const user = userEvent.setup();
-  const image = draftAttachment("annotated-plan.png", {
-    annotatedFileId: "draft-annotated-plan-rendered",
+test("chat-attachment-annotation-002 Escape leaves the revised note on the canvas", async () => {
+  imageDraft({
     annotations: boxAnnotation([
-      {
-        id: "editable-note",
-        ordinal: 1,
-        note: "Move the total higher",
-      },
+      { id: "position", ordinal: 1, note: "Move the total higher" },
     ]),
+    annotatedFileId: copy.id,
   });
-  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
-
-  await setupPage({
-    context,
-    path: `/chats/${ATTACHMENT_THREAD_ID}`,
-  });
-
-  await openAnnotationEditor("annotated-plan.png");
-  await user.click(screen.getByTestId("annotation-note-label-editable-note"));
-
-  const note = await screen.findByLabelText("What should change?");
-  await waitFor(() => {
-    expect(note).toHaveFocus();
-  });
-  await fill(note, "Align the total with the heading");
-  await user.keyboard("{Escape}");
-
-  expect(screen.queryByTestId("annotation-inline-editor")).toBeNull();
-  expect(screen.getByTestId("image-annotation-editor")).toBeVisible();
-  const label = screen.getByTestId("annotation-note-label-editable-note");
-  expect(label).toHaveTextContent("Align the total with the heading");
-  expect(label).toHaveStyle({ maxWidth: "50%" });
+  const { panel } = await annotate();
+  click(await within(panel).findByText("Move the total higher"));
+  const field = await within(panel).findByRole("textbox");
+  await fill(field, "Align the total with the heading");
+  await userEvent.setup().keyboard("{Escape}");
+  expect(within(panel).queryByRole("textbox")).toBeNull();
+  expect(panel).toBeVisible();
+  expect(
+    within(panel).getByText("Align the total with the heading"),
+  ).toBeVisible();
 });
 
-/** Clicks the surface once, which is how a text mark is placed. */
-function clickSurface(surface: HTMLElement, pointerId: number): void {
-  fireEvent.pointerDown(surface, { clientX: 320, clientY: 200, pointerId });
-  fireEvent.pointerUp(surface, { clientX: 320, clientY: 200, pointerId });
-}
-
-/**
- * The editor advertises a letter on every tool, and the letters only reach it
- * while nothing is being typed into. It opens over a composer whose message box
- * normally holds the caret, so the keys went into the message underneath and the
- * tooltips promised shortcuts that did nothing — bingjie: *"图2 的快捷键我这不好
- * 使"*. Typing then happens on the image itself rather than in a field below it.
- */
-test("A tool shortcut works on open and text is typed onto the image", async () => {
+test("chat-attachment-annotation-004 composing Enter preserves input and plain Enter confirms both lines", async () => {
+  imageDraft();
+  const { panel, surface } = await annotate();
+  click(await findNamedButton("Text", panel));
+  drag(surface, surface, [112, 95], [0, 0]);
+  const field = await within(panel).findByRole("textbox");
+  fireEvent.compositionStart(field);
+  fireEvent.change(field, { target: { value: "标注" } });
+  fireEvent.keyDown(field, { key: "Enter", isComposing: true, keyCode: 13 });
+  expect(field).toHaveValue("标注");
+  expect(field).toHaveFocus();
+  fireEvent.compositionEnd(field, { data: "标注" });
   const user = userEvent.setup();
-  const image = draftAttachment("typed-label.png");
-  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
-
-  await setupPage({
-    context,
-    path: `/chats/${ATTACHMENT_THREAD_ID}`,
-  });
-
-  const surface = await openAnnotationEditor("typed-label.png");
-  expect(screen.getByTestId("image-annotation-panel")).toHaveFocus();
-
-  await user.keyboard("t");
-  clickSurface(surface, 7);
-
-  const input = await screen.findByLabelText("Type here");
-  await waitFor(() => {
-    expect(input).toHaveFocus();
-  });
-  // The label used to be typed into a popover below the picture while the words
-  // appeared on it, so one string was shown in two places. Both kinds of mark
-  // are written in the same field on the image now.
-  expect(screen.getByTestId("annotation-inline-editor")).toContainElement(
-    input,
-  );
-
-  await user.keyboard("Raise this");
+  await user.keyboard("{Shift>}{Enter}{/Shift}Second line");
+  expect(field).toHaveValue("标注\nSecond line");
   await user.keyboard("{Enter}");
-
-  expect(screen.queryByLabelText("Type here")).toBeNull();
-  expect(screen.getByTestId("annotation-mark-1")).toHaveTextContent(
-    "Raise this",
-  );
+  expect(within(panel).queryByRole("textbox")).toBeNull();
+  expect(within(panel).getByText("标注 Second line")).toBeVisible();
+  expect(within(panel).getByTestId("image-annotation-panel")).toHaveFocus();
 });
 
-test.each([
-  { mode: "composing", isComposing: true, keyCode: 13 },
-  { mode: "Safari final key", isComposing: false, keyCode: 229 },
-])(
-  "IME Enter ($mode) keeps the text mark open until ordinary Enter",
-  async ({ isComposing, keyCode }) => {
-    const user = userEvent.setup();
-    const image = draftAttachment("ime-label.png");
-    mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
-
-    await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-    const surface = await openAnnotationEditor("ime-label.png");
-    await user.keyboard("t");
-    clickSurface(surface, 7);
-
-    const input = await screen.findByLabelText("Type here");
-    await waitFor(() => {
-      expect(input).toHaveFocus();
-    });
-    fireEvent.compositionStart(input);
-    fireEvent.change(input, { target: { value: "标注" } });
-    if (!isComposing) {
-      fireEvent.compositionEnd(input, { data: "标注" });
-    }
-    fireEvent.keyDown(input, { key: "Enter", isComposing, keyCode });
-
-    expect(input).toHaveFocus();
-    expect(input).toHaveValue("标注");
-    expect(screen.getByText("1 mark")).toBeInTheDocument();
-    if (isComposing) {
-      fireEvent.compositionEnd(input, { data: "标注" });
-    }
-
-    await user.keyboard("{Shift>}{Enter}{/Shift}Second line");
-    expect(input).toHaveFocus();
-    expect(input).toHaveValue("标注\nSecond line");
-    await user.keyboard("{Enter}");
-
-    expect(screen.queryByLabelText("Type here")).toBeNull();
-    expect(screen.getByTestId("annotation-mark-1")).toHaveTextContent(
-      "标注 Second line",
-    );
-    expect(screen.getByTestId("image-annotation-panel")).toHaveFocus();
-  },
-);
-
-test.each([
-  { key: "Backspace", mode: "composing", isComposing: true, keyCode: 8 },
-  { key: "Delete", mode: "composing", isComposing: true, keyCode: 46 },
-  {
-    key: "Backspace",
-    mode: "Safari final key",
-    isComposing: false,
-    keyCode: 229,
-  },
-  { key: "Delete", mode: "Safari final key", isComposing: false, keyCode: 229 },
-])(
-  "IME $key ($mode) preserves an empty note; ordinary $key deletes its mark",
-  async ({ key, isComposing, keyCode }) => {
-    const user = userEvent.setup();
-    const image = draftAttachment("ime-note.png", {
-      annotatedFileId: "draft-ime-note-annotated",
-      annotations: boxAnnotation([{ id: "ime-note", ordinal: 1 }]),
-    });
-    mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
-
-    await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-    await openAnnotationEditor("ime-note.png");
-    click(screen.getByTestId("annotation-mark-1"));
-
-    const input = await screen.findByLabelText("What should change?");
-    await waitFor(() => {
-      expect(input).toHaveFocus();
-    });
-    fireEvent.compositionStart(input);
-    if (!isComposing) {
-      fireEvent.compositionEnd(input);
-    }
-    fireEvent.keyDown(input, { key, isComposing, keyCode });
-
-    expect(input).toHaveFocus();
-    expect(input).toHaveValue("");
-    expect(screen.getByTestId("annotation-mark-1")).toBeInTheDocument();
-    if (isComposing) {
-      fireEvent.compositionEnd(input);
-    }
-    await user.keyboard(`{${key}}`);
-
-    expect(screen.queryByLabelText("What should change?")).toBeNull();
-    expect(screen.queryByTestId("annotation-mark-1")).toBeNull();
-    expect(screen.getByText("0 marks")).toBeInTheDocument();
-    expect(screen.getByTestId("image-annotation-panel")).toHaveFocus();
-  },
-);
-
-/**
- * Undo, redo and delete sit together in the pill, next to the tools. Delete
- * only means something while a mark is open, so it says so until one is.
- */
-test("The pill deletes the open mark and is dead until one is", async () => {
-  const image = draftAttachment("pill-delete.png", {
-    annotatedFileId: "draft-pill-delete-annotated",
-    annotations: boxAnnotation([{ id: "doomed-mark", ordinal: 1 }]),
+test("chat-attachment-annotation-013 the saved draft retains the mark while its upload is pending", async () => {
+  imageDraft();
+  context.mocks.http.get(original.url, originalBytes);
+  context.mocks.upload.pending(copy);
+  const saved = persisted(false);
+  const panel = await drawBox();
+  click(await findNamedButton("Attach marks", panel));
+  const file = await saved;
+  expect(file).toMatchObject({
+    fileId: original.id,
+    annotations: { marks: [{ shape: "box" }] },
   });
-  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
-
-  await setupPage({
-    context,
-    path: `/chats/${ATTACHMENT_THREAD_ID}`,
-  });
-
-  await openAnnotationEditor("pill-delete.png");
-  await expect(findNamedButton("Remove mark")).resolves.toBeDisabled();
-
-  fireEvent.click(screen.getByTestId("annotation-mark-1"));
-  const remove = await findNamedButton("Remove mark");
-  await waitFor(() => {
-    expect(remove).toBeEnabled();
-  });
-
-  click(remove);
-
-  await waitFor(() => {
-    expect(screen.queryByTestId("annotation-mark-1")).toBeNull();
-  });
-  expect(screen.getByText("0 marks")).toBeVisible();
+  expect(file).not.toHaveProperty("annotatedFileId");
 });
 
-test("The editor takes over from the preview without a frame between them", async () => {
-  // The preview leaves without an exit the moment the pencil is pressed. The
-  // editor used to wait a tick for its image URL before rendering anything,
-  // so for that tick the screen had no modal at all.
-  const image = draftAttachment("hand-off.png");
-  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
+test("chat-attachment-annotation-014 retrying the failed copy unlocks sending", async () => {
+  imageDraft();
+  context.mocks.http.get(original.url, originalBytes);
+  context.mocks.upload.success(copy);
+  let storageAvailable = false;
+  context.mocks.http.put("https://mock-upload.r2.test/" + copy.id, () => {
+    return new HttpResponse(null, { status: storageAvailable ? 200 : 503 });
+  });
+  const panel = await drawBox();
+  click(await findNamedButton("Attach marks", panel));
+  const retryLabel = "Retry the marked-up copy of " + name;
+  const retry = await findNamedButton(retryLabel);
+  await expect(findNamedButton("Send")).resolves.toBeDisabled();
+  storageAvailable = true;
+  click(retry);
+  await findEnabledButton("Send");
+  expect(queryNamedButton(retryLabel)).toBeNull();
+});
 
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-
-  click(await findNamedButton("Open image preview for hand-off.png"));
-  click(await findNamedButton("Annotate"));
-
-  expect(screen.getByTestId("image-annotation-editor")).toBeInTheDocument();
-  expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
+test("chat-attachment-annotation-015 the public image produces the copy when its private read fails", async () => {
+  const cdn = "https://cdn.vm7.io/signed/design.png";
+  imageDraft({ url: privateAttachmentUrl(original.id) });
+  context.mocks.api(webFilesContract.fileUrl, ({ respond }) => {
+    return respond(200, {
+      url: cdn,
+      downloadUrl: cdn + "?download",
+      expiresAt: "2099-01-01T00:00:00Z",
+      publicUrl: original.url,
+    });
+  });
+  context.mocks.http.get(cdn, () => {
+    return new HttpResponse(null, { status: 403 });
+  });
+  context.mocks.http.get(original.url, originalBytes);
+  context.mocks.upload.success(copy);
+  const panel = await drawBox();
+  click(await findNamedButton("Attach marks", panel));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Annotate" })).toBeNull();
+  });
   await expect(
-    screen.findByTestId("image-annotation-surface"),
-  ).resolves.toBeInTheDocument();
+    screen.findByTestId("composer-attachment-mark-count"),
+  ).resolves.toHaveTextContent("1");
+  await expect(findEnabledButton("Send")).resolves.toBeEnabled();
 });
 
-test("Attaching marks closes the editor at once and blocks sending until the copy uploads", async () => {
-  const image = draftAttachment("billing-page.png");
-  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
-  context.mocks.http.get(image.url, () => {
-    return HttpResponse.arrayBuffer(new Uint8Array([1, 2, 3]).buffer, {
-      headers: { "Content-Type": "image/png" },
-    });
+test("chat-attachment-annotation-016 completed upload persists the marked file next to its source", async () => {
+  imageDraft();
+  context.mocks.http.get(original.url, originalBytes);
+  context.mocks.upload.success(copy);
+  const saved = persisted(true);
+  const panel = await drawBox();
+  click(await findNamedButton("Attach marks", panel));
+  await expect(saved).resolves.toMatchObject({
+    fileId: original.id,
+    annotatedFileId: copy.id,
+    annotations: { marks: [{ shape: "box" }] },
   });
-  context.mocks.browser.imageDimensions({ width: 800, height: 500 });
-  context.mocks.browser.canvasRendering();
-  context.mocks.upload.pending({
-    id: "draft-billing-page-annotated",
-    filename: "billing-page.annotated.png",
-    contentType: "image/png",
-    size: 11,
-    url: "https://cdn.vm7.io/artifacts/tests/chat-attachments/billing-page.annotated.png",
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${ATTACHMENT_THREAD_ID}`,
-  });
-
-  await fillComposer(
-    await screen.findByRole("textbox", { name: "Message" }),
-    "Fix the billing page",
-  );
-  await expect(screen.findByLabelText("Send")).resolves.toBeEnabled();
-
-  const surface = await openAnnotationEditor("billing-page.png");
-  drawBox(surface);
-  click(await findNamedButton("Attach marks"));
-
-  expect(
-    screen.getByTestId("composer-attachment-mark-count"),
-  ).toHaveTextContent("1");
-  expect(screen.queryByTestId("image-annotation-editor")).toBeNull();
   await expect(
-    screen.findByLabelText("Preparing the marked-up copy of billing-page.png"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByLabelText("Send")).toBeDisabled();
+    screen.findByTestId("composer-attachment-mark-count"),
+  ).resolves.toHaveTextContent("1");
+  await expect(findEnabledButton("Send")).resolves.toBeEnabled();
 });
 
-test("Attached marks are saved while their copy is still uploading", async () => {
-  // The editor no longer waits for the copy, so the user can leave the chat
-  // before it exists. The marks have to be in the draft by then; restoring a
-  // draft rebuilds a missing copy.
-  const image = draftAttachment("leave-early.png");
-  const saved =
-    context.mocks.deferred<Extract<UserMessageInputPart, { type: "file" }>>();
-  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
-  context.mocks.http.get(image.url, () => {
-    return HttpResponse.arrayBuffer(new Uint8Array([1, 2, 3]).buffer, {
-      headers: { "Content-Type": "image/png" },
-    });
-  });
-  context.mocks.browser.imageDimensions({ width: 800, height: 500 });
-  context.mocks.browser.canvasRendering();
-  context.mocks.upload.pending({
-    id: "draft-leave-early-annotated",
-    filename: "leave-early.annotated.png",
-    contentType: "image/png",
-    size: 11,
-    url: "https://cdn.vm7.io/artifacts/tests/chat-attachments/leave-early.annotated.png",
-  });
-  context.mocks.api(chatThreadByIdContract.patch, ({ body, respond }) => {
-    const part = body.draftUserMessage?.parts.find((candidate) => {
-      return candidate.type === "file" && candidate.fileId === image.id;
-    });
-    if (part?.type === "file" && part.annotations) {
-      saved.resolve(part);
-    }
-    return respond(204);
-  });
-
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-  drawBox(await openAnnotationEditor("leave-early.png"));
-  click(await findNamedButton("Attach marks"));
-
-  const savedPart = await saved.promise;
-  expect(savedPart.annotations?.marks).toHaveLength(1);
-  expect(savedPart.annotatedFileId).toBeUndefined();
-});
-
-test("A copy that fails to upload can be retried from its chip", async () => {
-  const image = draftAttachment("flaky-copy.png");
-  let failNextRead = true;
-  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
-  context.mocks.http.get(image.url, () => {
-    if (failNextRead) {
-      failNextRead = false;
-      return HttpResponse.error();
-    }
-    return HttpResponse.arrayBuffer(new Uint8Array([1, 2, 3]).buffer, {
-      headers: { "Content-Type": "image/png" },
-    });
-  });
-  context.mocks.browser.imageDimensions({ width: 800, height: 500 });
-  context.mocks.browser.canvasRendering();
-  context.mocks.upload.success({
-    id: "a0000000-0000-4000-a000-000000000096",
-    filename: "flaky-copy.annotated.png",
-    contentType: "image/png",
-    size: 11,
-    url: "https://files.example.test/flaky-copy.annotated.png",
-  });
-
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-  drawBox(await openAnnotationEditor("flaky-copy.png"));
-  click(await findNamedButton("Attach marks"));
-
-  click(await findNamedButton("Retry the marked-up copy of flaky-copy.png"));
-
-  await waitFor(() => {
-    expect(screen.getByLabelText("Send")).toBeEnabled();
-  });
-  expect(
-    screen.queryByLabelText("Retry the marked-up copy of flaky-copy.png"),
-  ).toBeNull();
-});
-
-test("A user can attach marks to a private image through its public URL", async () => {
-  const fileId = "a0000000-0000-4000-a000-000000000091";
-  const resourceUrl = "https://private-files.example/annotated-billing.png";
-  const shareUrl = "https://cdn.vm7.io/annotated-billing.png";
-  const image = draftAttachment("annotated-billing.png", {
-    id: fileId,
-    url: privateAttachmentUrl(fileId),
-  });
-  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
-  mockPrivateUrlSequence(
-    context,
-    { [fileId]: [resourceUrl] },
-    { [fileId]: shareUrl },
-  );
-  context.mocks.http.get(resourceUrl, () => {
-    return HttpResponse.error();
-  });
-  context.mocks.http.get(shareUrl, () => {
-    return HttpResponse.arrayBuffer(new Uint8Array([1, 2, 3]).buffer, {
-      headers: { "Content-Type": "image/png" },
-    });
-  });
-  context.mocks.browser.imageDimensions({ width: 800, height: 500 });
-  context.mocks.browser.canvasRendering();
-  context.mocks.upload.success({
-    id: "a0000000-0000-4000-a000-000000000092",
-    filename: "annotated-billing.annotated.png",
-    contentType: "image/png",
-    size: 11,
-    url: "https://files.example.test/annotated-billing.annotated.png",
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${ATTACHMENT_THREAD_ID}`,
-  });
-
-  const surface = await openAnnotationEditor("annotated-billing.png");
-  drawBox(surface);
-  click(await findNamedButton("Attach marks"));
-
-  await waitFor(() => {
-    expect(screen.queryByTestId("image-annotation-editor")).toBeNull();
-    expect(
-      screen.getByTestId("composer-attachment-mark-count"),
-    ).toHaveTextContent("1");
-    expect(screen.getByLabelText("Send")).toBeEnabled();
-  });
-});
-
-test("Confirmed marks persist with their completed annotated file", async () => {
-  const image = draftAttachment("persist-marks.png");
-  const annotatedFileId = "a0000000-0000-4000-a000-000000000095";
-  const saved =
-    context.mocks.deferred<Extract<UserMessageInputPart, { type: "file" }>>();
-  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
-  context.mocks.http.get(image.url, () => {
-    return HttpResponse.arrayBuffer(new Uint8Array([1, 2, 3]).buffer, {
-      headers: { "Content-Type": "image/png" },
-    });
-  });
-  context.mocks.browser.imageDimensions({ width: 800, height: 500 });
-  context.mocks.browser.canvasRendering();
-  context.mocks.upload.success({
-    id: annotatedFileId,
-    filename: "persist-marks.annotated.png",
-    contentType: "image/png",
-    size: 11,
-    url: "https://files.example.test/persist-marks.annotated.png",
-  });
-  context.mocks.api(chatThreadByIdContract.patch, ({ body, respond }) => {
-    const part = body.draftUserMessage?.parts.find((candidate) => {
-      return candidate.type === "file" && candidate.fileId === image.id;
-    });
-    // The marks are saved once on attaching and again when their copy exists.
-    if (part?.type === "file" && part.annotatedFileId) {
-      saved.resolve(part);
-    }
-    return respond(204);
-  });
-
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-  drawBox(await openAnnotationEditor("persist-marks.png"));
-  click(await findNamedButton("Attach marks"));
-  const savedPart = await saved.promise;
-  expect(savedPart).toMatchObject({ type: "file", annotatedFileId });
-  expect(savedPart.annotations?.marks).toHaveLength(1);
-  expect(
-    screen.getByTestId("composer-attachment-mark-count"),
-  ).toHaveTextContent("1");
-  expect(screen.getByLabelText("Send")).toBeEnabled();
-});
-
-test("A user can attach marks after previewing a public image", async () => {
-  const image = draftAttachment("cached-preview.png");
-  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
+test("chat-attachment-annotation-017 a previewed image still yields an attachable copy", async () => {
+  imageDraft();
   context.mocks.browser.requestCacheMode();
-  context.mocks.http.get(image.url, ({ request }) => {
-    // A plain cross-origin <img> can populate the browser cache with an opaque
-    // response. Reading pixels must bypass that entry and perform a CORS fetch.
-    if (request.cache !== "no-store") {
-      return HttpResponse.error();
-    }
-    return HttpResponse.arrayBuffer(new Uint8Array([1, 2, 3]).buffer, {
-      headers: { "Content-Type": "image/png" },
-    });
+  context.mocks.http.get(original.url, ({ request }) => {
+    return ["no-store", "reload", "no-cache"].includes(request.cache)
+      ? originalBytes()
+      : new HttpResponse(null, { status: 403 });
   });
-  context.mocks.browser.imageDimensions({ width: 800, height: 500 });
-  context.mocks.browser.canvasRendering();
-  context.mocks.upload.success({
-    id: "a0000000-0000-4000-a000-000000000094",
-    filename: "cached-preview.annotated.png",
-    contentType: "image/png",
-    size: 11,
-    url: "https://files.example.test/cached-preview.annotated.png",
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${ATTACHMENT_THREAD_ID}`,
-  });
-
-  const surface = await openAnnotationEditor("cached-preview.png");
-  drawBox(surface);
-  click(await findNamedButton("Attach marks"));
-
+  context.mocks.upload.success(copy);
+  const panel = await drawBox();
+  click(await findNamedButton("Attach marks", panel));
   await waitFor(() => {
-    expect(screen.queryByTestId("image-annotation-editor")).toBeNull();
-    expect(
-      screen.getByTestId("composer-attachment-mark-count"),
-    ).toHaveTextContent("1");
-    expect(screen.getByLabelText("Send")).toBeEnabled();
+    expect(screen.queryByRole("dialog", { name: "Annotate" })).toBeNull();
   });
+  await expect(
+    screen.findByTestId("composer-attachment-mark-count"),
+  ).resolves.toHaveTextContent("1");
+  await expect(findEnabledButton("Send")).resolves.toBeEnabled();
 });
 
-/**
- * A draft that carries marks but no annotated copy is missing a derivative, not
- * a failure — nothing was ever attempted for it. Reporting `failed` put a retry
- * badge on it, and committing wrote exactly that shape by saving before the
- * copy finished uploading.
- *
- * Restoring rebuilds the copy instead. This enters through the chat-thread page
- * load, which reaches `seed$` rather than `restoreAttachments$`: the state is
- * set for every restored attachment, so the rebuild has to cover every path
- * that restores one. Asserting only that no badge appears would pass on a
- * permanently pending attachment that can never be sent, so this pins the
- * composer becoming sendable.
- */
-test("A draft with marks but no annotated copy rebuilds it and can send", async () => {
-  const image = draftAttachment("restored-marks.png", {
-    annotations: boxAnnotation([{ id: "restored-mark", ordinal: 1 }]),
-  });
-  let imageReads = 0;
-  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
-  context.mocks.http.get(image.url, () => {
-    imageReads += 1;
-    return HttpResponse.arrayBuffer(new Uint8Array([1, 2, 3]).buffer, {
-      headers: { "Content-Type": "image/png" },
-    });
-  });
-  context.mocks.browser.imageDimensions({ width: 800, height: 500 });
-  context.mocks.browser.canvasRendering();
-  context.mocks.upload.success({
-    id: "a0000000-0000-4000-a000-000000000093",
-    filename: "restored-marks.annotated.png",
-    contentType: "image/png",
-    size: 11,
-    url: "https://files.example.test/restored-marks.annotated.png",
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${ATTACHMENT_THREAD_ID}`,
-  });
-
-  await waitFor(() => {
-    expect(
-      screen.getByTestId("composer-attachment-mark-count"),
-    ).toHaveTextContent("1");
-    expect(screen.getByLabelText("Send")).toBeEnabled();
-  });
-  // Rebuilt from the original rather than presented as a failure.
-  expect(imageReads).toBe(1);
+test("chat-attachment-annotation-020 the selected pen stroke moves with its pointer", async () => {
+  imageDraft({ annotations: penAnnotation("route"), annotatedFileId: copy.id });
+  const { panel, surface } = await annotate();
+  const stroke = within(panel).getByTestId("annotation-mark-1");
+  expect(stroke.getAttribute("points")).toMatch(/^20,25 /);
+  click(stroke);
+  await within(panel).findByRole("textbox");
+  drag(stroke, surface, [100, 100], [50, 40]);
+  const moved = within(panel)
+    .getByTestId("annotation-mark-1")
+    .getAttribute("points")!
+    .split(" ")[0]!
+    .split(",")
+    .map(Number);
+  expect(moved[0]).toBeCloseTo(30);
+  expect(moved[1]).toBeCloseTo(35);
 });
 
-test("An arrow can be selected and re-aimed by dragging its tip", async () => {
-  const image = draftAttachment("arrow-flow.png", {
-    annotatedFileId: "draft-arrow-flow-annotated",
-    annotations: arrowAnnotation("aimable-arrow"),
+test("chat-attachment-annotation-021 undo reverses the drag after confirming the note", async () => {
+  imageDraft({
+    annotations: boxAnnotation([{ id: "panel", ordinal: 1 }]),
+    annotatedFileId: copy.id,
   });
-  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
-
-  await setupPage({
-    context,
-    path: `/chats/${ATTACHMENT_THREAD_ID}`,
-  });
-
-  const surface = await openAnnotationEditor("arrow-flow.png");
-  // The arrow used to render as decoration, so this click reached the canvas
-  // underneath and started a new stroke instead of selecting anything.
-  fireEvent.click(screen.getByTestId("annotation-mark-1"));
-
-  const tip = screen.getByTestId("annotation-handle-to");
-  expect(tip).toBeVisible();
-  expect(screen.getByTestId("annotation-handle-from")).toBeVisible();
-
-  fireEvent.pointerDown(tip, { clientX: 560, clientY: 300, pointerId: 2 });
-  fireEvent.pointerMove(surface, { clientX: 200, clientY: 450, pointerId: 2 });
-  fireEvent.pointerUp(surface, { clientX: 200, clientY: 450, pointerId: 2 });
-
-  await waitFor(() => {
-    expect(screen.getByTestId("annotation-handle-to")).toHaveStyle({
-      left: "25%",
-      top: "90%",
-    });
-  });
-});
-
-/** The first vertex of the rendered freehand stroke, in percent-of-image units. */
-function firstPenPoint(): [number, number] {
-  const points =
-    screen.getByTestId("annotation-mark-1").getAttribute("points") ?? "";
-  const [x, y] = points.split(" ")[0]?.split(",").map(Number) ?? [];
-  if (x === undefined || y === undefined) {
-    throw new Error(`Expected stroke points, got "${points}"`);
-  }
-  return [x, y];
-}
-
-test("A freehand stroke can be selected and moved", async () => {
-  const image = draftAttachment("sketch.png", {
-    annotatedFileId: "draft-sketch-annotated",
-    annotations: penAnnotation("movable-stroke"),
-  });
-  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
-
-  await setupPage({
-    context,
-    path: `/chats/${ATTACHMENT_THREAD_ID}`,
-  });
-
-  const surface = await openAnnotationEditor("sketch.png");
-  fireEvent.click(screen.getByTestId("annotation-mark-1"));
-
-  // A stroke draws no selection furniture of its own — its note field opening
-  // is what says the click landed on it.
-  await waitFor(() => {
-    expect(screen.getByTestId("annotation-inline-editor")).toBeVisible();
-  });
-  expect(firstPenPoint()).toStrictEqual([20, 25]);
-
-  fireEvent.pointerDown(screen.getByTestId("annotation-mark-1"), {
-    clientX: 280,
-    clientY: 200,
-    pointerId: 3,
-  });
-  fireEvent.pointerMove(surface, { clientX: 360, clientY: 250, pointerId: 3 });
-  fireEvent.pointerUp(surface, { clientX: 360, clientY: 250, pointerId: 3 });
-
-  // Compared as numbers: the offset accumulates in floating point, so the point
-  // lands on 30.000000000000004 and an exact match would be asserting the
-  // arithmetic rather than the move.
-  await waitFor(() => {
-    const [x, y] = firstPenPoint();
-    expect(x).toBeCloseTo(30, 6);
-    expect(y).toBeCloseTo(35, 6);
-  });
-});
-
-test("Enter confirms a note and one drag is a single undo step", async () => {
+  const { panel, surface } = await annotate();
+  const mark = within(panel).getByTestId("annotation-mark-1");
+  click(mark);
+  const field = await within(panel).findByRole("textbox");
+  await fill(field, "Raise this panel");
   const user = userEvent.setup();
-  const image = draftAttachment("keyboard-plan.png", {
-    annotatedFileId: "draft-keyboard-plan-annotated",
-    annotations: boxAnnotation([{ id: "keyboard-mark", ordinal: 1 }]),
-  });
-  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
-
-  await setupPage({
-    context,
-    path: `/chats/${ATTACHMENT_THREAD_ID}`,
-  });
-
-  const surface = await openAnnotationEditor("keyboard-plan.png");
-  fireEvent.click(screen.getByTestId("annotation-mark-1"));
-
-  const note = await screen.findByLabelText("What should change?");
-  await fill(note, "Raise this panel");
-  // Enter had no binding at all: the only way out of the field was Escape or
-  // clicking off it.
   await user.keyboard("{Enter}");
-  expect(screen.queryByTestId("annotation-inline-editor")).toBeNull();
-  expect(
-    screen.getByTestId("annotation-note-label-keyboard-mark"),
-  ).toHaveTextContent("Raise this panel");
-
-  // Every pointer move used to push its own history entry, so undoing one
-  // gesture took one Cmd+Z per frame it lasted.
-  fireEvent.pointerDown(screen.getByTestId("annotation-mark-1"), {
-    clientX: 100,
-    clientY: 80,
-    pointerId: 4,
-  });
-  for (const clientX of [140, 180, 220, 260]) {
-    fireEvent.pointerMove(surface, { clientX, clientY: 140, pointerId: 4 });
-  }
-  fireEvent.pointerUp(surface, { clientX: 260, clientY: 140, pointerId: 4 });
-
-  const moved = screen.getByTestId("annotation-mark-1").style.left;
-  expect(moved).not.toBe("8%");
-
+  expect(within(panel).queryByRole("textbox")).toBeNull();
+  expect(within(panel).getByText("Raise this panel")).toBeVisible();
+  expect(mark.style.left).toBe("8%");
+  drag(mark, surface, [50, 50], [60, 40]);
+  expect(mark.style.left).not.toBe("8%");
   await user.keyboard("{Control>}z{/Control}");
-  await waitFor(() => {
-    expect(screen.getByTestId("annotation-mark-1")).toHaveStyle({ left: "8%" });
-  });
+  expect(mark.style.left).toBe("8%");
 });

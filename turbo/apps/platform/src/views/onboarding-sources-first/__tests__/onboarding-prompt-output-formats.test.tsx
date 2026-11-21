@@ -1,32 +1,43 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { screen } from "@testing-library/react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { setupPage, click, fill } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { ROUTES } from "../../../signals/route-paths.ts";
-import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
-import { getConnectorAction } from "../../okou-page/__tests__/connector-page-test-helpers.ts";
+import {
+  getAction,
+  findAction,
+} from "../../okou-page/__tests__/connector-integrations-test-helpers.ts";
+import {
+  documentInstructions,
+  receiveFirstChat,
+  findSentPrompt,
+} from "./onboarding-first-chat-test-helpers.ts";
 
 const context = testContext();
-const TASK = "Review my latest campaign and recommend three improvements.";
-const PRESENTATION =
+const formats = [
+  "Image",
+  "Website",
+  "Document",
+  "Research brief",
+  "People shortlist",
+  "Presentation",
+] as const;
+type Format = (typeof formats)[number];
+const deck =
   "Present the findings as a concise presentation with key results, recommendations, and next steps.";
-const DOCUMENT =
-  "Create a complete document with the results in the requested file format (Markdown by default). Upload it as an artifact and include the working artifact link in your final response.";
-
-async function openPrompt({
-  prompt = TASK,
-  mobile = false,
-  path = ROUTES.onboarding,
-  formats,
-  multipleOutputs = true,
-}: {
-  readonly prompt?: string;
-  readonly mobile?: boolean;
-  readonly path?: string;
-  readonly formats?: string;
-  readonly multipleOutputs?: boolean;
-} = {}): Promise<HTMLTextAreaElement> {
+const site =
+  "Present the findings as a shareable webpage with clear sections and takeaways.";
+const people =
+  "Use this task as context to produce a shortlist of relevant people, with their roles, reasons for inclusion, and public professional profile links. If their relevance to the task is unclear, ask a focused question before searching.";
+const campaign = "Review my latest campaign and recommend three improvements.";
+async function openPrompt(
+  task: string,
+  {
+    mobile = false,
+    requested,
+    multiple = true,
+  }: { mobile?: boolean; requested?: string; multiple?: boolean } = {},
+) {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
@@ -34,448 +45,321 @@ async function openPrompt({
   context.mocks.browser.matchMedia((query) => {
     return mobile && query === "(width < 640px)";
   });
+  const params = new URLSearchParams({ prompt: task });
+  if (requested !== undefined) {
+    params.set("outputFormats", requested);
+  }
   await setupPage({
     context,
-    path: `${path}?prompt=${encodeURIComponent(prompt)}${formats === undefined ? "" : `&outputFormats=${encodeURIComponent(formats)}`}`,
-    locale: "en-US",
-    featureSwitches: {
-      [FeatureSwitchKey.OnboardingMultipleOutputs]: multipleOutputs,
-    },
+    path:
+      (mobile ? "/onboarding/sources" : "/onboarding") +
+      "?" +
+      params.toString(),
+    featureSwitches: { [FeatureSwitchKey.OnboardingMultipleOutputs]: multiple },
   });
-  const input = await screen.findByRole("textbox", {
-    name: "Onboarding prompt",
-  });
-  if (!(input instanceof HTMLTextAreaElement)) {
-    throw new Error("Expected the onboarding prompt textarea");
+  return screen.findByLabelText("Onboarding prompt");
+}
+function expectSelection(...selected: Format[]) {
+  for (const format of formats) {
+    expect(getAction("button", format)).toHaveAttribute(
+      "aria-pressed",
+      String(selected.includes(format)),
+    );
   }
-  return input;
+}
+async function expectChat(
+  receipt: ReturnType<typeof receiveFirstChat>,
+  expected: string,
+) {
+  const sent = await receipt;
+  expect(sent.prompt).toBe(expected);
+  expect(window.location.pathname).toBe("/chats/" + sent.threadId);
+  await expect(findSentPrompt(expected)).resolves.toBeVisible();
 }
 
 test.each([
   [
-    "Create a presentation from my topic or files. Ask me about the audience and goal.",
+    "onboarding-prompt-output-formats-001",
+    "Create a presentation for a planning retreat. Ask me about the audience and goal.",
     "Presentation",
   ],
   [
-    "Analyze the social profiles or posts I share. Summarize the evidence and recommend next steps.",
-    "Document",
-  ],
-  [
-    "Find people or businesses that match my criteria, using public professional sources. Explain why each result fits.",
+    "onboarding-prompt-output-formats-003",
+    "Find matching people or businesses from public professional sources and explain why each fits our ceramics studio.",
     "People shortlist",
   ],
   [
-    "Create an image from my brief. Ask me about the subject, style, and dimensions.",
+    "onboarding-prompt-output-formats-004",
+    "Create an image from my packaging brief. Ask about the subject, style, and dimensions.",
     "Image",
   ],
-  ["Build a landing page for my consulting business.", "Website"],
   [
-    "Research the market for AI assistants and compare competitors.",
-    "Research brief",
+    "onboarding-prompt-output-formats-005",
+    "Build a landing page for my operations consulting business.",
+    "Website",
   ],
   [
-    "/gen presentation, create a pitch deck about image generation",
+    "onboarding-prompt-output-formats-007",
+    "/gen presentation Make a pitch deck about image generation for publishers.",
     "Presentation",
   ],
-  ["/gen website create a portfolio for a presentation designer", "Website"],
-  ["Create a report about image generation trends.", "Document"],
-  ["/gen document compare three marketing strategies", "Document"],
   [
-    "Research AI assistants and return a document with the findings.",
-    "Document",
+    "onboarding-prompt-output-formats-008",
+    "/gen website Build a portfolio for a presentation designer.",
+    "Website",
   ],
-  ["Compare these proposals and present the results as a PDF.", "Document"],
-  ["调研市场并整理成一份文档。", "Document"],
-  ["Review our website traffic and recommend improvements.", "Document"],
-  ["Research website builders for a small business.", "Research brief"],
-  ["Find creators who reach small business owners.", "People shortlist"],
-  ["帮我制作一份产品介绍PPT", "Presentation"],
-  ["生成一张产品宣传海报", "Image"],
-  ["为咨询业务搭建一个网站", "Website"],
-  ["寻找适合推广办公工具的达人", "People shortlist"],
-  ["调研AI助手的市场和竞争对手", "Research brief"],
-  ["分析上周广告效果并提出改进建议", "Document"],
-  ["Turn these notes into a 10-slide presentation.", "Presentation"],
-  ["把这些资料整理成一份PPT。", "Presentation"],
-  [
-    "Don't create a presentation. Create a report with the findings.",
-    "Document",
-  ],
-  ["Do not create a report; instead create a presentation.", "Presentation"],
-  ["不要制作PPT，写一份报告。", "Document"],
-  ["Do not return JSON. Create a report.", "Document"],
-  ["Find people who can help me design a website.", "People shortlist"],
-  ["Find designers to create a presentation.", "People shortlist"],
-  ["找能帮我设计网站的人", "People shortlist"],
-  [
-    "Find people who can design a website. Present the shortlist as a report.",
-    "Document",
-  ],
-])("selects a task-matched default for %s", async (prompt, label) => {
-  const input = await openPrompt({ prompt });
-  expect(getConnectorAction("button", label)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  expect(input).toHaveValue(prompt);
-  // Clearing a default leaves the task intact, and editing does not select again.
-  click(getConnectorAction("button", "Clear selection"));
-  await waitFor(() => {
-    expect(input).toHaveValue(prompt);
-    expect(getConnectorAction("button", label)).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
-  });
-  await fill(input, "Create a presentation for the board.");
-  expect(getConnectorAction("button", "Presentation")).toHaveAttribute(
-    "aria-pressed",
-    "false",
-  );
-});
-
-test.each([
-  "What is 1 + 2? Reply with only the number.",
-  "What is 1 + 2? Only return the number.",
-  "Compare these two records. Return valid JSON.",
-  "计算1加2，只回复数字。",
-  "Create a report on the campaign. Reply with only one sentence.",
-])("preserves an explicit response contract: %s", async (prompt) => {
-  let sentPrompt: string | undefined;
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      sentPrompt = body.prompt;
-    },
-  });
-  const input = await openPrompt({ prompt });
-  expect(input).toHaveValue(prompt);
-  expect(getConnectorAction("button", "Document")).toHaveAttribute(
-    "aria-pressed",
-    "false",
-  );
-  click(getConnectorAction("button", "Next"));
-  await waitFor(() => {
-    expect(sentPrompt).toBe(prompt);
-  });
-});
-
-test("an explicit response contract can still be changed with the format controls", async () => {
-  const prompt = "What is 1 + 2? Reply with only the number.";
-  const input = await openPrompt({ prompt });
-  expect(input).toHaveValue(prompt);
-  click(getConnectorAction("button", "Document"));
-  await waitFor(() => {
-    expect(input).toHaveValue(prompt);
-    expect(getConnectorAction("button", "Document")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-  });
-  click(getConnectorAction("button", "Clear selection"));
-  await waitFor(() => {
-    expect(input).toHaveValue(prompt);
-  });
-});
-
-test.each([
-  ["Create a presentation for my next board meeting.", PRESENTATION],
-  [TASK, DOCUMENT],
-])(
-  "the default format reaches the first chat for %s",
-  async (prompt, instruction) => {
-    let sentPrompt: string | undefined;
-    mockChatLifecycle(context, {
-      onRunCreate: (body) => {
-        sentPrompt = body.prompt;
-      },
-    });
-    const input = await openPrompt({ prompt });
-    expect(input).toHaveValue(prompt);
-    click(getConnectorAction("button", "Next"));
-    await waitFor(() => {
-      expect(sentPrompt).toBe(`${prompt}\n\n${instruction}`);
-    });
-  },
-);
-
-test.each([
-  ["Presentation", PRESENTATION],
-  ["Document", DOCUMENT],
-  ["Clear selection", null],
 ] as const)(
-  "a shared prompt separates its format before selecting %s",
-  async (choice, instruction) => {
-    let sentPrompt: string | undefined;
-    mockChatLifecycle(context, {
-      onRunCreate: (body) => {
-        sentPrompt = body.prompt;
-      },
-    });
-    const input = await openPrompt({ prompt: `${TASK}\n\n${PRESENTATION}` });
-    expect(input).toHaveValue(TASK);
-    expect(getConnectorAction("button", "Presentation")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    click(getConnectorAction("button", choice));
-    expect(input).toHaveValue(TASK);
-    click(getConnectorAction("button", "Next"));
-    await waitFor(() => {
-      expect(sentPrompt).toBe(instruction ? `${TASK}\n\n${instruction}` : TASK);
-    });
+  "%s matches %s to %s and respects clearing it",
+  async (_id, task, format) => {
+    const editor = await openPrompt(task);
+    expect(editor).toHaveValue(task);
+    expectSelection(format);
+    click(getAction("button", "Clear selection"));
+    expect(editor).toHaveValue(task);
+    expectSelection();
+    const edit = task + " Create a presentation for the review.";
+    await fill(editor, edit);
+    expect(editor).toHaveValue(edit);
+    expectSelection();
   },
 );
 
 test.each([
-  { mobile: false, path: ROUTES.onboarding, action: "Next" },
-  { mobile: true, path: ROUTES.onboardingSources, action: "Start task" },
-])(
-  "prompt links keep the task separate and submit only the latest selected format (mobile: $mobile)",
-  async ({ mobile, path, action }) => {
-    let sentPrompt: string | undefined;
-    mockChatLifecycle(context, {
-      onRunCreate: (body) => {
-        sentPrompt = body.prompt;
-      },
-    });
-    const input = await openPrompt({ mobile, path });
-    expect(input).toHaveValue(TASK);
-    expect(getConnectorAction("button", "Document")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    expect(
-      screen.getByRole("region", { name: "Connect your work tools" }),
-    ).toBeInTheDocument();
+  [
+    "onboarding-prompt-output-formats-033",
+    "What is 1 + 2? Reply with only the number.",
+  ],
+  [
+    "onboarding-prompt-output-formats-034",
+    "What is 1 + 2? Only return the number.",
+  ],
+  [
+    "onboarding-prompt-output-formats-035",
+    "Compare the invoice record with the payment record and return valid JSON.",
+  ],
+  ["onboarding-prompt-output-formats-036", "计算1加2，只回复数字。"],
+])("%s sends the exact response constraint in %s", async (_id, task) => {
+  const receipt = receiveFirstChat(context);
+  await expect(openPrompt(task)).resolves.toHaveValue(task);
+  expectSelection();
+  click(getAction("button", "Next"));
+  await expectChat(receipt, task);
+});
 
-    const choices = [
-      "Image",
-      "Website",
-      "Document",
-      "Research brief",
-      "People shortlist",
-      "Presentation",
-    ];
-    for (const name of choices) {
-      click(getConnectorAction("button", name));
-      await waitFor(() => {
-        expect(input).toHaveValue(TASK);
-        expect(getConnectorAction("button", name)).toHaveAttribute(
-          "aria-pressed",
-          "true",
-        );
-      });
-    }
-    click(getConnectorAction("button", "Presentation"));
-    expect(input).toHaveValue(TASK);
-    click(getConnectorAction("button", action));
-    await waitFor(() => {
-      expect(sentPrompt).toBe(`${TASK}\n\n${PRESENTATION}`);
-    });
+test("onboarding-prompt-output-formats-038 opting into Document and clearing it keeps the numeric question", async () => {
+  const task = "What is 1 + 2? Reply with only the number.";
+  const editor = await openPrompt(task);
+  expect(editor).toHaveValue(task);
+  expectSelection();
+  click(getAction("button", "Document"));
+  expectSelection("Document");
+  expect(editor).toHaveValue(task);
+  click(getAction("button", "Clear selection"));
+  expectSelection();
+  expect(editor).toHaveValue(task);
+});
+
+test.each([
+  [
+    "onboarding-prompt-output-formats-039",
+    "Create a presentation for my next board meeting.",
+    "Presentation",
+    deck,
+  ],
+  [
+    "onboarding-prompt-output-formats-040",
+    campaign,
+    "Document",
+    documentInstructions,
+  ],
+] as const)(
+  "%s submits %s with the inferred %s instruction",
+  async (_id, task, format, instruction) => {
+    const receipt = receiveFirstChat(context);
+    await expect(openPrompt(task)).resolves.toHaveValue(task);
+    expectSelection(format);
+    click(getAction("button", "Next"));
+    await expectChat(receipt, task + "\n\n" + instruction);
   },
 );
 
-test("switching and clearing formats preserve the edited task and submit it unchanged", async () => {
-  let sentPrompt: string | undefined;
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      sentPrompt = body.prompt;
-    },
-  });
-  const input = await openPrompt();
-  const edited = `Please ${TASK}\n\nUse plain English.`;
-  await fill(input, edited);
-  for (const choice of ["Presentation", "Document", "Clear selection"]) {
-    click(getConnectorAction("button", choice));
-    expect(input).toHaveValue(edited);
+test("onboarding-prompt-output-formats-041 selecting the embedded presentation again adds its instruction only once", async () => {
+  const task = "Summarize the quarterly hiring outlook.";
+  const shared = task + "\n\n" + deck;
+  const receipt = receiveFirstChat(context);
+  const editor = await openPrompt(shared);
+  expect(editor).toHaveValue(task);
+  expectSelection("Presentation");
+  click(getAction("button", "Presentation"));
+  expect(editor).toHaveValue(task);
+  expectSelection("Presentation");
+  click(getAction("button", "Next"));
+  await expectChat(receipt, shared);
+});
+test("onboarding-prompt-output-formats-043 clearing an embedded presentation sends only its original task", async () => {
+  const task = "Describe the renewal forecast for Monday.";
+  const receipt = receiveFirstChat(context);
+  const editor = await openPrompt(task + "\n\n" + deck);
+  expect(editor).toHaveValue(task);
+  expectSelection("Presentation");
+  click(getAction("button", "Clear selection"));
+  expectSelection();
+  expect(editor).toHaveValue(task);
+  click(getAction("button", "Next"));
+  await expectChat(receipt, task);
+});
+
+test.each([
+  [
+    "onboarding-prompt-output-formats-044",
+    false,
+    "Evaluate the membership renewal campaign.",
+    "Next",
+  ],
+  [
+    "onboarding-prompt-output-formats-045",
+    true,
+    "Evaluate our spring fundraising campaign.",
+    "Start task",
+  ],
+] as const)(
+  "%s compares six formats and submits the chosen one (mobile %s)",
+  async (_id, mobile, task, button) => {
+    const receipt = receiveFirstChat(context);
+    const editor = await openPrompt(task, { mobile });
+    await screen.findByRole("region", { name: "Connect your work tools" });
+    expectSelection("Document");
+    for (const format of formats) {
+      click(getAction("button", format));
+      expectSelection(format);
+      expect(editor).toHaveValue(task);
+    }
+    click(getAction("button", button));
+    await expectChat(receipt, task + "\n\n" + deck);
+  },
+);
+
+test("onboarding-prompt-output-formats-046 switching deliverables and clearing preserves both edited paragraphs", async () => {
+  const receipt = receiveFirstChat(context);
+  const editor = await openPrompt(campaign);
+  const task = "Please " + campaign + "\n\nUse plain English.";
+  await fill(editor, task);
+  for (const format of ["Presentation", "Document"] as const) {
+    click(getAction("button", format));
+    expectSelection(format);
+    expect(editor).toHaveValue(task);
   }
-  expect(getConnectorAction("button", "Document")).toHaveAttribute(
-    "aria-pressed",
-    "false",
-  );
-  click(getConnectorAction("button", "Next"));
-  await waitFor(() => {
-    expect(sentPrompt).toBe(edited);
-  });
+  click(getAction("button", "Clear selection"));
+  expectSelection();
+  expect(editor).toHaveValue(task);
+  click(getAction("button", "Next"));
+  await expectChat(receipt, task);
+});
+test("onboarding-prompt-output-formats-047 replacing the document task retains the newly selected presentation", async () => {
+  const receipt = receiveFirstChat(context);
+  const editor = await openPrompt(campaign);
+  expectSelection("Document");
+  click(getAction("button", "Presentation"));
+  const edit = "Draft a customer update.";
+  await fill(editor, edit);
+  expect(editor).toHaveValue(edit);
+  expectSelection("Presentation");
+  click(getAction("button", "Next"));
+  await expectChat(receipt, edit + "\n\n" + deck);
+});
+test("onboarding-prompt-output-formats-048 the presentation chat retains all forty actionable recommendations", async () => {
+  const receipt = receiveFirstChat(context);
+  const task = campaign + " Keep the recommendations actionable.".repeat(40);
+  const editor = await openPrompt(task);
+  expect(editor).toHaveValue(task);
+  click(getAction("button", "Presentation"));
+  expectSelection("Presentation");
+  expect(editor).toHaveValue(task);
+  click(getAction("button", "Next"));
+  await expectChat(receipt, task + "\n\n" + deck);
 });
 
-test("editing the task preserves the selected format for submission", async () => {
-  let sentPrompt: string | undefined;
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      sentPrompt = body.prompt;
-    },
-  });
-  const input = await openPrompt();
-  click(getConnectorAction("button", "Presentation"));
-  const edited = "Draft a customer update.";
-  await fill(input, edited);
-  expect(input).toHaveValue(edited);
-  expect(getConnectorAction("button", "Presentation")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  click(getConnectorAction("button", "Next"));
-  await waitFor(() => {
-    expect(sentPrompt).toBe(`${edited}\n\n${PRESENTATION}`);
-  });
-});
-
-test("long landing-page prompts can choose a format without being truncated", async () => {
-  let sentPrompt: string | undefined;
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      sentPrompt = body.prompt;
-    },
-  });
-  const prompt = `${TASK}\n${"Keep the recommendations actionable. ".repeat(40)}`;
-  const input = await openPrompt({ prompt });
-  expect(input).toHaveValue(prompt);
-  click(getConnectorAction("button", "Presentation"));
-  await waitFor(() => {
-    expect(input).toHaveValue(prompt);
-  });
-  click(getConnectorAction("button", "Next"));
-  await waitFor(() => {
-    expect(sentPrompt).toBe(`${prompt}\n\n${PRESENTATION}`);
-  });
-});
-
-const WEBSITE =
-  "Present the findings as a shareable webpage with clear sections and takeaways.";
-const PEOPLE =
-  "Use this task as context to produce a shortlist of relevant people, with their roles, reasons for inclusion, and public professional profile links. If their relevance to the task is unclear, ask a focused question before searching.";
-
-test.each([false, true])(
-  "landing-page formats preselect both outputs and submit each once (mobile: %s)",
-  async (mobile) => {
-    let sentPrompt: string | undefined;
-    mockChatLifecycle(context, {
-      onRunCreate: (body) => {
-        sentPrompt = body.prompt;
-      },
-    });
-    const input = await openPrompt({
+test.each([
+  [
+    "onboarding-prompt-output-formats-049",
+    false,
+    "Compare local agency partnerships.",
+    "Next",
+  ],
+  [
+    "onboarding-prompt-output-formats-050",
+    true,
+    "Evaluate potential partners for our studio.",
+    "Start task",
+  ],
+] as const)(
+  "%s sends the edited agency task with Website then People (mobile %s)",
+  async (_id, mobile, task, button) => {
+    const receipt = receiveFirstChat(context);
+    const editor = await openPrompt(task, {
       mobile,
-      formats: "website,people,website,invalid",
+      requested: "website,people,website,unsupported",
     });
-    expect(input).toHaveValue(TASK);
-    for (const label of ["Website", "People shortlist"]) {
-      expect(getConnectorAction("button", label)).toHaveAttribute(
-        "aria-pressed",
-        "true",
-      );
-    }
-    expect(getConnectorAction("button", "Document")).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
-    expect(sentPrompt).toBeUndefined();
-    const edited = `${TASK} Focus on US agencies.`;
-    await fill(input, edited);
-    click(getConnectorAction("button", mobile ? "Start task" : "Next"));
-    await waitFor(() => {
-      expect(sentPrompt).toBe(`${edited}\n\n${WEBSITE}\n\n${PEOPLE}`);
-    });
+    expect(editor).toHaveValue(task);
+    expectSelection("Website", "People shortlist");
+    const edit = task + " Focus on US agencies.";
+    await fill(editor, edit);
+    expect(editor).toHaveValue(edit);
+    expectSelection("Website", "People shortlist");
+    click(getAction("button", button));
+    await expectChat(receipt, [edit, site, people].join("\n\n"));
   },
 );
 
-test("removing one preselected format keeps the other and preserves the editable request", async () => {
-  let sentPrompt: string | undefined;
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      sentPrompt = body.prompt;
-    },
-  });
-  const input = await openPrompt({ formats: "website,people" });
-  click(getConnectorAction("button", "Website"));
-  expect(input).toHaveValue(TASK);
-  expect(getConnectorAction("button", "Website")).toHaveAttribute(
-    "aria-pressed",
-    "false",
-  );
-  expect(getConnectorAction("button", "People shortlist")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  click(getConnectorAction("button", "Next"));
-  await waitFor(() => {
-    expect(sentPrompt).toBe(`${TASK}\n\n${PEOPLE}`);
-  });
+test("onboarding-prompt-output-formats-051 removing Website submits only the remaining People shortlist", async () => {
+  const receipt = receiveFirstChat(context);
+  const editor = await openPrompt(campaign, { requested: "website,people" });
+  expectSelection("Website", "People shortlist");
+  click(getAction("button", "Website"));
+  expectSelection("People shortlist");
+  expect(editor).toHaveValue(campaign);
+  click(getAction("button", "Next"));
+  await expectChat(receipt, campaign + "\n\n" + people);
 });
-
-test("clearing preselected formats submits only the task", async () => {
-  let sentPrompt: string | undefined;
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      sentPrompt = body.prompt;
-    },
-  });
-  const input = await openPrompt({ formats: "website,people" });
-  click(getConnectorAction("button", "Clear selection"));
-  expect(input).toHaveValue(TASK);
-  click(getConnectorAction("button", "Next"));
-  await waitFor(() => {
-    expect(sentPrompt).toBe(TASK);
-  });
+test("onboarding-prompt-output-formats-052 clearing a two-format link sends its campaign task verbatim", async () => {
+  const receipt = receiveFirstChat(context);
+  const editor = await openPrompt(campaign, { requested: "website,people" });
+  expectSelection("Website", "People shortlist");
+  click(getAction("button", "Clear selection"));
+  expectSelection();
+  expect(editor).toHaveValue(campaign);
+  click(getAction("button", "Next"));
+  await expectChat(receipt, campaign);
 });
-
-test("invalid format IDs retain the task-shaped default", async () => {
-  await openPrompt({ formats: "unknown,WEBSITE" });
-  expect(getConnectorAction("button", "Document")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+test("onboarding-prompt-output-formats-053 unknown and uppercase IDs leave the campaign's Document default", async () => {
+  await expect(
+    openPrompt(campaign, { requested: "WEBSITE,ledger" }),
+  ).resolves.toHaveValue(campaign);
+  expectSelection("Document");
 });
-
-test("all selected output instructions count toward the submission limit", async () => {
-  const prompt = "a".repeat(20_000 - WEBSITE.length - 2);
-  await openPrompt({ prompt, formats: "website,people" });
-  expect(getConnectorAction("button", "Next")).toBeDisabled();
-  click(getConnectorAction("button", "People shortlist"));
-  expect(getConnectorAction("button", "Next")).toBeEnabled();
+test("onboarding-prompt-output-formats-054 removing People shortlist makes the website request fit the exact limit", async () => {
+  const task = campaign.padEnd(20_000 - site.length - 2, "x");
+  await expect(
+    openPrompt(task, { requested: "website,people" }),
+  ).resolves.toHaveValue(task);
+  expectSelection("Website", "People shortlist");
+  const next = await findAction("button", "Next");
+  expect(next).toBeDisabled();
+  click(getAction("button", "People shortlist"));
+  expectSelection("Website");
+  expect(next).toBeEnabled();
 });
-
-test("shared multi-output requests separate suffixes without duplicating them", async () => {
-  let sentPrompt: string | undefined;
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      sentPrompt = body.prompt;
-    },
-  });
-  const prompt = `${TASK}\n\n${WEBSITE}\n\n${PEOPLE}`;
-  const input = await openPrompt({ prompt });
-  expect(input).toHaveValue(TASK);
-  expect(getConnectorAction("button", "Website")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  expect(getConnectorAction("button", "People shortlist")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  click(getConnectorAction("button", "Next"));
-  await waitFor(() => {
-    expect(sentPrompt).toBe(prompt);
-  });
+test("onboarding-prompt-output-formats-055 sharing a two-format campaign restores the task and each instruction", async () => {
+  const shared = [campaign, site, people].join("\n\n");
+  const receipt = receiveFirstChat(context);
+  await expect(openPrompt(shared)).resolves.toHaveValue(campaign);
+  expectSelection("Website", "People shortlist");
+  click(getAction("button", "Next"));
+  await expectChat(receipt, shared);
 });
-
-test("disabling multiple outputs retains the previous task-shaped selection", async () => {
-  const input = await openPrompt({
-    formats: "website,people",
-    multipleOutputs: false,
-  });
-  expect(input).toHaveValue(TASK);
-  expect(getConnectorAction("button", "Document")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  expect(getConnectorAction("button", "Website")).toHaveAttribute(
-    "aria-pressed",
-    "false",
-  );
-  expect(getConnectorAction("button", "People shortlist")).toHaveAttribute(
-    "aria-pressed",
-    "false",
-  );
+test("onboarding-prompt-output-formats-056 disabling multiple outputs leaves the task-selected Document", async () => {
+  await expect(
+    openPrompt(campaign, { multiple: false, requested: "website,people" }),
+  ).resolves.toHaveValue(campaign);
+  expectSelection("Document");
 });

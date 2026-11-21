@@ -1,276 +1,154 @@
+import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  teamsConnectContract,
-  type TeamsConnectStatus,
-} from "@okouai/api-contracts/contracts/teams-connect";
-import { act, screen, waitFor } from "@testing-library/react";
-import { expect, test } from "vitest";
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { test, expect } from "vitest";
+import { click, startPage, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  getAction,
+  findAction,
   getIntegrationCard,
+  mockTeams,
+  setupIntegrationsPage,
 } from "./connector-integrations-test-helpers.ts";
 
 const context = testContext();
-function status(
-  overrides: Partial<TeamsConnectStatus> = {},
-): TeamsConnectStatus {
-  return {
-    isInstalled: false,
+
+test("integrations-teams-004 the pending organization install opens its install flow and stays on Works", async () => {
+  const browser = context.mocks.browser.open();
+  const destination =
+    "https://api.example.test/api/teams/oauth/connect?flow=install&workspace=shore";
+  mockTeams(context, {
+    pendingInstallation: true,
     isConnected: false,
-    isAdmin: true,
-    pendingInstallation: false,
-    linkedAccounts: [],
-    connectUrl: "/api/teams/oauth/connect?orgId=org_default",
-    installUrl: "/api/teams/oauth/connect?flow=install&orgId=org_default",
-    ...overrides,
-  };
-}
-
-test.each(["focus", "visibility", "realtime"])(
-  "Works reconciles Teams through %s without leaving its prompt",
-  async (trigger) => {
-    let current = status();
-    context.mocks.api(teamsConnectContract.getStatus, ({ respond }) => {
-      return respond(200, current);
-    });
-    const visibility = context.mocks.browser.visibilityState("visible");
-    const popup = context.mocks.browser.authWindow();
-    const open = context.mocks.browser.open(popup);
-    await setupPage({
-      featureSwitches: { [FeatureSwitchKey.WorksChannelCards]: true },
-      context,
-      path: "/works?prompt=Retain+my+work",
-    });
-    const card = getIntegrationCard("Microsoft Teams");
-    expect(queryAllByRoleFast("button", card)).toHaveLength(1);
-    expect(getAction("button", "Connect", card)).toBeEnabled();
-    click(getAction("button", "Connect", card));
-    const url = new URL(open.calls[0]?.url ?? "");
-    expect(url.searchParams.get("prompt")).toBe("Retain my work");
-    popup.close();
-    expect(getAction("button", "Connect", card)).toBeEnabled();
-    await waitFor(() => {
-      return expect(
-        context.mocks.ably.hasSubscription("teams:changed"),
-      ).toBeTruthy();
-    });
-    current = status({
-      isInstalled: true,
-      isConnected: true,
-      tenantName: "Verified team",
-      connectUrl: null,
-    });
-    if (trigger === "focus") {
-      act(() => {
-        window.dispatchEvent(new Event("focus"));
-      });
-    } else if (trigger === "visibility") {
-      act(() => {
-        return visibility.changeTo("hidden");
-      });
-      act(() => {
-        return visibility.changeTo("visible");
-      });
-    } else {
-      act(() => {
-        return context.mocks.ably.trigger("teams:changed");
-      });
-    }
-    await expect(
-      screen.findByText("Connected (Verified team)"),
-    ).resolves.toBeInTheDocument();
-    expect(window.location.pathname).toBe("/works");
-    expect(new URLSearchParams(window.location.search).get("prompt")).toBe(
-      "Retain my work",
-    );
-  },
-);
-
-test("Works Connect starts the required Teams installation", async () => {
-  context.mocks.api(teamsConnectContract.getStatus, ({ respond }) => {
-    return respond(200, status({ pendingInstallation: true }));
+    installUrl: destination,
   });
-  const open = context.mocks.browser.open();
-  await setupPage({
-    featureSwitches: { [FeatureSwitchKey.WorksChannelCards]: true },
-    context,
-    path: "/works",
-  });
+  await setupIntegrationsPage(context);
   const card = getIntegrationCard("Microsoft Teams");
-  click(getAction("button", "Connect", card));
-  expect(new URL(open.calls[0]?.url ?? "").searchParams.get("flow")).toBe(
-    "install",
+  click(await findAction("button", "Install in Teams", card));
+  const popup = browser.calls.find(({ target }) => {
+    return target === "_blank";
+  });
+  expect(popup).toBeDefined();
+  const url = new URL(popup?.url ?? "", "https://app.okou.ai");
+  expect(url.origin + url.pathname).toBe(
+    "https://api.example.test/api/teams/oauth/connect",
   );
-  expect(card).not.toHaveTextContent("Connected");
-  expect(window.location.pathname).toBe("/works");
+  expect(url.searchParams.get("flow")).toBe("install");
+  expect(card).not.toHaveTextContent(/\bConnected\b/u);
+  expect(location.pathname).toBe("/works");
 });
 
-test("Returning to Works retries a failed Teams read without hiding the other integrations", async () => {
-  let failed = true;
-  context.mocks.api(teamsConnectContract.getStatus, ({ respond }) => {
-    if (failed) {
-      throw Response.error();
-    }
-    return respond(200, status());
+test("integrations-teams-008 a member opens their verified identity connection without an organization installer", async () => {
+  const browser = context.mocks.browser.open();
+  const target =
+    "https://api.example.test/api/teams/oauth/connect?connectState=verified-identity";
+  mockTeams(context, {
+    isAdmin: false,
+    isInstalled: false,
+    installUrl: null,
+    connectUrl: target,
   });
-  await expect(
-    setupPage({
-      featureSwitches: { [FeatureSwitchKey.WorksChannelCards]: true },
-      context,
-      path: "/works",
-    }),
-  ).rejects.toThrow("Failed to fetch");
-  await waitFor(() => {
-    expect(getIntegrationCard("Microsoft Teams")).toHaveTextContent(
-      "Unable to check your Teams connection.",
-    );
-  });
+  await setupIntegrationsPage(context);
   const card = getIntegrationCard("Microsoft Teams");
+  click(await findAction("button", "Connect", card));
+  const popup = browser.calls.find(({ target }) => {
+    return target === "_blank";
+  });
+  expect(popup).toBeDefined();
+  const url = new URL(popup?.url ?? "", "https://app.okou.ai");
+  expect(url.origin + url.pathname).toBe(
+    "https://api.example.test/api/teams/oauth/connect",
+  );
+  expect(url.searchParams.get("connectState")).toBe("verified-identity");
+  expect(location.pathname).toBe("/works");
+});
+
+test("integrations-teams-005 returning focus recovers only the unavailable Teams card", async () => {
+  let available = false;
+  context.mocks.api(teamsConnectContract.getStatus, ({ respond }) => {
+    return available
+      ? respond(200, {
+          isInstalled: false,
+          isAdmin: true,
+          isConnected: false,
+          linkedAccounts: [],
+          pendingInstallation: false,
+          installUrl: "/api/teams/oauth/connect?flow=install",
+        })
+      : respond(503, {
+          error: {
+            code: "UNAVAILABLE",
+            message: "Cannot fetch Harbor Teams status",
+          },
+        });
+  });
+  const page = await startPage({
+    context,
+    path: "/works",
+    featureSwitches: { [FeatureSwitchKey.WorksChannelCards]: false },
+  });
+  await expect(page.ready).rejects.toThrow(/Cannot fetch|Failed to fetch/i);
+  const card = getIntegrationCard("Microsoft Teams");
+  expect(card).toHaveTextContent("Unable to check your Teams connection.");
   expect(getIntegrationCard("Slack")).toBeInTheDocument();
-  failed = false;
-  act(() => {
-    window.dispatchEvent(new Event("focus"));
-  });
-  await waitFor(() => {
-    return expect(getAction("button", "Connect", card)).toBeEnabled();
-  });
-});
-
-test("Teams actions preserve prompt and protected preview access", async () => {
-  context.mocks.api(teamsConnectContract.getStatus, ({ respond }) => {
-    return respond(
-      200,
-      status({
-        installUrl:
-          "https://pr-431-api.vm6.ai/api/teams/oauth/connect?flow=install&orgId=org_default",
-      }),
-    );
-  });
-  const open = context.mocks.browser.open();
-  await setupPage({
-    featureSwitches: { [FeatureSwitchKey.WorksChannelCards]: true },
-    context,
-    host: "pr-431-app-okou-app-preview.vm0.workers.dev",
-    path: "/works?prompt=Retain+my+work&x-vercel-protection-bypass=preview-secret",
-  });
-  click(getAction("button", "Connect", getIntegrationCard("Microsoft Teams")));
-  const url = new URL(open.calls[0]?.url ?? "");
-  expect(url.origin).toBe("https://pr-431-api.vm6.ai");
-  expect(url.searchParams.get("prompt")).toBe("Retain my work");
-  expect(url.searchParams.get("x-vercel-protection-bypass")).toBe(
-    "preview-secret",
-  );
-  expect(window.location.pathname).toBe("/works");
-});
-
-test("An overlapping focus refresh keeps later realtime notifications active", async () => {
-  const started = context.mocks.deferred<void>();
-  const release = context.mocks.deferred<void>();
-  let blockNext = false;
-  let current = status();
-  context.mocks.api(teamsConnectContract.getStatus, async ({ respond }) => {
-    const snapshot = current;
-    if (blockNext) {
-      blockNext = false;
-      started.resolve();
-      await release.promise;
-    }
-    return respond(200, snapshot);
-  });
-  await setupPage({
-    featureSwitches: { [FeatureSwitchKey.WorksChannelCards]: true },
-    context,
-    path: "/works",
-  });
-  await waitFor(() => {
-    expect(context.mocks.ably.hasSubscription("teams:changed")).toBeTruthy();
-  });
-  blockNext = true;
-  act(() => {
-    context.mocks.ably.trigger("teams:changed");
-  });
-  await started.promise;
-  act(() => {
-    window.dispatchEvent(new Event("focus"));
-  });
-  await waitFor(() => {
-    expect(
-      getAction("button", "Connect", getIntegrationCard("Microsoft Teams")),
-    ).toBeEnabled();
-  });
-  release.resolve();
-  current = status({
-    isInstalled: true,
-    isConnected: true,
-    tenantName: "Later installation",
-  });
-  act(() => {
-    context.mocks.ably.trigger("teams:changed");
-  });
-  await waitFor(() => {
-    expect(
-      screen.getByText("Connected (Later installation)"),
-    ).toBeInTheDocument();
-  });
-});
-
-test("Members can connect a Teams identity without an organization bot", async () => {
-  context.mocks.api(teamsConnectContract.getStatus, ({ respond }) => {
-    return respond(
-      200,
-      status({
-        isAdmin: false,
-        installUrl: null,
-        connectUrl: "/api/teams/oauth/connect?connectState=verified-identity",
-      }),
-    );
-  });
-  const open = context.mocks.browser.open();
-  await setupPage({
-    featureSwitches: { [FeatureSwitchKey.WorksChannelCards]: true },
-    context,
-    path: "/works",
-  });
-  const card = getIntegrationCard("Microsoft Teams");
-  click(getAction("button", "Connect", card));
-  expect(
-    new URL(open.calls[0]?.url ?? "").searchParams.get("connectState"),
-  ).toBe("verified-identity");
-});
-
-test("An independent Teams identity remains connected after bot removal", async () => {
-  context.mocks.api(teamsConnectContract.getStatus, ({ respond }) => {
-    return respond(
-      200,
-      status({
-        isInstalled: false,
-        isConnected: true,
-        isAdmin: true,
-        connectUrl: null,
-        tenantName: "Personal identity tenant",
-        installUrl: "/api/teams/oauth/connect?connectState=admin-install",
-      }),
-    );
-  });
-  const open = context.mocks.browser.open();
-  await setupPage({
-    featureSwitches: { [FeatureSwitchKey.WorksChannelCards]: true },
-    context,
-    path: "/works",
-  });
+  available = true;
+  window.dispatchEvent(new Event("focus"));
   await expect(
-    screen.findByText("Connected (Personal identity tenant)"),
-  ).resolves.toBeInTheDocument();
+    findAction("button", "Install in Teams", card),
+  ).resolves.toBeEnabled();
+});
+
+test("integrations-teams-006 the preview installation keeps the prompt and access value on the API host", async () => {
+  const origin = "https://pr-749-api.vm6.ai";
+  mockTeams(context, {
+    installUrl: origin + "/api/teams/oauth/connect?flow=install",
+  });
+  const browser = context.mocks.browser.open();
+  await setupPage({
+    context,
+    host: "pr-749-app.omby.ai",
+    path: "/works?prompt=Retain+my+work&x-vercel-protection-bypass=harbor-preview",
+    featureSwitches: { [FeatureSwitchKey.WorksChannelCards]: false },
+  });
+  click(
+    await findAction(
+      "button",
+      "Install in Teams",
+      getIntegrationCard("Microsoft Teams"),
+    ),
+  );
+  const popup = browser.calls.at(-1);
+  expect(popup?.target).toBe("_blank");
+  const target = new URL(popup?.url ?? "");
+  expect(target.origin).toBe(origin);
+  expect(target.searchParams.get("prompt")).toBe("Retain my work");
+  expect(target.searchParams.get("x-vercel-protection-bypass")).toBe(
+    "harbor-preview",
+  );
+  expect(location.pathname).toBe("/works");
+});
+
+test("integrations-teams-009 the independent tenant stays connected while installation starts", async () => {
+  mockTeams(context, {
+    isInstalled: false,
+    isConnected: true,
+    tenantName: "Personal identity tenant",
+    linkedAccounts: [
+      {
+        tenantId: "harbor",
+        teamsUserId: "user27",
+        displayName: null,
+        teamsAadObjectId: null,
+        userPrincipalName: null,
+      },
+    ],
+    installUrl: "/api/teams/oauth/connect?connectState=admin-install",
+  });
+  const browser = context.mocks.browser.open();
+  await setupIntegrationsPage(context);
   const card = getIntegrationCard("Microsoft Teams");
-  click(getAction("button", "More Microsoft Teams options", card));
-  click(getAction("button", "Install in Teams"));
-  expect(
-    new URL(open.calls[0]?.url ?? "").searchParams.get("connectState"),
-  ).toBe("admin-install");
+  expect(card).toHaveTextContent("Connected (Personal identity tenant)");
+  click(await findAction("button", "Install in Teams", card));
+  const href = new URL(browser.calls.at(-1)?.url ?? "", location.href);
+  expect(href.searchParams.get("connectState")).toBe("admin-install");
+  expect(card).toHaveTextContent("Connected (Personal identity tenant)");
 });

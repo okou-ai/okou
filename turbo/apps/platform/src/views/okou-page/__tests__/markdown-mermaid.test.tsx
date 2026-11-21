@@ -1,291 +1,68 @@
-import mermaid from "@okouai/mermaid-lite";
-import {
-  screen,
-  waitFor,
-  waitForElementToBeRemoved,
-  within,
-} from "@testing-library/react";
-import { expect, test, vi } from "vitest";
-
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import {
-  testContext,
-  warmMermaidParser,
-} from "../../../signals/__tests__/test-helpers.ts";
-import {
-  createMarkdownChatFixture,
-  type MarkdownChatFixture,
-} from "./markdown-page-test-helpers.ts";
+import { sessionOutputChannelName } from "@okouai/api-contracts/contracts/realtime";
+import { screen, waitFor } from "@testing-library/react";
+import { expect, test } from "vitest";
+import { setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { createMarkdownChatFixture } from "./markdown-page-test-helpers.ts";
 
 const context = testContext();
-
-warmMermaidParser();
-
-function completedMessageRows(chat: MarkdownChatFixture, content: string) {
-  return [
-    chat.outputMessage(content, { seqId: 1 }),
-    chat.runCompleted({ seqId: 2 }),
-  ];
-}
-
-function getButtonByName(
-  name: string,
-  container: ParentNode = document.body,
-): HTMLElement {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
-    return (
-      candidate.textContent?.trim() === name ||
-      candidate.getAttribute("aria-label") === name
-    );
-  });
-  if (!button) {
-    throw new Error(`Expected button named "${name}"`);
-  }
-  return button;
-}
-
-function diagramButtons(container: ParentNode = document.body): HTMLElement[] {
-  return queryAllByRoleFast("button", container).filter((button) => {
-    return button.getAttribute("aria-label") === "Expand diagram";
-  });
-}
-
-async function openMermaidSplitView() {
-  vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(
-    900,
-  );
-  vi.spyOn(HTMLImageElement.prototype, "naturalHeight", "get").mockReturnValue(
-    600,
-  );
-  const chat = createMarkdownChatFixture(context);
-  const source = [
-    "```mermaid",
-    "flowchart TD",
-    "  First --> Preview",
-    "```",
-    "",
-    "```mermaid",
-    "sequenceDiagram",
-    "  Reader->>Platform: Expand second",
-    "```",
-  ].join("\n");
-  const rows = completedMessageRows(chat, source);
+const flow = "```mermaid\nflowchart LR\n  Draft --> Review\n```";
+const sequence = "```mermaid\nsequenceDiagram\n Alice->>Bob: Approve";
+test("markdown-mermaid-003 closing the live fence replaces readable source with an expandable diagram", async () => {
+  const chat = createMarkdownChatFixture(context),
+    runId = crypto.randomUUID(),
+    eventId = crypto.randomUUID();
+  const prompt = chat.inputPrompt("Diagram the handoff", { seqId: 1, runId });
   chat.install({
     rows: () => {
-      return rows;
+      return [prompt];
     },
   });
-
-  await setupPage({
-    locale: "en-US",
-    context,
-    path: chat.path,
-    host: "app.okou.ai",
-  });
-
-  const [, expandActions] = await waitFor(() => {
-    const images = screen.getAllByRole("img", { name: "Diagram" });
-    const actions = diagramButtons();
-    expect(images).toHaveLength(2);
-    expect(actions).toHaveLength(2);
-    return [images, actions] as const;
-  });
-  const firstExpand = expandActions[0];
-  const secondExpand = expandActions[1];
-  if (!firstExpand || !secondExpand) {
-    throw new Error("Expected two diagram expand actions");
-  }
-  expect(firstExpand).toBeEnabled();
-  expect(secondExpand).toBeEnabled();
-
-  click(firstExpand);
-
-  const dialog = await screen.findByRole("dialog", {
-    name: "diagram.svg preview",
-  });
-  expect(getButtonByName("Open in split view", dialog)).toBeVisible();
-  expect(
-    queryAllByRoleFast("button", dialog).some((button) => {
-      return button.getAttribute("aria-label") === "Share";
-    }),
-  ).toBeFalsy();
-
-  const dialogRemoved = waitForElementToBeRemoved(dialog);
-  click(getButtonByName("Open in split view", dialog));
-
-  const sidebar = await screen.findByTestId("artifact-sidebar");
-  expect(within(sidebar).getByText("diagram.svg")).toBeVisible();
-  const firstSidebarImage = await within(sidebar).findByRole("img", {
-    name: "diagram.svg",
-  });
-  const firstSidebarSource = firstSidebarImage.getAttribute("src");
-  await dialogRemoved;
-  return { sidebar, firstSidebarSource };
-}
-
-test("Closing a Mermaid artifact split view releases its blob and preserves the inline diagrams", async () => {
-  const { sidebar, firstSidebarSource } = await openMermaidSplitView();
-  if (!firstSidebarSource) {
-    throw new Error("Expected the sidebar diagram to have a blob URL");
-  }
-  const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL");
-  const sidebarRemoved = waitForElementToBeRemoved(sidebar);
-  click(getButtonByName("Close artifact", sidebar));
-
-  await sidebarRemoved;
-  expect(revokeObjectUrl).toHaveBeenCalledWith(firstSidebarSource);
-  expect(screen.getAllByRole("img", { name: "Diagram" })).toHaveLength(2);
-  expect(screen.getAllByText("Diagram source")).toHaveLength(2);
-});
-
-test("Completed Mermaid diagrams remain accessible and inspectable", async () => {
-  const browser = context.mocks.browser.blobDownload();
-  const chat = createMarkdownChatFixture(context);
-  const renderGate = context.mocks.deferred<void>();
-  const renderDiagram = mermaid.render.bind(mermaid);
-  vi.spyOn(mermaid, "render").mockImplementation(async (...args) => {
-    await renderGate.promise;
-    return await renderDiagram(...args);
-  });
-  const diagramSource = ["flowchart TD", "  Accessible --> Diagram"].join("\n");
-  const source = [
-    "```mermaid",
-    diagramSource,
-    "```",
-    "",
-    "```mermaid",
-    diagramSource,
-    "```",
-  ].join("\n");
-  const rows = [chat.outputMessage("Preparing diagrams.", { seqId: 1 })];
-  chat.install({
-    rows: () => {
-      return rows;
-    },
-  });
-
-  await setupPage({
-    context,
-    path: chat.path,
-    host: "app.okou.ai",
-  });
-  await expect(screen.findByText("Preparing diagrams.")).resolves.toBeVisible();
-
-  rows.push(
-    chat.outputMessage(source, { seqId: 2 }),
-    chat.runCompleted({ seqId: 3 }),
+  const channel = sessionOutputChannelName(
+    "test-user-123",
+    "org_default",
+    runId,
   );
-  context.mocks.ably.trigger(chat.realtimeTopic);
 
-  const pendingActions = await waitFor(() => {
-    const actions = diagramButtons();
-    expect(actions).toHaveLength(2);
-    return actions;
-  });
-  for (const pendingAction of pendingActions) {
-    expect(pendingAction).toBeDisabled();
-  }
-  expect(screen.getAllByText("Diagram source")).toHaveLength(2);
-  const sourceBlocks = Array.from(
-    document.querySelectorAll<HTMLElement>(
-      '[data-slot="mermaid-diagram-source"] code',
-    ),
-  );
-  expect(sourceBlocks).toHaveLength(2);
-  expect(
-    sourceBlocks.every((sourceBlock) => {
-      return sourceBlock.textContent === diagramSource;
-    }),
-  ).toBeTruthy();
-
-  renderGate.resolve();
-
+  await setupPage({ context, path: chat.path });
+  await screen.findByText("Diagram the handoff");
   await waitFor(() => {
-    expect(screen.getAllByRole("img", { name: "Diagram" })).toHaveLength(2);
-    expect(diagramButtons()).toHaveLength(2);
-    expect(
-      diagramButtons().every((button) => {
-        return !button.hasAttribute("disabled");
-      }),
+    return expect(
+      context.mocks.ably.hasSubscriptionOnChannel(channel, runId),
     ).toBeTruthy();
   });
-  const urls = screen.getAllByRole("img", { name: "Diagram" }).map((image) => {
-    return image.getAttribute("src");
-  });
-  expect(new Set(urls).size).toBe(2);
-  for (const url of urls) {
-    if (!url) {
-      throw new Error("Expected an independently owned diagram image URL");
-    }
-    expect(browser.blobForUrl(url)?.type).toBe("image/svg+xml");
-    expect(browser.revokedUrls).not.toContain(url);
-  }
-});
-
-test("A streaming Mermaid diagram stays readable until complete", async () => {
-  const chat = createMarkdownChatFixture(context);
-  const streamingEventId = "markdown-streaming-event";
-  const partialSource = [
-    "```mermaid",
-    "flowchart TD",
-    "  Completed --> Independent",
-    "```",
-    "",
-    "```mermaid",
-    "sequenceDiagram",
-    "  Reader->>Platform: Partial",
-  ].join("\n");
-  const completeSource = `${partialSource}\n\`\`\``;
-  const rows = [
-    chat.outputMessage(partialSource, {
-      id: streamingEventId,
-      seqId: 1,
-      runEventId: "markdown-streaming-message",
-    }),
-  ];
-  chat.install({
-    rows: () => {
-      return rows;
-    },
-  });
-
-  await setupPage({
-    context,
-    path: chat.path,
-    host: "app.okou.ai",
-  });
-
+  const chunk = (chunkIndex: number, delta: string) => {
+    return context.mocks.ably.triggerOnChannel(channel, runId, {
+      runId,
+      eventId,
+      threadId: chat.threadId,
+      runEventId: "diagram-message",
+      createdAt: prompt.createdAt,
+      chunkIndex,
+      delta,
+    });
+  };
+  chunk(0, flow + "\n\n" + sequence);
   await expect(
     screen.findByRole("img", { name: "Diagram" }),
   ).resolves.toBeVisible();
-  const partialCode = document.querySelector("code.language-mermaid");
-  expect(partialCode).not.toBeNull();
-  expect(partialCode).toHaveTextContent("sequenceDiagram");
-  expect(partialCode).toHaveTextContent("Reader->>Platform: Partial");
-  expect(partialCode).toBeVisible();
-  expect(diagramButtons()).toHaveLength(1);
-
-  rows[0] = chat.outputMessage(completeSource, {
-    id: streamingEventId,
-    seqId: 2,
-    sequenceNumber: 1,
-    runEventId: "markdown-streaming-message",
+  const partial = await waitFor(() => {
+    const code = [...document.querySelectorAll("pre code")].find((node) => {
+      return (
+        node.textContent?.includes("Alice->>Bob: Approve") &&
+        !node.closest("details")
+      );
+    });
+    expect(code).toBeVisible();
+    return code;
   });
-  rows.push(
-    chat.runCompleted({
-      seqId: 3,
-      sequenceNumber: 2,
-    }),
-  );
-  context.mocks.ably.trigger(chat.realtimeTopic);
-
+  expect(screen.getAllByLabelText("Expand diagram")).toHaveLength(1);
+  chunk(1, "\n```");
   await waitFor(() => {
-    expect(screen.getAllByRole("img", { name: "Diagram" })).toHaveLength(2);
-    expect(document.querySelector("code.language-mermaid")).toBeNull();
-    expect(diagramButtons()).toHaveLength(2);
+    return expect(screen.getAllByRole("img", { name: "Diagram" })).toHaveLength(
+      2,
+    );
   });
+  expect(partial).not.toBeVisible();
+  expect(screen.getAllByLabelText("Expand diagram")).toHaveLength(2);
 });

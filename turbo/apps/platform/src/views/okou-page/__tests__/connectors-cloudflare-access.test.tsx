@@ -1,63 +1,47 @@
-import {
-  cloudflareAccessContract,
-  type ScopedCloudflareAccessConfig,
-} from "@okouai/api-contracts/contracts/cloudflare-access";
-import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
-import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-
-import { setupPage } from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
+import { findNamedLink } from "./chat-attachment-test-helpers.ts";
 import {
-  mockConnectors,
-  mockPublicConnectorStatus,
-} from "./connector-page-test-helpers.ts";
-import { getAction } from "./connector-integrations-test-helpers.ts";
+  mockRemoteInventory,
+  REMOTE_TIMESTAMP,
+  sshHost,
+  vncHost,
+} from "./connectors-remote-control-test-helpers.ts";
 
 const context = testContext();
-const config: ScopedCloudflareAccessConfig = Object.freeze({
-  id: "a0000000-0000-4000-8000-000000000001",
-  name: "Protected applications",
-  scope: "personal",
-  revision: 1,
-  generation: 1,
-  sshHosts: [],
-  vncHosts: [],
-  createdAt: "2026-09-22T00:00:00.000Z",
-  updatedAt: "2026-09-22T00:00:00.000Z",
-});
 
-function mockRemoteAccess() {
-  mockConnectors(context, []);
-  mockPublicConnectorStatus(context, []);
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 1 });
+test("connectors-cloudflare-access-001 Private network offers management for the listed Cloudflare configuration", async () => {
+  const name = "Protected applications";
+  mockRemoteInventory(context, {
+    ssh: [sshHost(1, "Shell host")],
+    vnc: [vncHost(1, "Desktop")],
+    cloudflare: [
+      {
+        id: crypto.randomUUID(),
+        scope: "personal",
+        name,
+        generation: 1,
+        revision: 1,
+        createdAt: REMOTE_TIMESTAMP,
+        updatedAt: REMOTE_TIMESTAMP,
+        sshHosts: [],
+        vncHosts: [],
+      },
+    ],
   });
-  context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 1 });
+  await setupPage({ context, path: "/connectors" });
+  click(await findFastControl("radio", /^Private network/i));
+  const networks = await screen.findByRole("region", {
+    name: /private network/i,
   });
-  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return respond(200, { configs: [config] });
-  });
-  context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    return respond(200, { configs: [] });
-  });
-}
-
-async function page(path = "/connectors") {
-  await setupPage({
-    context,
-    path,
-  });
-}
-
-test("Private network lists Cloudflare Access configurations", async () => {
-  mockRemoteAccess();
-  await page("/connectors?scope=private-network");
-  expect(screen.getByTestId("connectors-scope-private-network")).toBeVisible();
-  await screen.findByText(config.name);
-  expect(getAction("button", "Add network")).toBeInTheDocument();
-  expect(getAction("link", `Manage ${config.name}`)).toBeInTheDocument();
+  await within(networks).findByText(name);
+  await expect(
+    findFastControl("button", "Add network", networks),
+  ).resolves.toBeEnabled();
+  await expect(
+    findNamedLink("Manage Protected applications", networks),
+  ).resolves.toBeInTheDocument();
 });

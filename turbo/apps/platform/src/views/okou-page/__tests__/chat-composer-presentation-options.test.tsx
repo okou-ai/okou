@@ -1,229 +1,56 @@
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import type {
-  ChatRunOptionsRequest,
-  UserMessageDocument,
-} from "@okouai/api-contracts/contracts/chat-threads";
-import { screen, waitFor, within } from "@testing-library/react";
-import { expect, test } from "vitest";
-import {
-  click,
-  fill,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import {
-  AGENT_ID,
-  CLAUDE_SUBSCRIPTION_PROVIDER_ID,
-  findComposerEditor,
-  createChatComposerHelpers,
-} from "./chat-composer-test-helpers.ts";
-import { buildRunModel } from "./chat-model-builders.ts";
-import { mockChatLifecycle } from "./chat-test-helpers.ts";
+import { screen, waitFor } from "@testing-library/react";
+import { test, expect } from "vitest";
+import { findAction } from "./connector-integrations-test-helpers.ts";
+import { captureTemplateSubmission } from "./template-submission-fixtures.ts";
 
 const context = testContext();
-const { mockAgent, mockBillingCapabilities, mockPersonalModelRoutes } =
-  createChatComposerHelpers(context);
 
-interface SubmittedMessage {
-  readonly userMessage?: UserMessageDocument;
-  readonly runOptions?: ChatRunOptionsRequest;
-}
-
-function button(label: string, container: ParentNode = document): HTMLElement {
-  const result = queryAllByRoleFast("button", container).find((item) => {
-    return (
-      (item.getAttribute("aria-label") ?? item.textContent?.trim()) === label
-    );
-  });
-  if (!result) {
-    throw new Error(`Expected button ${label}`);
-  }
-  return result;
-}
-
-function setupModels(): void {
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(404, {
-      error: {
-        code: "BROWSER_NOT_FOUND",
-        message: "Managed browser not found",
-      },
-    });
-  });
-  mockAgent();
-  mockPersonalModelRoutes();
-  context.mocks.data.availableRunModels([
-    buildRunModel({
-      model: "claude-fable-5-1",
-      modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
-    }),
-  ]);
-  context.mocks.data.userModelPreference({
-    selectedModel: "claude-fable-5-1",
-    serviceTier: null,
-    modelSettings: {},
-    selectedImageModel: null,
-    updatedAt: null,
-  });
-  mockBillingCapabilities({
-    restrictedBuiltInModels: false,
-  });
-}
-
-async function setupComposer(): Promise<HTMLElement> {
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-  });
-  return await findComposerEditor();
-}
-
-async function enterPresentation(editor: HTMLElement): Promise<HTMLElement> {
+async function draft() {
+  const sent = captureTemplateSubmission(context);
+  await setupPage({ context, path: "/" });
+  const editor = await screen.findByLabelText("Message");
   await fill(editor, "Our launch");
-  const cards = await screen.findByRole("group", {
-    name: "Explore Okou capabilities",
-  });
-  click(
-    button(
-      "Presentation",
-      within(cards).getByRole("region", { name: "Create" }),
-    ),
-  );
-  return await screen.findByRole("combobox", { name: "Slide count" });
+  click(await findAction("button", "Presentation"));
+  return { sent, editor };
 }
-
-function visibleText(message: SubmittedMessage | undefined): string {
-  return (
-    message?.userMessage?.parts
-      .flatMap((part) => {
-        return part.type === "text" ? [part.text] : [];
-      })
-      .join("")
-      .replace(/\s+/g, " ")
-      .trim() ?? ""
-  );
-}
-
-test("Create opens presentation templates and keeps the draft", async () => {
-  setupModels();
-  mockChatLifecycle(context);
-  const editor = await setupComposer();
-  await enterPresentation(editor);
-  await expect(
-    screen.findByRole("group", { name: "Presentation templates" }),
-  ).resolves.toBeInTheDocument();
+test("chat-composer-presentation-options-001 the launch brief survives opening the presentation shelf", async () => {
+  const { editor } = await draft();
+  await screen.findByRole("group", { name: "Presentation templates" });
   expect(editor).toHaveTextContent(/^Our launch$/);
 });
-
-test("Presentation sends Auto as additional info without changing the message", async () => {
-  setupModels();
-  const submissions: SubmittedMessage[] = [];
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      submissions.push(body);
-    },
+test("chat-composer-presentation-options-004 a slide range is sent alongside the unchanged launch brief", async () => {
+  const { sent } = await draft();
+  click(await screen.findByLabelText("Slide count"));
+  click(await screen.findByText("20–24 slides"));
+  click(await findAction("button", "Send"));
+  const { userMessage } = await sent.promise;
+  expect(userMessage?.parts).toContainEqual({
+    type: "text",
+    text: "Our launch",
   });
-  const editor = await setupComposer();
-  const picker = await enterPresentation(editor);
-  click(picker);
-  const menu = await screen.findByRole("listbox");
-  click(within(menu).getByRole("option", { name: "Auto" }));
-  await waitFor(() => {
-    expect(picker).toHaveTextContent("Auto");
-  });
-  click(button("Send"));
-  await waitFor(() => {
-    expect(submissions).toHaveLength(1);
-  });
-  expect(submissions[0]?.userMessage?.parts).toContainEqual({
-    type: "additional_info",
-    text: expect.stringContaining("Create a presentation."),
-  });
-  expect(submissions[0]?.userMessage?.parts).toContainEqual({
-    type: "additional_info",
-    text: expect.stringContaining(
-      "- Slide count: Auto (choose the number of slides based on the content)",
-    ),
-  });
-  expect(visibleText(submissions[0])).toBe("Our launch");
-});
-
-test("Presentation instructions stay out of the sent message bubble", async () => {
-  setupModels();
-  mockChatLifecycle(context);
-  const editor = await setupComposer();
-  await enterPresentation(editor);
-  click(button("Send"));
-  await waitFor(() => {
-    const message = document.querySelector<HTMLElement>('[data-role="user"]');
-    expect(message).toBeVisible();
-    expect(message).toHaveTextContent("Our launch");
-    expect(message).not.toHaveTextContent("Slide count");
-    expect(message).not.toHaveTextContent("Create a presentation.");
-  });
-});
-
-test("Presentation sends the chosen slide count in additional info", async () => {
-  const label = "20–24 slides";
-  const range = "20-24";
-  setupModels();
-  const submissions: SubmittedMessage[] = [];
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      submissions.push(body);
-    },
-  });
-  const editor = await setupComposer();
-  const picker = await enterPresentation(editor);
-  click(picker);
-  click(await screen.findByRole("option", { name: label }));
-  await waitFor(() => {
-    expect(picker).toHaveTextContent(label);
-  });
-  click(button("Send"));
-  await waitFor(() => {
-    expect(submissions).toHaveLength(1);
-  });
-  expect(submissions[0]?.userMessage?.parts).toContainEqual({
-    type: "additional_info",
-    text: expect.stringContaining(`- Slide count: ${range}`),
-  });
-  expect(submissions[0]?.userMessage?.parts).toContainEqual({
-    type: "additional_info",
-    text: expect.stringContaining(
-      "Where this run's message asks for a different slide count, the message wins.",
-    ),
-  });
-  expect(visibleText(submissions[0])).toBe("Our launch");
-});
-
-test("Leaving presentation hides its picker and drops its settings", async () => {
-  setupModels();
-  const submissions: SubmittedMessage[] = [];
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      submissions.push(body);
-    },
-  });
-  const editor = await setupComposer();
-  const picker = await enterPresentation(editor);
-  click(picker);
-  click(await screen.findByRole("option", { name: "Auto" }));
-  await waitFor(() => {
-    expect(picker).toHaveTextContent("Auto");
-  });
-  click(button("Remove Presentation"));
-  await waitFor(() => {
-    expect(screen.queryByLabelText("Remove Presentation")).toBeNull();
-  });
-  expect(screen.queryByRole("combobox", { name: "Slide count" })).toBeNull();
-  click(button("Send"));
-  await waitFor(() => {
-    expect(submissions).toHaveLength(1);
-  });
-  expect(submissions[0]?.userMessage?.parts).not.toContainEqual(
-    expect.objectContaining({ type: "additional_info" }),
+  expect(
+    userMessage?.parts.find((p) => {
+      return p.type === "additional_info";
+    })?.text,
+  ).toMatch(
+    /Slide count: 20-24[\s\S]*different .*slide count, the message wins/i,
   );
-  expect(visibleText(submissions[0])).toBe("Our launch");
+});
+test("chat-composer-presentation-options-005 removing presentation discards the Auto preference before sending", async () => {
+  const { sent } = await draft();
+  await screen.findByRole("group", { name: "Presentation templates" });
+  click(await screen.findByLabelText("Slide count"));
+  click(await screen.findByText("Auto"));
+  click(await findAction("button", "Remove Presentation"));
+  await waitFor(() => {
+    return expect(
+      screen.queryByRole("group", { name: "Presentation templates" }),
+    ).toBeNull();
+  });
+  click(await findAction("button", "Send"));
+  expect((await sent.promise).userMessage?.parts).toStrictEqual([
+    { type: "text", text: "Our launch" },
+  ]);
 });

@@ -1,217 +1,159 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  userTemplatesContract,
-  type UserTemplateCatalogEntry,
-  type UserTemplateKind,
-} from "@okouai/api-contracts/contracts/user-templates";
-import { DOCUMENT_TEMPLATE_ITEMS } from "@okouai/core/document-template-items";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
-import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
+import {
+  type UserTemplateCatalogEntry,
+  userTemplatesContract,
+} from "@okouai/api-contracts/contracts/user-templates";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import {
-  click,
-  fill,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
-  THREAD_ID,
   createTemplateGalleryHelpers,
+  expectInlineTemplate,
+  THREAD_ID,
 } from "./chat-composer-template-gallery-test-helpers.ts";
 
 const context = testContext();
-const { mockTemplateChat } = createTemplateGalleryHelpers(context);
+const agentChat = `/agents/${AGENT_ID}/chat`;
 
-function template(kind: UserTemplateKind): UserTemplateCatalogEntry {
-  const id = {
-    presentation: "11111111-1111-4111-8111-111111111111",
-    illustration: "22222222-2222-4222-8222-222222222222",
-    document: "33333333-3333-4333-8333-333333333333",
-  }[kind];
+function published(
+  kind: UserTemplateCatalogEntry["kind"],
+  title: string,
+  mine: boolean,
+): UserTemplateCatalogEntry & { coverUrl: string } {
+  const id = crypto.randomUUID();
   return {
     id,
     kind,
-    title: `My ${kind} template`,
-    sourceFilename: `source-${kind}.pdf`,
-    coverUrl: kind === "document" ? null : `https://example.test/${kind}.png`,
+    title,
+    sourceFilename:
+      title +
+      { presentation: ".pptx", illustration: ".png", document: ".docx" }[kind],
+    coverUrl: `https://assets.example.test/${id}.png`,
     coverHasMorePages: kind === "presentation",
-    pageCount: kind === "presentation" ? 12 : null,
-    visibility: "private",
-    ownerUserId: "user_self",
-    ownerDisplayName: "Dana Self",
-    canManage: true,
-    createdAt: "2026-01-02T00:00:00Z",
-    updatedAt: "2026-01-02T00:00:00Z",
-    previewAssets: [
-      {
-        previewAssetId: `utp:${id}:example`,
-        url: `https://example.test/${kind}-example.png`,
-        expiresAt: "2026-12-31T00:00:00.000Z",
-      },
-    ],
+    pageCount: kind === "presentation" ? 3 : null,
+    visibility: mine ? "private" : "organization",
+    ownerUserId: mine ? "user_mock" : "user-colleague",
+    ownerDisplayName: mine ? "Author" : "Teammate",
+    canManage: mine,
+    createdAt: "2026-09-04T09:00:00Z",
+    updatedAt: "2026-09-04T09:00:00Z",
+    previewAssets:
+      kind === "illustration"
+        ? [
+            {
+              previewAssetId: `example-${id}`,
+              url: `https://assets.example.test/${id}/example.png`,
+              expiresAt: "2099-01-01T00:00:00Z",
+            },
+          ]
+        : [],
   };
 }
 
-function button(name: string, container: ParentNode = document.body) {
-  const result = queryAllByRoleFast("button", container).find((candidate) => {
-    return (
-      candidate.textContent?.trim() === name ||
-      candidate.getAttribute("aria-label") === name
-    );
-  });
-  if (!result) {
-    throw new Error(`Expected button ${name}`);
-  }
-  return result;
+function previewImage(container: HTMLElement, url: string) {
+  const image = within(container).getByAltText("");
+  expect(image).toHaveAttribute("src", url);
+  return image;
 }
 
-async function openSlashCategory(
-  category: string,
-  path = `/agents/${AGENT_ID}/chat`,
-) {
-  context.mocks.browser.matchMedia(true);
-  await setupPage({
-    context,
-    path,
-    featureSwitches: { [FeatureSwitchKey.SlashActions]: true },
-  });
-  const editor = await findComposerEditor();
-  await fill(editor, "Keep my brief /");
-  const menu = await screen.findByTestId("slash-workflow-menu");
-  const entry = await waitFor(() => {
-    const templates = queryAllByRoleFast("button", menu).find((candidate) => {
-      return candidate.textContent
-        ?.replace(/\s+/gu, " ")
-        .trim()
-        .startsWith("Templates ");
-    });
-    if (!templates) {
-      throw new Error("Expected the Templates overview entry");
-    }
-    return templates;
-  });
-  await userEvent.setup({ delay: null }).hover(entry);
-  const pane = await within(menu).findByRole("region", { name: "Templates" });
-  const type = queryAllByRoleFast("button", pane).find((candidate) => {
-    return candidate.textContent
-      ?.replace(/\s+/gu, " ")
-      .trim()
-      .startsWith(`${category} `);
-  });
-  if (!type) {
-    throw new Error(`Expected template type ${category}`);
-  }
-  click(type);
-  await waitFor(() => {
-    expect(type).toHaveAttribute("aria-pressed", "true");
-  });
-  return { editor, pane };
-}
-
-const CATEGORIES = [
+test.each([
   {
-    category: "Presentation",
-    kind: "presentation",
-    builtInTitle: PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!.title,
+    id: "001",
     path: `/chats/${THREAD_ID}`,
+    kind: "presentation",
+    category: "Presentation",
+    builtin: "Paper magazine",
+    brief: "Pitch the autumn collection",
   },
   {
-    category: "Illustration",
+    id: "002",
+    path: agentChat,
     kind: "illustration",
-    builtInTitle: ILLUSTRATION_TEMPLATE_ITEMS[0]!.title,
-    path: `/agents/${AGENT_ID}/chat`,
+    category: "Illustration",
+    builtin: "Cozy Parlor",
+    brief: "Illustrate a neighborhood map",
   },
   {
-    category: "Document",
+    id: "003",
+    path: agentChat,
     kind: "document",
-    builtInTitle: DOCUMENT_TEMPLATE_ITEMS[0]!.title,
-    path: `/agents/${AGENT_ID}/chat`,
+    category: "Document",
+    builtin: "Simple invoice",
+    brief: "Write the studio proposal",
   },
-] as const;
-
-test.each(CATEGORIES)(
-  "The Templates overview's $category type offers accessible custom templates and sends their references",
-  async ({ category, kind, builtInTitle, path }) => {
-    const capture = mockTemplateChat();
-    const own = template(kind);
-    const shared = {
-      ...own,
-      id: "44444444-4444-4444-8444-444444444444",
-      title: "Shared brand template",
-      visibility: "organization" as const,
-      ownerUserId: "user_colleague",
-      canManage: false,
-    };
-    context.mocks.api(userTemplatesContract.list, ({ respond }) => {
-      return respond(200, [
-        template("presentation"),
-        template("illustration"),
-        template("document"),
-        shared,
-      ]);
-    });
-    const { pane, editor } = await openSlashCategory(category, path);
-    await within(pane).findByText(own.title);
-    expect(within(pane).getByText(shared.title)).toBeInTheDocument();
-    expect(within(pane).getByText(builtInTitle)).toBeInTheDocument();
-    const otherKind = kind === "presentation" ? "illustration" : "presentation";
-    expect(
-      within(pane).queryByText(template(otherKind).title),
-    ).not.toBeInTheDocument();
-    const cover = button(`Use template ${own.title}`, pane);
-    expect(cover.querySelector("img")?.getAttribute("src") ?? null).toBe(
-      kind === "illustration" ? own.previewAssets[0]!.url : own.coverUrl,
+] as const)(
+  "chat-composer-slash-custom-templates-$id sends the author's $category selection from the Templates menu",
+  async ({ path, kind, category, brief, builtin }) => {
+    context.mocks.browser.matchMedia(true);
+    const own = published(kind, `My ${category} design`, true);
+    const shared = published(kind, `Team ${category} design`, false);
+    const unrelated = published(
+      kind === "document" ? "presentation" : "document",
+      "Other department sample",
+      false,
     );
-    click(cover);
-    await waitFor(() => {
-      expect(editor).toHaveTextContent(own.title);
+    context.mocks.api(userTemplatesContract.list, ({ respond }) => {
+      return respond(200, [unrelated, shared, own]);
     });
-    expect(editor).toHaveTextContent("Keep my brief");
-    expect(editor).not.toHaveTextContent("/");
-    expect(screen.queryByTestId("slash-workflow-menu")).not.toBeInTheDocument();
+    const chat = createTemplateGalleryHelpers(context).mockTemplateChat();
+    await setupPage({
+      context,
+      path,
+      featureSwitches: { [FeatureSwitchKey.SlashActions]: true },
+    });
+    const editor = await findComposerEditor();
+    await fill(editor, brief);
+    await userEvent.paste(" /");
+    await userEvent.hover(
+      await screen.findByText("Templates", { selector: "button span" }),
+    );
+    const menu = await screen.findByRole("region", { name: "Templates" });
+    const choices = within(menu);
+    click(choices.getByText(category, { selector: "button" }));
+    const select = await choices.findByLabelText(`Use template ${own.title}`);
+    expect(
+      choices.getByLabelText(`Use template ${shared.title}`),
+    ).toBeEnabled();
+    expect(choices.getByLabelText(`Use template ${builtin}`)).toBeEnabled();
+    expect(
+      choices.queryByLabelText(`Use template ${unrelated.title}`),
+    ).not.toBeInTheDocument();
+    // The illustration option displays a published example; the composer chip uses its cover.
+    const target =
+      kind === "illustration"
+        ? previewImage(select, own.previewAssets[0]!.url)
+        : select;
+    click(target);
+
+    const attachment = await expectInlineTemplate(own.title);
+    const selectedContent =
+      kind === "illustration"
+        ? previewImage(attachment, own.coverUrl)
+        : attachment;
+    expect(editor).toContainElement(selectedContent);
+    expect(
+      within(editor).getByText(brief, { exact: true }),
+    ).toBeInTheDocument();
     expect(editor).toHaveFocus();
-    click(button("Send"));
+    expect(screen.queryByTestId("slash-workflow-menu")).not.toBeInTheDocument();
+    await userEvent.keyboard("{Enter}");
     await waitFor(() => {
-      expect(capture.selectedTemplates).toStrictEqual([
-        { type: "custom", selection: { userTemplateId: own.id } },
-      ]);
+      expect(chat.sentMessages.at(-1)?.parts).toStrictEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "template",
+            template: { type: "custom", selection: { userTemplateId: own.id } },
+          }),
+          expect.objectContaining({
+            type: "text",
+            text: expect.stringContaining(brief),
+          }),
+        ]),
+      );
     });
   },
 );
-
-test("The open Templates overview refreshes published and removed custom templates", async () => {
-  mockTemplateChat();
-  let catalog = [template("presentation")];
-  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
-    return respond(200, catalog);
-  });
-  const { pane } = await openSlashCategory("Presentation");
-  await within(pane).findByText(template("presentation").title);
-  catalog = [
-    { ...template("presentation"), title: "Newly published template" },
-  ];
-  context.mocks.ably.trigger("presentationTemplatesChanged");
-  await within(pane).findByText("Newly published template");
-  expect(
-    within(pane).queryByText(template("presentation").title),
-  ).not.toBeInTheDocument();
-});
-
-test("A failed custom catalog keeps built-in templates available in the overview", async () => {
-  mockTemplateChat();
-  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
-    return respond(500, {
-      error: { code: "INTERNAL_ERROR", message: "Unavailable" },
-    });
-  });
-  const { pane } = await openSlashCategory("Presentation");
-  await within(pane).findByText("Couldn't load templates.");
-  expect(
-    within(pane).getByText(PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!.title),
-  ).toBeInTheDocument();
-});

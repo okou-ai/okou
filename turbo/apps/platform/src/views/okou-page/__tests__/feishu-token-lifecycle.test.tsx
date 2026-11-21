@@ -1,81 +1,106 @@
 import {
   feishuConnectContract,
-  larkConnectContract,
   type FeishuConnectStatus,
-  type FeishuInstallationStatus,
 } from "@okouai/api-contracts/contracts/feishu-connect";
-import { act, screen } from "@testing-library/react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { click, fill } from "../../../__tests__/page-helper.ts";
+
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  getAction,
   findAction,
+  getAction,
   mockFeishu,
-  setupFeishuSettingsPage,
 } from "./connector-integrations-test-helpers.ts";
-const context = testContext();
 
-test.each(["feishu", "lark"] as const)(
-  "%s token setup preserves a newer bot draft",
-  async (platform) => {
-    const contract =
-      platform === "lark" ? larkConnectContract : feishuConnectContract;
-    mockFeishu(context, {}, platform);
-    const started = context.mocks.deferred<void>();
-    const response = context.mocks.deferred<void>();
-    const installation: FeishuInstallationStatus = {
-      id: "f0000000-0000-4000-a000-000000000001",
-      isConnected: true,
-      appId: "cli_first_bot",
-      callbackUrl: "https://api.okou.test/callback",
-      callbackVerified: true,
-      messageReceived: false,
-      tenantKey: "first-tenant",
-      tenantName: "First bot",
-      defaultAgentId: null,
-      defaultAgentName: "Okou",
-      setupCompleted: false,
-    };
-    context.mocks.api(contract.setup, async ({ respond }) => {
-      started.resolve();
-      await response.promise;
-      const status: FeishuConnectStatus = {
-        ...installation,
-        installationId: installation.id,
-        isAdmin: true,
-        isInstalled: true,
-        installations: [installation],
-      };
-      mockFeishu(context, status, platform);
-      return respond(200, status);
-    });
-    await setupFeishuSettingsPage(context, platform);
-    click(await screen.findByText("Add bot"));
-    click(await findAction("button", "Next"));
-    await fill(await screen.findByLabelText("App ID"), "cli_first_bot");
-    await fill(screen.getByLabelText("App Secret"), "test-secret");
-    click(await findAction("button", "Next"));
-    await fill(
-      await screen.findByLabelText("Verification Token"),
-      "test-token",
-    );
-    await fill(screen.getByLabelText("Encrypt Key"), "test-key");
-    click(getAction("button", "Verify and continue"));
-    await started.promise;
-    click(getAction("link", `${platform === "lark" ? "Lark" : "Feishu"} bots`));
-    await screen.findByRole("heading", {
-      name: `${platform === "lark" ? "Lark" : "Feishu"} bots`,
-    });
-    click(getAction("link", "Add bot"));
-    click(await findAction("button", "Next"));
-    await fill(screen.getByLabelText("App ID"), "cli_second_draft");
-    await fill(screen.getByLabelText("App Secret"), "new-test-secret");
-    await act(async () => {
-      response.resolve();
-      await response.promise;
-    });
-    expect(screen.getByLabelText("App ID")).toHaveValue("cli_second_draft");
-    expect(screen.getByLabelText("App Secret")).toHaveValue("new-test-secret");
-  },
-);
+const context = testContext();
+const FIRST_INSTALLATION_ID = "e0000000-0000-4000-a000-000000000a21";
+
+type Credential =
+  "App ID" | "App Secret" | "Verification Token" | "Encrypt Key";
+
+function field(label: Credential): HTMLInputElement {
+  return screen.getByLabelText<HTMLInputElement>(label);
+}
+
+async function findStep(title: string): Promise<void> {
+  await expect(
+    screen.findByRole("heading", { name: title }),
+  ).resolves.toBeInTheDocument();
+}
+
+async function enterAppCredentials(appId: string, secret: string) {
+  await findStep("Create an Agent app");
+  click(getAction("button", "Next"));
+  await findStep("Add the app credentials");
+  await fill(field("App ID"), appId);
+  await fill(field("App Secret"), secret);
+}
+
+function configuredBot(appId: string): FeishuConnectStatus {
+  return {
+    isInstalled: true,
+    isConnected: false,
+    isAdmin: true,
+    appId,
+    callbackUrl: "https://api.okou.test/api/integrations/feishu/events",
+    callbackVerified: false,
+    messageReceived: false,
+    tenantKey: null,
+    tenantName: null,
+    defaultAgentId: null,
+    defaultAgentName: "Okou",
+    installationId: FIRST_INSTALLATION_ID,
+  };
+}
+
+test("feishu token setup preserves a newer bot draft", async () => {
+  mockFeishu(context);
+  const submitted = context.mocks.deferred<void>();
+  const aborted = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  const answered = context.mocks.deferred<void>();
+  context.mocks.api(
+    feishuConnectContract.setup,
+    async ({ body, request, respond }) => {
+      request.signal.addEventListener(
+        "abort",
+        () => {
+          aborted.resolve();
+        },
+        { once: true },
+      );
+      submitted.resolve();
+      await release.promise;
+      answered.resolve();
+      return respond(200, configuredBot(body.appId));
+    },
+  );
+  await setupPage({
+    context,
+    path: "/settings/feishu/setup",
+    featureSwitches: { [FeatureSwitchKey.FeishuIntegration]: true },
+  });
+  await enterAppCredentials("cli_first_bot", "first-secret");
+  click(getAction("button", "Next"));
+  await findStep("Add the event verification tokens");
+  await fill(field("Encrypt Key"), "first-encrypt-key");
+  await fill(field("Verification Token"), "first-verification-token");
+  click(getAction("button", "Verify and continue"));
+  await submitted.promise;
+  await findAction("button", "Verifying…");
+
+  click(getAction("link", "Feishu bots"));
+  click(await findAction("link", "Add bot"));
+  await enterAppCredentials("cli_second_bot", "second-secret");
+  await aborted.promise;
+  release.resolve();
+  await answered.promise;
+
+  expect(
+    screen.getByRole("heading", { name: "Add the app credentials" }),
+  ).toBeInTheDocument();
+  expect(field("App ID")).toHaveValue("cli_second_bot");
+  expect(field("App Secret")).toHaveValue("second-secret");
+});

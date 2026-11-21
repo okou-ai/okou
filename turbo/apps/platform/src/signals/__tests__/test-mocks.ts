@@ -415,7 +415,7 @@ export function createTestMocks(getSignal: () => AbortSignal) {
           url: string,
           peer: BrowserWebSocketPeer,
         ) => string | null,
-        options?: { readonly autoOpen?: boolean },
+        options?: BrowserWebSocketOptions,
       ): ReturnType<typeof mockBrowserWebSocket> => {
         return mockBrowserWebSocket(getSignal(), respond, options);
       },
@@ -1524,6 +1524,11 @@ export interface BrowserWebSocketPeer {
   receive(data: string): void;
 }
 
+interface BrowserWebSocketOptions {
+  readonly autoOpen?: boolean;
+  readonly onConnecting?: (url: string, socket: { open(): void }) => void;
+}
+
 function mockBrowserWebSocket(
   signal: AbortSignal,
   respond: (
@@ -1531,7 +1536,7 @@ function mockBrowserWebSocket(
     url: string,
     peer: BrowserWebSocketPeer,
   ) => string | null,
-  options: { readonly autoOpen?: boolean } = {},
+  options: BrowserWebSocketOptions = {},
 ) {
   const sockets = new Set<TestWebSocket>();
   let connectionCount = 0;
@@ -1548,6 +1553,7 @@ function mockBrowserWebSocket(
       connectionCount += 1;
       this.id = connectionCount;
       sockets.add(this);
+      options.onConnecting?.(url, this);
       if (options.autoOpen !== false) {
         queueMicrotask(() => {
           this.open();

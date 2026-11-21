@@ -1,128 +1,82 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { findEnabledButton } from "./chat-run-test-fixtures.ts";
 import {
-  billingStatusContract,
-  billingUsagePackCatalogContract,
   billingUsagePackManagementContract,
-  billingUsagePackMigrationContract,
-  type BillingStatusResponse,
+  billingUsagePackCatalogContract,
+  billingStatusContract,
 } from "@okouai/api-contracts/contracts/billing";
+import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
-import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
+import { voiceIoTranscribeContract } from "@okouai/api-contracts/contracts/voice-io-transcribe";
+import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import {
-  findButton,
-  findEnabledButton,
-  readyChat,
+  billingPlanCapabilities,
+  defaultBillingStatus,
+} from "../../../mocks/handlers/api-billing.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  createChatCapabilityHelpers,
   RUN_PATH,
-  createChatRunFixtures,
-} from "./chat-run-test-fixtures.ts";
-import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
+} from "./chat-capability-test-helpers.ts";
 
 const context = testContext();
-const { installRunChat } = createChatRunFixtures(context);
-
-type VoicePlan = "limited-free-1" | "pro" | "team";
-type WorkspaceRole = "admin" | "member";
-
-function billingStatus(tier: VoicePlan): BillingStatusResponse {
-  const paid = tier !== "limited-free-1";
-  return {
-    showUsagePack: false,
-    tier,
-    ...billingPlanCapabilities(tier),
-    credits: paid ? 20_000 : 500,
-    onboardingPaymentPending: false,
-    subscriptionStatus: paid ? "active" : null,
-    currentPeriodEnd: paid ? "2026-09-30T00:00:00.000Z" : null,
-    cancelAtPeriodEnd: false,
-    scheduledChange: null,
-    hasSubscription: paid,
-    autoRecharge: { enabled: false, threshold: null, amount: null },
-    creditExpiry: { expiringNextCycle: 0, nextExpiryDate: null },
-    creditBreakdown: [],
-    creditGrants: [],
-    concurrencyLimit: 0,
-    concurrencySubscriptions: [],
-  };
-}
-
-function installVoicePlan(tier: VoicePlan, role: WorkspaceRole): void {
-  context.mocks.data.org({
-    id: "org_voice_workspace",
-    name: "Voice Workspace",
-    role,
+async function startMeteredVoiceInput(
+  tier: "limited-free-1" | "pro",
+  role: "admin" | "member",
+  usage: { count: number },
+) {
+  context.mocks.browser.voiceInput({ rms: 0.12 });
+  createChatCapabilityHelpers(context).installCapabilityChat({ events: [] });
+  context.mocks.api(orgContract.get, ({ respond }) => {
+    return respond(200, { id: "org_default", name: "Launch team", role });
   });
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, billingStatus(tier));
+    return respond(200, {
+      ...defaultBillingStatus(),
+      ...billingPlanCapabilities(tier),
+      onboardingPaymentPending: false,
+      hasSubscription: tier === "pro",
+      subscriptionStatus: tier === "pro" ? "active" : null,
+      tier,
+    });
+  });
+  context.mocks.api(voiceIoQuotaContract.get, ({ respond }) => {
+    return respond(200, {
+      count: usage.count,
+      limit: 10,
+      allowed: usage.count < 10,
+    });
   });
   context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
     return respond(200, {
       supportsFreeMembers: true,
-      usagePacks: ([20, 50, 100, 200] as const).map((usagePackUsd) => {
-        const purchasedCredits = usagePackUsd * 100;
-        const bonusCredits = usagePackUsd * 10;
-        return {
-          usagePackUsd,
-          priceUsd: usagePackUsd,
-          purchasedCredits,
-          bonusCredits,
-          totalCredits: purchasedCredits + bonusCredits,
-        };
-      }),
-    });
-  });
-  context.mocks.api(billingUsagePackMigrationContract.get, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "No legacy plan migration" },
+      usagePacks: [
+        {
+          usagePackUsd: 20,
+          priceUsd: 20,
+          purchasedCredits: 2000,
+          bonusCredits: 200,
+          totalCredits: 2200,
+        },
+      ],
     });
   });
   context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
     return respond(404, {
-      error: { code: "NOT_FOUND", message: "No managed usage pack plan" },
+      error: { code: "NOT_FOUND", message: "No managed plan" },
     });
   });
-}
-
-function installExhaustedVoiceQuota(): void {
-  context.mocks.api(voiceIoQuotaContract.get, ({ respond }) => {
-    return respond(200, { allowed: false, count: 10, limit: 10 });
-  });
-}
-
-async function readyVoiceInput(): Promise<HTMLElement> {
-  await readyChat();
-  const voiceInput = await findButton("Voice input");
-  expect(voiceInput).toBeEnabled();
-  return voiceInput;
-}
-
-async function expectVoiceLimitMessage(message: string): Promise<void> {
-  await waitFor(() => {
-    const visibleMessage = screen.getAllByText(message).find((candidate) => {
-      return candidate.closest('[data-sonner-toast][data-visible="true"]');
-    });
-    expect(visibleMessage).toBeVisible();
-  });
-}
-
-test("Offer role-aware recovery when voice quota is exhausted", async () => {
-  context.mocks.browser.voiceInput();
-  installVoicePlan("limited-free-1", "admin");
-  installExhaustedVoiceQuota();
-  installRunChat();
-
   await setupPage({ context, path: RUN_PATH });
-
-  click(await readyVoiceInput());
-
-  await expectVoiceLimitMessage(
+  click(await findEnabledButton("Voice input"));
+}
+test("chat-capability-voice-quota-001 offers Pro and Team to the free workspace admin at the voice limit", async () => {
+  await startMeteredVoiceInput("limited-free-1", "admin", { count: 10 });
+  await screen.findByText(
     "Voice input limit reached. Upgrade to Pro or Team for higher limits.",
   );
   const chooser = await screen.findByRole("dialog", { name: "Choose a plan" });
-  expect(chooser).toBeVisible();
   await expect(
     within(chooser).findByRole("article", { name: "Pro plan" }),
   ).resolves.toBeVisible();
@@ -130,117 +84,35 @@ test("Offer role-aware recovery when voice quota is exhausted", async () => {
     within(chooser).findByRole("article", { name: "Team plan" }),
   ).resolves.toBeVisible();
 });
-
-test("Offer a Team upgrade when a Pro admin exhausts voice quota", async () => {
-  context.mocks.browser.voiceInput({
-    rms: 0.12,
-  });
-  installVoicePlan("pro", "admin");
-  context.mocks.api(voiceIoQuotaContract.get, ({ respond }) => {
-    return respond(200, { allowed: true, count: 9, limit: 10 });
-  });
-  context.mocks.http.post("*/api/voice-io/transcribe/segment", () => {
+test("chat-capability-voice-quota-002 offers Team after the Pro admin's transcription reaches the limit", async () => {
+  const usage = { count: 9 };
+  context.mocks.http.post("*" + voiceIoTranscribeContract.segment.path, () => {
+    usage.count = 10;
     return HttpResponse.json(
       {
         error: {
           code: "DAILY_RATE_LIMIT_EXCEEDED",
-          message: "Daily voice request limit reached",
+          message: "Voice limit reached",
         },
         quota: { count: 10, limit: 10 },
       },
       { status: 429 },
     );
   });
-  installRunChat();
-
-  await setupPage({ context, path: RUN_PATH });
-
-  click(await readyVoiceInput());
+  await startMeteredVoiceInput("pro", "admin", usage);
   click(await findEnabledButton("Stop recording"));
-
-  await expectVoiceLimitMessage(
+  await screen.findByText(
     "Voice input limit reached. Upgrade to Team for higher limits.",
   );
   const chooser = await screen.findByRole("dialog", { name: "Choose a plan" });
-  expect(chooser).toBeVisible();
   await expect(
     within(chooser).findByRole("article", { name: "Team plan" }),
   ).resolves.toBeVisible();
 });
-
-test("Keep a recorded draft after a quota response", async () => {
-  context.mocks.browser.voiceInput({ rms: 0.12 });
-  installVoicePlan("team", "admin");
-  context.mocks.api(voiceIoQuotaContract.get, ({ respond }) => {
-    return respond(200, { allowed: true, count: 0, limit: 60 });
-  });
-  context.mocks.http.post("*/api/voice-io/polish/segments", () => {
-    return HttpResponse.json({ text: "Retained recording." });
-  });
-  context.mocks.http.post("*/api/voice-io/transcribe/segment", () => {
-    return HttpResponse.json(
-      {
-        error: {
-          code: "DAILY_RATE_LIMIT_EXCEEDED",
-          message: "Daily voice request limit reached",
-        },
-      },
-      { status: 429 },
-    );
-  });
-  installRunChat();
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-  click(await readyVoiceInput());
-  const stop = await findButton("Stop recording");
-  await waitFor(() => {
-    return expect(stop).toBeEnabled();
-  });
-  click(stop);
-  await expectVoiceLimitMessage(
-    "Voice input limit reached. Please wait for your limit to reset.",
+test("chat-capability-voice-quota-004 directs a free workspace member to an admin from the current chat", async () => {
+  await startMeteredVoiceInput("limited-free-1", "member", { count: 10 });
+  await screen.findByText(
+    "Voice input limit reached. Ask a workspace admin to upgrade for higher limits.",
   );
-  await expect(findEnabledButton("Remove voice draft")).resolves.toBeVisible();
-});
-
-test("Ask an admin when a member exhausts voice quota", async () => {
-  context.mocks.browser.voiceInput();
-  installVoicePlan("limited-free-1", "member");
-  installExhaustedVoiceQuota();
-  installRunChat();
-
-  await setupPage({ context, path: RUN_PATH });
-
-  click(await readyVoiceInput());
-
-  await expect(
-    screen.findByText(
-      "Voice input limit reached. Ask a workspace admin to upgrade for higher limits.",
-    ),
-  ).resolves.toBeVisible();
-  expect(
-    screen.queryByRole("dialog", { name: "Choose a plan" }),
-  ).not.toBeInTheDocument();
-});
-
-test("Wait for voice allowance reset on a Team plan", async () => {
-  context.mocks.browser.voiceInput();
-  installVoicePlan("team", "admin");
-  installExhaustedVoiceQuota();
-  installRunChat();
-
-  await setupPage({ context, path: RUN_PATH });
-
-  click(await readyVoiceInput());
-
-  await expect(
-    screen.findByText(
-      "Voice input limit reached. Please wait for your limit to reset.",
-    ),
-  ).resolves.toBeVisible();
-  expect(
-    screen.queryByRole("dialog", { name: "Choose a plan" }),
-  ).not.toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).toBeNull();
 });

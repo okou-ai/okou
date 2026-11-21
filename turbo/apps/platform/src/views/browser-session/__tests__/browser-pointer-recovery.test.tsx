@@ -1,329 +1,275 @@
-import {
-  browserContract,
-  type BrowserSession,
-} from "@okouai/api-contracts/contracts/browser";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
-import {
-  mockBrowserCdp,
-  TEST_BROWSER_EXTENSION,
-} from "../../../__tests__/browser-cdp-fixture.ts";
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
-import { initSentry } from "../../../lib/sentry.ts";
+import { click } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  arrangeNativePage,
+  expectStreamingAt,
+} from "./browser-native-page-fixture.ts";
 
 const context = testContext();
-const threadId = "11111111-1111-4111-8111-111111111111";
+const board = "https://studio.example/board";
+const notes = "https://studio.example/notes";
 
-async function setupViewer() {
-  const session: BrowserSession = {
-    threadId,
-    name: "pointer recovery",
-    status: "active",
-    viewerUrl: `https://viewer.example/browsers/${threadId}`,
-    liveUrl: "https://viewer.example/live",
-    screenshotUrl: null,
-    window: {
-      instanceId: "22222222-2222-4222-8222-222222222222",
-      primaryWindowId: 0,
-    },
-    timeoutMinutes: 240,
-    idleExpiresAt: "2026-09-01T10:10:00.000Z",
-    suspendedAt: null,
-    suspensionReason: null,
-    createdAt: "2026-09-01T10:00:00.000Z",
-    updatedAt: "2026-09-01T10:00:00.000Z",
-  };
-  const cdpUrl = "wss://browser.example/pointer-recovery";
-  const browser = mockBrowserCdp(context, cdpUrl, {
+async function openStudio() {
+  const page = arrangeNativePage(context, {
     targets: [
-      {
-        targetId: "example-page",
-        title: "Example",
-        url: "https://example.com",
-      },
-      {
-        targetId: "other-page",
-        title: "Other",
-        url: "https://other.example.com",
-      },
+      { targetId: "board", title: "Drawing board", url: board, windowId: 101 },
+      { targetId: "notes", title: "Project notes", url: notes, windowId: 101 },
     ],
   });
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(200, {
-      browser: session,
-      viewer: { browser: session, cdpUrl, extension: TEST_BROWSER_EXTENSION },
-    });
-  });
-  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
-    return respond(200, { browser: session });
-  });
-  await setupPage({ context, path: `/browsers/${threadId}` });
-  await waitFor(() => {
-    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
-  });
-  const canvas = screen.getByRole("img", {
-    name: "Live browser view",
-  });
-  // Pointer hit geometry must not also schedule a startup window resize.
-  vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(
+  await page.openPage();
+  await expectStreamingAt(board);
+  const image = screen.getByRole("img", { name: "Live browser view" });
+  vi.spyOn(image, "getBoundingClientRect").mockReturnValue(
     new DOMRect(0, 0, 1440, 900),
   );
-  return { browser, surface: canvas.parentElement! };
+  return { cdp: page.cdp, image, original: page.cdp.pageSession("board") };
 }
 
-function moveMouse(surface: HTMLElement, buttons = 0, shiftKey = false) {
-  fireEvent.pointerMove(surface, {
-    pointerId: 1,
+function move(image: HTMLElement, x: number, buttons = 0) {
+  fireEvent.pointerMove(image, {
     pointerType: "mouse",
-    clientX: 100,
-    clientY: 100,
+    pointerId: 1,
     buttons,
-    shiftKey,
+    clientX: x,
+    clientY: 120,
   });
 }
 
-function pressMouse(surface: HTMLElement) {
-  fireEvent.pointerDown(surface, {
-    pointerId: 1,
-    pointerType: "mouse",
-    clientX: 100,
-    clientY: 100,
-    button: 0,
-    buttons: 1,
-  });
-  fireEvent.mouseDown(surface, {
-    clientX: 100,
-    clientY: 100,
-    button: 0,
-    buttons: 1,
-  });
-}
+type BrowserPeer = Awaited<ReturnType<typeof openStudio>>["cdp"];
 
-function detachOriginal(browser: ReturnType<typeof mockBrowserCdp>) {
-  act(() => {
-    browser.event("Target.detachedFromTarget", {
-      sessionId: "example-page-session",
-      targetId: "example-page",
+async function writeNote(peer: BrowserPeer, text: string) {
+  const input = screen.getByLabelText("Remote browser input");
+  input.focus();
+  fireEvent.input(input, {
+    target: { value: text },
+    data: text,
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(peer.input).toContainEqual({
+      sessionId: peer.pageSession("notes"),
+      method: "Input.insertText",
+      params: { text },
     });
   });
 }
 
-function cleanupError(sentry: ReturnType<typeof context.mocks.sentry>) {
-  const report = sentry.reports.find((entry) => {
-    return (
-      entry.type === "exception" &&
-      entry.error instanceof Error &&
-      entry.error.message === "Original input cleanup is unconfirmed."
+test("browser-pointer-recovery-002 a removed drawing tab hands text and navigation to its sibling without replaying hover", async () => {
+  const { cdp, image, original } = await openStudio();
+  const hover = cdp.holdNext("Input.dispatchMouseEvent");
+  move(image, 240);
+  await hover.received;
+  const oldPosition = expect.objectContaining({
+    type: "mouseMoved",
+    buttons: 0,
+    modifiers: 0,
+    x: 240,
+    y: 120,
+  });
+  expect(cdp.input).toContainEqual({
+    method: "Input.dispatchMouseEvent",
+    sessionId: original,
+    params: oldPosition,
+  });
+  cdp.event("Target.targetDestroyed", { targetId: "board" });
+  await screen.findByLabelText("Project notes", {
+    selector: '[role="tab"][aria-selected="true"]',
+  });
+  await expectStreamingAt(notes);
+  const delivered = new Set(cdp.input);
+  await act(() => {
+    return hover.release();
+  });
+  // Exercise the successor's own pointer stream, at a distinguishable position.
+  move(screen.getByRole("img", { name: "Live browser view" }), 640);
+  await waitFor(() => {
+    expect(cdp.input).toContainEqual({
+      sessionId: cdp.pageSession("notes"),
+      method: "Input.dispatchMouseEvent",
+      params: expect.objectContaining({ type: "mouseMoved", x: 640, y: 120 }),
+    });
+  });
+  const afterReply = cdp.input.filter((event) => {
+    return !delivered.has(event);
+  });
+  expect(afterReply).not.toContainEqual(
+    expect.objectContaining({
+      method: "Input.dispatchMouseEvent",
+      params: oldPosition,
+    }),
+  );
+  await writeNote(cdp, "Move to archive");
+  const destination = "https://archive.example/sketches";
+  fireEvent.change(screen.getByLabelText("Address"), {
+    target: { value: destination },
+  });
+  click(screen.getByLabelText("Open address"));
+  await screen.findByLabelText("archive.example", {
+    selector: '[role="tab"][aria-selected="true"]',
+  });
+  await expectStreamingAt(destination);
+});
+
+test("browser-pointer-recovery-005 the interrupted drag fences its tab while notes remain editable", async () => {
+  const telemetry = context.mocks.sentry();
+  const { cdp, image, original } = await openStudio();
+  const press = {
+    pointerType: "mouse",
+    pointerId: 1,
+    button: 0,
+    buttons: 1,
+    clientX: 180,
+    clientY: 120,
+    detail: 1,
+  };
+  fireEvent.pointerDown(image, press);
+  fireEvent.mouseDown(image, press);
+  await waitFor(() => {
+    expect(cdp.input).toContainEqual({
+      method: "Input.dispatchMouseEvent",
+      sessionId: original,
+      params: expect.objectContaining({ type: "mousePressed", button: "left" }),
+    });
+  });
+  const drag = cdp.holdNext("Input.dispatchMouseEvent");
+  move(image, 380, 1);
+  await drag.received;
+  expect(cdp.input).toContainEqual({
+    method: "Input.dispatchMouseEvent",
+    sessionId: original,
+    params: expect.objectContaining({ type: "mouseMoved", buttons: 1, x: 380 }),
+  });
+  cdp.event("Target.detachedFromTarget", { sessionId: original });
+  await screen.findByText("Browser view unavailable");
+  await waitFor(() => {
+    expect(telemetry.reports).toContainEqual(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          message: "Original input cleanup is unconfirmed.",
+          request: { method: "Input.dispatchMouseEvent" },
+        }),
+      }),
     );
   });
-  if (report?.type !== "exception" || !(report.error instanceof Error)) {
-    throw new Error("Expected original input cleanup failure");
-  }
-  return report.error;
-}
-
-test.each([false, true])(
-  "An unacknowledged hover recovers after its session ends (target destroyed: %s)",
-  async (destroyed) => {
-    const { browser, surface } = await setupViewer();
-    const receipt = browser.holdNext("Input.dispatchMouseEvent");
-    moveMouse(surface);
-    await receipt.received;
-    expect(browser.input).toStrictEqual([
-      {
-        method: "Input.dispatchMouseEvent",
-        sessionId: "example-page-session",
-        params: {
-          type: "mouseMoved",
-          x: 100,
-          y: 100,
-          button: "none",
-          buttons: 0,
-          modifiers: 0,
-        },
-      },
-    ]);
-    if (destroyed) {
-      act(() => {
-        browser.event("Target.targetDestroyed", { targetId: "example-page" });
-      });
-    } else {
-      detachOriginal(browser);
-    }
-    await waitFor(() => {
-      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
-      expect(
-        screen.getByLabelText(destroyed ? "Other" : "Example", {
-          selector: '[role="tab"]',
-        }),
-      ).toHaveAttribute("aria-selected", "true");
-    });
-    await act(async () => {
-      await receipt.release();
-    });
-    const input = screen.getByLabelText("Remote browser input");
-    await userEvent.click(input);
-    expect(input).toHaveFocus();
-    fireEvent.input(input, {
-      target: { value: "fresh input" },
-      inputType: "insertText",
-    });
-    await waitFor(() => {
-      expect(browser.input.at(-1)).toMatchObject({
-        method: "Input.insertText",
-        params: { text: "fresh input" },
-      });
-    });
-    const address = screen.getByLabelText("Address");
-    await fill(address, "recovered.example/ready");
-    await userEvent.keyboard("{Enter}");
-    await waitFor(() => {
-      expect(address).toHaveValue("http://recovered.example/ready");
-    });
-    expect(
-      browser.requests.filter((entry) => {
-        return (
-          entry.method === "Input.dispatchMouseEvent" &&
-          entry.params?.type === "mouseMoved" &&
-          entry.params.x === 100 &&
-          entry.params.y === 100
-        );
-      }),
-    ).toHaveLength(1);
-  },
-);
-
-test.each(["press", "release", "drag", "modified hover"])(
-  "An unacknowledged mouse %s retains its original failure and same-tab fence",
-  async (operation) => {
-    const sentry = context.mocks.sentry();
-    initSentry();
-    const { browser, surface } = await setupViewer();
-    if (operation === "release" || operation === "drag") {
-      const pressed = browser.holdNext("Input.dispatchMouseEvent");
-      pressMouse(surface);
-      await pressed.received;
-      await act(async () => {
-        await pressed.release();
-      });
-    }
-    const receipt = browser.holdNext("Input.dispatchMouseEvent");
-    if (operation === "press") {
-      pressMouse(surface);
-    } else if (operation === "drag") {
-      moveMouse(surface, 1);
-    } else if (operation === "modified hover") {
-      moveMouse(surface, 0, true);
-    } else {
-      fireEvent.pointerUp(surface, {
-        pointerId: 1,
-        pointerType: "mouse",
-        clientX: 100,
-        clientY: 100,
-        buttons: 0,
-      });
-      fireEvent.mouseUp(surface, { clientX: 100, clientY: 100, button: 0 });
-    }
-    await receipt.received;
-    detachOriginal(browser);
-    await screen.findByText("Browser view unavailable");
-    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-    await waitFor(() => {
-      expect(cleanupError(sentry)).toMatchObject({
-        cause: {
-          message: "Original input retirement failed.",
-          cause: {
-            message: "Original input receipt failed: Input.dispatchMouseEvent.",
-            cause: { message: "The browser target session is closed." },
-          },
-        },
-      });
-    });
-    await act(async () => {
-      await receipt.release();
-    });
-    click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
-    await waitFor(() => {
-      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
-    });
-    click(screen.getByLabelText("Example", { selector: '[role="tab"]' }));
-    await screen.findByText("Browser view unavailable");
-    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-  },
-);
-
-test("A detached neutral hover cannot hide a held key's failed original release", async () => {
-  const sentry = context.mocks.sentry();
-  initSentry();
-  const { browser, surface } = await setupViewer();
-  const input = screen.getByLabelText("Remote browser input");
-  await userEvent.click(input);
-  const key = browser.holdNext("Input.dispatchKeyEvent");
-  fireEvent.keyDown(input, { key: "ArrowDown", code: "ArrowDown" });
-  await key.received;
-  await act(async () => {
-    await key.release();
+  await act(() => {
+    return drag.release();
   });
-  const receipt = browser.holdNext("Input.dispatchMouseEvent");
-  moveMouse(surface);
-  await receipt.received;
-  expect(browser.input.at(-1)).toMatchObject({
-    method: "Input.dispatchMouseEvent",
-    params: { type: "mouseMoved", button: "none", buttons: 0, modifiers: 0 },
+  expect(
+    screen.getByLabelText("Drawing board", {
+      selector: '[role="tab"][aria-selected="true"]',
+    }),
+  ).toBeVisible();
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  click(screen.getByLabelText("Project notes", { selector: '[role="tab"]' }));
+  await expectStreamingAt(notes);
+  await writeNote(cdp, "Record interrupted stroke");
+  click(screen.getByLabelText("Drawing board", { selector: '[role="tab"]' }));
+  await screen.findByLabelText("Drawing board", {
+    selector: '[role="tab"][aria-selected="true"]',
   });
-  detachOriginal(browser);
   await screen.findByText("Browser view unavailable");
   expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+});
+
+test("browser-pointer-recovery-007 a neutral hover cannot replace the held key's release failure", async () => {
+  const telemetry = context.mocks.sentry();
+  const { cdp, image, original } = await openStudio();
+  const keyboard = screen.getByLabelText("Remote browser input");
+  keyboard.focus();
+  fireEvent.keyDown(keyboard, {
+    key: "ArrowLeft",
+    code: "ArrowLeft",
+    keyCode: 37,
+  });
   await waitFor(() => {
-    expect(cleanupError(sentry)).toMatchObject({
-      cause: {
-        cause: {
-          message:
-            "Original cleanup receipt failed: Input.dispatchKeyEvent (CDP -32001).",
-        },
-      },
+    expect(cdp.input).toContainEqual({
+      method: "Input.dispatchKeyEvent",
+      sessionId: original,
+      params: expect.objectContaining({ key: "ArrowLeft" }),
     });
   });
-  await act(async () => {
-    await receipt.release();
+  const hover = cdp.holdNext("Input.dispatchMouseEvent");
+  move(image, 500);
+  await hover.received;
+  expect(cdp.input).toContainEqual({
+    method: "Input.dispatchMouseEvent",
+    sessionId: original,
+    params: expect.objectContaining({
+      type: "mouseMoved",
+      buttons: 0,
+      modifiers: 0,
+    }),
+  });
+  cdp.event("Target.detachedFromTarget", { sessionId: original });
+  await screen.findByText("Browser view unavailable");
+  expect(keyboard).toBeDisabled();
+  expect(cdp.requests).toContainEqual(
+    expect.objectContaining({
+      sessionId: original,
+      method: "Input.dispatchKeyEvent",
+      params: expect.objectContaining({ type: "keyUp", key: "ArrowLeft" }),
+    }),
+  );
+  await waitFor(() => {
+    expect(telemetry.reports).toContainEqual(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          request: expect.objectContaining({
+            method: "Input.dispatchKeyEvent",
+            code: -32_001,
+          }),
+        }),
+      }),
+    );
   });
 });
 
-test("A detached neutral hover preserves an earlier native rejection", async () => {
-  const sentry = context.mocks.sentry();
-  initSentry();
-  const { browser, surface } = await setupViewer();
-  browser.failNext("Input.dispatchMouseEvent", "Native hover rejected");
-  const receipt = browser.holdNext("Input.dispatchMouseEvent");
-  moveMouse(surface);
-  await receipt.received;
-  await act(async () => {
-    await receipt.release();
+test("browser-pointer-recovery-008 the rejected hover remains attributed to the drawing page after a later hover loses its session", async () => {
+  const diagnostic = context.mocks.sentry();
+  const { cdp, image, original } = await openStudio();
+  const rejected = cdp.holdNext("Input.dispatchMouseEvent");
+  cdp.failNext("Input.dispatchMouseEvent", "Drawing cursor refused", -32_017);
+  move(image, 275);
+  await rejected.received;
+  await act(() => {
+    return rejected.release();
   });
-  const hover = browser.holdNext("Input.dispatchMouseEvent");
-  moveMouse(surface);
-  await hover.received;
-  detachOriginal(browser);
+  const pending = cdp.holdNext("Input.dispatchMouseEvent");
+  move(image, 590);
+  await pending.received;
+  expect(cdp.input).toContainEqual({
+    method: "Input.dispatchMouseEvent",
+    sessionId: original,
+    params: expect.objectContaining({
+      type: "mouseMoved",
+      button: "none",
+      buttons: 0,
+      modifiers: 0,
+      x: 590,
+    }),
+  });
+  const beforeDetach = diagnostic.reports.length;
+  cdp.event("Target.detachedFromTarget", { sessionId: original });
   await screen.findByText("Browser view unavailable");
-  await act(async () => {
-    await hover.release();
+  await act(() => {
+    return pending.release();
   });
-  click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
   await waitFor(() => {
-    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    expect(diagnostic.reports.slice(beforeDetach)).toContainEqual(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          request: { method: "Input.dispatchMouseEvent", code: -32_017 },
+        }),
+        context: expect.objectContaining({
+          tags: expect.objectContaining({ browser_event: "recovery-stopped" }),
+        }),
+      }),
+    );
   });
-  click(screen.getByLabelText("Example", { selector: '[role="tab"]' }));
-  await screen.findByText("Browser view unavailable");
-  await waitFor(() => {
-    expect(cleanupError(sentry)).toMatchObject({
-      cause: {
-        cause: {
-          message:
-            "Original input receipt failed: Input.dispatchMouseEvent (CDP -32000).",
-        },
-      },
-    });
-  });
+  click(screen.getByLabelText("Project notes", { selector: '[role="tab"]' }));
+  await expectStreamingAt(notes);
+  await writeNote(cdp, "Cursor rejected on board");
 });

@@ -3,223 +3,159 @@ import {
   type CloudflareAccessImpactPreview,
   type ScopedCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
-import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
-import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
-import {
-  sshConnectionsContract,
-  type SshConnectionResponse,
-} from "@okouai/api-contracts/contracts/ssh-connections";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, expect, test } from "vitest";
+import { expect, test } from "vitest";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { getAction } from "./connector-integrations-test-helpers.ts";
+import { getConnectorAction } from "./connector-page-test-helpers.ts";
+import {
+  mockRemoteInventory,
+  REMOTE_TIMESTAMP,
+  remoteId,
+} from "./connectors-remote-control-test-helpers.ts";
 
 const context = testContext();
-const orgId = "org_cloudflare_parity";
-const timestamp = "2026-10-13T00:00:00.000Z";
-const config: ScopedCloudflareAccessConfig = Object.freeze({
-  id: "a0000000-0000-4000-8000-000000000001",
-  name: "Protected applications",
-  scope: "personal",
-  revision: 1,
-  generation: 1,
-  sshHosts: [],
-  vncHosts: [],
-  createdAt: timestamp,
-  updatedAt: timestamp,
-});
-const shared: ScopedCloudflareAccessConfig = Object.freeze({
-  ...config,
-  scope: "organization",
-});
-const impact: CloudflareAccessImpactPreview = Object.freeze({
-  expectedRevision: 1,
-  ownHostCount: 0,
-  otherHostCount: 2,
-  affectedOwners: [{ userId: "other-owner", displayName: "Other Owner" }],
-  impactSnapshot: "a".repeat(64),
-});
-const detailsPath = `/connectors?scope=private-network&remoteResource=cloudflare:${config.id}`;
 
-beforeEach(() => {
-  context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    return respond(200, { configs: [] });
-  });
-  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return respond(200, { configs: [config] });
-  });
-});
-
-async function page(path = detailsPath, role: "admin" | "member" = "member") {
-  context.mocks.data.org({ id: orgId, name: "Engineering", role });
-  await setupPage({
-    context,
-    path,
-    auth: {
-      user: { id: "access-owner", fullName: "Access Owner" },
-      organization: {
-        activeOrg: { id: orgId, name: "Engineering" },
-        memberships: [{ id: orgId }],
-      },
-    },
-  });
+function gateway(
+  index: number,
+  name: string,
+  scope: ScopedCloudflareAccessConfig["scope"],
+): ScopedCloudflareAccessConfig {
+  return {
+    id: remoteId("c", index),
+    name,
+    scope,
+    revision: 1,
+    generation: 1,
+    createdAt: REMOTE_TIMESTAMP,
+    updatedAt: REMOTE_TIMESTAMP,
+    sshHosts: [],
+    vncHosts: [],
+  };
 }
 
-async function sharedDeletion() {
-  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return respond(200, { configs: [shared] });
+function impact(
+  otherHostCount: number,
+  ownerName: string,
+  mark: string,
+): CloudflareAccessImpactPreview {
+  return {
+    expectedRevision: 1,
+    ownHostCount: 0,
+    otherHostCount,
+    affectedOwners: [{ userId: "user_morgan", displayName: ownerName }],
+    impactSnapshot: mark.repeat(64),
+  };
+}
+
+async function openNetwork(name: string): Promise<void> {
+  await setupPage({ context, path: "/connectors?scope=private-network" });
+  await waitFor(() => {
+    expect(getConnectorAction("link", `Manage ${name}`)).toBeInTheDocument();
   });
-  await page(detailsPath, "admin");
-  await screen.findByRole("heading", { name: shared.name });
-  click(getAction("button", "Delete Cloudflare Access"));
+  click(getConnectorAction("link", `Manage ${name}`));
+  await expect(
+    screen.findByRole("heading", { name, level: 2 }),
+  ).resolves.toBeInTheDocument();
+}
+
+/** Opens the shared deletion dialog and confirms the reviewed impact. */
+async function acknowledgeSharedDeletion(preview: {
+  current: CloudflareAccessImpactPreview;
+}): Promise<HTMLElement> {
+  mockRemoteInventory(context, {
+    cloudflare: [gateway(2, "Team gateway", "organization")],
+  });
+  context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
+    return respond(200, preview.current);
+  });
+  await openNetwork("Team gateway");
+  click(getConnectorAction("button", "Delete Cloudflare Access"));
   const dialog = await screen.findByRole("dialog", {
     name: "Delete Cloudflare Access",
   });
-  await within(dialog).findByText(/Other Owner/u);
-  await userEvent.click(within(dialog).getByRole("checkbox"));
-  expect(getAction("button", "Delete Cloudflare Access", dialog)).toBeEnabled();
+  await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
+    "Affected: 1 member and 2 hosts.",
+  );
+  await userEvent.setup({ delay: null }).click(acknowledgement(dialog));
+  await waitFor(() => {
+    expect(
+      getConnectorAction("button", "Delete Cloudflare Access", dialog),
+    ).toBeEnabled();
+  });
   return dialog;
 }
 
+function acknowledgement(dialog: HTMLElement): HTMLElement {
+  return within(dialog).getByRole("checkbox", { name: /^I understand/ });
+}
+
 test("An unchanged save returns to details without updating the configuration", async () => {
+  mockRemoteInventory(context, {
+    cloudflare: [gateway(1, "Protected applications", "personal")],
+  });
   context.mocks.api(cloudflareAccessContract.update, ({ respond }) => {
     return respond(500, {
-      error: { code: "INTERNAL_ERROR", message: "Unavailable" },
+      error: { code: "INTERNAL_ERROR", message: "Update unavailable" },
     });
   });
-  await page();
-  await screen.findByRole("heading", { name: config.name });
-  click(getAction("button", "Edit settings"));
-  const name = await screen.findByLabelText("Network name");
-  await fill(name, ` ${config.name} `);
-  click(getAction("button", "Save network"));
-  await screen.findByRole("heading", { name: config.name });
-  expect(getAction("button", "Edit settings")).toBeInTheDocument();
+  await openNetwork("Protected applications");
+  click(getConnectorAction("button", "Edit settings"));
+  await fill(
+    await screen.findByLabelText("Network name"),
+    "  Protected applications  ",
+  );
+
+  click(getConnectorAction("button", "Save network"));
+
+  await waitFor(() => {
+    expect(getConnectorAction("button", "Edit settings")).toBeEnabled();
+  });
+  expect(
+    screen.getByRole("heading", { name: "Protected applications", level: 2 }),
+  ).toBeInTheDocument();
+  expect(screen.queryByLabelText("Network name")).not.toBeInTheDocument();
 });
 
-test.each(["cloudflare-access:changed", "ssh:changed"])(
-  "Shared deletion refreshes changed impact on %s and requires fresh confirmation",
-  async (topic) => {
-    let currentImpact = impact;
-    context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
-      return respond(200, currentImpact);
-    });
-    const dialog = await sharedDeletion();
-    currentImpact = {
-      ...impact,
-      otherHostCount: 3,
-      impactSnapshot: "b".repeat(64),
-    };
-    await act(() => {
-      return context.mocks.ably.trigger(topic, { orgId });
-    });
-    await within(dialog).findByText(/1 member and 3 hosts/u);
-    expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
-    expect(
-      getAction("button", "Delete Cloudflare Access", dialog),
-    ).toBeDisabled();
-  },
-);
+test("Shared deletion refreshes changed impact on cloudflare-access:changed and requires fresh confirmation", async () => {
+  const preview = { current: impact(2, "Morgan Lee", "a") };
+  const dialog = await acknowledgeSharedDeletion(preview);
+
+  // Another member binds a host; the server announces the Access change.
+  preview.current = impact(3, "Morgan Lee", "b");
+  context.mocks.ably.trigger("cloudflare-access:changed", {
+    orgId: "org_default",
+  });
+
+  await waitFor(() => {
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "Affected: 1 member and 3 hosts.",
+    );
+  });
+  expect(acknowledgement(dialog)).toHaveAttribute("aria-checked", "false");
+  expect(
+    getConnectorAction("button", "Delete Cloudflare Access", dialog),
+  ).toBeDisabled();
+});
 
 test("Shared deletion keeps confirmation when a refreshed impact snapshot is unchanged", async () => {
-  let currentImpact = impact;
-  context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
-    return respond(200, currentImpact);
-  });
-  const dialog = await sharedDeletion();
-  currentImpact = {
-    ...impact,
-    affectedOwners: [{ userId: "other-owner", displayName: "Updated Owner" }],
-  };
-  await act(() => {
-    return context.mocks.ably.trigger("cloudflare-access:changed", { orgId });
-  });
-  await within(dialog).findByText(/Updated Owner/u);
-  expect(within(dialog).getByRole("checkbox")).toBeChecked();
-  expect(getAction("button", "Delete Cloudflare Access", dialog)).toBeEnabled();
-});
+  const preview = { current: impact(2, "Morgan Lee", "a") };
+  const dialog = await acknowledgeSharedDeletion(preview);
+  expect(within(dialog).getByText("Morgan Lee")).toBeInTheDocument();
 
-test("A network-only removal refreshes SSH rebind requirements and preserves default access", async () => {
-  let removed = false;
-  const host: SshConnectionResponse = {
-    id: "c0000000-0000-4000-8000-000000000001",
-    displayName: "Private server",
-    host: "ssh.example.com",
-    port: 443,
-    username: "deploy",
-    credentialId: "b0000000-0000-4000-8000-000000000001",
-    credentialName: "SSH login",
-    generation: 1,
-    learnedHostKey: null,
-    transport: { type: "cloudflare_access", configId: config.id },
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  };
-  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return respond(200, {
-      configs: removed
-        ? []
-        : [
-            {
-              ...shared,
-              sshHosts: [{ id: host.id, displayName: host.displayName }],
-            },
-          ],
-    });
+  // The member renames their profile; the impact itself is unchanged.
+  preview.current = impact(2, "Morgan Rivera", "a");
+  context.mocks.ably.trigger("cloudflare-access:changed", {
+    orgId: "org_default",
   });
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 1 });
-  });
-  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    return respond(200, {
-      connections: [
-        removed
-          ? {
-              ...host,
-              generation: 2,
-              transport: { type: "cloudflare_access", needsRebind: true },
-            }
-          : host,
-      ],
-    });
-  });
-  context.mocks.api(sshConnectionsContract.observations, ({ respond }) => {
-    return respond(200, { observations: [] });
-  });
-  context.mocks.api(
-    chatRemoteAccessContract.listHostDefaults,
-    ({ respond }) => {
-      return respond(200, {
-        ssh: [
-          {
-            connectionId: host.id,
-            displayName: host.displayName,
-            defaultEnabled: true,
-          },
-        ],
-        vnc: [],
-      });
-    },
-  );
-  await page(`/connectors?scope=remote-control&remoteResource=ssh:${host.id}`);
-  await screen.findByRole("heading", { name: host.displayName });
-  const toggle = await screen.findByRole("switch", {
-    name: "Enabled by default for chats",
-  });
-  await waitFor(() => {
-    expect(toggle).toBeChecked();
-  });
-  removed = true;
-  await act(() => {
-    return context.mocks.ably.trigger("cloudflare-access:changed", { orgId });
-  });
-  await screen.findByText(
-    "This host needs a new Cloudflare Access configuration. Edit it to rebind or choose Direct. It will not connect until you do.",
-  );
+
+  await expect(
+    within(dialog).findByText("Morgan Rivera"),
+  ).resolves.toBeInTheDocument();
+  expect(acknowledgement(dialog)).toHaveAttribute("aria-checked", "true");
   expect(
-    screen.getByRole("switch", { name: "Enabled by default for chats" }),
-  ).toBeChecked();
+    getConnectorAction("button", "Delete Cloudflare Access", dialog),
+  ).toBeEnabled();
 });

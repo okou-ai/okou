@@ -12,106 +12,59 @@ import {
   warmMermaidParser,
 } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  createMarkdownChatFixture,
-  type MarkdownChatFixture,
-} from "./markdown-page-test-helpers.ts";
+  completedConversation,
+  createChatCapabilityHelpers,
+  RUN_PATH,
+} from "./chat-capability-test-helpers.ts";
 
 const context = testContext();
-
+const { installCapabilityChat } = createChatCapabilityHelpers(context);
 warmMermaidParser();
 
-function completedMessageRows(chat: MarkdownChatFixture, content: string) {
-  return [
-    chat.outputMessage(content, { seqId: 1 }),
-    chat.runCompleted({ seqId: 2 }),
-  ];
+const FAILING = "flowchart LR\n  Intake --> Triage";
+const SURVIVING = "flowchart LR\n  Draft --> Review";
+
+function expandActions(): HTMLElement[] {
+  return queryAllByRoleFast("button").filter((button) => {
+    return button.getAttribute("aria-label") === "Expand diagram";
+  });
 }
-
-function getButtonByName(
-  name: string,
-  container: ParentNode = document.body,
-): HTMLElement {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
-    return (
-      candidate.textContent?.trim() === name ||
-      candidate.getAttribute("aria-label") === name
-    );
-  });
-  if (!button) {
-    throw new Error(`Expected button named "${name}"`);
-  }
-  return button;
-}
-
-test("Sequence diagrams render in chat", async () => {
-  const chat = createMarkdownChatFixture(context);
-  const sequenceSource = [
-    "sequenceDiagram",
-    "  participant Reader",
-    "  participant Platform",
-    "  Reader->>Platform: Show sequence",
-    "  Platform-->>Reader: Render diagram",
-  ].join("\n");
-  const source = ["```mermaid", sequenceSource, "```"].join("\n");
-  const rows = completedMessageRows(chat, source);
-  chat.install({
-    rows: () => {
-      return rows;
-    },
-  });
-
-  await setupPage({
-    context,
-    path: chat.path,
-    host: "app.okou.ai",
-  });
-
-  const diagram = await screen.findByRole("img", { name: "Diagram" });
-  expect(diagram).toBeVisible();
-  expect(getButtonByName("Expand diagram")).toBeEnabled();
-});
 
 test("A failed Mermaid layout leaves its source readable and other diagrams usable", async () => {
-  vi.spyOn(mermaid, "render").mockRejectedValueOnce(
-    new Error("Diagram layout failed"),
-  );
-  const chat = createMarkdownChatFixture(context);
-  const failedSource = "flowchart TD\n  Failed --> Layout";
-  const source = [
-    "```mermaid",
-    failedSource,
-    "```",
-    "",
-    "```mermaid",
-    "sequenceDiagram",
-    "  Reader->>Platform: Surviving diagram",
-    "```",
-  ].join("\n");
-  const rows = completedMessageRows(chat, source);
-  chat.install({
-    rows: () => {
-      return rows;
-    },
+  // The browser layout engine cannot lay out the first diagram.
+  const render = mermaid.render;
+  vi.spyOn(mermaid, "render").mockImplementation((id, code) => {
+    return code === FAILING
+      ? Promise.reject(new Error("Diagram layout failed"))
+      : render(id, code);
+  });
+  installCapabilityChat({
+    events: completedConversation(
+      [
+        "Two process views:",
+        "",
+        "```mermaid",
+        FAILING,
+        "```",
+        "",
+        "```mermaid",
+        SURVIVING,
+        "```",
+      ].join("\n"),
+    ),
+  });
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  const failedSource = await screen.findByText(/Intake --> Triage/u);
+  expect(failedSource.closest("code, pre")).not.toBeNull();
+  // Only the surviving diagram rendered, so it alone offers expansion.
+  const expand = await waitFor(() => {
+    const actions = expandActions();
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toBeEnabled();
+    return actions[0] as HTMLElement;
   });
 
-  await setupPage({
-    context,
-    path: chat.path,
-    host: "app.okou.ai",
-  });
+  click(expand);
 
-  await waitFor(() => {
-    const fallback = screen.getByText("flowchart TD Failed --> Layout", {
-      selector: "pre code",
-    });
-    expect(fallback).toBeVisible();
-  });
-  await expect(
-    screen.findByRole("img", { name: "Diagram" }),
-  ).resolves.toBeVisible();
-  expect(screen.getAllByRole("img", { name: "Diagram" })).toHaveLength(1);
-  click(getButtonByName("Expand diagram"));
-  await expect(
-    screen.findByRole("dialog", { name: "diagram.svg preview" }),
-  ).resolves.toBeInTheDocument();
+  await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();
 });

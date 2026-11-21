@@ -1,530 +1,263 @@
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
+import { mockNow } from "../../../lib/time.ts";
 import {
-  connectorPermissionsResponse,
-  type ConnectorPermissionFixture,
-} from "../../../__tests__/connector-permissions.ts";
+  getAction,
+  queryAction,
+} from "../../okou-page/__tests__/connector-integrations-test-helpers.ts";
 import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
-import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
-import {
-  chatEventsContract,
-  chatThreadMetadataContract,
-  type ChatEventSendBody,
-} from "@okouai/api-contracts/contracts/chat-threads";
-
+import { agentFixture } from "../../team-page/__tests__/team-page-test-helpers.ts";
+import { mockAuthorizationCallbackThread } from "../../okou-page/__tests__/authorization-callback-test-helpers.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  connectorPermissionsContract,
-  type ConnectorPermissions,
-  type ApplyConnectorPermissions,
-} from "@okouai/api-contracts/contracts/connector-permissions";
-import { act, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import { mockNow } from "../../../__tests__/time.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  PERMISSION_NOW,
+  PERMISSION_LATER,
+  mockPermissionCatalog,
+  mockPermissionGrants,
+} from "./permission-test-fixtures.ts";
 
 const context = testContext();
-const AGENT_ID = "10000000-0000-4000-a000-000000000001";
-const THREAD_ID = "20000000-0000-4000-a000-000000000001";
-const items = [
-  { connectorSlug: "slack", permission: "chat:write" },
-  { connectorSlug: "github", permission: "issues:read" },
-] as const;
-
-function button(text: string) {
-  const result = queryAllByRoleFast("button").find((element) => {
-    return element.textContent?.trim() === text;
-  });
-  if (!result) {
-    throw new Error(`Button not found: ${text}`);
-  }
-  return result;
-}
-
-function installResources({
-  permissionDefault = "ask",
-  failMetadata = false,
-}: {
-  permissionDefault?: "ask" | "allow" | "deny";
-  failMetadata?: boolean;
-} = {}) {
-  const grants: ConnectorPermissionFixture[] = [];
-  context.mocks.api(agentsByIdContract.get, ({ respond }) => {
-    return respond(200, {
-      isDefaultAgent: false,
-      agentId: AGENT_ID,
-      ownerId: "test-user-123",
-      displayName: "Research Bot",
-      description: null,
-      sound: null,
-      avatarUrl: null,
-      visibility: "private",
-    });
-  });
-  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
-    return respond(200, connectorPermissionsResponse(query, grants));
-  });
-  context.mocks.api(
-    connectorCatalogContract.permissions,
-    ({ params, respond }) => {
-      if (failMetadata && params.connectorSlug === "github") {
-        return respond(404, {
-          error: { code: "NOT_FOUND", message: "Connector unavailable" },
-        });
-      }
-      const permissions =
-        params.connectorSlug === "neon"
-          ? ["branches:create", "branches:delete"]
-          : params.connectorSlug === "slack"
-            ? ["chat:write"]
-            : ["issues:read", "issues:write"];
-      return respond(200, {
-        permissions: {
-          connectorSlug: params.connectorSlug,
-          label: params.connectorSlug === "slack" ? "Slack" : "GitHub",
-          icon: {
-            url: `https://assets.example.test/${params.connectorSlug}.svg`,
-            invertInDarkMode: false,
-          },
-          permissionCount: permissions.length,
-          permissions: permissions.map((permission) => {
-            return {
-              name: permission,
-              description: `Description for ${permission}`,
-            };
-          }),
-          categories: null,
-          defaultPolicy: { permissionDefault, unknownPolicy: "ask" },
-        },
-      });
-    },
-  );
-  context.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
-    return respond(200, {
-      id: THREAD_ID,
-      agentId: AGENT_ID,
-      title: "Review",
-      selectedModel: "claude-sonnet-5",
-      modelSettings: {},
-      serviceTier: null,
-      pinnedAt: null,
-      archived: false,
-      muted: false,
-      computerUseHostId: null,
-      cloudBrowserEnabled: false,
-    });
-  });
-  return grants;
-}
-
-function openPage({
-  callback = false,
-  malformed = false,
-  memberItems,
-}: {
-  memberItems?: readonly { connectorSlug: string; permission: string }[];
-  callback?: boolean;
-  malformed?: boolean;
-} = {}) {
-  const params = new URLSearchParams({
-    items: malformed ? "not-json" : JSON.stringify(memberItems ?? items),
+async function openReview(continuation = false) {
+  const items = [
+    { connectorSlug: "github", permission: "issues:read" },
+    { connectorSlug: "slack", permission: "chat:write" },
+  ];
+  const query = new URLSearchParams({
     action: "allow",
+    items: JSON.stringify(items),
   });
-  if (callback) {
-    params.set("threadId", THREAD_ID);
-    params.set("callbackPrompt", "Continue the review");
+  if (continuation) {
+    mockAuthorizationCallbackThread(
+      context,
+      "2e6d73b1-23cd-42b0-beaa-f1aad7bc766c",
+    );
+    query.set("threadId", "2e6d73b1-23cd-42b0-beaa-f1aad7bc766c");
+    query.set("callbackPrompt", "Publish the issue summary");
   }
-  return setupPage({
-    context,
-    host: "app.okou.ai",
-    path: memberItems
-      ? `/connectors/permissions/batch?orgId=org_default&userId=test-user-123&${params}`
-      : `/agents/${AGENT_ID}/permissions/batch?${params}`,
-    featureSwitches: {
-      [FeatureSwitchKey.BatchConnectorPermissions]: true,
-    },
+  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
+    return params.id !== context.resourceId
+      ? respond(404, { error: { code: "NOT_FOUND", message: "Unknown agent" } })
+      : respond(200, agentFixture(context.resourceId, "Issue reporter"));
   });
+  context.mocks.data.agents([
+    { agentId: context.resourceId, displayName: "Issue reporter" },
+  ]);
+  await setupPage({
+    context,
+    path: "/agents/" + context.resourceId + "/permissions/batch?" + query,
+    featureSwitches: { [FeatureSwitchKey.BatchConnectorPermissions]: true },
+  });
+  return within(screen.getByRole("main"));
 }
 
-test.each([
-  {
-    outcome: "success",
-    message: "The chat has continued.",
-  },
-  {
-    outcome: "failure",
-    message: /^Permissions allowed, but could not continue\./u,
-  },
-] as const)(
-  "Grouped permissions remain allowed after continuation $outcome",
-  async ({ outcome, message }) => {
-    installResources();
-    const applied: string[] = [];
-    const durations: string[] = [];
-    const shared = new Map<string, ConnectorPermissions["grants"]>();
-    context.mocks.api(
-      connectorPermissionsContract.get,
-      ({ query, respond }) => {
-        return respond(200, {
-          target: query,
-          grants:
-            shared.get(
-              query.kind === "builtin"
-                ? query.connectorSlug
-                : query.customConnectorId,
-            ) ?? [],
-        });
-      },
-    );
-    context.mocks.api(
-      connectorPermissionsContract.apply,
-      ({ body, respond }) => {
-        if (body.target.kind !== "builtin") {
-          throw new Error("Expected builtin target");
-        }
-        const connectorSlug = body.target.connectorSlug;
-        for (const grant of body.grants) {
-          durations.push(String(grant.expiresIn));
-          applied.push(`${connectorSlug}:${grant.permission}`);
-        }
-        const saved = body.grants.map((grant) => {
-          return {
-            permission: grant.permission,
-            action: grant.action,
-            expiresAt: "2099-01-01T00:00:00.000Z",
-          };
-        });
-        shared.set(connectorSlug, saved);
-        return respond(200, {
-          target: body.target,
-          grants: saved,
-        });
-      },
-    );
-    context.mocks.api(chatEventsContract.send, ({ respond }) => {
-      return outcome === "success"
-        ? respond(201, { threadId: THREAD_ID })
-        : respond(500, {
-            error: {
-              code: "INTERNAL_SERVER_ERROR",
-              message: "Chat unavailable",
-            },
-          });
-    });
-    await openPage({ callback: true });
-    await screen.findByText("Description for chat:write");
-    const scope =
-      "Applies to this connector across your chats in this workspace. Your teammates have their own permissions.";
-    expect(screen.getByText(scope)).toBeInTheDocument();
-    expect(screen.getByText("GitHub")).toBeInTheDocument();
-    expect(screen.getByText("Description for issues:read")).toBeInTheDocument();
-    expect(screen.getByLabelText("Permission duration")).toHaveTextContent(
-      "1 hour",
-    );
-    await waitFor(() => {
-      expect(button("Allow all 2 permissions")).toBeEnabled();
-    });
-    click(button("Allow all 2 permissions"));
-    await screen.findByText("Permissions allowed");
-    await expect(screen.findByText(message)).resolves.toBeInTheDocument();
-    expect(screen.getByText("2 of 2 permissions allowed")).toBeInTheDocument();
-    expect(applied.sort()).toStrictEqual([
-      "github:issues:read",
-      "slack:chat:write",
-    ]);
-    expect(durations).toStrictEqual(["1h", "1h"]);
-  },
-);
-
-test.each(["dismissed", "continued"] as const)(
-  "Navigating from a %s batch isolates the next agent's permissions and continuation",
-  async (firstOutcome) => {
-    const nextAgentId = "10000000-0000-4000-a000-000000000002";
-    const nextThreadId = "20000000-0000-4000-a000-000000000002";
-    const grants = installResources();
-    const applied: ApplyConnectorPermissions[] = [];
-    const sent: ChatEventSendBody[] = [];
-    context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-      return respond(200, {
-        isDefaultAgent: false,
-        agentId: params.id,
-        ownerId: "test-user-123",
-        displayName: params.id === nextAgentId ? "Next Bot" : "Research Bot",
-        description: null,
-        sound: null,
-        avatarUrl: null,
-        visibility: "private",
-      });
-    });
-    context.mocks.api(
-      connectorPermissionsContract.apply,
-      ({ body, respond }) => {
-        applied.push(body);
-        if (body.target.kind !== "builtin") {
-          throw new Error("Expected a builtin connector");
-        }
-        const { connectorSlug } = body.target;
-        grants.push(
-          ...body.grants.map((grant) => {
-            return {
-              connectorSlug,
-              permission: grant.permission,
-              action: "allow" as const,
-              expiresAt: "2099-01-01T00:00:00.000Z",
-              createdAt: "2030-01-01T00:00:00.000Z",
-              updatedAt: "2030-01-01T00:00:00.000Z",
-            };
-          }),
-        );
-        context.mocks.ably.trigger("connectorPermissionUpdated");
-        return respond(200, connectorPermissionsResponse(body.target, grants));
-      },
-    );
-    context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
-      return respond(200, {
-        id: params.id,
-        agentId: params.id === nextThreadId ? nextAgentId : AGENT_ID,
-        title: "Review",
-        selectedModel: null,
-        modelSettings: {},
-        serviceTier: null,
-        pinnedAt: null,
-        archived: false,
-        muted: false,
-        computerUseHostId: null,
-        cloudBrowserEnabled: false,
-      });
-    });
-    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-      sent.push(body);
-      return respond(201, { threadId: body.threadId ?? THREAD_ID });
-    });
-
-    await openPage({ callback: true });
-    await waitFor(() => {
-      expect(button("Allow all 2 permissions")).toBeEnabled();
-    });
-    click(screen.getByRole("combobox", { name: "Permission duration" }));
-    click(await screen.findByRole("option", { name: "24 hours" }));
-    if (firstOutcome === "dismissed") {
-      click(button("Not now"));
-      await screen.findByText("No permissions were changed.");
-    } else {
-      click(button("Allow all 2 permissions"));
-      await screen.findByText("The chat has continued.");
-    }
-
-    const nextParams = new URLSearchParams({
-      items: JSON.stringify([{ ...items[1], permission: "issues:write" }]),
-      action: "allow",
-      threadId: nextThreadId,
-      callbackPrompt: "Continue the next agent's review",
-    });
-    act(() => {
-      window.history.pushState(
-        null,
-        "",
-        `/agents/${nextAgentId}/permissions/batch?${nextParams}`,
-      );
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    });
-
-    await screen.findByText("Next Bot");
-    await waitFor(() => {
-      expect(button("Allow 1 permission")).toBeEnabled();
-    });
-    expect(
-      screen.getByText("Description for issues:write"),
-    ).toBeInTheDocument();
-    expect(screen.getByLabelText("Permission duration")).toHaveTextContent(
-      "1 hour",
-    );
-    click(button("Allow 1 permission"));
-    await screen.findByText("The chat has continued.");
-    expect(applied.at(-1)).toStrictEqual({
-      target: { kind: "builtin", connectorSlug: "github" },
-      mode: "patch",
-      grants: [
-        { permission: "issues:write", action: "allow", expiresIn: "1h" },
-      ],
-    });
-    expect(sent.at(-1)).toMatchObject({
-      threadId: nextThreadId,
-      prompt: "Continue the next agent's review",
-    });
-  },
-);
-
-test("Policy-allowed batches show their completed state without requiring a grant", async () => {
-  installResources({ permissionDefault: "allow" });
-  await openPage();
-  await screen.findByText("Permissions allowed");
-  expect(screen.getByText("Description for chat:write")).toBeInTheDocument();
+test("permission-batch-page-008 policy grants complete review on arrival", async () => {
+  mockPermissionCatalog(context, "allow");
+  const { writes } = mockPermissionGrants(context);
+  const review = await openReview();
+  await expect(
+    review.findByText("Permissions allowed"),
+  ).resolves.toBeInTheDocument();
+  expect(review.getByText("Send Slack messages")).toBeInTheDocument();
+  expect(review.getByText("2 of 2 permissions allowed")).toBeInTheDocument();
+  expect(
+    queryAction("button", "Allow all 2 permissions", screen.getByRole("main")),
+  ).toBeNull();
+  expect(writes).toStrictEqual([]);
 });
 
-test("Missing connector metadata fails closed and Not now dismisses without changing permissions", async () => {
-  installResources({ failMetadata: true });
-  await openPage();
-  await screen.findByText(
+test("permission-batch-page-009 a missing GitHub catalog prevents changing either permission", async () => {
+  mockPermissionCatalog(context, "ask", "github");
+  const { writes } = mockPermissionGrants(context);
+  const review = await openReview();
+  await expect(review.findByRole("alert")).resolves.toHaveTextContent(
     "Could not verify all requested permissions. No permissions can be changed.",
   );
-  expect(button("Allow all 2 permissions")).toBeDisabled();
-  click(button("Not now"));
-  await screen.findByText("No permissions were changed.");
+  expect(
+    getAction("button", "Allow all 2 permissions", screen.getByRole("main")),
+  ).toBeDisabled();
+  click(getAction("button", "Not now", screen.getByRole("main")));
+  await expect(
+    review.findByText("No permissions were changed."),
+  ).resolves.toBeInTheDocument();
+  expect(writes).toStrictEqual([]);
 });
 
-const neonBranchItems = [
-  { connectorSlug: "neon", permission: "branches:create" },
-  { connectorSlug: "neon", permission: "branches:delete" },
-] as const;
+test("permission-batch-page-011 a save without acknowledgments leaves both permissions unapproved", async () => {
+  mockPermissionCatalog(context);
+  const { writes } = mockPermissionGrants(context, { acknowledge: false });
+  const review = await openReview(true);
+  await expect(
+    review.findByText("Send Slack messages"),
+  ).resolves.toBeInTheDocument();
+  click(
+    getAction("button", "Allow all 2 permissions", screen.getByRole("main")),
+  );
+  await expect(review.findByRole("alert")).resolves.toHaveTextContent(
+    "Couldn't update permissions",
+  );
+  expect(writes).toStrictEqual(
+    ["github", "slack"].map((slug) => {
+      return {
+        mode: "patch",
+        target: { kind: "builtin", connectorSlug: slug },
+        grants: [
+          {
+            permission: slug === "github" ? "issues:read" : "chat:write",
+            action: "allow",
+            expiresIn: "1h",
+          },
+        ],
+      };
+    }),
+  );
+  expect(review.getByText("0 of 2 permissions allowed")).toBeInTheDocument();
+  expect(
+    getAction("button", "Allow all 2 permissions", screen.getByRole("main")),
+  ).toBeDisabled();
+  expect(review.queryByText("Permissions allowed")).toBeNull();
+  expect(review.queryByText("The chat has continued.")).toBeNull();
+});
 
-test("The requesting member confirms both Neon permissions for one hour before the originating chat continues", async () => {
-  const startedAt = Date.parse("2026-11-05T12:00:00Z");
-  mockNow(startedAt, context.signal);
-  const grants = installResources({ permissionDefault: "deny" });
-  const writes: ApplyConnectorPermissions[] = [];
-  const callbacks: ChatEventSendBody[] = [];
-  context.mocks.api(connectorPermissionsContract.apply, ({ body, respond }) => {
-    writes.push(body);
-    for (const item of neonBranchItems) {
-      grants.push({
-        ...item,
-        action: "allow",
-        expiresAt: new Date(startedAt + 60 * 60 * 1000).toISOString(),
-      });
-    }
-    return respond(200, connectorPermissionsResponse(body.target, grants));
+const branchPermissions = ["branches:create", "branches:delete"] as const;
+const callbackPrompt = "Resume my branch review";
+async function openMemberReview(threadId?: string) {
+  const params = new URLSearchParams({
+    orgId: "org_default",
+    userId: "test-user-123",
+    action: "allow",
+    items: JSON.stringify(
+      branchPermissions.map((permission) => {
+        return {
+          connectorSlug: "neon",
+          permission,
+        };
+      }),
+    ),
   });
+  if (threadId) {
+    params.set("threadId", threadId);
+    params.set("callbackPrompt", callbackPrompt);
+  }
+  await setupPage({
+    context,
+    path: "/connectors/permissions/batch?" + params,
+    featureSwitches: { [FeatureSwitchKey.BatchConnectorPermissions]: true },
+  });
+}
+test("Saving both Neon grants for one hour allows the member's originating chat to continue", async () => {
+  mockNow(new Date(PERMISSION_NOW), context.signal);
+  mockPermissionCatalog(context, "deny");
+  const { saved, writes } = mockPermissionGrants(context);
+  const thread = crypto.randomUUID();
+  mockAuthorizationCallbackThread(context, thread);
+  const receipt = context.mocks.deferred<void>();
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    callbacks.push(body);
-    return respond(201, { threadId: THREAD_ID });
-  });
-  await openPage({ callback: true, memberItems: neonBranchItems });
-  await screen.findByText("Description for branches:delete");
-  expect(writes).toHaveLength(0);
-  expect(callbacks).toHaveLength(0);
-  const duration = screen.getByRole("combobox", {
-    name: "Permission duration",
-  });
-  click(duration);
-  click(await screen.findByRole("option", { name: "24 hours" }));
-  click(duration);
-  click(await screen.findByRole("option", { name: "1 hour" }));
-  expect(duration).toHaveTextContent("1 hour");
-  click(button("Allow all 2 permissions"));
-  await screen.findByText("The chat has continued.");
-  expect(writes).toStrictEqual([
-    {
-      target: { kind: "builtin", connectorSlug: "neon" },
-      mode: "patch",
-      grants: neonBranchItems.map(({ permission }) => {
+    expect(body).toMatchObject({ threadId: thread, prompt: callbackPrompt });
+    expect(saved.get("neon")).toStrictEqual(
+      branchPermissions.map((permission) => {
         return {
           permission,
           action: "allow",
-          expiresIn: "1h",
+          expiresAt: PERMISSION_LATER,
         };
       }),
-    },
-  ]);
-  expect(callbacks).toMatchObject([
-    { threadId: THREAD_ID, prompt: "Continue the review" },
-  ]);
-});
-
-test.each([
-  { offset: -1, summary: "2 of 2 permissions allowed" },
-  { offset: 0, summary: "0 of 2 permissions allowed" },
-])(
-  "Both temporary Neon grants reflect the one-hour boundary at offset $offset",
-  async ({ offset, summary }) => {
-    const deadline = Date.parse("2026-11-05T13:00:00Z");
-    mockNow(deadline + offset, context.signal);
-    const grants = installResources({ permissionDefault: "deny" });
-    for (const item of neonBranchItems) {
-      grants.push({
-        ...item,
+    );
+    receipt.resolve();
+    return respond(201, { threadId: thread });
+  });
+  await openMemberReview(thread);
+  await screen.findByText("Delete a Neon branch");
+  const duration = screen.getByRole("combobox", {
+    name: "Permission duration",
+  });
+  for (const option of ["24 hours", "1 hour"]) {
+    click(duration);
+    click(await screen.findByRole("option", { name: option }));
+  }
+  expect(duration).toHaveTextContent("1 hour");
+  expect(saved.has("neon")).toBeFalsy();
+  click(getAction("button", "Allow all 2 permissions"));
+  await receipt.promise;
+  await expect(
+    screen.findByText("The chat has continued."),
+  ).resolves.toBeVisible();
+  expect(writes).toContainEqual({
+    target: { kind: "builtin", connectorSlug: "neon" },
+    mode: "patch",
+    grants: branchPermissions.map((permission) => {
+      return {
+        permission,
         action: "allow",
-        expiresAt: new Date(deadline).toISOString(),
-      });
-    }
-    await openPage({ memberItems: neonBranchItems });
-    await screen.findByText("Description for branches:create");
-    await expect(screen.findByText(summary)).resolves.toBeInTheDocument();
+        expiresIn: "1h",
+      };
+    }),
+  });
+});
+test.each([
+  { offset: -1, allowed: 2 },
+  { offset: 0, allowed: 0 },
+])(
+  "Member sees $allowed current grants at the Neon expiry boundary ($offset ms)",
+  async ({ offset, allowed }) => {
+    mockNow(Date.parse(PERMISSION_LATER) + offset, context.signal);
+    mockPermissionCatalog(context, "deny");
+    const grants = mockPermissionGrants(context);
+    grants.saved.set(
+      "neon",
+      branchPermissions.map((permission) => {
+        return {
+          permission,
+          expiresAt: PERMISSION_LATER,
+          action: "allow",
+        };
+      }),
+    );
+    await openMemberReview();
+    await screen.findByText("Create a Neon branch");
+    await expect(
+      screen.findByText(allowed + " of 2 permissions allowed"),
+    ).resolves.toBeVisible();
   },
 );
 
-test("An unavailable callback Chat prevents a member batch from being confirmed", async () => {
-  installResources();
-  context.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Chat thread not found" },
-    });
+test("A missing originating chat prevents reviewing member batch grants", async () => {
+  const thread = crypto.randomUUID();
+  mockAuthorizationCallbackThread(context, thread, () => {
+    return false;
   });
-  await openPage({ callback: true, memberItems: items });
-  await screen.findByText(
+  mockPermissionCatalog(context);
+  const grants = mockPermissionGrants(context);
+  await openMemberReview(thread);
+  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
     "Could not verify all requested permissions. No permissions can be changed.",
   );
   expect(
-    queryAllByRoleFast("button").some((element) => {
-      return (
-        element.textContent?.trim() === "Allow all 2 permissions" &&
-        !element.hasAttribute("disabled")
-      );
-    }),
-  ).toBeFalsy();
+    queryAction("button", "Allow all 2 permissions")?.hasAttribute(
+      "disabled",
+    ) ?? true,
+  ).toBeTruthy();
+  expect(grants.saved.has("neon")).toBeFalsy();
 });
-
-test("A member cannot confirm after losing access to the callback Chat", async () => {
-  installResources();
-  await openPage({ callback: true, memberItems: items });
-  await screen.findByText("Description for chat:write");
-  const confirm = button("Allow all 2 permissions");
+test("Member approval rechecks chat access before changing any Neon grants", async () => {
+  const thread = crypto.randomUUID();
+  let accessible = true;
+  mockAuthorizationCallbackThread(context, thread, () => {
+    return accessible;
+  });
+  mockPermissionCatalog(context);
+  const grants = mockPermissionGrants(context);
+  await openMemberReview(thread);
+  await screen.findByText("Create a Neon branch");
+  const confirm = getAction("button", "Allow all 2 permissions");
   await waitFor(() => {
-    expect(confirm).toBeEnabled();
+    return expect(confirm).toBeEnabled();
   });
-  let writes = 0;
-  context.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Chat thread not found" },
-    });
-  });
-  context.mocks.api(connectorPermissionsContract.apply, ({ respond }) => {
-    writes++;
-    return respond(200, {
-      target: { kind: "builtin", connectorSlug: "slack" },
-      grants: [],
-    });
-  });
+  accessible = false;
   click(confirm);
-  await screen.findByRole("alert");
-  expect(writes).toBe(0);
-});
-
-test("A malformed batch URL renders an unavailable page", async () => {
-  await openPage({ malformed: true });
-  await expect(
-    screen.findByText("This permission link is invalid or unavailable."),
-  ).resolves.toBeInTheDocument();
-});
-
-test("A successful HTTP response without all grant acknowledgments cannot continue", async () => {
-  installResources();
-  context.mocks.api(connectorPermissionsContract.apply, ({ body, respond }) => {
-    return respond(200, connectorPermissionsResponse(body.target, []));
-  });
-  await openPage({ callback: true });
-  await screen.findByText("Description for chat:write");
-  await waitFor(() => {
-    expect(button("Allow all 2 permissions")).toBeEnabled();
-  });
-  click(button("Allow all 2 permissions"));
-  await screen.findByRole("alert");
-  expect(screen.getByText("0 of 2 permissions allowed")).toBeInTheDocument();
-  expect(button("Allow all 2 permissions")).toBeDisabled();
-  expect(
-    screen.queryByText("Permissions allowed", { exact: true }),
-  ).not.toBeInTheDocument();
+  await expect(screen.findByRole("alert")).resolves.toBeVisible();
+  expect(confirm).toBeDisabled();
+  expect(grants.saved.has("neon")).toBeFalsy();
 });

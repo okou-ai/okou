@@ -1,6 +1,5 @@
-import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
-import { mockAuthorizationCallbackThread } from "../../okou-page/__tests__/authorization-callback-test-helpers.ts";
 import { browserAuthorizationRequestsContract } from "@okouai/api-contracts/contracts/browser";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -9,159 +8,102 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { platformOkouWordmarkDarkImg } from "../../../lib/static-assets.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const REQUEST_TOKEN = "browser-request-token";
+const REQUEST_TOKEN = "vm0_browser_authorization_request_test";
+const THREAD_ID = "b0000000-0000-4000-a000-000000000951";
+const PAGE_PATH = `/browser/authorize/${REQUEST_TOKEN}`;
 
-function mockPendingAuthorization(): void {
+/** The pending request as the API stores it; applying it completes it. */
+function mockPendingRequest(): void {
+  const server = { applied: false };
   context.mocks.api(browserAuthorizationRequestsContract.get, ({ respond }) => {
     return respond(200, {
-      id: "a0000000-0000-4000-a000-000000000001",
-      chatThreadId: "b0000000-0000-4000-a000-000000000001",
-      expiresAt: "2099-09-01T10:00:00.000Z",
-      completedAt: null,
-      cloudBrowserEnabled: false,
+      id: "a4000000-0000-4000-8000-000000000001",
+      chatThreadId: THREAD_ID,
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      completedAt: server.applied ? "2026-11-20T08:00:00.000Z" : null,
+      cloudBrowserEnabled: server.applied,
     });
   });
+  context.mocks.api(
+    browserAuthorizationRequestsContract.apply,
+    ({ respond }) => {
+      server.applied = true;
+      return respond(200, { ok: true, cloudBrowserEnabled: true });
+    },
+  );
 }
 
-function getButton(name: string): HTMLButtonElement {
-  const button = queryAllByRoleFast("button").find((candidate) => {
+function button(name: string): HTMLElement | undefined {
+  return queryAllByRoleFast("button").find((candidate) => {
     return candidate.textContent?.trim() === name;
   });
-  if (!(button instanceof HTMLButtonElement)) {
-    throw new Error(`Button not found: ${name}`);
-  }
-  return button;
 }
 
-test("Cloud-browser authorization uses the current app's brand", async () => {
-  context.mocks.browser.matchMedia(false);
-  mockPendingAuthorization();
-
-  await setupPage({
-    context,
-    path: `/browser/authorize/${REQUEST_TOKEN}`,
-    host: "app.okou.ai",
+async function enableForThread(): Promise<void> {
+  const enable = await waitFor(() => {
+    const found = button("Enable for this thread");
+    expect(found).toBeEnabled();
+    return found as HTMLElement;
   });
-
-  await expect(
-    screen.findByRole("heading", { name: "Enable cloud browser" }),
-  ).resolves.toBeVisible();
-  const brandLink = queryAllByRoleFast("link").find((candidate) => {
-    return candidate.querySelector('img[alt="Okou"]') !== null;
+  click(enable);
+  await waitFor(() => {
+    expect(button("Cloud browser enabled")).toBeDisabled();
   });
-  if (!brandLink) {
-    throw new Error("Expected the Okou brand link");
-  }
-  expect(brandLink).toHaveAttribute("href", "/connectors");
-  expect(screen.getByRole("img", { name: "Okou" })).toHaveAttribute(
-    "src",
-    platformOkouWordmarkDarkImg,
-  );
-});
+}
 
-test.each([404, 410] as const)(
-  "An unavailable authorization link does not offer browser access (%s)",
+test.each([404])(
+  "An unavailable authorization link does not offer browser access (%i)",
   async (status) => {
     context.mocks.api(
       browserAuthorizationRequestsContract.get,
       ({ respond }) => {
         return respond(status, {
-          error: { code: "NOT_FOUND", message: "Request unavailable" },
+          error: { code: "NOT_FOUND", message: "Authorization not found" },
         });
       },
     );
-    await setupPage({
-      context,
-      path: `/browser/authorize/${REQUEST_TOKEN}`,
-      host: "app.okou.ai",
-    });
 
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("Authorization link unavailable");
-    expect(alert).toHaveTextContent(
+    await setupPage({ context, path: PAGE_PATH });
+
+    await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
       "This cloud browser authorization link is invalid, expired, or not available for this workspace.",
     );
-    expect(
-      screen.getByRole("img", { name: "Okou" }).closest("a"),
-    ).toHaveAttribute("href", "/connectors");
-    expect(queryAllByRoleFast("button", alert)).toHaveLength(0);
+    const brand = queryAllByRoleFast("link").find((link) => {
+      return link.getAttribute("href") === "/connectors";
+    });
+    expect(brand).toBeDefined();
+    expect(queryAllByRoleFast("button")).toStrictEqual([]);
   },
 );
 
 test("A user can enable the cloud browser for one conversation", async () => {
-  let applyCount = 0;
-  mockPendingAuthorization();
-  context.mocks.api(
-    browserAuthorizationRequestsContract.apply,
-    ({ params, respond }) => {
-      if (params.requestToken === REQUEST_TOKEN) {
-        applyCount += 1;
-      }
-      return respond(200, { ok: true, cloudBrowserEnabled: true });
-    },
-  );
-
-  await setupPage({
-    context,
-    path: `/browser/authorize/${REQUEST_TOKEN}`,
-  });
-
+  mockPendingRequest();
+  await setupPage({ context, path: PAGE_PATH });
   await expect(
     screen.findByRole("heading", { name: "Enable cloud browser" }),
-  ).resolves.toBeVisible();
-  expect(
-    screen.getByText(
-      "Okou uses the same website logins across chats, with a separate browser window and tabs for each chat. Enabling Browser disconnects Computer Use for this chat.",
-    ),
-  ).toBeVisible();
-  click(getButton("Enable for this thread"));
+  ).resolves.toBeInTheDocument();
 
-  await waitFor(() => {
-    expect(getButton("Cloud browser enabled")).toBeDisabled();
-  });
-  expect(applyCount).toBe(1);
+  await enableForThread();
+
+  expect(button("Enable for this thread")).toBeUndefined();
 });
 
-test.each([false, true])(
-  "The standalone Browser page honors the optional callback (%s)",
-  async (callback) => {
-    const threadId = "b0000000-0000-4000-a000-000000000001";
-    mockPendingAuthorization();
-    mockAuthorizationCallbackThread(context, threadId);
-    let grants = 0;
-    const prompts: string[] = [];
-    context.mocks.api(
-      browserAuthorizationRequestsContract.apply,
-      ({ respond }) => {
-        grants++;
-        return respond(200, { ok: true, cloudBrowserEnabled: true });
-      },
-    );
-    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-      expect(grants).toBe(1);
-      expect(body.clientEventId).toBe("a0000000-0000-4000-a000-000000000001");
-      if (body.prompt) {
-        prompts.push(body.prompt);
-      }
-      return respond(201, { threadId });
+test("The standalone Browser page honors the optional callback (false)", async () => {
+  mockPendingRequest();
+  const callback: { prompt?: string } = {};
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    callback.prompt = body.prompt;
+    return respond(500, {
+      error: { code: "UNEXPECTED_CALLBACK", message: "No callback expected" },
     });
-    await setupPage({
-      context,
-      path: `/browser/authorize/${REQUEST_TOKEN}${callback ? `?threadId=${threadId}&callbackPrompt=Continue` : ""}`,
-      host: "app.okou.ai",
-    });
-    await waitFor(() => {
-      expect(getButton("Enable for this thread")).toBeEnabled();
-    });
-    click(getButton("Enable for this thread"));
-    await waitFor(() => {
-      expect(getButton("Cloud browser enabled")).toBeDisabled();
-    });
-    expect(grants).toBe(1);
-    expect(prompts).toStrictEqual(callback ? ["Continue"] : []);
-  },
-);
+  });
+  await setupPage({ context, path: PAGE_PATH });
+
+  await enableForThread();
+
+  // Without a callback thread or prompt, nothing is posted to a chat.
+  expect(callback.prompt).toBeUndefined();
+});

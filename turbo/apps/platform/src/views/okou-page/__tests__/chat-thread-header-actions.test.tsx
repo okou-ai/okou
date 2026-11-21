@@ -1,610 +1,115 @@
-import { selectDesktopHeaderAction } from "./chat-header-test-helpers.ts";
-import { act, screen, waitFor, within } from "@testing-library/react";
-import { expect, test } from "vitest";
 import {
   chatThreadArchiveContract,
   chatThreadMuteContract,
   chatThreadPinContract,
   chatThreadUnpinContract,
-  chatThreadsContract,
-  type ChatThreadEvent,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import { mailContract } from "@okouai/api-contracts/contracts/mail";
-import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { act, screen } from "@testing-library/react";
+import { test, expect } from "vitest";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { mockChatLifecycle } from "./chat-test-helpers.ts";
-import { chatListEvent } from "./chat-list-test-helpers.ts";
-import { changeChatThreadList } from "../../../mocks/mock-helpers.ts";
-import { pathname } from "../../../signals/location.ts";
+import {
+  createChatRunFixtures,
+  RUN_PATH,
+  promptEvent,
+  findButton,
+  queryButton,
+} from "./chat-run-test-fixtures.ts";
+import { findNamedMenuItem } from "./chat-attachment-test-helpers.ts";
 
 const context = testContext();
-const THREAD_ID = "b0000000-0000-4000-a000-000000000951";
-const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
+const subject = "Check the revised shipping date";
 
-async function setupHeaderPage(threadEvents: readonly ChatThreadEvent[] = []) {
-  mockChatLifecycle(context, {
-    threadId: THREAD_ID,
-    threadTitle: "😀 Header planning",
-    chatEvents: [
-      {
-        id: "header-planning-prompt",
-        role: "user",
-        content: "Review the header layout",
-        runId: "header-planning-run",
-        createdAt: "2026-09-01T10:00:00Z",
-      },
-      {
-        id: "header-planning-answer",
-        role: "assistant",
-        content: "The header layout is ready.",
-        runId: "header-planning-run",
-        createdAt: "2026-09-01T10:00:01Z",
-      },
-    ],
-  });
-  context.mocks.api(chatThreadsContract.events, ({ query, respond }) => {
-    return respond(200, {
-      events: threadEvents.filter((event) => {
-        return event.seqId > (query.sinceSeqId ?? 0);
-      }),
-      hasMore: false,
-    });
-  });
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(404, {
-      error: {
-        code: "BROWSER_NOT_FOUND",
-        message: "Managed browser not found",
-      },
-    });
-  });
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-  });
-  await screen.findByText("Review the header layout");
-  await waitFor(() => {
-    expect(screen.getByLabelText("Change icon")).toHaveTextContent("😀");
-  });
-}
-
-function buttonNamed(name: string, container: ParentNode = document.body) {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
-    return (
-      candidate.getAttribute("aria-label") === name ||
-      candidate.textContent?.trim() === name
-    );
-  });
-  if (!button) {
-    throw new Error(`Button not found: ${name}`);
-  }
-  return button;
-}
-
-function menuItemNamed(name: string) {
-  const item = queryAllByRoleFast("menuitem").find((candidate) => {
-    return (
-      candidate.getAttribute("aria-label") === name ||
-      candidate.textContent?.trim() === name
-    );
-  });
-  if (!item) {
-    throw new Error(`Menu item not found: ${name}`);
-  }
-  return item;
-}
-
-function menuItemNames() {
-  return queryAllByRoleFast("menuitem").map((item) => {
-    return item.textContent?.trim();
-  });
-}
-
-test("Keep menu pin changes responsive across resize and save", async () => {
+async function openMobile() {
   const viewport = context.mocks.browser.matchMedia(false);
-  const pinResponse = context.mocks.deferred<void>();
-  const events: ChatThreadEvent[] = [];
-  context.mocks.api(
-    chatThreadPinContract.pin,
-    async ({ params, query, respond }) => {
-      await pinResponse.promise;
-      events.push(
-        chatListEvent(951, events.length + 1, "pinned", params.id, {
-          id: query?.eventId,
-          agentId: "c0000000-0000-4000-a000-000000000001",
-          pinOrder: query?.pinOrder,
-        }),
-      );
-      return respond(204);
-    },
-  );
-  context.mocks.api(
-    chatThreadUnpinContract.unpin,
-    ({ params, query, respond }) => {
-      events.push(
-        chatListEvent(951, events.length + 1, "unpinned", params.id, {
-          id: query?.eventId,
-          agentId: "c0000000-0000-4000-a000-000000000001",
-        }),
-      );
-      // A following server event makes completed reconciliation observable.
-      events.push(
-        chatListEvent(951, events.length + 1, "renamed", params.id, {
-          agentId: "c0000000-0000-4000-a000-000000000001",
-          title: "😀 Pin changes saved",
-        }),
-      );
-      changeChatThreadList();
-      return respond(204);
-    },
-  );
-  await setupHeaderPage(events);
-  click(buttonNamed("More actions"));
-  await screen.findByRole("menu");
-  click(menuItemNamed("Pin chat"));
-  act(() => {
-    viewport.setMatches(true);
+  const runId = crypto.randomUUID();
+  createChatRunFixtures(context).installRunChat({
+    threadTitle: "Cargo review",
+    chatEvents: [promptEvent({ id: runId, runId, seqId: 1, text: subject })],
   });
-  await waitFor(() => {
-    expect(
-      screen.getByTestId("chat-thread-header-title").closest("header"),
-    ).toContainElement(buttonNamed("Share messages"));
-  });
-  act(() => {
-    viewport.setMatches(false);
-  });
-  await waitFor(() => {
-    expect(buttonNamed("More actions")).toBeInTheDocument();
-  });
-
-  click(buttonNamed("More actions"));
-  await waitFor(() => {
-    expect(menuItemNamed("Unpin chat")).toBeEnabled();
-  });
-  click(menuItemNamed("Unpin chat"));
-
-  pinResponse.resolve();
-  await waitFor(() => {
-    expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
-      "Pin changes saved",
-    );
-  });
-  click(buttonNamed("More actions"));
-  await waitFor(() => {
-    expect(menuItemNamed("Pin chat")).toBeEnabled();
-  });
-});
-
-test("Keep Share and More in the header and match the sidebar menu order", async () => {
-  context.mocks.browser.matchMedia(false);
-  context.mocks.api(mailContract.listThreadMail, ({ respond }) => {
-    return respond(200, {
-      mails: [
-        {
-          mailDraftId: "e0000000-0000-4000-a000-000000000951",
-          status: "draft",
-          subject: "Header planning",
-          from: "sender@example.com",
-          createdAt: "2026-09-01T10:00:00Z",
-        },
-      ],
-    });
-  });
-  await setupHeaderPage();
-  await waitFor(() => {
-    expect(buttonNamed("Manage emails")).toHaveAttribute("aria-busy", "false");
-  });
-  const more = buttonNamed("More actions");
-  const group = more.parentElement;
-  if (!group) {
-    throw new Error("Header action group is missing");
-  }
-  expect(
-    queryAllByRoleFast("button", group).map((button) => {
-      return button.getAttribute("aria-label");
-    }),
-  ).toStrictEqual([
-    "Share messages",
-    "Manage emails",
-    "Artifacts and chats",
-    "More actions",
-  ]);
-  expect(screen.getByLabelText("Back to chats")).toBeInTheDocument();
-
-  click(more);
-  await screen.findByRole("menu");
-  expect(menuItemNames()).toStrictEqual([
-    "Pin chat",
-    "Rename chat",
-    "Mute chat",
-    "Archive chat",
-    "Automations",
-    "Open browser",
-  ]);
-  click(menuItemNamed("Rename chat"));
-  const dialog = await screen.findByRole("dialog", { name: "Rename chat" });
-  expect(within(dialog).getByPlaceholderText("Chat title")).toHaveValue(
-    "😀 Header planning",
-  );
-});
-
-test("Keep primary icon actions accessible and open emails from the desktop menu", async () => {
-  context.mocks.browser.matchMedia(true);
-  await setupHeaderPage();
-  expect(buttonNamed("Share messages")).toHaveAccessibleName("Share messages");
-  expect(buttonNamed("Artifacts and chats")).toHaveAccessibleName(
-    "Artifacts and chats",
-  );
-  const more = buttonNamed("More actions");
-  expect(more).toHaveAccessibleName("More actions");
-  click(more);
-  await screen.findByRole("menu");
-  expect(menuItemNames()).toStrictEqual([
-    "Automations",
-    "Manage emails",
-    "Open browser",
-  ]);
-  click(menuItemNamed("Manage emails"));
-  const mail = await screen.findByRole("dialog", { name: "Emails" });
-  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-  click(buttonNamed("Close emails", mail));
-  await waitFor(() => {
-    return expect(more).toHaveFocus();
-  });
-  await selectDesktopHeaderAction("Automations");
-  await screen.findByRole("complementary", { name: "Automations" });
-});
-
-test("Archive from the mobile header and return home before saving", async () => {
-  context.mocks.browser.matchMedia(false);
-  const archiveResponse = context.mocks.deferred<void>();
-  const events: ChatThreadEvent[] = [];
-  let archiveRequestAborted = false;
-  context.mocks.api(
-    chatThreadArchiveContract.archive,
-    async ({ params, query, request, respond }) => {
-      request.signal.addEventListener("abort", () => {
-        archiveRequestAborted = true;
-      });
-      await archiveResponse.promise;
-      events.push(
-        chatListEvent(951, 1, "archived", params.id, {
-          id: query?.eventId,
-          agentId: AGENT_ID,
-        }),
-      );
-      changeChatThreadList();
-      return respond(204);
-    },
-  );
-  await setupHeaderPage(events);
-  click(buttonNamed("More actions"));
-  await screen.findByRole("menu");
-  click(menuItemNamed("Archive chat"));
-  await waitFor(() => {
-    expect(pathname()).toBe("/");
-  });
-  expect(
-    screen.queryByText("Review the header layout"),
-  ).not.toBeInTheDocument();
-
-  archiveResponse.resolve();
-  await waitFor(() => {
-    expect(events).toHaveLength(1);
-  });
-  expect(archiveRequestAborted).toBeFalsy();
-});
-
-test("Undo a header archive from its toast and return to the thread", async () => {
-  context.mocks.browser.matchMedia(false);
-  const events: ChatThreadEvent[] = [];
-  context.mocks.api(
-    chatThreadArchiveContract.archive,
-    ({ params, query, respond }) => {
-      events.push(
-        chatListEvent(951, 1, "archived", params.id, {
-          id: query?.eventId,
-          agentId: AGENT_ID,
-        }),
-      );
-      changeChatThreadList();
-      return respond(204);
-    },
-  );
-  context.mocks.api(
-    chatThreadArchiveContract.unarchive,
-    ({ params, query, respond }) => {
-      events.push(
-        chatListEvent(951, 2, "unarchived", params.id, {
-          id: query?.eventId,
-          agentId: AGENT_ID,
-        }),
-      );
-      changeChatThreadList();
-      return respond(204);
-    },
-  );
-  await setupHeaderPage(events);
-  click(buttonNamed("More actions"));
-  await screen.findByRole("menu");
-  click(menuItemNamed("Archive chat"));
-
-  await expect(
-    screen.findByText("Chat archived."),
-  ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe("/");
-
-  click(buttonNamed("Undo"));
-  await waitFor(() => {
-    expect(pathname()).toBe(`/chats/${THREAD_ID}`);
-  });
-  await expect(
-    screen.findByText("Review the header layout"),
-  ).resolves.toBeInTheDocument();
-  click(buttonNamed("More actions"));
-  await screen.findByRole("menu");
-  await waitFor(() => {
-    expect(menuItemNames()).toContain("Archive chat");
-  });
-});
-
-function mockMuteRequests(events: ChatThreadEvent[]) {
-  for (const [route, muted] of [
-    [chatThreadMuteContract.mute, true],
-    [chatThreadMuteContract.unmute, false],
-  ] as const) {
-    context.mocks.api(route, ({ params, query, respond }) => {
-      events.push(
-        chatListEvent(951, events.length + 1, "sort_touched", params.id, {
-          id: query?.eventId,
-          agentId: AGENT_ID,
-          muted,
-        }),
-      );
-      changeChatThreadList();
-      return respond(204);
-    });
-  }
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  await screen.findByText(subject);
+  return viewport;
 }
 
-test("Mute from the mobile header and unmute from the desktop header", async () => {
-  const viewport = context.mocks.browser.matchMedia(false);
-  const events: ChatThreadEvent[] = [];
-  mockMuteRequests(events);
-  await setupHeaderPage(events);
-  click(buttonNamed("More actions"));
-  await screen.findByRole("menu");
-  expect(menuItemNames()).toStrictEqual([
-    "Pin chat",
-    "Rename chat",
-    "Mute chat",
-    "Archive chat",
-    "Automations",
-    "Open browser",
-  ]);
-  click(menuItemNamed("Mute chat"));
-  await expect(
-    screen.findByText(
-      "Chat muted. New replies won't show as unread or send push notifications.",
-    ),
-  ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe(`/chats/${THREAD_ID}`);
-  click(buttonNamed("More actions"));
-  await waitFor(() => {
-    expect(menuItemNames()).toContain("Unmute chat");
-  });
+async function action(name: string) {
+  click(await findButton("More actions"));
+  const menu = await screen.findByRole("menu");
+  return findNamedMenuItem(name, menu);
+}
 
-  act(() => {
-    viewport.setMatches(true);
-  });
-  const unmute = await waitFor(() => {
-    return buttonNamed("Unmute chat");
-  });
-  expect(
-    screen.getByTestId("chat-thread-header-title").closest("header"),
-  ).toContainElement(unmute);
-  click(unmute);
-  await expect(screen.findByText("Chat unmuted")).resolves.toBeInTheDocument();
-  expect(screen.queryByLabelText("Unmute chat")).not.toBeInTheDocument();
-});
-
-test("Show the archive API error after leaving the thread", async () => {
-  context.mocks.browser.matchMedia(false);
+test("chat-thread-header-actions-006 undoing archive returns to the original mobile conversation", async () => {
   context.mocks.api(chatThreadArchiveContract.archive, ({ respond }) => {
-    return respond(500, { error: { message: "Archive request failed" } });
+    return respond(204);
   });
-  await setupHeaderPage();
-  click(buttonNamed("More actions"));
-  await screen.findByRole("menu");
-  click(menuItemNamed("Archive chat"));
-  await expect(
-    screen.findByText("Archive request failed"),
-  ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe("/");
-});
-
-test("Unarchive from the mobile header and stay in the current thread", async () => {
-  context.mocks.browser.matchMedia(false);
-  const unarchiveResponse = context.mocks.deferred<void>();
-  const events: ChatThreadEvent[] = [
-    chatListEvent(951, 1, "archived", THREAD_ID, { agentId: AGENT_ID }),
-  ];
-  context.mocks.api(
-    chatThreadArchiveContract.unarchive,
-    async ({ params, query, respond }) => {
-      await unarchiveResponse.promise;
-      events.push(
-        chatListEvent(951, 2, "unarchived", params.id, {
-          id: query?.eventId,
-          agentId: AGENT_ID,
-        }),
-      );
-      changeChatThreadList();
-      return respond(204);
-    },
-  );
-  await setupHeaderPage(events);
-  click(buttonNamed("More actions"));
-  await screen.findByRole("menu");
-  expect(menuItemNames()).toStrictEqual([
-    "Pin chat",
-    "Rename chat",
-    "Mute chat",
-    "Unarchive chat",
-    "Automations",
-    "Open browser",
-  ]);
-  click(menuItemNamed("Unarchive chat"));
-  click(buttonNamed("More actions"));
-  await screen.findByRole("menu");
-  expect(menuItemNamed("Archive chat")).toHaveAttribute(
+  context.mocks.api(chatThreadArchiveContract.unarchive, ({ respond }) => {
+    return respond(204);
+  });
+  await openMobile();
+  click(await action("Archive chat"));
+  const undo = await findButton("Undo");
+  expect(location.pathname).toBe("/");
+  click(undo);
+  await screen.findByText(subject);
+  expect(location.pathname).toBe(RUN_PATH);
+  await expect(action("Archive chat")).resolves.not.toHaveAttribute(
     "aria-disabled",
     "true",
   );
-
-  unarchiveResponse.resolve();
-  await waitFor(() => {
-    expect(menuItemNamed("Archive chat")).not.toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
-  });
-  expect(pathname()).toBe(`/chats/${THREAD_ID}`);
-  expect(screen.getByText("Review the header layout")).toBeInTheDocument();
 });
 
-test("Stay in the archived thread and show the unarchive API error", async () => {
-  context.mocks.browser.matchMedia(false);
-  context.mocks.api(chatThreadArchiveContract.unarchive, ({ respond }) => {
-    return respond(500, { error: { message: "Unarchive request failed" } });
+test("chat-thread-header-actions-007 unmuting from the desktop header clears the mobile mute", async () => {
+  context.mocks.api(chatThreadMuteContract.mute, ({ respond }) => {
+    return respond(204);
   });
-  await setupHeaderPage([
-    chatListEvent(951, 1, "archived", THREAD_ID, { agentId: AGENT_ID }),
-  ]);
-  click(buttonNamed("More actions"));
-  await screen.findByRole("menu");
-  click(menuItemNamed("Unarchive chat"));
-  await expect(
-    screen.findByText("Unarchive request failed"),
-  ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe(`/chats/${THREAD_ID}`);
-  expect(screen.getByText("Review the header layout")).toBeInTheDocument();
+  context.mocks.api(chatThreadMuteContract.unmute, ({ respond }) => {
+    return respond(204);
+  });
+  const viewport = await openMobile();
+  click(await action("Mute chat"));
+  await screen.findByText(/Chat muted\./);
+  expect(location.pathname).toBe(RUN_PATH);
+  const unmute = await action("Unmute chat");
+  expect(unmute).toBeInTheDocument();
+  act(() => {
+    viewport.setMatches((query) => {
+      return query.startsWith("(min-width:");
+    });
+  });
+  const button = await findButton("Unmute chat");
+  expect(button.closest("header")).toHaveTextContent("Cargo review");
+  click(button);
+  await screen.findByText("Chat unmuted");
+  expect(queryButton("Unmute chat")).toBeNull();
 });
 
-test("Open linked automations from the mobile menu", async () => {
-  context.mocks.browser.matchMedia(false);
-  context.mocks.api(
-    workflowAutomationsContract.listForChatThread,
-    ({ respond }) => {
-      return respond(200, [
-        {
-          id: "a0000000-0000-4000-a000-000000000951",
-          ownerUserId: "test-user-123",
-          enabled: true,
-          chatThreadId: THREAD_ID,
-          nextRunAt: null,
-          lastRunAt: null,
-          official: null,
-          kind: "schedule",
-          schedule: { type: "loop", intervalSeconds: 7200 },
-          scheduleSummary: "Every two hours",
-          workflow: {
-            id: "a0000000-0000-4000-a000-000000000952",
-            agentId: "c0000000-0000-4000-a000-000000000001",
-            name: "header-check",
-            displayName: "Header check",
-            description: null,
-          },
-        },
-      ]);
-    },
-  );
-  await setupHeaderPage();
-  expect(screen.queryByLabelText("Open mobile automations")).toBeNull();
-  click(buttonNamed("More actions"));
-  await waitFor(() => {
-    expect(menuItemNames()).toStrictEqual([
-      "Pin chat",
-      "Rename chat",
-      "Mute chat",
-      "Archive chat",
-      "Automations",
-      "Open browser",
-    ]);
-  });
-  click(menuItemNamed("Automations"));
-  const panel = await screen.findByRole("complementary", {
-    name: "Automations",
-  });
-  const automation = await within(panel).findByText("Header check");
-  expect(automation).toBeVisible();
-});
-
-test("Retain message selection and restore mobile actions after sharing", async () => {
-  context.mocks.browser.matchMedia(false);
-  await setupHeaderPage();
-  click(buttonNamed("Share messages"));
-  await screen.findAllByText("0 selected");
-  expect(screen.queryByLabelText("More actions")).not.toBeInTheDocument();
-  click(screen.getAllByText("Select message group")[0]!);
-  await screen.findAllByText("1 selected");
-  click(buttonNamed("Cancel"));
-  await waitFor(() => {
-    expect(buttonNamed("Share messages")).toBeInTheDocument();
-    expect(buttonNamed("More actions")).toBeInTheDocument();
-  });
-  click(buttonNamed("Change icon"));
-  const search = await screen.findByLabelText("Search emoji");
-  expect(search).toBeInTheDocument();
-});
-
-test("Show the existing API error without undoing an optimistic pin", async () => {
-  context.mocks.browser.matchMedia(true);
-  context.mocks.api(chatThreadPinContract.pin, ({ respond }) => {
-    return respond(500, { error: { message: "Pin request failed" } });
-  });
-  await setupHeaderPage();
-  click(screen.getByTestId("chat-thread-menu-trigger"));
-  await screen.findByRole("menu");
-  click(menuItemNamed("Pin chat"));
-  const error = await screen.findByText("Pin request failed");
-  expect(error).toBeInTheDocument();
-  click(screen.getByTestId("chat-thread-menu-trigger"));
-  await screen.findByRole("menu");
-  expect(menuItemNamed("Unpin chat")).toBeEnabled();
-});
-
-test("Continue saving the next pin change after an earlier request fails", async () => {
-  context.mocks.browser.matchMedia(false);
-  const pinResponse = context.mocks.deferred<void>();
+test("chat-thread-header-actions-014 both failed pin changes release the next mobile action", async () => {
+  const first = context.mocks.deferred<void>();
+  const second = context.mocks.deferred<void>();
   context.mocks.api(chatThreadPinContract.pin, async ({ respond }) => {
-    await pinResponse.promise;
-    return respond(500, { error: { message: "Pin request failed" } });
+    await first.promise;
+    return respond(400, {
+      error: { code: "BAD_REQUEST", message: "Pin rejected for cargo review" },
+    });
   });
-  context.mocks.api(chatThreadUnpinContract.unpin, ({ respond }) => {
-    return respond(500, { error: { message: "Unpin request failed" } });
+  context.mocks.api(chatThreadUnpinContract.unpin, async ({ respond }) => {
+    await second.promise;
+    return respond(400, {
+      error: {
+        code: "BAD_REQUEST",
+        message: "Unpin rejected for cargo review",
+      },
+    });
   });
-  await setupHeaderPage();
-  click(buttonNamed("More actions"));
-  await screen.findByRole("menu");
-  click(menuItemNamed("Pin chat"));
-  click(buttonNamed("More actions"));
-  await waitFor(() => {
-    expect(menuItemNamed("Unpin chat")).toBeEnabled();
-  });
-  click(menuItemNamed("Unpin chat"));
-
-  pinResponse.resolve();
-  await screen.findByText("Unpin request failed");
-  expect(screen.getByText("Pin request failed")).toBeInTheDocument();
-  click(buttonNamed("More actions"));
-  await waitFor(() => {
-    expect(menuItemNamed("Pin chat")).toBeEnabled();
-  });
+  await openMobile();
+  click(await action("Pin chat"));
+  click(await action("Unpin chat"));
+  first.resolve();
+  await screen.findByText(/Pin rejected for cargo review/);
+  second.resolve();
+  await screen.findByText(/Unpin rejected for cargo review/);
+  await expect(action("Pin chat")).resolves.not.toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
 });

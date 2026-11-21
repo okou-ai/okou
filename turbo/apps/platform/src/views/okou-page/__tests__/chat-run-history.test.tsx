@@ -1,1045 +1,292 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-
-import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
-import { mockNow } from "../../../__tests__/time.ts";
-import { now } from "../../../lib/time.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { setupPage } from "./chat-lifecycle-test-helpers.ts";
+import {
+  click,
+  fill,
+  setupPage,
+  queryAllByRoleFast,
+} from "../../../__tests__/page-helper.ts";
+import { mockNow, now } from "../../../lib/time.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
+  findEnabledButton,
   assistantEvent,
   completedEvent,
-  creditUsage,
-  expectTextOrder,
-  findButton,
-  findLink,
-  findWorkHistoryToggle,
-  promptEvent,
-  queryButton,
-  queryWorkHistoryToggles,
-  readyChat,
-  RUN_PATH,
-  usageEvent,
   createChatRunFixtures,
+  promptEvent,
+  usageEvent,
+  creditUsage,
+  RUN_PATH,
+  queryButton,
 } from "./chat-run-test-fixtures.ts";
-
 const context = testContext();
-const { installRunChat } = createChatRunFixtures(context);
-
-const RUN_A = "a0000000-0000-4000-a000-000000000201";
-const RUN_B = "a0000000-0000-4000-a000-000000000202";
-
-function createdAt(minute: number, second = 0): string {
-  return `2026-08-01T10:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}.000Z`;
-}
-
-function buttonsNamed(name: string): HTMLElement[] {
-  return queryAllByRoleFast("button").filter((button) => {
-    return button.getAttribute("aria-label") === name;
+function historyControls(pane: HTMLElement) {
+  return queryAllByRoleFast("button", pane).filter((button) => {
+    return /^(Expand|Collapse) work history$/u.test(
+      button.getAttribute("aria-label") ?? "",
+    );
   });
 }
-
-function buttonNamedIn(name: string, container: HTMLElement): HTMLElement {
-  const button = buttonsNamed(name).find((candidate) => {
-    return container.contains(candidate);
+function input(runId: string, seqId: number, text: string, createdAt?: string) {
+  return promptEvent({
+    id: crypto.randomUUID(),
+    runId,
+    seqId,
+    text,
+    createdAt,
   });
-  if (!button) {
-    throw new Error(`Expected button named "${name}" in container`);
+}
+function output(
+  runId: string,
+  seqId: number,
+  text: string,
+  createdAt?: string,
+) {
+  return assistantEvent({
+    id: crypto.randomUUID(),
+    runId,
+    seqId,
+    text,
+    createdAt,
+  });
+}
+function end(runId: string, seqId: number, createdAt?: string) {
+  return completedEvent({ id: crypto.randomUUID(), runId, seqId, createdAt });
+}
+async function show(events: MockChatEventInput[], activeRunIds: string[] = []) {
+  const service = createChatRunFixtures(context).installRunChat({
+    chatEvents: events,
+    activeRunIds,
+  });
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  return service;
+}
+function transcript(text: HTMLElement) {
+  const pane = text.closest<HTMLElement>("[data-chat-thread-container-id]");
+  if (!pane) {
+    throw new Error("Expected message in conversation");
   }
-  return button;
+  return pane;
 }
-
-function workMessage(index: number): string {
-  return `Work message ${String(index + 1)}`;
-}
-
-function workMessageEvents(count: number): MockChatEventInput[] {
-  return Array.from({ length: count }, (_, index) => {
-    return assistantEvent({
-      id: `work-message-${String(index + 1)}`,
-      runId: RUN_A,
-      seqId: index + 2,
-      text: workMessage(index),
-      createdAt: createdAt(10, (index + 1) * 5),
-    });
-  });
-}
-
-function activeWorkChatEvents(messageCount: number): MockChatEventInput[] {
-  return [
-    promptEvent({
-      id: "active-work-user",
-      runId: RUN_A,
-      seqId: 1,
-      text: "Prepare the deployment review",
-      createdAt: createdAt(10),
-    }),
-    ...workMessageEvents(messageCount),
-  ];
-}
-
-function assistantGroupFor(element: Element): HTMLElement {
-  const group = element.closest<HTMLElement>('[data-role="assistant"]');
-  if (!group) {
-    throw new Error("Expected content inside one assistant response");
-  }
-  return group;
-}
-
-function myOkouAvatarButtons(): HTMLElement[] {
-  return queryAllByRoleFast("button").filter((button) => {
-    return button.getAttribute("aria-label") === "My Okou";
-  });
-}
-
-async function setupCompletedConversationPhases(): Promise<void> {
-  installRunChat({
-    chatEvents: [
-      promptEvent({
-        id: "phase-a-user",
-        runId: RUN_A,
-        seqId: 1,
-        text: "Plan phase one",
-        createdAt: createdAt(0),
-      }),
-      assistantEvent({
-        id: "phase-a-work-1",
-        runId: RUN_A,
-        seqId: 2,
-        text: "Collected requirements",
-        createdAt: createdAt(0, 20),
-      }),
-      assistantEvent({
-        id: "phase-a-answer-1",
-        runId: RUN_A,
-        seqId: 3,
-        text: "Phase one outline",
-        createdAt: createdAt(0, 40),
-      }),
-      promptEvent({
-        id: "phase-a-followup",
-        runId: RUN_A,
-        seqId: 4,
-        text: "Include rollback steps",
-        createdAt: createdAt(1),
-      }),
-      assistantEvent({
-        id: "phase-a-work-2",
-        runId: RUN_A,
-        seqId: 5,
-        text: "Compared rollback options",
-        createdAt: createdAt(1, 20),
-      }),
-      assistantEvent({
-        id: "phase-a-final",
-        runId: RUN_A,
-        seqId: 6,
-        text: "Phase one final plan",
-        createdAt: createdAt(2),
-      }),
-      completedEvent({
-        id: "phase-a-complete",
-        runId: RUN_A,
-        seqId: 7,
-        createdAt: createdAt(2, 1),
-      }),
-      promptEvent({
-        id: "phase-b-user",
-        runId: RUN_B,
-        seqId: 8,
-        text: "Plan phase two",
-        createdAt: createdAt(3),
-      }),
-      assistantEvent({
-        id: "phase-b-work",
-        runId: RUN_B,
-        seqId: 9,
-        text: "Checked launch dependencies",
-        createdAt: createdAt(3, 20),
-      }),
-      assistantEvent({
-        id: "phase-b-final",
-        runId: RUN_B,
-        seqId: 10,
-        text: "Phase two final plan",
-        createdAt: createdAt(5),
-      }),
-      completedEvent({
-        id: "phase-b-complete",
-        runId: RUN_B,
-        seqId: 11,
-        createdAt: createdAt(5, 1),
-      }),
-      usageEvent({
-        id: "phase-b-usage",
-        runId: RUN_B,
-        seqId: 12,
-        usage: creditUsage(7, [
-          {
-            kind: "connector",
-            credits: 7,
-            providers: [{ provider: "slack", credits: 7 }],
-          },
-        ]),
-      }),
-    ],
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-
-  await readyChat();
-
-  const viewport = screen
-    .getByText("Phase two final plan")
-    .closest("[data-scroll-container]");
-  if (!(viewport instanceof HTMLElement)) {
-    throw new Error("Chat scroll viewport not found");
-  }
-  fireEvent.scroll(viewport, { target: { scrollTop: 0 } });
-  await screen.findByText("Plan phase one");
-}
-
-test("Summarize completed work by conversation phase", async () => {
-  await setupCompletedConversationPhases();
-  expect(
-    assistantGroupFor(screen.getByText("Phase one outline")),
-  ).toHaveTextContent("Worked for 1 min");
-  expect(
-    assistantGroupFor(screen.getByText("Phase one final plan")),
-  ).toHaveTextContent("Worked for 1 min");
-  expect(screen.getByText("Worked for 2 min")).toBeVisible();
-  expect(screen.getByText("Phase one outline")).toBeVisible();
-  expect(screen.getByText("Phase one final plan")).toBeVisible();
-  expect(screen.getByText("Phase two final plan")).toBeVisible();
-  expect(screen.queryByText("Collected requirements")).toBeNull();
-  expect(screen.queryByText("Compared rollback options")).toBeNull();
-  expect(screen.queryByText("Checked launch dependencies")).toBeNull();
-  expect(queryWorkHistoryToggles("collapsed")).toHaveLength(3);
-});
-
-test("Expand the first completed conversation phase", async () => {
-  await setupCompletedConversationPhases();
-  click(
-    buttonNamedIn(
-      "Expand work history",
-      assistantGroupFor(screen.getByText("Phase one outline")),
-    ),
-  );
-  await expect(
-    screen.findByText("Collected requirements"),
-  ).resolves.toBeVisible();
-  expect(screen.queryByText("Compared rollback options")).toBeNull();
-  expect(screen.queryByText("Checked launch dependencies")).toBeNull();
-  expectTextOrder(
-    "Plan phase one",
-    "Collected requirements",
-    "Phase one outline",
-    "Include rollback steps",
-    "Phase one final plan",
-  );
-});
-
-test.each([
-  {
-    label: "one output message",
-    messageCount: 1,
-    showsHistoryStatus: true,
-    canExpandHistory: false,
-  },
-  {
-    label: "multiple output messages",
-    messageCount: 5,
-    showsHistoryStatus: true,
-    canExpandHistory: true,
-  },
-])(
-  "Project an active run with $label",
-  async ({ messageCount, showsHistoryStatus, canExpandHistory }) => {
-    installRunChat({
-      activeRunIds: [RUN_A],
-      chatEvents: activeWorkChatEvents(messageCount),
-    });
-
-    await setupPage({
-      context,
-      path: RUN_PATH,
-    });
-
-    await readyChat();
-    const thinking = document.querySelector<HTMLElement>(
-      "[data-thinking-indicator]",
-    );
-    expect(thinking).toBeVisible();
-    expect(screen.queryAllByText(/^Working(?: for)? /u)).toHaveLength(
-      showsHistoryStatus ? 1 : 0,
-    );
-    expect(queryWorkHistoryToggles("collapsed")).toHaveLength(
-      canExpandHistory ? 1 : 0,
-    );
-
-    const main = screen.getByText(workMessage(messageCount - 1));
-    expect(main).toBeVisible();
-
-    for (let index = 0; index < messageCount - 1; index += 1) {
-      expect(screen.queryByText(workMessage(index))).toBeNull();
-    }
-    expect(assistantGroupFor(main)).toContainElement(thinking);
-
-    if (!canExpandHistory) {
-      return;
-    }
-
-    click(await findWorkHistoryToggle("collapsed"));
-    const firstHistoryMessage = await screen.findByText(workMessage(0));
-    const secondHistoryMessage = screen.getByText(workMessage(1));
-    expect(assistantGroupFor(firstHistoryMessage)).toBe(
-      assistantGroupFor(main),
-    );
-    expect(assistantGroupFor(secondHistoryMessage)).toBe(
-      assistantGroupFor(main),
-    );
-    expectTextOrder(workMessage(0), workMessage(1), workMessage(2));
-  },
-);
-
-test.each([
-  {
-    active: false,
-    durationMs: 30_000,
-    expected: "Worked for 30 sec",
-  },
-  {
-    active: false,
-    durationMs: 60_000,
-    expected: "Worked for 1 min",
-  },
-  {
-    active: false,
-    durationMs: 60 * 60_000,
-    expected: "Worked for 1 hr",
-  },
-  {
-    active: false,
-    durationMs: 89 * 60_000,
-    expected: "Worked for 1 hr 29 min",
-  },
-  {
-    active: true,
-    durationMs: 89 * 60_000,
-    expected: "Working for 1 hr 29 min",
-  },
-])(
-  "Render the $expected work duration",
-  async ({ active, durationMs, expected }) => {
-    // ElapsedTime uses Date.now directly for active runs; allow time to advance
-    // naturally while keeping the completed-run timestamps deterministic.
-    const startedAt = active
-      ? now() - durationMs
-      : new Date(createdAt(0)).getTime();
-    installRunChat({
-      activeRunIds: active ? [RUN_A] : [],
-      chatEvents: [
-        promptEvent({
-          id: "localized-work-user",
-          runId: RUN_A,
-          seqId: 1,
-          text: "Prepare the report",
-          createdAt: new Date(startedAt).toISOString(),
-        }),
-        assistantEvent({
-          id: "localized-work-first",
-          runId: RUN_A,
-          seqId: 2,
-          text: "Collected data",
-          createdAt: new Date(startedAt + 5000).toISOString(),
-        }),
-        assistantEvent({
-          id: "localized-work-second",
-          runId: RUN_A,
-          seqId: 3,
-          text: "Prepared report",
-          createdAt: new Date(startedAt + 10_000).toISOString(),
-        }),
-        ...(active
-          ? []
-          : [
-              completedEvent({
-                id: "localized-work-complete",
-                runId: RUN_A,
-                seqId: 4,
-                createdAt: new Date(startedAt + durationMs).toISOString(),
-              }),
-            ]),
-      ],
-    });
-
-    await setupPage({ context, path: RUN_PATH });
-    await screen.findByText("Prepared report");
-    await waitFor(() => {
-      expect(document.querySelector("[data-chat-run-work]")).toHaveTextContent(
-        expected,
+test("chat-run-history-002 expanding the first outline reveals only its own work", async () => {
+  const first = crypto.randomUUID(),
+    second = crypto.randomUUID();
+  await show([
+    input(first, 1, "Plan phase one"),
+    output(first, 2, "Collected requirements"),
+    output(first, 3, "Phase one outline"),
+    input(first, 4, "Refine phase one"),
+    output(first, 5, "Rechecked totals"),
+    output(first, 6, "Phase one revision"),
+    end(first, 7),
+    input(second, 8, "Plan phase two"),
+    output(second, 9, "Compared alternatives"),
+    output(second, 10, "Phase two outline"),
+    end(second, 11),
+  ]);
+  const anchor = await screen.findByText("Phase one outline");
+  const pane = transcript(anchor);
+  const toggle = queryAllByRoleFast("button", pane)
+    .filter((el) => {
+      return (
+        el.getAttribute("aria-label") === "Expand work history" &&
+        Boolean(
+          el.compareDocumentPosition(anchor) & Node.DOCUMENT_POSITION_FOLLOWING,
+        )
       );
-    });
-    expect(document.querySelector("[data-chat-run-work]")).toHaveTextContent(
-      "1 step",
-    );
-  },
-);
-
-test.each(["input.prompt", "input.automation"] as const)(
-  "Exclude initial queue wait from active and completed work for %s",
-  async (eventType) => {
-    const durationMs = 71 * 60_000 + 35_000;
-    const startedAt = now() - durationMs;
-    const at = (offsetMs: number) => {
-      return new Date(startedAt + offsetMs).toISOString();
-    };
-    mockNow(new Date(at(durationMs)), context.signal);
-    const queuedInput: MockChatEventInput = {
-      id: "queued-report",
-      role: "user",
-      eventType,
-      content: "Prepare the report",
-      createdAt: at(-(60 * 60_000 + 40_000)),
-      seqId: 3,
-      ...(eventType === "input.automation"
-        ? {
-            userMessage: {
-              version: 1,
-              parts: [
-                {
-                  type: "automation",
-                  workflowName: "Report preparation",
-                  automationBrief: "Prepare the report",
-                },
-              ],
-            },
-          }
-        : {}),
-    };
-    const chat = installRunChat({
-      activeRunIds: [RUN_B],
-      chatEvents: [
-        promptEvent({
-          id: "previous-request",
-          runId: RUN_A,
-          seqId: 1,
-          text: "Complete the previous delivery",
-          createdAt: at(-(84 * 60_000 + 30_000)),
-        }),
-        assistantEvent({
-          id: "previous-work",
-          runId: RUN_A,
-          seqId: 2,
-          text: "Checking the previous delivery",
-          createdAt: at(-(84 * 60_000 + 25_000)),
-        }),
-        queuedInput,
-        assistantEvent({
-          id: "previous-result",
-          runId: RUN_A,
-          seqId: 4,
-          text: "Previous delivery complete",
-          createdAt: at(-2000),
-        }),
-        completedEvent({
-          id: "previous-completed",
-          runId: RUN_A,
-          seqId: 5,
-          createdAt: at(-1000),
-        }),
-        {
-          ...queuedInput,
-          id: "delivered-report",
-          eventType: "input.prompt",
-          runId: RUN_B,
-          revokesEventId: queuedInput.id,
-          seqId: 6,
-          createdAt: at(0),
-        },
-        assistantEvent({
-          id: "report-work",
-          runId: RUN_B,
-          seqId: 7,
-          text: "Collecting report data",
-          createdAt: at(5000),
-        }),
-        assistantEvent({
-          id: "report-result",
-          runId: RUN_B,
-          seqId: 8,
-          text: "Prepared report",
-          createdAt: at(durationMs - 5000),
-        }),
-      ],
-    });
-
-    await setupPage({ context, path: RUN_PATH });
-    await screen.findByText("Prepared report");
-    expect(
-      assistantGroupFor(screen.getByText("Prepared report")),
-    ).toHaveTextContent("Working for 1 hr 12 min");
-    expect(
-      assistantGroupFor(screen.getByText("Previous delivery complete")),
-    ).toHaveTextContent("Worked for 1 hr 24 min");
-
-    chat.completeRun();
-
-    await expect(
-      screen.findByText("Worked for 1 hr 12 min"),
-    ).resolves.toBeInTheDocument();
-    expect(
-      assistantGroupFor(screen.getByText("Previous delivery complete")),
-    ).toHaveTextContent("Worked for 1 hr 24 min");
-  },
-);
-
-test("Do not create history before the first output.message", async () => {
-  installRunChat({
-    activeRunIds: [RUN_A],
-    chatEvents: [
-      promptEvent({
-        id: "status-only-user",
-        runId: RUN_A,
-        seqId: 1,
-        text: "Inspect the release",
-        createdAt: createdAt(0),
-      }),
-    ],
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-
-  await readyChat();
-  expect(screen.queryByText(/^Working(?: for)? /u)).toBeNull();
-  expect(queryWorkHistoryToggles("collapsed")).toHaveLength(0);
-  expect(document.querySelector("[data-thinking-indicator]")).toBeVisible();
-});
-
-test("Count one output.message once when Markdown renders multiple child blocks", async () => {
-  const artifactUrl =
-    "https://cdn.vm7.io/artifacts/run-folding/multi-block/package.pdf";
-  installRunChat({
-    activeRunIds: [RUN_A],
-    chatEvents: [
-      promptEvent({
-        id: "multi-block-user",
-        runId: RUN_A,
-        seqId: 1,
-        text: "Prepare the package",
-      }),
-      assistantEvent({
-        id: "multi-block-output",
-        runId: RUN_A,
-        seqId: 2,
-        text: [
-          "Final package",
-          "![Package chart](https://example.com/package-chart.png)",
-          `![Package](${artifactUrl})`,
-          "[Compare plans](/?settings=billing&billingView=plans)",
-        ].join("\n\n"),
-      }),
-    ],
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-
-  await readyChat();
-  expect(screen.getByText("Final package")).toBeVisible();
-  await expect(screen.findByAltText("Package chart")).resolves.toBeVisible();
-  await expect(
-    findLink("Open pdf preview for package.pdf"),
-  ).resolves.toBeVisible();
-  await expect(screen.findByTestId("plan-upgrade-card")).resolves.toBeVisible();
-  expect(queryWorkHistoryToggles("collapsed")).toHaveLength(0);
-  expect(screen.queryAllByText(/^Working(?: for)? /u)).toHaveLength(1);
-  expect(myOkouAvatarButtons()).toHaveLength(1);
-});
-
-test("A retained conversation displays the workspace assistant name on its reply", async () => {
-  installRunChat({
-    chatEvents: [
-      promptEvent({
-        id: "named-reply-user",
-        runId: RUN_A,
-        seqId: 1,
-        text: "Summarize the launch notes",
-      }),
-      assistantEvent({
-        id: "named-reply-output",
-        runId: RUN_A,
-        seqId: 2,
-        text: "The launch notes are summarized.",
-      }),
-      completedEvent({ id: "named-reply-completed", runId: RUN_A, seqId: 3 }),
-    ],
-  });
-
-  context.mocks.data.onboardingStatus({
-    defaultAgentId: "c0000000-0000-4000-a000-000000000009",
-  });
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.ChatReplyNameLine]: true },
-  });
-
-  await readyChat();
-  const reply = await screen.findByText("The launch notes are summarized.");
-  const group = reply.closest('[data-role="assistant"]');
-  expect(group).toHaveTextContent("Okou");
-  expect(group?.querySelector('a[href^="/agents/"]')).toBeNull();
-  expect(myOkouAvatarButtons()).toHaveLength(0);
-});
-
-test.each([
-  {
-    label: "multiple output messages",
-    messageCount: 5,
-    canExpandHistory: true,
-  },
-])(
-  "Project a completed run with $label",
-  async ({ messageCount, canExpandHistory }) => {
-    installRunChat({
-      chatEvents: [
-        ...activeWorkChatEvents(messageCount),
-        completedEvent({
-          id: "finished-work-complete",
-          runId: RUN_A,
-          seqId: messageCount + 2,
-          createdAt: createdAt(11),
-        }),
-      ],
-    });
-
-    await setupPage({
-      context,
-      path: RUN_PATH,
-    });
-
-    await readyChat();
-    expect(screen.getByText(workMessage(messageCount - 1))).toBeVisible();
-    expect(document.querySelector("[data-thinking-indicator]")).toBeNull();
-    expect(screen.queryAllByText(/^Worked(?: for)? /u)).toHaveLength(1);
-    expect(queryWorkHistoryToggles("collapsed")).toHaveLength(
-      canExpandHistory ? 1 : 0,
-    );
-    for (let index = 0; index < messageCount - 1; index += 1) {
-      expect(screen.queryByText(workMessage(index))).toBeNull();
-    }
-  },
-);
-
-const finalOutputDocuments = [
-  {
-    label: "an action card",
-    content: "[Compare plans](/?settings=billing&billingView=plans)",
-    find: () => {
-      return screen.findByTestId("plan-upgrade-card");
-    },
-  },
-] as const;
-
-test.each(finalOutputDocuments)(
-  "Use the last output.message as the main result when it renders $label",
-  async ({ content, find }) => {
-    installRunChat({
-      activeRunIds: [RUN_A],
-      chatEvents: [
-        promptEvent({
-          id: "document-shape-user",
-          runId: RUN_A,
-          seqId: 1,
-          text: "Prepare the final result",
-          createdAt: createdAt(10),
-        }),
-        assistantEvent({
-          id: "document-shape-history",
-          runId: RUN_A,
-          seqId: 2,
-          text: "Earlier output belongs in history",
-          createdAt: createdAt(10, 20),
-        }),
-        assistantEvent({
-          id: "document-shape-main",
-          runId: RUN_A,
-          seqId: 3,
-          text: content,
-          createdAt: createdAt(10, 40),
-        }),
-      ],
-    });
-
-    await setupPage({
-      context,
-      path: RUN_PATH,
-    });
-
-    await readyChat();
-    const main = await find();
-    expect(main).toBeVisible();
-    expect(myOkouAvatarButtons()).toHaveLength(1);
-    expect(screen.queryByText("Earlier output belongs in history")).toBeNull();
-    expect(queryWorkHistoryToggles("collapsed")).toHaveLength(1);
-    const thinking = document.querySelector<HTMLElement>(
-      "[data-thinking-indicator]",
-    );
-    expect(assistantGroupFor(main)).toContainElement(thinking);
-  },
-);
-
-test("Keep result actions visible alongside running progress", async () => {
-  installRunChat({
-    activeRunIds: [RUN_A],
-    chatEvents: [
-      promptEvent({
-        id: "exclusive-tail-user",
-        runId: RUN_A,
-        seqId: 1,
-        text: "Prepare a result",
-      }),
-      assistantEvent({
-        id: "exclusive-tail-result",
-        runId: RUN_A,
-        seqId: 2,
-        text: "The result is still being checked",
-      }),
-    ],
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-
-  await readyChat();
-  expect(screen.getByText("The result is still being checked")).toBeVisible();
-  expect(document.querySelector("[data-thinking-indicator]")).toBeVisible();
+    })
+    .at(-1);
+  expect(toggle).toHaveAttribute("aria-expanded", "false");
+  expect(within(pane).queryByText("Collected requirements")).toBeNull();
+  click(toggle!);
+  const step = await within(pane).findByText("Collected requirements");
   expect(
-    document.querySelector('[data-testid="chat-event-actions"]'),
-  ).toBeVisible();
-});
-
-test("Do not render result actions while waiting for assistant output", async () => {
-  installRunChat({
-    activeRunIds: [RUN_A],
-    chatEvents: [
-      promptEvent({
-        id: "waiting-actions-user",
-        runId: RUN_A,
-        seqId: 1,
-        text: "Prepare a result",
-      }),
-    ],
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-
-  await readyChat();
-  expect(document.querySelector("[data-thinking-indicator]")).toBeVisible();
-  expect(
-    document.querySelector('[data-testid="chat-event-actions"]'),
-  ).toBeNull();
-});
-
-test("Show working dots on scroll-to-bottom while the thread works", async () => {
-  const chat = installRunChat({
-    activeRunIds: [RUN_A],
-    chatEvents: [
-      promptEvent({
-        id: "scroll-working-user",
-        runId: RUN_A,
-        seqId: 1,
-        text: "Prepare a long report",
-      }),
-      assistantEvent({
-        id: "scroll-working-progress",
-        runId: RUN_A,
-        seqId: 2,
-        text: "Drafting the first section",
-      }),
-    ],
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-
-  await readyChat();
-  expect(
-    document.querySelector("[data-thinking-indicator]"),
-  ).toBeInTheDocument();
-  const scroller = document.querySelector<HTMLElement>(
-    "[data-scroll-container]",
-  );
-  if (!scroller) {
-    throw new Error("Expected the transcript scroll container");
-  }
-  Object.defineProperties(scroller, {
-    scrollHeight: { configurable: true, value: 2400 },
-    clientHeight: { configurable: true, value: 600 },
-  });
-  scroller.scrollTop = 800;
-  fireEvent.scroll(scroller);
-
-  const scrollButton = () => {
-    return document.querySelector<HTMLElement>("[data-scroll-to-bottom]");
-  };
-  await waitFor(() => {
-    expect(scrollButton()).toHaveAttribute("data-working");
-  });
-  expect(scrollButton()).toHaveAccessibleName("Scroll to bottom");
-  expect(
-    scrollButton()?.querySelectorAll("[data-scroll-to-bottom-working-dot]"),
-  ).toHaveLength(3);
-
-  chat.completeRun("Report ready");
-
-  // The arrow returning is the positive sentinel for the finished run.
-  await waitFor(() => {
-    expect(scrollButton()?.querySelector("svg")).toBeInTheDocument();
-  });
-  expect(scrollButton()).not.toHaveAttribute("data-working");
-  expect(
-    scrollButton()?.querySelector("[data-scroll-to-bottom-working-dot]"),
-  ).toBeNull();
-  expect(scrollButton()).toHaveAccessibleName("Scroll to bottom");
-});
-
-test("Render result actions after a run completes", async () => {
-  installRunChat({
-    chatEvents: [
-      promptEvent({
-        id: "completed-actions-user",
-        runId: RUN_A,
-        seqId: 1,
-        text: "Prepare a completed result",
-      }),
-      assistantEvent({
-        id: "completed-actions-result",
-        runId: RUN_A,
-        seqId: 2,
-        text: "The completed result is ready",
-      }),
-      completedEvent({
-        id: "completed-actions-terminal",
-        runId: RUN_A,
-        seqId: 3,
-      }),
-    ],
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-
-  await readyChat();
-  const result = screen.getByText("The completed result is ready");
-  const assistantGroup = assistantGroupFor(result);
-  const mainMessage = result.closest<HTMLElement>("[data-chat-run-work-main]");
-  if (!mainMessage) {
-    throw new Error("Expected the result inside the main message region");
-  }
-  expect(assistantGroup.querySelector("[data-thinking-indicator]")).toBeNull();
-  const actions = assistantGroup.querySelector<HTMLElement>(
-    '[data-testid="chat-event-actions"]',
-  );
-  if (!actions) {
-    throw new Error("Expected the completed result action bar");
-  }
-  expect(actions).toBeVisible();
-  expect(mainMessage).toContainElement(actions);
-  expect(
-    result.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING,
+    within(pane).getByText("Plan phase one").compareDocumentPosition(step) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
-});
-
-test("Keep interleaved run updates with their own turns", async () => {
-  installRunChat({
-    chatEvents: [
-      promptEvent({
-        id: "interleave-a-user",
-        runId: RUN_A,
-        seqId: 1,
-        text: "Request A",
-      }),
-      promptEvent({
-        id: "interleave-b-user",
-        runId: RUN_B,
-        seqId: 2,
-        text: "Request B",
-      }),
-      assistantEvent({
-        id: "interleave-b-answer",
-        runId: RUN_B,
-        seqId: 3,
-        text: "B final answer",
-      }),
-      assistantEvent({
-        id: "interleave-a-final",
-        runId: RUN_A,
-        seqId: 4,
-        text: "A late final answer",
-      }),
-      completedEvent({ id: "interleave-a-complete", runId: RUN_A, seqId: 5 }),
-      completedEvent({ id: "interleave-b-complete", runId: RUN_B, seqId: 6 }),
-    ],
-  });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  expect(screen.getByText("A late final answer")).toBeVisible();
-  expectTextOrder(
-    "Request A",
-    "A late final answer",
-    "Request B",
-    "B final answer",
-  );
-});
-
-test("Keep run-budget instructions out of the transcript", async () => {
-  const events: MockChatEventInput[] = [
-    promptEvent({
-      id: "budget-user",
-      runId: RUN_A,
-      seqId: 1,
-      text: "Complete the migration",
-    }),
-    {
-      id: "budget-instruction",
-      eventType: "input.budget",
-      role: "user",
-      content: null,
-      runId: RUN_A,
-      seqId: 2,
-      createdAt: "2026-08-01T10:00:02.000Z",
-      userMessage: {
-        version: 1,
-        parts: [
-          {
-            type: "text",
-            text: "You have 12 minutes left in this run",
-          },
-        ],
-      },
-    },
-    assistantEvent({
-      id: "budget-answer",
-      runId: RUN_A,
-      seqId: 3,
-      text: "The migration is complete.",
-    }),
-    completedEvent({ id: "budget-complete", runId: RUN_A, seqId: 4 }),
-  ];
-  installRunChat({ chatEvents: events });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  expect(screen.getByText("Complete the migration")).toBeVisible();
-  expect(screen.getByText("The migration is complete.")).toBeVisible();
   expect(
-    screen.queryByText("You have 12 minutes left in this run"),
-  ).not.toBeInTheDocument();
+    step.compareDocumentPosition(anchor) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(within(pane).queryByText("Rechecked totals")).toBeNull();
+  expect(within(pane).queryByText("Compared alternatives")).toBeNull();
 });
-
-test("Keep usage-only activity out of the conversation", async () => {
-  installRunChat({
-    chatEvents: [
-      usageEvent({
-        id: "zero-usage",
-        runId: RUN_A,
-        seqId: 1,
-        usage: creditUsage(0, []),
-      }),
+test("chat-run-history-003 an active answer has one work label and thinking continues", async () => {
+  const run = crypto.randomUUID();
+  await show(
+    [
+      input(run, 1, "Check the first shipment"),
+      output(run, 2, "Shipment A is accounted for"),
     ],
+    [run],
+  );
+  const pane = transcript(
+    await screen.findByText("Shipment A is accounted for"),
+  );
+  await waitFor(() => {
+    expect(pane.querySelector("[data-thinking-indicator]")).toBeVisible();
+    expect(within(pane).getAllByText(/^Working for /)).toHaveLength(1);
   });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  const chat = await readyChat();
-  expect(chat).not.toHaveTextContent("Credit usage");
-  expect(queryButton("Stop")).toBeNull();
-  await expect(findButton("Send")).resolves.toBeVisible();
+  expect(historyControls(pane)).toHaveLength(0);
 });
-
-test("Preserve user text that resembles HTML", async () => {
-  installRunChat({
-    chatEvents: [
-      promptEvent({
-        id: "literal-html",
-        runId: RUN_A,
-        seqId: 1,
-        text: "<span> 123 </span>",
-      }),
-      assistantEvent({
-        id: "literal-answer",
-        runId: RUN_A,
-        seqId: 2,
-        text: "I preserved it literally.",
-      }),
-      completedEvent({ id: "literal-complete", runId: RUN_A, seqId: 3 }),
-    ],
-  });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  const literalText = screen.getByText("<span> 123 </span>");
-  expect(literalText).toBeVisible();
-  expect(literalText.textContent).toBe("<span> 123 </span>");
-});
-
-test("Replace a stale assistant answer with its correction", async () => {
-  installRunChat({
-    chatEvents: [
-      promptEvent({
-        id: "correction-user",
-        runId: RUN_A,
-        seqId: 1,
-        text: "Revise the launch plan",
-      }),
-      assistantEvent({
-        id: "obsolete-answer",
-        runId: RUN_A,
-        seqId: 2,
-        text: "Obsolete launch plan",
-      }),
+test("chat-run-history-010 queue time stays outside the running and final work durations", async () => {
+  const old = crypto.randomUUID(),
+    run = crypto.randomUUID();
+  const finish = now();
+  mockNow(finish, context.signal);
+  const at = (minutesBefore: number) => {
+    return new Date(finish - minutesBefore * 60_000).toISOString();
+  };
+  const queued = {
+    ...input(run, 4, "Review the queue ledger", at(132 + 40 / 60)),
+    runId: undefined,
+  };
+  const service = await show(
+    [
+      input(old, 1, "Audit invoices", at(312)),
+      output(old, 2, "Invoice audit ready", at(230)),
+      end(old, 3, at(228)),
+      queued,
       {
-        id: "revised-answer",
-        eventType: "output.message",
-        role: "assistant",
-        content: "Revised launch plan",
-        runId: RUN_A,
-        revokesEventId: "obsolete-answer",
-        seqId: 3,
-        createdAt: "2026-08-01T10:00:03.000Z",
+        ...input(run, 5, "Review the queue ledger", at(72)),
+        revokesEventId: queued.id,
       },
-      completedEvent({ id: "correction-complete", runId: RUN_A, seqId: 4 }),
+      output(run, 6, "Reading entries", at(69)),
     ],
+    [run],
+  );
+  const currentOutput = await screen.findByText("Reading entries");
+  const view = within(transcript(currentOutput));
+  function durationsInTurn(prompt: string, answer: HTMLElement) {
+    const start = view.getByText(prompt);
+    return view
+      .queryAllByText(/^(Working|Worked) for /)
+      .filter((label) => {
+        return (
+          Boolean(
+            start.compareDocumentPosition(label) &
+            Node.DOCUMENT_POSITION_FOLLOWING,
+          ) &&
+          Boolean(
+            label.compareDocumentPosition(answer) &
+            Node.DOCUMENT_POSITION_FOLLOWING,
+          )
+        );
+      })
+      .map((label) => {
+        return label.textContent;
+      });
+  }
+  await waitFor(() => {
+    expect(
+      durationsInTurn("Review the queue ledger", currentOutput),
+    ).toStrictEqual(["Working for 1 hr 12 min"]);
   });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  expect(screen.getByText("Revised launch plan")).toBeVisible();
-  expect(screen.queryByText("Obsolete launch plan")).not.toBeInTheDocument();
+  expect(
+    durationsInTurn("Audit invoices", view.getByText("Invoice audit ready")),
+  ).toStrictEqual(["Worked for 1 hr 24 min"]);
+  service.completeRun();
+  await waitFor(() => {
+    expect(
+      durationsInTurn(
+        "Review the queue ledger",
+        view.getByText("Reading entries"),
+      ),
+    ).toStrictEqual(["Worked for 1 hr 12 min"]);
+  });
+  expect(
+    durationsInTurn("Audit invoices", view.getByText("Invoice audit ready")),
+  ).toStrictEqual(["Worked for 1 hr 24 min"]);
+});
+test("chat-run-history-012 a pending request has no work duration or history yet", async () => {
+  const run = crypto.randomUUID();
+  await show([input(run, 1, "Calculate supplier balances")], [run]);
+  const pane = transcript(
+    await screen.findByText("Calculate supplier balances"),
+  );
+  await waitFor(() => {
+    expect(pane.querySelector("[data-thinking-indicator]")).toBeVisible();
+  });
+  expect(within(pane).queryByText(/^(Working|Worked) for /)).toBeNull();
+  expect(historyControls(pane)).toHaveLength(0);
+});
+test("chat-run-history-018 the waiting turn has no result actions", async () => {
+  const run = crypto.randomUUID();
+  await show([input(run, 1, "Price the returned stock")], [run]);
+  const pane = transcript(await screen.findByText("Price the returned stock"));
+  await waitFor(() => {
+    expect(pane.querySelector("[data-thinking-indicator]")).toBeVisible();
+  });
+  expect(within(pane).queryByTestId("chat-event-actions")).toBeNull();
+});
+test("chat-run-history-015 only the fifth result remains visible after the audit completes", async () => {
+  const run = crypto.randomUUID(),
+    notes = [
+      "Extract quantities",
+      "Match vendor",
+      "Compare freight",
+      "Verify tax",
+      "Invoice reconciled",
+    ];
+  await show([
+    input(run, 1, "Review invoice"),
+    ...notes.map((note, i) => {
+      return output(run, i + 2, note);
+    }),
+    end(run, 7),
+  ]);
+  const pane = transcript(await screen.findByText("Invoice reconciled"));
+  const view = within(pane);
+  expect(view.getAllByText(/^Worked for /)).toHaveLength(1);
+  const controls = historyControls(pane);
+  expect(controls).toHaveLength(1);
+  expect(controls[0]).toHaveAttribute("aria-expanded", "false");
+  expect(pane.querySelector("[data-thinking-indicator]")).toBeNull();
+  for (const note of notes.slice(0, 4)) {
+    expect(view.queryByText(note)).toBeNull();
+  }
+});
+test("chat-run-history-021 the finished answer excludes the run's budget instruction", async () => {
+  const run = crypto.randomUUID(),
+    notice = "You have 12 minutes left in this run";
+  await show([
+    input(run, 1, "Report the balance"),
+    { ...input(run, 2, notice), eventType: "input.budget" },
+    output(run, 3, "Closing balance is forty"),
+    end(run, 4),
+  ]);
+  const pane = transcript(await screen.findByText("Closing balance is forty"));
+  expect(within(pane).getByText("Report the balance")).toBeInTheDocument();
+  expect(within(pane).queryByText(notice)).toBeNull();
+});
+test("chat-run-history-022 a settled zero-credit event leaves an idle composer", async () => {
+  const run = crypto.randomUUID();
+  await show([
+    usageEvent({
+      id: crypto.randomUUID(),
+      seqId: 1,
+      runId: run,
+      usage: creditUsage(0, []),
+    }),
+  ]);
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  const pane = transcript(composer);
+  await within(pane).findByRole("group", { name: "Explore Okou capabilities" });
+  expect(queryButton("Send", pane)).toBeVisible();
+  expect(queryButton("Stop", pane)).toBeNull();
+  expect(queryButton("Credit usage", pane)).toBeNull();
+  expect(within(pane).queryByText(/credits? used/i)).toBeNull();
+});
+test("chat-run-history-023 the submitted markup is literal text next to its answer", async () => {
+  const literal = "<span> 123 </span>";
+  const service = await show([]);
+  const editor = await screen.findByRole("textbox", { name: "Message" });
+  await fill(editor, literal);
+  click(await findEnabledButton("Send"));
+  await screen.findByText(literal, { selector: '[data-role="user"] *' });
+  service.completeRun("Copied your example");
+  const view = within(
+    transcript(await screen.findByText("Copied your example")),
+  );
+  expect(view.getByText(literal)).toBeVisible();
 });

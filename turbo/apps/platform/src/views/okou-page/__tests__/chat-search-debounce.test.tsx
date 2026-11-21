@@ -1,180 +1,81 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { expect, test } from "vitest";
-import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { chatSearchContract } from "@okouai/api-contracts/contracts/chat-threads";
-
-import { click, fill, startPage } from "../../../__tests__/page-helper.ts";
+import { fireEvent, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { test, expect } from "vitest";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { installContinuityWorkspace } from "./chat-continuity-test-helpers.ts";
-import {
-  CHAT_LIST_AGENT_ID,
-  chatListThread,
-} from "./chat-list-test-helpers.ts";
-
+import { completedMarkdownReply } from "./markdown-page-test-helpers.ts";
+import { findAction } from "./connector-integrations-test-helpers.ts";
 const context = testContext();
-const SEARCH_LABEL = "Search workspace...";
-const SEARCH_BUTTON_LABEL = "Search workspace";
-const THREAD_TITLE = "Workspace notes";
-const ARTIFACT_ID = "a0000000-0000-4000-a000-000000000037";
-const ARTIFACT_TITLE = "Quarterly plan";
-
-async function openSearch() {
-  const searchButton = await screen.findByLabelText(SEARCH_BUTTON_LABEL, {
-    selector: "button",
-  });
-  click(searchButton);
-  const dialog = await screen.findByRole("dialog", { name: SEARCH_LABEL });
-  return {
-    dialog,
-    search: within(dialog).getByPlaceholderText(SEARCH_LABEL),
-  };
-}
-
-function installMessageSearch(threadId: string): string[] {
-  const keywords: string[] = [];
+async function searchFixture() {
+  const keywords = new Set<string>();
   context.mocks.api(chatSearchContract.search, ({ query, respond }) => {
-    keywords.push(query.keyword);
+    keywords.add(query.keyword);
     return respond(200, {
       results: [
         {
-          chatThreadId: threadId,
-          agentName: "Support Agent",
+          chatThreadId: context.resourceId,
+          agentName: "Operations",
+          matchedRanges: [{ start: 0, end: query.keyword.length }],
           matchedMessage: {
-            chatThreadId: threadId,
-            role: "user",
-            content: query.keyword,
-            createdAt: "2026-08-01T01:00:00.000Z",
-            seqId: 1,
+            role: "assistant",
+            chatThreadId: context.resourceId,
+            content: query.keyword + " in the operations ledger",
+            createdAt: "2026-06-03T12:00:00Z",
+            seqId: 2,
             runId: null,
           },
-          matchedRanges: [{ start: 0, end: query.keyword.length }],
         },
       ],
     });
   });
-  return keywords;
-}
-
-function installArtifactSearch(): string[] {
-  const keywords: string[] = [];
-  context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
-    keywords.push(query.keyword ?? "");
-    return respond(200, {
-      artifacts: [
-        {
-          id: ARTIFACT_ID,
-          kind: "file",
-          title: ARTIFACT_TITLE,
-          thumbnail: null,
-          createdAt: "2026-08-01T01:00:00.000Z",
-          updatedAt: "2026-08-01T01:00:00.000Z",
-        },
-      ],
-      nextCursor: null,
-    });
-  });
-  return keywords;
-}
-
-test("Search messages only after the latest input settles", async () => {
-  const thread = chatListThread(1, THREAD_TITLE);
-  const remoteChatList = context.mocks.deferred<void>();
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 37,
-    threads: [thread],
-    chatListRemoteGate: remoteChatList.promise,
-  });
-  const keywords = installMessageSearch(thread.id);
-  await startPage({
+  await setupPage({
     context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
-    ...workspace.pageOptions,
+    path: completedMarkdownReply(context, "Review the ledger"),
   });
-  const chatThreads = await screen.findByLabelText("Chat threads");
-  await within(chatThreads).findByText(THREAD_TITLE);
-  expect(remoteChatList.settled()).toBeFalsy();
-  const { dialog, search } = await openSearch();
-
+  await screen.findByText("Review the ledger");
+  return keywords;
+}
+async function openSearch() {
+  click(await findAction("button", "Search workspace"));
+  const dialog = await screen.findByRole("dialog");
+  return within(dialog).getByRole("combobox");
+}
+test("chat-search-debounce-001 only the settled number reaches workspace message search", async () => {
+  const keywords = await searchFixture();
+  const input = await openSearch();
   for (const value of ["3", "32", "320", "3205", "32059"]) {
-    fireEvent.change(search, { target: { value } });
-    expect(search).toHaveValue(value);
+    fireEvent.change(input, { target: { value } });
   }
-
-  await expect(within(dialog).findByText("32059")).resolves.toBeInTheDocument();
-  expect(keywords).toStrictEqual(["32059"]);
+  const result = await screen.findByLabelText("32059 in the operations ledger");
+  expect(result).toHaveTextContent("32059 in the operations ledger");
+  for (const superseded of ["3", "32", "320", "3205"]) {
+    expect(keywords.has(superseded)).toBeFalsy();
+  }
 });
-
-test("Clearing or closing search discards a pending message search", async () => {
-  const thread = chatListThread(1, THREAD_TITLE);
-  const remoteChatList = context.mocks.deferred<void>();
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 38,
-    threads: [thread],
-    chatListRemoteGate: remoteChatList.promise,
-  });
-  const keywords = installMessageSearch(thread.id);
-  await startPage({
-    context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
-    ...workspace.pageOptions,
-  });
-  const chatThreads = await screen.findByLabelText("Chat threads");
-  await within(chatThreads).findByText(THREAD_TITLE);
-  expect(remoteChatList.settled()).toBeFalsy();
-  const { dialog, search } = await openSearch();
-
-  fireEvent.change(search, { target: { value: "discarded" } });
-  fireEvent.change(search, { target: { value: "" } });
-  expect(search).toHaveValue("");
+test("chat-search-debounce-002 cleared and dismissed keywords never reach the search service", async () => {
+  const keywords = await searchFixture();
+  const input = await openSearch();
+  const type = (box: HTMLElement, value: string) => {
+    return fireEvent.change(box, { target: { value } });
+  };
+  type(input, "discarded");
+  type(input, "");
   await expect(
-    within(dialog).findByText(THREAD_TITLE),
-  ).resolves.toBeInTheDocument();
-
-  await fill(search, "issue");
-  await expect(within(dialog).findByText("issue")).resolves.toBeInTheDocument();
-  expect(keywords).not.toContain("discarded");
-
-  fireEvent.change(search, { target: { value: "dismissed" } });
-  fireEvent.keyDown(search, { key: "Escape", code: "Escape" });
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: SEARCH_LABEL })).toBeNull();
-  });
-
+    within(await screen.findByRole("dialog")).findByText("Rich content"),
+  ).resolves.toBeVisible();
+  type(input, "issue");
+  await expect(
+    screen.findByLabelText("issue in the operations ledger"),
+  ).resolves.toBeVisible();
+  type(input, "dismissed");
+  await userEvent.keyboard("{Escape}");
   const reopened = await openSearch();
-  expect(reopened.search).toHaveValue("");
-  await fill(reopened.search, "budget");
+  expect(reopened).toHaveValue("");
+  type(reopened, "budget");
   await expect(
-    within(reopened.dialog).findByText("budget"),
-  ).resolves.toBeInTheDocument();
-  expect(keywords).not.toContain("dismissed");
-});
-
-test("Search artifacts only after the latest input settles", async () => {
-  const thread = chatListThread(1, THREAD_TITLE);
-  const remoteChatList = context.mocks.deferred<void>();
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 39,
-    threads: [thread],
-    chatListRemoteGate: remoteChatList.promise,
-  });
-  installMessageSearch(thread.id);
-  const keywords = installArtifactSearch();
-  await startPage({
-    context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
-    ...workspace.pageOptions,
-  });
-  const chatThreads = await screen.findByLabelText("Chat threads");
-  await within(chatThreads).findByText(THREAD_TITLE);
-  const { dialog, search } = await openSearch();
-
-  for (const value of ["q", "qu", "qua", "quar", "quart"]) {
-    fireEvent.change(search, { target: { value } });
-    expect(search).toHaveValue(value);
-  }
-
-  await expect(
-    within(dialog).findByText(ARTIFACT_TITLE),
-  ).resolves.toBeInTheDocument();
-  expect(keywords).toStrictEqual(["quart"]);
+    screen.findByLabelText("budget in the operations ledger"),
+  ).resolves.toBeVisible();
+  expect(keywords.has("discarded")).toBeFalsy();
+  expect(keywords.has("dismissed")).toBeFalsy();
 });

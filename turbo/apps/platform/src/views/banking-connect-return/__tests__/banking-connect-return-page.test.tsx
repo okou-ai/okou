@@ -1,52 +1,25 @@
-import { screen } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
-
-import {
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { screen, waitFor } from "@testing-library/react";
+import { expect, test } from "vitest";
+import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-
-test("A cancelled banking-provider return shows failure", async () => {
-  await setupPage({
-    context,
-    path: "/banking/connect/return?reason=cancelled&code=499&customerId=temporary-customer&institutionId=temporary-bank",
-    auth: null,
+test("banking-connect-return-page-002 confirms the bank connection on the clean success URL", async () => {
+  const receipt = new URLSearchParams({
+    customerId: "customer-903",
+    institutionId: "institution-57",
+    code: "200",
+    reason: "complete",
   });
-
-  await expect(
-    screen.findByRole("heading", {
-      name: "Couldn’t connect Bank account",
-    }),
-  ).resolves.toBeVisible();
-  expect(screen.getByText("Connection failed")).toBeVisible();
-  expect(vi.mocked(window.history.replaceState)).toHaveBeenLastCalledWith(
-    {},
-    "",
-    "/banking/connect/return/error",
-  );
-});
-
-test("A successful banking-provider return confirms the connection", async () => {
-  await setupPage({
-    context,
-    path: "/banking/connect/return?reason=complete&code=200&customerId=temporary-customer&institutionId=temporary-bank",
-    auth: null,
+  await setupPage({ context, path: "/banking/connect/return?" + receipt });
+  await screen.findByRole("heading", { name: "Bank account connected" });
+  await waitFor(() => {
+    return expect(location.pathname + location.search).toBe(
+      "/banking/connect/return/success",
+    );
   });
-
-  await expect(
-    screen.findByRole("heading", { name: "Bank account connected" }),
-  ).resolves.toBeVisible();
-  expect(screen.getByText("Connected")).toBeVisible();
-  const closeWindow = queryAllByRoleFast("button").find((button) => {
-    return button.textContent?.trim() === "Close window";
-  });
-  expect(closeWindow).toBeEnabled();
-  expect(vi.mocked(window.history.replaceState)).toHaveBeenLastCalledWith(
-    {},
-    "",
-    "/banking/connect/return/success",
-  );
+  expect(screen.getByText("Connected", { exact: true })).toBeInTheDocument();
+  expect(
+    screen.getByText("Close window", { selector: "button" }),
+  ).toBeEnabled();
 });

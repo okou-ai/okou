@@ -1,145 +1,101 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  mailContract,
-  type MailDraft,
-} from "@okouai/api-contracts/contracts/mail";
-import { screen, waitFor, within } from "@testing-library/react";
+import { mailContract } from "@okouai/api-contracts/contracts/mail";
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
-
+import { test, expect } from "vitest";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { selectPassage } from "./chat-capability-test-helpers.ts";
 import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import {
-  completedConversation,
-  quoteSelectedPassage,
+  assistantEvent,
+  completedEvent,
+  createChatRunFixtures,
+  findButton,
+  findEnabledButton,
+  promptEvent,
   RUN_PATH,
-  selectPassage,
-  waitForSend,
-  type CapturedChatSend,
-  createChatCapabilityHelpers,
-} from "./chat-capability-test-helpers.ts";
+  RUN_THREAD_ID,
+} from "./chat-run-test-fixtures.ts";
 
 const context = testContext();
-const { installCapabilityChat } = createChatCapabilityHelpers(context);
 
-const MAIL_DRAFT_ID = "e0000000-0000-4000-a000-000000000811";
-const SENT_MAIL_ID = "gmail-sent-message-811";
-const MAIL_SUBJECT = "Launch approval email";
-const MAIL_PASSAGE = "Move the launch review to Monday morning.";
-const MAIL_CARD = `[${MAIL_SUBJECT}](/mail/drafts/${MAIL_DRAFT_ID})`;
-
-function mailFixture(status: "draft" | "sent"): MailDraft {
-  return {
-    version: 3,
-    provider: "gmail",
-    from: "owner@example.com",
-    fromName: "Launch Owner",
-    to: ["reviewer@example.com"],
-    cc: [],
-    bcc: [],
-    subject: MAIL_SUBJECT,
-    body: MAIL_PASSAGE,
-    accessStatus: "ready",
-    references: [],
-    status,
-    detailAvailable: true,
-    gmailDraftId: "gmail-draft-811",
-    gmailThreadId: "gmail-thread-811",
-    gmailMessageId: "gmail-message-811",
-    ...(status === "sent"
-      ? {
-          sentGmailMessageId: SENT_MAIL_ID,
-          sentAt: "2026-08-01T10:02:00.000Z",
-        }
-      : {}),
-    attachments: [],
-    createdAt: "2026-08-01T10:00:00.000Z",
-    updatedAt: "2026-08-01T10:02:00.000Z",
-  };
-}
-
-function mockMail(status: "draft" | "sent"): void {
-  const draft = mailFixture(status);
+test("chat-capability-mail-feedback-001 sending a draft quote keeps its mail source and comment together", async () => {
+  const id = crypto.randomUUID(),
+    run = crypto.randomUUID(),
+    url = "https://app.okou.ai/mail/drafts/" + id;
+  const passage = "launch review to Monday morning",
+    comment = "Rewrite this as a clear scheduling request";
+  const sent = context.mocks.deferred<UserMessageDocument | undefined>();
+  createChatRunFixtures(context).installRunChat({
+    onSendRequest(body) {
+      if ((body.threadId ?? body.clientThreadId) === RUN_THREAD_ID) {
+        sent.resolve(body.userMessage);
+      }
+    },
+    chatEvents: [
+      promptEvent({
+        id: run,
+        runId: run,
+        seqId: 1,
+        text: "Prepare the launch email",
+      }),
+      assistantEvent({
+        id: crypto.randomUUID(),
+        runId: run,
+        seqId: 2,
+        text: url,
+      }),
+      completedEvent({ id: crypto.randomUUID(), runId: run, seqId: 3 }),
+    ],
+  });
   context.mocks.api(mailContract.getDraft, ({ respond }) => {
     return respond(200, {
-      mailDraftId: MAIL_DRAFT_ID,
-      mailDraftUrl: `https://app.okou.ai/mail/drafts/${MAIL_DRAFT_ID}`,
-      mailDraft: draft,
+      mailDraftId: id,
+      mailDraftUrl: url,
+      mailDraft: {
+        provider: "gmail",
+        gmailDraftId: "draft-launch",
+        gmailThreadId: "launch-thread",
+        gmailMessageId: "draft-message",
+        version: 3,
+        from: "dispatch@example.org",
+        to: ["team@example.org"],
+        cc: [],
+        bcc: [],
+        subject: "Proposed launch review",
+        body: "Move the " + passage + ".",
+        references: [],
+        status: "draft",
+        detailAvailable: true,
+        createdAt: "2026-09-01T12:00:00Z",
+        updatedAt: "2026-09-01T12:00:00Z",
+        attachments: [],
+      },
     });
   });
-}
-
-async function openMailDetails(): Promise<HTMLElement> {
-  const openEmail = await waitFor(() => {
-    const button = queryAllByRoleFast("button").find((candidate) => {
-      return candidate.getAttribute("aria-label")?.includes(MAIL_SUBJECT);
-    });
-    if (!button) {
-      throw new Error("Mail card action was not available");
-    }
-    return button;
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  click(await screen.findByText("Proposed launch review"));
+  await screen.findByText("Move the " + passage + ".");
+  await selectPassage(passage);
+  click(await findButton("Quote"));
+  const editor = await screen.findByRole("textbox", {
+    name: "Ask or comment on this quote",
   });
-  click(openEmail);
-  const sidebar = await screen.findByRole("complementary", {
-    name: "Email details",
+  await userEvent.setup({ delay: null }).type(editor, comment);
+  click(await findEnabledButton("Send"));
+  const feedback = (await sent.promise)?.parts.find((p) => {
+    return p.type === "feedback";
   });
-  expect(within(sidebar).getByText(MAIL_PASSAGE)).toBeInTheDocument();
-  return sidebar;
-}
-
-async function sendMailFeedback(
-  sends: CapturedChatSend[],
-  comment: string,
-): Promise<CapturedChatSend> {
-  await selectPassage("launch review to Monday morning");
-  const editor = await quoteSelectedPassage();
-  const user = userEvent.setup({ delay: null });
-  click(editor);
-  await user.paste(comment);
-  const composer = editor.closest<HTMLElement>("[data-chat-composer]");
-  if (!composer) {
-    throw new Error("Owning mail feedback composer was not available");
-  }
-  const send = queryAllByRoleFast("button", composer).find((candidate) => {
-    return candidate.getAttribute("aria-label") === "Send";
+  expect(feedback).toMatchObject({
+    quote: passage,
+    note: [{ type: "text", text: comment }],
+    source: { type: "mail", id, status: "draft" },
   });
-  if (!send) {
-    throw new Error("Mail feedback send action was not available");
-  }
-  click(send);
-  return await waitForSend(sends, 1);
-}
-
-test("Keep inline feedback tied to the source email", async () => {
-  const sends: CapturedChatSend[] = [];
-  installCapabilityChat({
-    events: completedConversation(MAIL_CARD),
-    onSend(send) {
-      sends.push(send);
-    },
-  });
-  mockMail("draft");
-
-  await setupPage({ locale: "en-US", context, path: RUN_PATH });
-
-  await openMailDetails();
-  const comment = "Rewrite this as a clear scheduling request.";
-  const sent = await sendMailFeedback(sends, comment);
-
-  expect(sent.userMessage?.parts).toStrictEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        type: "feedback",
-        quote: "launch review to Monday morning",
-        note: [{ type: "text", text: comment }],
-        source: { type: "mail", id: MAIL_DRAFT_ID, status: "draft" },
-      }),
-    ]),
-  );
-  const submittedComment = await screen.findByText(comment);
-  expect(submittedComment).toBeInTheDocument();
-  expect(screen.getByText("Quoted from an email draft")).toBeInTheDocument();
+  const posted = await screen.findByText(comment);
+  const row = posted.closest<HTMLElement>(
+    "[data-chat-scroll-anchor-event-id]",
+  )!;
+  expect(
+    within(row).getByText("Quoted from an email draft"),
+  ).toBeInTheDocument();
 });

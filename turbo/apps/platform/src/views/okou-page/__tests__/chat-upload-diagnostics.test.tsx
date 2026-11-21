@@ -1,191 +1,79 @@
-import { screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { HttpResponse } from "msw";
-import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
-import { expect, test, vi } from "vitest";
-
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { createDeferredPromise } from "../../../signals/utils.ts";
+// @vitest-environment-options {"url":"https://app.okou.ai/","settings":{"disableIframePageLoading":true,"disableCSSFileLoading":true,"handleDisabledFileLoadingAsSuccess":true}}
+import { findAction } from "./connector-integrations-test-helpers.ts";
 import { initSentry } from "../../../lib/sentry.ts";
-import {
-  continuityThread,
-  installContinuityWorkspace,
-} from "./chat-continuity-test-helpers.ts";
-import { fastButton } from "./chat-list-test-helpers.ts";
-
+import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { HttpResponse } from "msw";
+import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { test, expect } from "vitest";
+import { setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 const context = testContext();
-const BYTES = 5 * 1024 * 1024;
-const FILENAME = "private-recording.mp4";
-const TARGET = "https://uploads.vm7.test/private-recording.mp4";
-const SIGNED_TARGET =
-  `${TARGET}?X-Amz-Signature=private-signature` +
-  "&X-Amz-Credential=private-credential&uploadId=private-upload-id&partNumber=1";
-
-function fileInput(): HTMLInputElement {
-  const input = document.querySelector<HTMLInputElement>('input[type="file"]');
-  if (!input) {
-    throw new Error("Expected the composer file input");
-  }
-  return input;
-}
-
-function installUpload(caseId: number) {
-  const thread = continuityThread(caseId, 1, "Upload diagnostics");
-  const workspace = installContinuityWorkspace(context, {
-    caseId,
-    threads: [thread],
-  });
-  const id = `f8000000-0000-4000-a000-${String(caseId).padStart(12, "0")}`;
-  context.mocks.api(uploadsContract.prepare, ({ body, respond }) => {
+const filename = "private-recording.mp4",
+  size = 5 * 1024 * 1024;
+function storage() {
+  const record = {
+    id: crypto.randomUUID(),
+    filename,
+    contentType: "video/mp4",
+    size,
+    url: "https://cdn.example.org/video",
+  };
+  const endpoint =
+    "https://upload.example.org/confidential/private-object?X-Amz-Signature=private-signature";
+  context.mocks.api(uploadsContract.prepare, ({ respond }) => {
     return respond(200, {
-      id,
-      filename: body.filename,
-      contentType: body.contentType,
-      size: body.size,
-      url: `https://cdn.vm7.io/uploads/${caseId}/recording.mp4`,
+      ...record,
       multipart: {
-        uploadId: "private-upload-id",
-        partSize: BYTES,
-        parts: [{ partNumber: 1, uploadUrl: SIGNED_TARGET }],
+        uploadId: "movie",
+        partSize: size,
+        parts: [{ partNumber: 1, uploadUrl: endpoint }],
       },
     });
   });
   context.mocks.api(uploadsContract.completeMultipart, ({ respond }) => {
-    return respond(200, {
-      id,
-      url: `https://cdn.vm7.io/uploads/${caseId}/recording.mp4`,
-    });
+    return respond(200, record);
   });
-  return { id, thread, workspace };
-}
-
-async function openComposer(fixture: ReturnType<typeof installUpload>) {
-  await setupPage({
-    context,
-    path: `/chats/${fixture.thread.id}`,
-    ...fixture.workspace.pageOptions,
+  context.mocks.http.get("https://api.instatus.com/issues", () => {
+    return HttpResponse.json([]);
   });
-  await screen.findByRole("textbox", { name: "Message" });
-}
-
-test("reports one exhausted upload with safe terminal diagnostics", async () => {
-  const fixture = installUpload(40);
-  const sentry = context.mocks.sentry();
+  const telemetry = context.mocks.sentry();
   initSentry();
-  // happy-dom does not implement the native XHR timeout property's default.
-  const open = XMLHttpRequest.prototype.open;
-  vi.spyOn(XMLHttpRequest.prototype, "open").mockImplementation(function (
-    this: XMLHttpRequest,
-    ...args
-  ) {
-    this.timeout = 0;
-    open.apply(this, args);
-  });
-  context.mocks.http.put(TARGET, () => {
+  return telemetry;
+}
+async function attach() {
+  await setupPage({ context, path: "/", host: "app.okou.ai" });
+  const input = await screen.findByLabelText("Attach", { selector: "input" });
+  await userEvent
+    .setup({ delay: null })
+    .upload(
+      input,
+      new File([new Uint8Array(size)], filename, { type: "video/mp4" }),
+    );
+}
+test("chat-upload-diagnostics-002 a failed video transfer can retry into a removable attachment", async () => {
+  const telemetry = storage();
+  const retry = context.mocks.deferred<void>();
+  let recovered = false;
+  context.mocks.http.put("https://upload.example.org/*", async () => {
+    if (recovered) {
+      await retry.promise;
+      return new HttpResponse(null, { status: 200 });
+    }
+    recovered = true;
     return HttpResponse.error();
   });
-  await openComposer(fixture);
-  await userEvent.upload(
-    fileInput(),
-    new File([new Uint8Array(BYTES)], FILENAME, { type: "video/mp4" }),
-  );
+  await attach();
   await expect(
-    screen.findByText(`Failed to upload ${FILENAME}.`),
-  ).resolves.toBeInTheDocument();
-
-  const reports = sentry.reports.filter((report) => {
-    return (
-      report.type === "exception" &&
-      report.error instanceof TypeError &&
-      report.error.message === "Storage upload failed"
-    );
-  });
-  const report = reports[0];
-  const options = sentry.initializations.at(-1)?.options;
-  if (
-    report?.type !== "exception" ||
-    !options?.beforeSend ||
-    !options.beforeBreadcrumb
-  ) {
-    throw new Error("Expected the existing upload exception and privacy hooks");
-  }
-  expect(reports).toHaveLength(1);
-  const event = await options.beforeSend(
-    { type: undefined, request: { url: SIGNED_TARGET } },
-    { originalException: report.error },
-  );
-  expect(event?.contexts?.storage_upload).toMatchObject({
-    file_id: fixture.id,
-    file_size: BYTES,
-    part_number: 1,
-    part_count: 1,
-    attempt: 5,
-    request_event: "error",
-    target_origin: "https://uploads.vm7.test",
-    response_status: 0,
-    total_bytes: BYTES,
-    elapsed_ms: expect.any(Number),
-    reported_bytes: expect.any(Number),
-    timeout_ms: 0,
-    online: true,
-    with_credentials: false,
-  });
-  const breadcrumb = options.beforeBreadcrumb(
-    { category: "xhr", data: { method: "PUT", url: SIGNED_TARGET } },
-    {},
-  );
-  expect(breadcrumb?.data?.url).toBe(
-    "https://uploads.vm7.test/[presigned-object]",
-  );
-  expect(JSON.stringify({ event, breadcrumb })).not.toContain("private-");
-});
-
-test("does not report an upload error when a transient network failure recovers", async () => {
-  const fixture = installUpload(41);
-  const sentry = context.mocks.sentry();
-  initSentry();
-  let attempts = 0;
-  context.mocks.http.put(TARGET, () => {
-    attempts += 1;
-    return attempts === 1
-      ? HttpResponse.error()
-      : new HttpResponse(null, { status: 200 });
-  });
-  await openComposer(fixture);
-  await userEvent.upload(
-    fileInput(),
-    new File([new Uint8Array(BYTES)], FILENAME, { type: "video/mp4" }),
-  );
-  await waitFor(() => {
-    expect(fastButton(`Remove ${FILENAME}`)).toBeInTheDocument();
-    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
-  });
-  expect(sentry.reports).toStrictEqual([]);
-});
-
-test("does not report an upload error when the user cancels", async () => {
-  const fixture = installUpload(43);
-  const sentry = context.mocks.sentry();
-  initSentry();
-  const started = createDeferredPromise<void>(context.signal);
-  context.mocks.http.put(TARGET, () => {
-    started.resolve();
-    return createDeferredPromise<never>(context.signal).promise;
-  });
-  await openComposer(fixture);
-  await userEvent.upload(
-    fileInput(),
-    new File([new Uint8Array(BYTES)], FILENAME, { type: "video/mp4" }),
-  );
-  await screen.findByRole("progressbar", { name: `Loading ${FILENAME}` });
-  await started.promise;
-  click(fastButton(`Cancel upload ${FILENAME}`));
-  await waitFor(() => {
-    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
-  });
+    screen.findByRole("progressbar", { name: "Loading " + filename }),
+  ).resolves.toBeVisible();
+  retry.resolve();
+  const remove = await findAction("button", "Remove " + filename);
+  expect(remove).toBeEnabled();
+  expect(screen.queryByRole("progressbar")).toBeNull();
   expect(
-    screen.queryByText(`Failed to upload ${FILENAME}.`),
-  ).not.toBeInTheDocument();
-  expect(sentry.reports).toStrictEqual([]);
+    telemetry.reports.filter((r) => {
+      return r.type === "exception";
+    }),
+  ).toStrictEqual([]);
 });

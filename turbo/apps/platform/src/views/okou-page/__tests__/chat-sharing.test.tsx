@@ -1,1387 +1,396 @@
+import { sharedThreadVisibilityContract } from "@okouai/api-contracts/contracts/shared-thread-visibility";
 import {
-  sharedThreadVisibilityContract,
-  type SharedThreadAudience,
-} from "@okouai/api-contracts/contracts/shared-thread-visibility";
-import {
-  act,
-  fireEvent,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+  selectPassage,
+  setPassageSelection,
+} from "./chat-capability-test-helpers.ts";
+import { screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test, vi } from "vitest";
-
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import { createChatEvent } from "../../../mocks/mock-helpers.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
-import { mockChatLifecycle } from "./chat-test-helpers.ts";
-
+import {
+  createChatRunFixtures,
+  RUN_PATH,
+  publishRunUpdate,
+  findWorkHistoryToggle,
+  assistantEvent,
+  promptEvent,
+  completedEvent,
+} from "./chat-run-test-fixtures.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 const context = testContext();
-
-const THREAD_ID = "b0000000-0000-4000-a000-000000000801";
-const PROMPT_EVENT_ID = "b0000000-0000-4000-a000-000000000802";
-const ANSWER_EVENT_ID = "b0000000-0000-4000-a000-000000000803";
-const SHARED_THREAD_ID = "b0000000-0000-4000-a000-000000000804";
-const GROUPED_ANSWER_EVENT_IDS = [
-  "b0000000-0000-4000-a000-000000000811",
-  "b0000000-0000-4000-a000-000000000812",
-  "b0000000-0000-4000-a000-000000000813",
-] as const;
-const GROUPED_RUN_ID = "grouped-launch-run";
-const FOLLOW_UP_PROMPT_EVENT_ID = "b0000000-0000-4000-a000-000000000806";
-const PROMPT = "Summarize the launch plan";
-const FOLLOW_UP_PROMPT = "Keep it short";
-const ANSWER = "The launch plan has three phases.";
-
-/** The suite covers the `ChatShareRefresh` design; one test keeps the legacy
- * flow the switch falls back to. */
-function withShareRefresh(
-  featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>,
-): Partial<Record<FeatureSwitchKey, boolean>> {
-  return { [FeatureSwitchKey.ChatShareRefresh]: true, ...featureSwitches };
-}
-
-function mockConversation(
-  chatEvents: MockChatEventInput[] = standardConversation(),
-): void {
-  mockChatLifecycle(context, {
-    threadId: THREAD_ID,
-    threadTitle: "Launch planning",
-    chatEvents,
+async function conversation(answer: string, refreshed = false) {
+  const runId = crypto.randomUUID();
+  const promptId = crypto.randomUUID();
+  const answerId = crypto.randomUUID();
+  createChatRunFixtures(context).installRunChat({
+    chatEvents: [
+      promptEvent({
+        id: promptId,
+        runId,
+        seqId: 1,
+        text: "Inspect inventory",
+      }),
+      assistantEvent({
+        id: answerId,
+        runId,
+        seqId: 2,
+        text: answer,
+      }),
+      completedEvent({ id: crypto.randomUUID(), runId, seqId: 3 }),
+    ],
   });
-}
-
-function standardConversation() {
-  return [
-    {
-      id: PROMPT_EVENT_ID,
-      role: "user" as const,
-      content: PROMPT,
-      runId: "launch-run",
-      createdAt: "2026-08-01T10:00:00Z",
-    },
-    {
-      id: ANSWER_EVENT_ID,
-      role: "assistant" as const,
-      content: ANSWER,
-      runId: "launch-run",
-      createdAt: "2026-08-01T10:00:01Z",
-    },
-  ];
-}
-
-function buttonsNamed(name: string): HTMLElement[] {
-  return queryAllByRoleFast("button").filter((button) => {
-    return (
-      button.getAttribute("aria-label") === name ||
-      button.textContent?.trim() === name
-    );
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.ChatShareRefresh]: refreshed },
   });
+  return [promptId, answerId];
 }
 
-function requiredButtonNamed(name: string): HTMLElement {
-  const button = buttonsNamed(name)[0];
-  if (!button) {
-    throw new Error(`Button not found: ${name}`);
-  }
-  return button;
-}
-
-function requiredRadioNamed(name: string): HTMLElement {
-  const group = screen.getByRole("radiogroup", { name: "Who can access" });
-  const radio = queryAllByRoleFast("radio", group).find((candidate) => {
-    return (
-      candidate.getAttribute("aria-label") === name ||
-      candidate.textContent?.trim() === name
-    );
+test("chat-sharing-001 toggling the prompt from its row label updates the selection once", async () => {
+  await conversation("Inventory checked");
+  click(await findFastControl("button", "Share messages"));
+  const prompt = await screen.findByText("Inspect inventory");
+  const share = await findFastControl("button", "Share");
+  expect(share).toBeDisabled();
+  const row = within(
+    prompt.closest<HTMLElement>("[data-chat-share-selectable-group]")!,
+  );
+  click(row.getByText("Select message group"));
+  await screen.findAllByText("1 selected");
+  expect(row.getByRole("checkbox")).toBeChecked();
+  expect(share).toBeEnabled();
+  click(row.getByText("Deselect message group"));
+  await waitFor(() => {
+    return expect(share).toBeDisabled();
   });
-  if (!radio) {
-    throw new Error(`Radio not found: ${name}`);
-  }
-  return radio;
-}
+  expect(row.getByRole("checkbox")).not.toBeChecked();
+  await screen.findAllByText("0 selected");
+});
 
-function selectionActionButtons(): HTMLElement[] {
-  return queryAllByRoleFast("button").filter((button) => {
-    return ["c", "q", "f"].includes(
-      button.getAttribute("aria-keyshortcuts") ?? "",
-    );
+test("chat-sharing-005 copying code and clicking the answer preserve the intended message selection", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  await conversation(
+    "Inventory checked. [Catalog](https://example.test/catalog)\n\n```sh\necho inventory\n```",
+  );
+  click(await findFastControl("button", "Share messages"));
+  const share = await findFastControl("button", "Share");
+  const link = await findFastControl("link", "Catalog");
+  const row = within(
+    link.closest<HTMLElement>("[data-chat-share-selectable-group]")!,
+  );
+  click(row.getByLabelText("Copy to clipboard"));
+  await waitFor(() => {
+    return expect(clipboard.writes).toStrictEqual(["echo inventory\n"]);
   });
-}
+  expect(row.getByRole("checkbox")).not.toBeChecked();
+  expect(share).toBeDisabled();
+  click(row.getByText("Select message group"));
+  expect(share).toBeEnabled();
+  click(row.getByText(/Inventory checked\./));
+  expect(row.getByRole("checkbox")).toBeChecked();
+  expect(share).toBeEnabled();
+});
 
-function selectAnswerText(): void {
-  const answer = screen.getByText(ANSWER);
-  const range = document.createRange();
-  range.selectNodeContents(answer);
-  const rect = new DOMRect(24, 24, 200, 24);
-  Object.defineProperty(range, "getClientRects", {
-    value: () => {
-      return [rect];
-    },
+test("chat-sharing-020 Escape dismisses the message audience menu and returns to Share", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  await conversation("Inventory checked", true);
+  const composer = await screen.findByRole("textbox", { name: /message/i });
+  const share = await findFastControl("button", "Share message");
+  click(share);
+  await screen.findByRole("menu");
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    return expect(share).toHaveFocus();
   });
-  const selection = window.getSelection();
-  if (!selection) {
-    throw new Error("Text selection is unavailable");
-  }
-  fireEvent.pointerDown(answer, {
-    button: 0,
-    isPrimary: true,
-    pointerId: 1,
-    pointerType: "mouse",
-  });
-  selection.removeAllRanges();
-  selection.addRange(range);
-  fireEvent(document, new Event("selectionchange"));
-  fireEvent.pointerUp(answer, {
-    button: 0,
-    isPrimary: true,
-    pointerId: 1,
-    pointerType: "mouse",
-  });
-  fireEvent.click(answer);
-}
-
-function clearAnswerSelection(): void {
-  window.getSelection()?.removeAllRanges();
-  fireEvent(document, new Event("selectionchange"));
-}
-
-function selectableGroupForText(text: string): HTMLElement {
-  const group = screen
-    .getByText(text)
-    .closest<HTMLElement>("[data-chat-share-selectable-group]");
-  if (!group) {
-    throw new Error(`Selectable message group not found: ${text}`);
-  }
-  return group;
-}
-
-// The row under a user bubble holds the space the next bubble in a burst is
-// pulled into, so it is part of that message's frame rather than part of the
-// copy button it usually carries. jsdom computes no layout, so the overlap this
-// guards against has no page-observable form: the reserved row is the only
-// evidence available for it, and the case is still worth covering because
-// losing that row is exactly what put two bubbles on top of each other.
-function nameLineSwitches(): Partial<Record<FeatureSwitchKey, boolean>> {
-  return { [FeatureSwitchKey.ChatReplyNameLine]: true };
-}
-
-function userMessageFor(text: string): HTMLElement {
-  const message = screen
-    .getByText(text)
-    .closest<HTMLElement>('[data-role="user"]');
-  if (!message) {
-    throw new Error(`User message not found: ${text}`);
-  }
-  return message;
-}
-
-function actionRowFor(text: string): HTMLElement | null {
-  return userMessageFor(text).querySelector<HTMLElement>(
-    "[data-chat-user-message-actions]",
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  expect(clipboard.writes).toStrictEqual([]);
+  expect(composer).toBeInTheDocument();
+});
+function messageGroup(text: string) {
+  return within(
+    screen
+      .getByText(text)
+      .closest<HTMLElement>("[data-chat-share-selectable-group]")!,
   );
 }
 
-// Alongside the reserved row, the stacked marker is the only evidence of the
-// pull itself, for the same reason: jsdom computes no layout.
-function isStackedOnPrevious(text: string): boolean {
-  return userMessageFor(text).dataset.chatUserMessageStacked !== undefined;
-}
-
-async function setupMessageSharing(
-  chatEvents: MockChatEventInput[] = standardConversation(),
-  featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>,
-  createStatus: 201 | 404 = 201,
-) {
+test("chat-sharing-007 public selection copies the snapshot and locks the answer group", async () => {
   const clipboard = context.mocks.browser.clipboardWriteText();
-  const createRequests: string[][] = [];
-  mockConversation(chatEvents);
+  const snapshot = crypto.randomUUID();
+  let submitted: unknown;
   context.mocks.api(
     sharedThreadVisibilityContract.create,
     ({ body, respond }) => {
-      createRequests.push([...body.eventIds]);
-      if (createStatus === 404) {
-        return respond(404, {
-          error: { code: "NOT_FOUND", message: "Not found" },
-        });
-      }
-      return respond(201, { id: SHARED_THREAD_ID });
+      submitted = body;
+      return respond(201, { id: snapshot });
     },
   );
+  const ids = await conversation("Dispatch complete");
+  click(await findFastControl("button", "Share messages"));
+  for (const text of ["Inspect inventory", "Dispatch complete"]) {
+    click(messageGroup(text).getByText("Select message group"));
+  }
+  click(await findFastControl("button", "Share"));
+  const link = await screen.findByRole("textbox", { name: "Shared chat link" });
+  expect(link).toHaveValue(location.origin + "/share/threads/" + snapshot);
+  expect(submitted).toMatchObject({ eventIds: ids, audience: "public" });
+  expect(clipboard.writes).toContain(
+    location.origin + "/share/threads/" + snapshot,
+  );
+  const selection = messageGroup("Dispatch complete").getByRole("checkbox");
+  click(selection);
+  expect(selection).toBeChecked();
+  expect(selectionPopup()).not.toBeInTheDocument();
+});
+
+test("chat-sharing-016 a group above the snapshot limit stays unselected", async () => {
+  const serials = "01234567,89012345,".repeat(90_000);
+  await conversation(
+    ["Serial export", "", "~~~text", serials, "~~~"].join("\n"),
+  );
+  click(await findFastControl("button", "Share messages"));
+  const group = messageGroup("Serial export");
+  click(group.getByRole("checkbox"));
+  await screen.findByText("Select fewer messages to share");
+  expect(group.getByRole("checkbox")).not.toBeChecked();
+  expect(screen.getByText("Inspect inventory")).toBeInTheDocument();
+});
+
+test("chat-sharing-009 consecutive prompts retain the action rows in classic sharing", async () => {
+  const runId = crypto.randomUUID();
+  createChatRunFixtures(context).installRunChat({
+    chatEvents: ["North manifest", "South manifest"].map((text, i) => {
+      return promptEvent({
+        text,
+        runId,
+        seqId: i + 1,
+        id: crypto.randomUUID(),
+      });
+    }),
+  });
   await setupPage({
     context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-    featureSwitches: withShareRefresh(featureSwitches),
+    path: RUN_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.ChatShareRefresh]: false,
+      [FeatureSwitchKey.ChatReplyNameLine]: false,
+    },
   });
-  await screen.findByText(PROMPT);
-  await waitFor(() => {
-    expect(buttonsNamed("Share messages").length).toBeGreaterThan(0);
-  });
-  click(requiredButtonNamed("Share messages"));
-  await waitFor(() => {
-    expect(screen.getAllByText(/^0 of \d+ selected$/).length).toBeGreaterThan(
-      0,
-    );
+  click(await findFastControl("button", "Share messages"));
+  await findFastControl("button", "Share");
+  for (const text of ["North manifest", "South manifest"]) {
+    const row = screen.getByText(text).closest('[data-role="user"]');
     expect(
-      screen.getAllByText("Select the messages to share").length,
-    ).toBeGreaterThan(0);
-  });
-  return {
-    answerGroup: selectableGroupForText(ANSWER),
-    clipboard,
-    createRequests,
-    promptGroup: selectableGroupForText(PROMPT),
-  };
-}
-
-async function prepareGroupSelection(
-  featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>,
-) {
-  const { promptGroup } = await setupMessageSharing(
-    standardConversation(),
-    featureSwitches,
-  );
-  const selection = within(promptGroup).getByRole("checkbox", {
-    name: "Select message group",
-  });
-  return { promptGroup, selection };
-}
-
-async function expectOneSelectedGroup(selection: HTMLElement) {
-  await waitFor(() => {
-    expect(selection).toBeChecked();
-    expect(selection).toHaveAccessibleName("Deselect message group");
-    expect(screen.getAllByText(/^1 of \d+ selected$/).length).toBeGreaterThan(
-      0,
-    );
-  });
-}
-
-async function expectNoSelectedGroups(selection: HTMLElement) {
-  await waitFor(() => {
-    expect(selection).not.toBeChecked();
-    expect(selection).toHaveAccessibleName("Select message group");
-    expect(requiredButtonNamed("Create link")).toBeDisabled();
-  });
-}
-
-test("The selection column toggles a message group once", async () => {
-  const { promptGroup, selection } = await prepareGroupSelection();
-  expect(selection).not.toBeChecked();
-  click(within(promptGroup).getByText("Select message group"));
-  await expectOneSelectedGroup(selection);
-  click(within(promptGroup).getByText("Deselect message group"));
-  await expectNoSelectedGroups(selection);
-});
-
-test("With Agent name on replies, the selection column toggles a group and marks it as a whole", async () => {
-  const { promptGroup, selection } =
-    await prepareGroupSelection(nameLineSwitches());
-  expect(promptGroup).not.toHaveAttribute("data-selected");
-  click(within(promptGroup).getByText("Select message group"));
-  await expectOneSelectedGroup(selection);
-  expect(promptGroup).toHaveAttribute("data-selected");
-  click(selection);
-  await expectNoSelectedGroups(selection);
-  expect(promptGroup).not.toHaveAttribute("data-selected");
-});
-
-test("Select all, clear all, and individual selection use the same message groups", async () => {
-  const { answerGroup, promptGroup, createRequests } =
-    await setupMessageSharing();
-  const promptSelection = within(promptGroup).getByRole("checkbox");
-  const answerSelection = within(answerGroup).getByRole("checkbox");
-  click(requiredButtonNamed("Select all"));
-  await waitFor(() => {
-    expect(promptSelection).toBeChecked();
-    expect(answerSelection).toBeChecked();
-    expect(requiredButtonNamed("Deselect all")).toBeEnabled();
-  });
-  click(requiredButtonNamed("Deselect all"));
-  await expectNoSelectedGroups(promptSelection);
-  expect(answerSelection).not.toBeChecked();
-  click(promptSelection);
-  await expectOneSelectedGroup(promptSelection);
-  click(requiredButtonNamed("Select all"));
-  await waitFor(() => {
-    expect(answerSelection).toBeChecked();
-  });
-  click(answerSelection);
-  await waitFor(() => {
-    expect(requiredButtonNamed("Select all")).toBeEnabled();
-  });
-  click(requiredButtonNamed("Select all"));
-  click(requiredButtonNamed("Create link"));
-  await screen.findByRole("textbox", { name: "Shared chat link" });
-  expect(createRequests).toStrictEqual([[PROMPT_EVENT_ID, ANSWER_EVENT_ID]]);
-});
-
-test("The checkbox toggles a message group once", async () => {
-  const user = userEvent.setup({ delay: null });
-  const { selection } = await prepareGroupSelection();
-  await user.click(selection);
-  await expectOneSelectedGroup(selection);
-  await user.click(selection);
-  await expectNoSelectedGroups(selection);
-  expect(selection).toHaveFocus();
-});
-
-test("Keyboard toggling preserves focus and the message group count", async () => {
-  const user = userEvent.setup({ delay: null });
-  const { selection } = await prepareGroupSelection();
-  selection.focus();
-  expect(selection).toHaveFocus();
-  await user.keyboard(" ");
-  await expectOneSelectedGroup(selection);
-  expect(selection).toHaveFocus();
-  await user.keyboard(" ");
-  await expectNoSelectedGroups(selection);
-  expect(selection).toHaveFocus();
-});
-
-test("Message text and code copying remain separate from group selection", async () => {
-  const code = "const launch = true;";
-  const conversation = standardConversation().map((event) => {
-    return event.role === "assistant"
-      ? {
-          ...event,
-          content: `${ANSWER}\n\n[Launch reference](https://example.com/launch)\n\n\`\`\`typescript\n${code}\n\`\`\``,
-        }
-      : event;
-  });
-  const { answerGroup, clipboard } = await setupMessageSharing(conversation);
-  const selection = within(answerGroup).getByRole("checkbox");
-  const link = queryAllByRoleFast("link", answerGroup).find((element) => {
-    return element.textContent === "Launch reference";
-  });
-  if (!link) {
-    throw new Error("Expected the launch reference link");
+      row?.querySelector("[data-chat-user-message-actions]"),
+    ).toBeInTheDocument();
   }
-  expect(link).toHaveAttribute("href", "https://example.com/launch");
-  click(screen.getByText(ANSWER));
-  click(requiredButtonNamed("Copy to clipboard"));
-  await waitFor(() => {
-    expect(requiredButtonNamed("Copied")).toBeInTheDocument();
-  });
-  expect(clipboard.writes).toStrictEqual([`${code}\n`]);
-  expect(selection).not.toBeChecked();
-  expect(requiredButtonNamed("Create link")).toBeDisabled();
-
-  click(within(answerGroup).getByText("Select message group"));
-  await waitFor(() => {
-    expect(selection).toBeChecked();
-  });
-  click(screen.getByText(ANSWER));
-  expect(selection).toBeChecked();
-  expect(screen.getAllByText(/^1 of \d+ selected$/).length).toBeGreaterThan(0);
+  expect(
+    screen.getByText("South manifest").closest('[data-role="user"]'),
+  ).toHaveAttribute("data-chat-user-message-stacked");
+  expect(screen.queryByLabelText("Copy message")).not.toBeInTheDocument();
 });
 
-test("A growing selected message group becomes partial and can select its new messages", async () => {
-  const user = userEvent.setup();
-  const chatEvents: MockChatEventInput[] = standardConversation().slice(0, 1);
-  const createRequests: string[][] = [];
-  mockConversation(chatEvents);
-  context.mocks.api(
-    sharedThreadVisibilityContract.create,
-    ({ body, respond }) => {
-      createRequests.push([...body.eventIds]);
-      return respond(201, { id: SHARED_THREAD_ID });
-    },
-  );
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-    featureSwitches: withShareRefresh(),
-  });
-  await screen.findByText(PROMPT);
-  await waitFor(() => {
-    expect(buttonsNamed("Share messages").length).toBeGreaterThan(0);
-  });
-  click(requiredButtonNamed("Share messages"));
-  const group = selectableGroupForText(PROMPT);
-  click(within(group).getByText("Select message group"));
-  const selection = within(group).getByRole("checkbox");
-  await waitFor(() => {
-    expect(selection).toBeChecked();
-  });
-
-  act(() => {
-    chatEvents.push({
-      id: FOLLOW_UP_PROMPT_EVENT_ID,
-      role: "user",
-      content: FOLLOW_UP_PROMPT,
-      runId: "launch-run",
-      createdAt: "2026-08-01T10:00:01Z",
-    });
-    createChatEvent(THREAD_ID);
-  });
-  await screen.findByText(FOLLOW_UP_PROMPT);
-  expect(selection).toBePartiallyChecked();
-  click(within(group).getByText("Select message group"));
-  await waitFor(() => {
-    expect(selection).toBeChecked();
-  });
-  expect(selection).not.toBePartiallyChecked();
-  expect(screen.getAllByText(/^1 of \d+ selected$/).length).toBeGreaterThan(0);
-
-  await user.click(selection);
-  expect(selection).not.toBeChecked();
-  expect(selection).not.toBePartiallyChecked();
-  expect(requiredButtonNamed("Create link")).toBeDisabled();
-
-  await user.keyboard(" ");
-  expect(selection).toBeChecked();
-  expect(selection).not.toBePartiallyChecked();
-  click(requiredButtonNamed("Create link"));
-  await screen.findByRole("textbox", { name: "Shared chat link" });
-  expect(createRequests).toStrictEqual([
-    [PROMPT_EVENT_ID, FOLLOW_UP_PROMPT_EVENT_ID],
-  ]);
-});
-
-test("Share selected message groups as a public conversation snapshot", async () => {
-  const { answerGroup, promptGroup, clipboard, createRequests } =
-    await setupMessageSharing();
-  click(within(promptGroup).getByText("Select message group"));
-  click(within(answerGroup).getByText("Select message group"));
-  await waitFor(() => {
-    expect(screen.getAllByText(/^2 of \d+ selected$/).length).toBeGreaterThan(
-      0,
-    );
-    expect(requiredButtonNamed("Create link")).toBeEnabled();
-  });
-  click(requiredButtonNamed("Create link"));
-  await waitFor(() => {
-    expect(createRequests).toStrictEqual([[PROMPT_EVENT_ID, ANSWER_EVENT_ID]]);
-  });
-  const shareLink = await screen.findByRole("textbox", {
-    name: "Shared chat link",
-  });
-  expect(shareLink).toHaveValue(
-    `https://app.okou.ai/share/threads/${SHARED_THREAD_ID}`,
-  );
-  await screen.findByText("Link created for 2 messages");
-  await waitFor(() => {
-    expect(buttonsNamed("Copied")).toHaveLength(1);
-  });
-  expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
-  expect(clipboard.writes).toStrictEqual([
-    `https://app.okou.ai/share/threads/${SHARED_THREAD_ID}`,
-  ]);
-  expect(within(answerGroup).getByRole("checkbox")).toBeChecked();
-  expect(within(answerGroup).getByRole("checkbox")).toHaveAttribute(
-    "aria-readonly",
-    "true",
-  );
-  click(within(answerGroup).getByText("Deselect message group"));
-  expect(within(answerGroup).getByRole("checkbox")).toBeChecked();
-  expect(screen.queryByTestId("chat-event-actions")).toBeNull();
-});
-
-test("Hide passage actions throughout sharing and restore them afterward", async () => {
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  mockConversation();
-  context.mocks.api(sharedThreadVisibilityContract.create, ({ respond }) => {
-    return respond(201, { id: SHARED_THREAD_ID });
-  });
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-    featureSwitches: withShareRefresh(),
-  });
-  await screen.findByText(ANSWER);
-  selectAnswerText();
-  await waitFor(() => {
-    expect(selectionActionButtons()).toHaveLength(3);
-  });
-
-  click(requiredButtonNamed("Share messages"));
-  await screen.findAllByText(/^0 of \d+ selected$/);
-  expect(selectionActionButtons()).toHaveLength(0);
-
-  clearAnswerSelection();
-  selectAnswerText();
-  expect(window.getSelection()?.toString()).toBe(ANSWER);
-  expect(selectionActionButtons()).toHaveLength(0);
-  const answerGroup = selectableGroupForText(ANSWER);
-  expect(within(answerGroup).getByRole("checkbox")).not.toBeChecked();
-  expect(requiredButtonNamed("Create link")).toBeDisabled();
-
-  click(within(answerGroup).getByText("Select message group"));
-  await screen.findAllByText(/^1 of \d+ selected$/);
-
-  click(requiredButtonNamed("Create link"));
-  await screen.findByRole("textbox", { name: "Shared chat link" });
-  expect(clipboard.writes).toStrictEqual([
-    `https://app.okou.ai/share/threads/${SHARED_THREAD_ID}`,
-  ]);
-  clearAnswerSelection();
-  selectAnswerText();
-  expect(selectionActionButtons()).toHaveLength(0);
-
-  click(requiredButtonNamed("Done"));
-  await waitFor(() => {
-    expect(buttonsNamed("Share messages").length).toBeGreaterThan(0);
-  });
-  expect(selectionActionButtons()).toHaveLength(0);
-  clearAnswerSelection();
-  selectAnswerText();
-  await waitFor(() => {
-    expect(selectionActionButtons()).toHaveLength(3);
-  });
-});
-
-async function startSharingBackToBackPrompts(
-  featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>,
-): Promise<void> {
-  mockConversation([
-    {
-      id: PROMPT_EVENT_ID,
-      role: "user",
-      content: PROMPT,
-      runId: "launch-run",
-      createdAt: "2026-08-01T10:00:00Z",
-    },
-    {
-      id: FOLLOW_UP_PROMPT_EVENT_ID,
-      role: "user",
-      content: FOLLOW_UP_PROMPT,
-      runId: "launch-run",
-      createdAt: "2026-08-01T10:00:01Z",
-    },
-    {
-      id: ANSWER_EVENT_ID,
-      role: "assistant",
-      content: ANSWER,
-      runId: "launch-run",
-      createdAt: "2026-08-01T10:00:02Z",
-    },
-  ]);
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-    featureSwitches: withShareRefresh(featureSwitches),
-  });
-
-  await screen.findByText(FOLLOW_UP_PROMPT);
-  expect(actionRowFor(PROMPT)).toBeInTheDocument();
-  expect(actionRowFor(FOLLOW_UP_PROMPT)).toBeInTheDocument();
-  expect(isStackedOnPrevious(FOLLOW_UP_PROMPT)).toBeTruthy();
-  await waitFor(() => {
-    expect(buttonsNamed("Share messages").length).toBeGreaterThan(0);
-  });
-
-  click(requiredButtonNamed("Share messages"));
-
-  await waitFor(() => {
-    expect(screen.getAllByText(/^0 of \d+ selected$/).length).toBeGreaterThan(
-      0,
-    );
-  });
-}
-
-// Back-to-back user messages are pulled together by a negative margin sized
-// against the row that sits under every bubble. Share selection hides the copy
-// button in that row; when it took the row with it, the second bubble climbed
-// into the first one and the two rendered on top of each other.
-test("Back-to-back user messages keep their frame apart while sharing", async () => {
-  await startSharingBackToBackPrompts();
-  expect(actionRowFor(PROMPT)).toBeInTheDocument();
-  expect(actionRowFor(FOLLOW_UP_PROMPT)).toBeInTheDocument();
-  expect(isStackedOnPrevious(FOLLOW_UP_PROMPT)).toBeTruthy();
-  expect(buttonsNamed("Copy message")).toHaveLength(0);
-});
-
-// With Agent name on replies, a selected group is tinted, so sharing drops the
-// row and the pull measured against it together; a pull without its row would
-// put the second bubble on top of the first.
-test("With Agent name on replies, back-to-back user messages drop their pull with the copy row while sharing", async () => {
-  await startSharingBackToBackPrompts(nameLineSwitches());
-  expect(actionRowFor(PROMPT)).toBeNull();
-  expect(actionRowFor(FOLLOW_UP_PROMPT)).toBeNull();
-  expect(isStackedOnPrevious(FOLLOW_UP_PROMPT)).toBeFalsy();
-  expect(buttonsNamed("Copy message")).toHaveLength(0);
-});
-
-test("Replacing a selected live answer clears it before the next answer is shared", async () => {
-  const nextAnswerId = "b0000000-0000-4000-a000-000000000805";
-  const nextAnswer = "The revised launch plan has four phases.";
-  const chatEvents = standardConversation();
-  const createRequests: string[][] = [];
-  mockChatLifecycle(context, {
-    threadId: THREAD_ID,
-    threadTitle: "Live launch planning",
-    chatEvents,
-    activeRunIds: ["launch-run"],
-  });
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(404, {
-      error: {
-        code: "BROWSER_NOT_FOUND",
-        message: "Managed browser not found",
-      },
-    });
-  });
-  context.mocks.api(
-    sharedThreadVisibilityContract.create,
-    ({ body, respond }) => {
-      createRequests.push([...body.eventIds]);
-      return respond(201, { id: SHARED_THREAD_ID });
-    },
-  );
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-    featureSwitches: withShareRefresh(),
-  });
-
-  await screen.findByText(ANSWER);
-  await waitFor(() => {
-    expect(buttonsNamed("Share messages").length).toBeGreaterThan(0);
-  });
-  click(requiredButtonNamed("Share messages"));
-
-  const firstSelection = within(selectableGroupForText(ANSWER)).getByRole(
-    "checkbox",
-  );
-  click(firstSelection);
-  await waitFor(() => {
-    expect(firstSelection).toBeChecked();
-    expect(screen.getAllByText(/^1 of \d+ selected$/).length).toBeGreaterThan(
-      0,
-    );
-  });
-
-  act(() => {
-    chatEvents.push({
-      id: nextAnswerId,
-      role: "assistant",
-      content: nextAnswer,
-      runId: "launch-run",
-      createdAt: "2026-08-01T10:00:02Z",
-    });
-    createChatEvent(THREAD_ID);
-  });
-
-  await screen.findByText(nextAnswer);
-  expect(screen.queryByText(ANSWER)).not.toBeInTheDocument();
-  const nextSelection = within(selectableGroupForText(nextAnswer)).getByRole(
-    "checkbox",
-  );
-  expect(nextSelection).not.toBeChecked();
-  const shareButton = requiredButtonNamed("Create link");
-  expect(screen.getAllByText(/^0 of \d+ selected$/).length).toBeGreaterThan(0);
-  expect.soft(shareButton).toBeDisabled();
-
-  click(nextSelection);
-  await waitFor(() => {
-    expect(nextSelection).toBeChecked();
-  });
-  expect(screen.getAllByText(/^1 of \d+ selected$/).length).toBeGreaterThan(0);
-  click(requiredButtonNamed("Create link"));
-
-  await screen.findByRole("textbox", { name: "Shared chat link" });
-  expect(createRequests).toStrictEqual([[nextAnswerId]]);
-});
-
-test("Select all includes the complete transcript after selected messages move outside the render window", async () => {
-  const chatEvents: MockChatEventInput[] = [
-    ...standardConversation(),
-    {
-      id: "launch-completed",
-      role: "assistant",
-      content: null,
-      runId: "launch-run",
-      runLifecycleEvent: "completed",
-      createdAt: "2026-08-01T10:00:02Z",
-    },
-  ];
-  const createRequests: string[][] = [];
-  mockChatLifecycle(context, {
-    threadId: THREAD_ID,
-    threadTitle: "Growing launch conversation",
-    chatEvents,
-  });
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(404, {
-      error: {
-        code: "BROWSER_NOT_FOUND",
-        message: "Managed browser not found",
-      },
-    });
-  });
-  context.mocks.api(
-    sharedThreadVisibilityContract.create,
-    ({ body, respond }) => {
-      createRequests.push([...body.eventIds]);
-      return respond(201, { id: SHARED_THREAD_ID });
-    },
-  );
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-    featureSwitches: withShareRefresh(),
-  });
-
-  await screen.findByText(ANSWER);
-  await waitFor(() => {
-    expect(buttonsNamed("Share messages").length).toBeGreaterThan(0);
-  });
-  click(requiredButtonNamed("Share messages"));
-  const selection = within(selectableGroupForText(ANSWER)).getByRole(
-    "checkbox",
-  );
-  click(selection);
-  await waitFor(() => {
-    expect(selection).toBeChecked();
-    expect(screen.getAllByText(/^1 of \d+ selected$/).length).toBeGreaterThan(
-      0,
-    );
-  });
-
-  act(() => {
-    for (let turn = 1; turn <= 12; turn++) {
-      const minute = String(turn).padStart(2, "0");
-      const runId = `later-run-${String(turn)}`;
-      chatEvents.push(
-        {
-          id: `later-prompt-${String(turn)}`,
-          role: "user",
-          content: `Follow-up question ${String(turn)}`,
-          runId,
-          createdAt: `2026-08-01T10:${minute}:00Z`,
-        },
-        {
-          id: `later-answer-${String(turn)}`,
-          role: "assistant",
-          content: `Follow-up answer ${String(turn)}`,
-          runId,
-          createdAt: `2026-08-01T10:${minute}:01Z`,
-        },
-        {
-          id: `later-completed-${String(turn)}`,
-          role: "assistant",
-          content: null,
-          runId,
-          runLifecycleEvent: "completed",
-          createdAt: `2026-08-01T10:${minute}:02Z`,
-        },
+test.each([
+  ["022", "Everyone", "The shared link could not be created."],
+  ["026", "Organization", "Could not copy the link"],
+] as const)(
+  "chat-sharing-%s restores the composer actions after sharing with %s fails",
+  async (id, audience, error) => {
+    context.mocks.browser.clipboardWriteText();
+    if (id === "026") {
+      vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(
+        new DOMException("Clipboard denied", "NotAllowedError"),
       );
     }
-    createChatEvent(THREAD_ID);
-  });
-
-  await screen.findByText("Follow-up answer 12");
-  expect(screen.queryByText(ANSWER)).not.toBeInTheDocument();
-  const shareButton = requiredButtonNamed("Create link");
-  expect(screen.getAllByText(/^1 of \d+ selected$/).length).toBeGreaterThan(0);
-  expect(shareButton).toBeEnabled();
-  click(requiredButtonNamed("Select all"));
-  await waitFor(() => {
-    expect(screen.getAllByText(/^26 of \d+ selected$/).length).toBeGreaterThan(
-      0,
+    const release = context.mocks.deferred<void>();
+    context.mocks.api(
+      sharedThreadVisibilityContract.create,
+      async ({ body, respond }) => {
+        await release.promise;
+        return id === "022"
+          ? respond(403, { error: { code: "FORBIDDEN", message: "Denied" } })
+          : respond(201, { id: body.id! });
+      },
     );
-  });
-  click(shareButton);
+    await conversation("Dispatch complete", true);
+    const composer = await screen.findByRole("textbox", { name: /message/i });
+    click(await findFastControl("button", "Share message"));
+    const menu = await screen.findByRole("menu");
+    click(within(menu).getByText(audience));
+    await screen.findAllByText("Copied");
+    release.resolve();
+    await screen.findByText(error);
+    expect(screen.queryAllByText("Copied")).toHaveLength(0);
+    await expect(
+      findFastControl("button", "Share message"),
+    ).resolves.toBeEnabled();
+    expect(composer).toBeEnabled();
+    expect(
+      screen.queryByRole("textbox", { name: "Shared chat link" }),
+    ).not.toBeInTheDocument();
+  },
+);
 
+test("chat-sharing-006 a new prompt makes the previously selected group mixed", async () => {
+  const runId = crypto.randomUUID(),
+    first = crypto.randomUUID(),
+    second = crypto.randomUUID();
+  const events = [
+    promptEvent({ id: first, runId, seqId: 1, text: "April count" }),
+  ];
+  createChatRunFixtures(context).installRunChat({ chatEvents: events });
+  const payload = context.mocks.deferred<string[]>();
+  const snapshot = crypto.randomUUID();
+  context.mocks.api(
+    sharedThreadVisibilityContract.create,
+    ({ body, respond }) => {
+      payload.resolve(body.eventIds);
+      return respond(201, { id: snapshot });
+    },
+  );
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.ChatShareRefresh]: false },
+  });
+  click(await findFastControl("button", "Share messages"));
+  click(messageGroup("April count").getByText("Select message group"));
+  expect(messageGroup("April count").getByRole("checkbox")).toBeChecked();
+  events.push(promptEvent({ id: second, runId, seqId: 2, text: "May count" }));
+  publishRunUpdate();
+  await screen.findByText("May count");
+  const group = messageGroup("May count"),
+    box = group.getByRole("checkbox");
+  expect(box).toBePartiallyChecked();
+  click(box);
+  expect(box).toBeChecked();
+  click(box);
+  expect(box).not.toBeChecked();
+  click(box);
+  click(await findFastControl("button", "Share"));
+  await screen.findByDisplayValue(
+    location.origin + "/share/threads/" + snapshot,
+  );
+  await expect(payload.promise).resolves.toStrictEqual([first, second]);
+});
+function selectionPopup() {
+  return document.querySelector<HTMLElement>(
+    "[data-chat-selection-interaction]",
+  );
+}
+function expectSelectionCommands() {
+  const popup = selectionPopup();
+  expect(popup).toBeInTheDocument();
+  for (const label of ["Copy", "Quote", "Fork"]) {
+    expect(within(popup!).getByText(label)).toBeInTheDocument();
+  }
+}
+
+test("chat-sharing-008 passage controls return only after closing the shared selection", async () => {
+  const text = "Shipment estimate";
+  context.mocks.api(sharedThreadVisibilityContract.create, ({ respond }) => {
+    return respond(201, { id: crypto.randomUUID() });
+  });
+  await conversation(text);
+  await selectPassage(text);
+  expectSelectionCommands();
+  click(await findFastControl("button", "Share messages"));
+  const share = await findFastControl("button", "Share");
+  expect(selectionPopup()).not.toBeInTheDocument();
+  setPassageSelection(text);
+  expect(window.getSelection()?.toString()).toBe(text);
+  expect(selectionPopup()).not.toBeInTheDocument();
+  click(messageGroup(text).getByText("Select message group"));
+  click(share);
   await screen.findByRole("textbox", { name: "Shared chat link" });
-  expect(createRequests).toStrictEqual([
-    [
-      PROMPT_EVENT_ID,
-      ANSWER_EVENT_ID,
-      ...Array.from({ length: 12 }, (_, index) => {
-        return [
-          `later-prompt-${String(index + 1)}`,
-          `later-answer-${String(index + 1)}`,
-        ];
-      }).flat(),
-    ],
-  ]);
+  expect(selectionPopup()).not.toBeInTheDocument();
+  click(await findFastControl("button", "Close"));
+  await screen.findByRole("textbox", { name: /message/i });
+  await selectPassage(text);
+  expectSelectionCommands();
 });
 
-test.each(["running", "failed"] as const)(
-  "Sharing a %s answer shows only its latest message and restores the expanded history on close",
-  async (runStatus) => {
-    const createRequests: string[][] = [];
-    const error = "The provider could not complete the request.";
-    const statusSelector =
-      runStatus === "failed"
-        ? "[data-chat-run-status-tail]"
-        : "[data-thinking-indicator]";
-    mockChatLifecycle(context, {
-      threadId: THREAD_ID,
-      threadTitle: "Grouped launch answer",
+test.each(["013", "014"] as const)(
+  "chat-sharing-%s isolates the last answer and restores its open history",
+  async (id) => {
+    const runId = crypto.randomUUID();
+    const texts = ["Reading backlog", "Checking stock", "Shipment estimate"];
+    const messages = texts.map((text, i) => {
+      return assistantEvent({
+        id: crypto.randomUUID(),
+        runId,
+        seqId: i + 2,
+        text,
+      });
+    });
+    const final = messages[2]!.id;
+    const failed = id === "014";
+    createChatRunFixtures(context).installRunChat({
+      activeRunIds: failed ? [] : [runId],
       chatEvents: [
-        {
-          id: PROMPT_EVENT_ID,
-          role: "user",
-          content: PROMPT,
-          runId: GROUPED_RUN_ID,
-          createdAt: "2026-08-01T10:00:00Z",
-        },
-        ...GROUPED_ANSWER_EVENT_IDS.map((id, index) => {
-          return {
-            id,
-            role: "assistant" as const,
-            content: `Launch answer ${String(index + 1)}`,
-            runId: GROUPED_RUN_ID,
-            createdAt: `2026-08-01T10:00:0${String(index + 1)}Z`,
-          };
+        promptEvent({
+          id: crypto.randomUUID(),
+          runId,
+          text: "Check backlog",
+          seqId: 1,
         }),
-        ...(runStatus === "failed"
+        ...messages,
+        ...(failed
           ? [
               {
-                id: "b0000000-0000-4000-a000-000000000814",
-                eventType: "run.failed" as const,
-                content: null,
-                error,
-                runId: GROUPED_RUN_ID,
-                createdAt: "2026-08-01T10:00:04Z",
+                ...completedEvent({ id: crypto.randomUUID(), runId, seqId: 5 }),
+                runLifecycleEvent: "failed" as const,
               },
             ]
           : []),
       ],
-      activeRunIds: runStatus === "running" ? [GROUPED_RUN_ID] : [],
     });
+    const snapshot = crypto.randomUUID();
+    const payload = context.mocks.deferred<string[]>();
     context.mocks.api(
       sharedThreadVisibilityContract.create,
       ({ body, respond }) => {
-        createRequests.push([...body.eventIds]);
-        return respond(201, { id: SHARED_THREAD_ID });
+        payload.resolve(body.eventIds);
+        return respond(201, { id: snapshot });
       },
     );
-
     await setupPage({
       context,
-      path: `/chats/${THREAD_ID}`,
-      host: "app.okou.ai",
-      featureSwitches: withShareRefresh(),
+      path: RUN_PATH,
+      featureSwitches: { [FeatureSwitchKey.ChatShareRefresh]: false },
     });
-
-    await screen.findByText("Launch answer 3");
-    expect(screen.queryByText("Launch answer 1")).toBeNull();
-    expect(screen.queryByText("Launch answer 2")).toBeNull();
-    click(requiredButtonNamed("Expand work history"));
-
-    await screen.findByText("Launch answer 1");
-    expect(screen.getByText("Launch answer 2")).toBeInTheDocument();
-    expect(screen.getByTestId("chat-event-actions")).toBeInTheDocument();
-    await waitFor(() => {
-      expect(document.querySelector(statusSelector)).toBeInTheDocument();
-    });
-    await waitFor(() => {
-      expect(buttonsNamed("Share messages").length).toBeGreaterThan(0);
-    });
-    click(requiredButtonNamed("Share messages"));
-
-    const answerGroup = selectableGroupForText("Launch answer 3");
-    const answerSelection = within(answerGroup).getByRole("checkbox", {
-      name: "Select message group",
-    });
-    expect(screen.queryByText("Launch answer 1")).toBeNull();
-    expect(screen.queryByText("Launch answer 2")).toBeNull();
-    expect(buttonsNamed("Collapse work history")).toHaveLength(0);
-    expect(buttonsNamed("Expand work history")).toHaveLength(0);
-    expect(screen.queryByTestId("chat-event-actions")).toBeNull();
-    expect(document.querySelector("[data-chat-run-status-tail]")).toBeNull();
-    expect(document.querySelector("[data-thinking-indicator]")).toBeNull();
-    expect(screen.queryByText("This run couldn't finish")).toBeNull();
-    click(requiredButtonNamed("Select all"));
-
-    await waitFor(() => {
-      expect(screen.getAllByText(/^2 of \d+ selected$/).length).toBeGreaterThan(
-        0,
-      );
-      expect(answerSelection).toBeChecked();
-    });
-    expect(
-      document.querySelectorAll('[role="checkbox"][aria-checked="true"]'),
-    ).toHaveLength(2);
-
-    click(requiredButtonNamed("Create link"));
-    await screen.findByRole("textbox", { name: "Shared chat link" });
-    expect(createRequests).toStrictEqual([
-      [PROMPT_EVENT_ID, GROUPED_ANSWER_EVENT_IDS.at(-1)],
-    ]);
-    expect(screen.queryByTestId("chat-event-actions")).toBeNull();
-    expect(screen.queryByText("Launch answer 1")).toBeNull();
-    expect(document.querySelector("[data-chat-run-status-tail]")).toBeNull();
-
-    click(requiredButtonNamed("Done"));
-
-    await screen.findByText("Launch answer 1");
-    expect(screen.getByText("Launch answer 2")).toBeInTheDocument();
-    expect(screen.getByText("Launch answer 3")).toBeInTheDocument();
-    expect(requiredButtonNamed("Collapse work history")).toHaveAttribute(
-      "aria-expanded",
-      "true",
+    click(await findWorkHistoryToggle("collapsed"));
+    await screen.findByText(texts[0]!);
+    const status = () => {
+      return failed
+        ? screen.queryByText("This run couldn't finish")
+        : document.querySelector("[data-thinking-indicator]");
+    };
+    expect(status()).toBeVisible();
+    await selectPassage(texts[2]!);
+    click(await findFastControl("button", "Share messages"));
+    const row = messageGroup(texts[2]!);
+    for (const earlier of texts.slice(0, 2)) {
+      expect(screen.queryByText(earlier)).not.toBeInTheDocument();
+    }
+    expect(status()).not.toBeInTheDocument();
+    expect(selectionPopup()).not.toBeInTheDocument();
+    click(row.getByText("Select message group"));
+    click(await findFastControl("button", "Share"));
+    await screen.findByDisplayValue(
+      location.origin + "/share/threads/" + snapshot,
     );
-    expect(screen.getByTestId("chat-event-actions")).toBeInTheDocument();
-    await waitFor(() => {
-      expect(document.querySelector(statusSelector)).toBeInTheDocument();
-    });
+    await expect(payload.promise).resolves.toStrictEqual([final]);
+    click(await findFastControl("button", "Close"));
+    await findWorkHistoryToggle("expanded");
+    for (const text of texts) {
+      await screen.findByText(text);
+    }
+    expect(status()).toBeVisible();
+    await selectPassage(texts[2]!);
+    expectSelectionCommands();
   },
 );
-
-test("Sharing while awaiting the first answer hides the run indicator until cancelled", async () => {
-  mockChatLifecycle(context, {
-    threadId: THREAD_ID,
-    chatEvents: standardConversation().slice(0, 1),
-    activeRunIds: ["launch-run"],
-  });
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-    featureSwitches: withShareRefresh(),
-  });
-
-  await screen.findByText(PROMPT);
-  await waitFor(() => {
-    expect(
-      document.querySelector("[data-thinking-indicator]"),
-    ).toBeInTheDocument();
-  });
-  click(requiredButtonNamed("Share messages"));
-
-  const promptGroup = selectableGroupForText(PROMPT);
-  expect(within(promptGroup).getByRole("checkbox")).toBeInTheDocument();
-  expect(document.querySelector("[data-thinking-indicator]")).toBeNull();
-
-  click(requiredButtonNamed("Cancel"));
-
-  await waitFor(() => {
-    expect(
-      document.querySelector("[data-thinking-indicator]"),
-    ).toBeInTheDocument();
-  });
-});
-
-test("An oversized Select all leaves the existing selection intact", async () => {
-  const oversizedBody = `Oversized message\n\n<!--${"界".repeat(524_289)}-->`;
-  mockConversation([
-    {
-      id: PROMPT_EVENT_ID,
-      role: "user",
-      content: "A normal message remains available",
-      runId: "oversized-run",
-      createdAt: "2026-08-01T10:00:00Z",
-    },
-    {
-      id: ANSWER_EVENT_ID,
-      role: "assistant",
-      content: oversizedBody,
-      runId: "oversized-run",
-      createdAt: "2026-08-01T10:00:01Z",
-    },
-  ]);
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-    featureSwitches: withShareRefresh(),
-  });
-
-  await screen.findByText("A normal message remains available");
-  await waitFor(() => {
-    expect(buttonsNamed("Share messages").length).toBeGreaterThan(0);
-  });
-  click(requiredButtonNamed("Share messages"));
-
-  await screen.findByText("Oversized message");
-  const oversizedGroup = selectableGroupForText("Oversized message");
-  const oversizedSelection = within(oversizedGroup).getByRole("checkbox", {
-    name: "Select message group",
-  });
-
-  click(oversizedSelection);
-  await screen.findByText("Select fewer messages to share");
-  expect(oversizedSelection).not.toBeChecked();
-
-  const promptSelection = within(
-    selectableGroupForText("A normal message remains available"),
-  ).getByRole("checkbox");
-  click(promptSelection);
-  await expectOneSelectedGroup(promptSelection);
-  click(requiredButtonNamed("Select all"));
-
-  await screen.findAllByText("Select fewer messages to share");
-  expect(oversizedSelection).not.toBeChecked();
-  expect(promptSelection).toBeChecked();
-  expect(requiredButtonNamed("Create link")).toBeEnabled();
-  expect(screen.getByText("A normal message remains available")).toBeVisible();
-});
-
-test("Select an audience before creating a share and change it after creation", async () => {
-  let audience: SharedThreadAudience = "organization";
-  let revision = "b0000000-0000-4000-a000-000000000901";
-  const created: (SharedThreadAudience | undefined)[] = [];
-  const updates: SharedThreadAudience[] = [];
-  context.mocks.api(sharedThreadVisibilityContract.get, ({ respond }) => {
-    return respond(200, {
-      id: SHARED_THREAD_ID,
-      audience,
-      revision,
-      organization: { id: "org_mock", name: "Acme" },
-    });
-  });
-  context.mocks.api(
-    sharedThreadVisibilityContract.update,
-    ({ body, respond }) => {
-      expect(body.expectedRevision).toBe(revision);
-      audience = body.audience;
-      revision = "b0000000-0000-4000-a000-000000000902";
-      updates.push(audience);
-      return respond(200, {
-        id: SHARED_THREAD_ID,
-        audience,
-        revision,
-        organization: { id: "org_mock", name: "Acme" },
-      });
-    },
-  );
-  const { answerGroup } = await setupMessageSharing(standardConversation());
-  context.mocks.api(
-    sharedThreadVisibilityContract.create,
-    ({ body, respond }) => {
-      created.push(body.audience);
-      return respond(201, { id: SHARED_THREAD_ID });
-    },
-  );
-  click(requiredButtonNamed("Who can access"));
-  expect(requiredRadioNamed("Anyone with the link")).toBeChecked();
-  click(requiredRadioNamed("Anyone at Default Org"));
-  await userEvent.keyboard("{Escape}");
-  click(within(answerGroup).getByText("Select message group"));
-  click(requiredButtonNamed("Create link"));
-  await screen.findByRole("textbox", { name: "Shared chat link" });
-  expect(created).toStrictEqual(["organization"]);
-  const footer = screen
-    .getByRole("textbox", { name: "Shared chat link" })
-    .closest("footer")!;
-  const manage = queryAllByRoleFast("button", footer).find((button) => {
-    return button.getAttribute("aria-label") === "Share";
-  });
-  if (!manage) {
-    throw new Error("Expected the conversation share menu");
-  }
-  click(manage);
-  await waitFor(() => {
-    expect(requiredRadioNamed("Anyone at Acme")).toBeChecked();
-  });
-  click(requiredRadioNamed("Anyone with the link"));
-  await waitFor(() => {
-    expect(requiredRadioNamed("Anyone with the link")).toBeChecked();
-  });
-  expect(updates).toStrictEqual(["public"]);
-});
-
-async function setupAudienceMessageShare(
-  failure: 403 | 404 | 409 | 503 | null = null,
-  clipboardFails = false,
-) {
-  mockConversation();
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  if (clipboardFails) {
-    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(
-      new Error("Clipboard permission denied"),
-    );
-  }
-  const response = context.mocks.deferred<void>();
-  const requestReceived = context.mocks.deferred<{
-    eventIds: string[];
-    id: string | undefined;
-    audience: SharedThreadAudience;
-  }>();
-  context.mocks.api(
-    sharedThreadVisibilityContract.create,
-    async ({ body, respond }) => {
-      requestReceived.resolve({
-        eventIds: [...body.eventIds],
-        id: body.id,
-        audience: body.audience,
-      });
-      await response.promise;
-      if (failure === 403) {
-        return respond(403, {
-          error: { code: "FORBIDDEN", message: "Access denied" },
-        });
-      }
-      if (failure === 404) {
-        return respond(404, {
-          error: { code: "NOT_FOUND", message: "Not found" },
-        });
-      }
-      if (failure === 409) {
-        return respond(409, {
-          error: { code: "CONFLICT", message: "Share already exists" },
-        });
-      }
-      if (failure === 503) {
-        return respond(503, {
-          error: {
-            code: "SERVICE_UNAVAILABLE",
-            message: "The shared link could not be created.",
-          },
-        });
-      }
-      return respond(201, { id: body.id ?? SHARED_THREAD_ID });
-    },
-  );
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-    featureSwitches: withShareRefresh(),
-  });
-  await screen.findByText(ANSWER);
-  await waitFor(() => {
-    expect(buttonsNamed("Share message")).toHaveLength(1);
-  });
-  return {
-    clipboard,
-    requestReceived,
-    response,
-    share: requiredButtonNamed("Share message"),
-  };
-}
-
-function messageShareItem(menu: HTMLElement, name: string) {
-  const item = queryAllByRoleFast("menuitem", menu).find((candidate) => {
-    return candidate.textContent?.startsWith(name);
-  });
-  if (!item) {
-    throw new Error(`Share option not found: ${name}`);
-  }
-  return item;
-}
-
-test.each([
-  { label: "Organization", audience: "organization" },
-  { label: "Everyone", audience: "public" },
-])(
-  "Choose $label and copy a message share without replacing the composer",
-  async ({ label, audience }) => {
-    const { clipboard, requestReceived, response, share } =
-      await setupAudienceMessageShare();
-    const composer = screen.getByRole("textbox", { name: "Message" });
-    click(share);
-    const menu = await screen.findByRole("menu", { name: "Share message" });
-    expect(queryAllByRoleFast("menuitem", menu)).toHaveLength(2);
-    expect(clipboard.writes).toStrictEqual([]);
-    click(messageShareItem(menu, label));
-    // The option click owns the browser gesture, before the HTTP response.
-    expect(clipboard.writes).toHaveLength(1);
-    expect(buttonsNamed("Copied")).toHaveLength(1);
-    const request = await requestReceived.promise;
-    expect(request).toMatchObject({
-      eventIds: [PROMPT_EVENT_ID, ANSWER_EVENT_ID],
-      audience,
-    });
-    expect(clipboard.writes).toStrictEqual([
-      `https://app.okou.ai/share/threads/${request.id}`,
-    ]);
-    expect(composer).toBeInTheDocument();
-    expect(
-      screen.queryByRole("textbox", { name: "Shared chat link" }),
-    ).not.toBeInTheDocument();
-    response.resolve();
-    await waitFor(() => {
-      expect(buttonsNamed("Copied")).toHaveLength(1);
-    });
-    expect(
-      screen.getByRole("textbox", { name: "Message" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("textbox", { name: "Shared chat link" }),
-    ).not.toBeInTheDocument();
-  },
-);
-
-test("Dismiss the audience menu without copying", async () => {
-  const { clipboard, share } = await setupAudienceMessageShare();
-  click(share);
-  await screen.findByRole("menu", { name: "Share message" });
-  await userEvent.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(share).toHaveFocus();
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-  });
-  expect(clipboard.writes).toStrictEqual([]);
-  expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
-});
-
-test("Choose a message audience from the keyboard and return focus to Share", async () => {
-  const { requestReceived, response, share } =
-    await setupAudienceMessageShare();
-  share.focus();
-  await userEvent.keyboard("{Enter}");
-  await screen.findByRole("menu", { name: "Share message" });
-  await userEvent.keyboard("{ArrowDown}{Enter}");
-  expect(buttonsNamed("Copied")).toHaveLength(1);
-  const request = await requestReceived.promise;
-  await waitFor(() => {
-    expect(share).toHaveFocus();
-  });
-  expect(request.audience).toBe("public");
-  response.resolve();
-  await waitFor(() => {
-    expect(buttonsNamed("Copied")).toHaveLength(1);
-  });
-});
-
-test.each([403, 404, 409, 503] as const)(
-  "A failed message share (%s) reverts the optimistic copy and keeps the composer",
-  async (failure) => {
-    const { response, share } = await setupAudienceMessageShare(failure);
-    click(share);
-    const menu = await screen.findByRole("menu", { name: "Share message" });
-    click(messageShareItem(menu, "Everyone"));
-    expect(buttonsNamed("Copied")).toHaveLength(1);
-    response.resolve();
-    await expect(
-      screen.findByText("The shared link could not be created."),
-    ).resolves.toBeInTheDocument();
-    expect(buttonsNamed("Copied")).toHaveLength(0);
-    expect(requiredButtonNamed("Share message")).toBeEnabled();
-    expect(
-      screen.getByRole("textbox", { name: "Message" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("textbox", { name: "Shared chat link" }),
-    ).not.toBeInTheDocument();
-  },
-);
-
-test("A denied clipboard write reverts the optimistic message share confirmation", async () => {
-  const { response, share } = await setupAudienceMessageShare(null, true);
-  click(share);
-  const menu = await screen.findByRole("menu", { name: "Share message" });
-  click(messageShareItem(menu, "Organization"));
-  expect(buttonsNamed("Copied")).toHaveLength(1);
-  response.resolve();
-  await expect(
-    screen.findByText("Could not copy the link"),
-  ).resolves.toBeInTheDocument();
-  expect(buttonsNamed("Copied")).toHaveLength(0);
-  expect(requiredButtonNamed("Share message")).toBeEnabled();
-  expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
-  expect(
-    screen.queryByRole("textbox", { name: "Shared chat link" }),
-  ).not.toBeInTheDocument();
-});
-
-test("A previous share failure does not revert a newer copy confirmation", async () => {
-  mockConversation();
-  context.mocks.browser.clipboardWriteText();
-  const failedResponse = context.mocks.deferred<void>();
-  const successfulResponse = context.mocks.deferred<void>();
-  context.mocks.api(
-    sharedThreadVisibilityContract.create,
-    async ({ body, respond }) => {
-      if (body.audience === "organization") {
-        await failedResponse.promise;
-        return respond(403, {
-          error: { code: "FORBIDDEN", message: "Access denied" },
-        });
-      }
-      await successfulResponse.promise;
-      return respond(201, { id: body.id ?? SHARED_THREAD_ID });
-    },
-  );
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-    featureSwitches: withShareRefresh(),
-  });
-  await screen.findByText(ANSWER);
-  await waitFor(() => {
-    expect(buttonsNamed("Share message")).toHaveLength(1);
-  });
-  click(requiredButtonNamed("Share message"));
-  const firstMenu = await screen.findByRole("menu", { name: "Share message" });
-  click(messageShareItem(firstMenu, "Organization"));
-  expect(buttonsNamed("Copied")).toHaveLength(1);
-  await waitFor(() => {
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-  });
-  await userEvent.click(requiredButtonNamed("Copied"));
-  const secondMenu = await screen.findByRole("menu");
-  click(messageShareItem(secondMenu, "Everyone"));
-  expect(buttonsNamed("Copied")).toHaveLength(1);
-  failedResponse.resolve();
-  await expect(
-    screen.findByText("The shared link could not be created."),
-  ).resolves.toBeInTheDocument();
-  expect(buttonsNamed("Copied")).toHaveLength(1);
-  successfulResponse.resolve();
-});
-
-test("A visibility share fails without publishing when its API is unavailable", async () => {
-  const { answerGroup } = await setupMessageSharing(
-    standardConversation(),
-    undefined,
-    404,
-  );
-  click(within(answerGroup).getByText("Select message group"));
-  click(requiredButtonNamed("Create link"));
-  await screen.findByText("Could not create the shared chat.");
-  expect(
-    screen.queryByRole("textbox", { name: "Shared chat link" }),
-  ).not.toBeInTheDocument();
-});
-
-test("Without the refreshed design, sharing keeps the legacy footer and copy toast", async () => {
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  mockConversation();
-  context.mocks.api(sharedThreadVisibilityContract.create, ({ respond }) => {
-    return respond(201, { id: SHARED_THREAD_ID });
-  });
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-  await screen.findByText(PROMPT);
-  await waitFor(() => {
-    expect(buttonsNamed("Share messages").length).toBeGreaterThan(0);
-  });
-  click(requiredButtonNamed("Share messages"));
-  await screen.findAllByText("0 selected");
-  expect(
-    screen.getAllByText(
-      "Choose who can view this chat. Only you can change access.",
-    ).length,
-  ).toBeGreaterThan(0);
-  expect(buttonsNamed("Select all")).toHaveLength(0);
-  expect(requiredButtonNamed("Share")).toBeDisabled();
-
-  click(screen.getAllByText("Select message group")[0]!);
-  await screen.findAllByText("1 selected");
-  click(requiredButtonNamed("Share"));
-  await screen.findByRole("textbox", { name: "Shared chat link" });
-  await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
-  expect(clipboard.writes).toStrictEqual([
-    `https://app.okou.ai/share/threads/${SHARED_THREAD_ID}`,
-  ]);
-
-  click(requiredButtonNamed("Close"));
-  await waitFor(() => {
-    expect(buttonsNamed("Share messages").length).toBeGreaterThan(0);
-  });
-});

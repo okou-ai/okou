@@ -1,16 +1,17 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
+
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  createComposerConnectorHelpers,
+  SCOUT_AGENT_ID,
+} from "./chat-composer-connectors-test-helpers.ts";
 import {
   findFastControl,
   queryFastControl,
 } from "./chat-message-experience-test-helpers.ts";
-import {
-  SCOUT_AGENT_ID,
-  createComposerConnectorHelpers,
-} from "./chat-composer-connectors-test-helpers.ts";
+import { mockRemoteInventory } from "./connectors-remote-control-test-helpers.ts";
 
 const context = testContext();
 const { installComposerConnectorFixture } =
@@ -18,27 +19,30 @@ const { installComposerConnectorFixture } =
 
 test("Chat VNC setup appears and filters", async () => {
   installComposerConnectorFixture();
-  context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 0 });
-  });
-  await setupPage({
-    context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
-  });
+  // No SSH or VNC connections are configured yet.
+  mockRemoteInventory(context);
+  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
   click(await findFastControl("button", "Connectors"));
   click(await findFastControl("button", "Add connectors"));
   const search = await screen.findByPlaceholderText("Find connectors...");
-  const dialog = search.closest('[role="dialog"]');
-  if (!(dialog instanceof HTMLElement)) {
-    throw new Error("Missing connector dialog");
+  const catalog = search.closest<HTMLElement>('[role="dialog"]');
+  if (!catalog) {
+    throw new Error("Expected the connector catalog dialog");
   }
-  await findFastControl("link", "Manage VNC", dialog);
-  await fill(search, "vnc");
   await expect(
-    findFastControl("link", "Manage VNC", dialog),
-  ).resolves.toHaveAttribute(
+    findFastControl("link", "Manage SSH hosts", catalog),
+  ).resolves.toBeInTheDocument();
+
+  await fill(search, "vnc");
+
+  // Filtering drops the SSH entry while the VNC entry stays.
+  await waitFor(() => {
+    expect(
+      queryFastControl("link", "Manage SSH hosts", catalog),
+    ).not.toBeInTheDocument();
+  });
+  expect(queryFastControl("link", "Manage VNC", catalog)).toHaveAttribute(
     "href",
     "/connectors?scope=remote-control&type=vnc",
   );
-  expect(queryFastControl("link", "Manage SSH hosts", dialog)).toBeNull();
 });

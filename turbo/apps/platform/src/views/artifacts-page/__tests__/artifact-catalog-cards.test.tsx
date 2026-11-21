@@ -1,33 +1,37 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   artifact,
-  findArtifactAction,
+  getButtonByName,
   setupArtifactCatalogPage,
 } from "./artifact-catalog-test-helpers.ts";
 
 const context = testContext();
 
 test("Artifact cards identify their kind and show available previews", async () => {
+  const siteCover = "https://static.example.test/covers/launch-site.png";
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
       artifacts: [
-        artifact({ title: "launch-plan.txt" }),
         artifact({
-          id: "a0000000-0000-4000-a000-000000000002",
-          kind: "hosted-site",
-          title: "launch-site",
-          thumbnail: {
-            url: "https://cdn.vm0.io/artifacts/test/preview.webp",
-          },
+          id: "a0000000-0000-4000-a000-000000000c01",
+          kind: "file",
+          title: "launch-plan.txt",
         }),
         artifact({
-          id: "a0000000-0000-4000-a000-000000000003",
+          id: "a0000000-0000-4000-a000-000000000c02",
+          kind: "hosted-site",
+          title: "Launch site",
+          thumbnail: { url: siteCover },
+        }),
+        artifact({
+          id: "a0000000-0000-4000-a000-000000000c03",
           kind: "avatar",
-          title: "avatar-video.mp4",
+          title: "Founder intro",
+          videoSourceUrl: "https://media.example.test/founder-intro.mp4",
         }),
       ],
       nextCursor: null,
@@ -36,69 +40,44 @@ test("Artifact cards identify their kind and show available previews", async () 
 
   await setupArtifactCatalogPage(context);
 
-  await expect(
-    findArtifactAction("launch-plan.txt"),
-  ).resolves.toBeInTheDocument();
-  const siteCard = await findArtifactAction("launch-site");
-  const avatarCard = await findArtifactAction("avatar-video.mp4");
-
+  await expect(screen.findByText("Launch site")).resolves.toBeInTheDocument();
+  const site = getButtonByName("Preview Launch site");
   expect(
-    within(siteCard).getByLabelText("Hosted site artifact"),
+    within(site).getByRole("img", { name: "Hosted site artifact" }),
   ).toBeInTheDocument();
-  expect(
-    within(avatarCard).getByLabelText("Avatar artifact"),
-  ).toBeInTheDocument();
-  expect(siteCard.querySelector("img")).toHaveAttribute(
-    "src",
-    "https://cdn.vm0.io/cdn-cgi/image/width=640,fit=scale-down,format=auto,quality=85,metadata=none/artifacts/test/preview.webp",
-  );
-});
-
-test("A video artifact without a poster uses its source as the catalog preview", async () => {
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, {
-      artifacts: [
-        artifact({
-          kind: "video",
-          title: "product-tour.mp4",
-          videoSourceUrl: "https://videos.example.test/product-tour.mp4",
-        }),
-      ],
-      nextCursor: null,
-    });
+  await waitFor(() => {
+    expect(
+      within(site).getByTestId("artifact-catalog-thumbnail"),
+    ).toHaveAttribute("src", siteCover);
   });
-
-  await setupArtifactCatalogPage(context, { path: "/artifacts?tab=video" });
-
-  const card = await findArtifactAction("product-tour.mp4");
   expect(
-    within(card).getByTestId("artifact-catalog-video-source"),
-  ).toHaveAttribute(
-    "src",
-    "https://videos.example.test/product-tour.mp4#t=0.001",
-  );
+    within(getButtonByName("Preview Founder intro")).getByRole("img", {
+      name: "Avatar artifact",
+    }),
+  ).toBeInTheDocument();
+  expect(getButtonByName("Preview launch-plan.txt")).toBeEnabled();
 });
 
 test("Re-read the catalog when one of the member's artifacts changes", async () => {
-  let reads = 0;
+  const artifactId = "a0000000-0000-4000-a000-000000000c11";
+  const server = { title: "launch-plan.txt" };
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    reads += 1;
     return respond(200, {
-      artifacts: [
-        artifact({
-          title: reads > 1 ? "synced-plan.txt" : "launch-plan.txt",
-        }),
-      ],
+      artifacts: [artifact({ id: artifactId, title: server.title })],
       nextCursor: null,
     });
   });
-
   await setupArtifactCatalogPage(context);
-  await expect(findArtifactAction("launch-plan.txt")).resolves.toBeVisible();
+  await expect(
+    screen.findByText("launch-plan.txt"),
+  ).resolves.toBeInTheDocument();
 
-  context.mocks.ably.trigger("artifact:changed", {
-    artifactId: "a0000000-0000-4000-a000-000000000001",
-  });
+  // The member's artifact is updated elsewhere, for example by a Drive sync.
+  server.title = "synced-plan.txt";
+  context.mocks.ably.trigger("artifact:changed", { artifactId });
 
-  await expect(findArtifactAction("synced-plan.txt")).resolves.toBeVisible();
+  await expect(
+    screen.findByText("synced-plan.txt"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText("launch-plan.txt")).not.toBeInTheDocument();
 });

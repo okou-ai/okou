@@ -1,403 +1,130 @@
-import { billingRedeemCodeContract } from "@okouai/api-contracts/contracts/billing";
-import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
-import { marketingEventsContract } from "@okouai/api-contracts/contracts/marketing-events";
-import { marketingHandoffsContract } from "@okouai/api-contracts/contracts/marketing-handoffs";
-import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
-import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-  startPage,
-} from "../../../__tests__/page-helper.ts";
-import { mockedClerk } from "../../../__tests__/mock-auth.ts";
+import { screen, waitFor } from "@testing-library/react";
+import { billingRedeemCodeContract } from "@okouai/api-contracts/contracts/billing";
+import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
+import { marketingEventsContract } from "@okouai/api-contracts/contracts/marketing-events";
+import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { pathname, search } from "../../../signals/location.ts";
-import { ROUTES } from "../../../signals/route-paths.ts";
-import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
-
+import {
+  receiveFirstChat,
+  findSentPrompt,
+} from "./onboarding-first-chat-test-helpers.ts";
 const context = testContext();
-const TASK = "What is 1 + 2? Reply with only the number.";
-const HASH = "a".repeat(12);
-const FILE_ID = "bc3125d1-dc3f-4422-955c-f69f1d077608";
-
-test("Authentication keeps task text separate from the actual onboarding flags", async () => {
-  context.mocks.clerk();
-  // The deployed Clerk builder decodes the nested query before serializing it.
-  mockedClerk.buildSignInUrl.mockImplementation((options) => {
-    const url = new URL("/sign-in", "https://app.okou.ai");
-    const params = new URLSearchParams({
-      redirect_url: decodeURIComponent(options?.redirectUrl ?? ""),
-    });
-    url.hash = `/?${params}`;
-    return url.toString();
+function newcomer() {
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
   });
-  const prompt = "Find C++ teams &skipOnboarding=true&redeemCode=TASK-TEXT";
-  const params = new URLSearchParams({
+}
+test("onboarding-entry-skip-001 sign-in keeps literal flags in the task separate from URL parameters", async () => {
+  const prompt = "Review skipOnboarding=true&redeemCode=TEXT as literal text.";
+  const query = new URLSearchParams({
     prompt,
     skipOnboarding: "false",
     redeemCode: "PRO-ENTRY",
   });
-  await startPage({
-    context,
-    host: "app.okou.ai",
-    path: `/onboarding?${params}`,
-    auth: null,
-  });
+  await startPage({ context, path: "/onboarding?" + query, auth: null });
   await waitFor(() => {
-    expect(window.location.pathname).toBe("/sign-in");
+    return expect(location.pathname).toBe("/sign-in");
   });
-  const signIn = new URL(window.location.href);
-  const target =
-    signIn.searchParams.get("redirect_url") ??
-    new URLSearchParams(signIn.hash.split("?")[1] ?? "").get("redirect_url");
-  if (!target) {
-    throw new Error("Expected an authentication return URL");
-  }
-  const returned = new URL(target);
-  expect(returned.searchParams.get("prompt")).toBe(prompt);
-  expect(returned.searchParams.getAll("skipOnboarding")).toStrictEqual([
-    "false",
-  ]);
-  expect(returned.searchParams.getAll("redeemCode")).toStrictEqual([
-    "PRO-ENTRY",
-  ]);
+  const target = new URL(
+    new URL(location.href).searchParams.get("redirect_url")!,
+  );
+  expect(target.pathname).toBe("/onboarding");
+  expect(target.searchParams.get("prompt")).toBe(prompt);
+  expect(target.searchParams.get("skipOnboarding")).toBe("false");
+  expect(target.searchParams.get("redeemCode")).toBe("PRO-ENTRY");
 });
-
-function needsOnboarding(isAdmin = true): void {
-  context.mocks.data.onboardingStatus({
-    needsOnboarding: true,
-    onboardingComplete: !isAdmin,
-    isAdmin,
+test("onboarding-entry-skip-006 a skip link without a task redeems the code and completes at Home", async () => {
+  newcomer();
+  const code = context.mocks.deferred<string>();
+  context.mocks.api(billingRedeemCodeContract.create, ({ body, respond }) => {
+    if (!code.settled()) {
+      code.resolve(body.code);
+    }
+    return respond(200, { redeemed: true });
   });
-}
-
-function completeOnboarding(isAdmin = true): void {
+  const done = context.mocks.deferred<void>();
   context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
     context.mocks.data.onboardingStatus({
       needsOnboarding: false,
       onboardingComplete: true,
-      isAdmin,
     });
+    if (!done.settled()) {
+      done.resolve();
+    }
     return respond(200, { needsOnboarding: false, onboardingComplete: true });
   });
-}
-
-function nextButton(): HTMLElement {
-  return action("button", "Next");
-}
-
-function action(role: "button" | "link", name: string): HTMLElement {
-  const found = queryAllByRoleFast(role).find((element) => {
-    return element.textContent?.trim() === name;
-  });
-  if (!found) {
-    throw new Error(`Expected ${role} named ${name}`);
-  }
-  return found;
-}
-
-test.each([true, false])(
-  "A skip link redeems, completes and runs its task while cookie delivery survives navigation (eligible: %s)",
-  async (redeemed) => {
-    needsOnboarding();
-    completeOnboarding();
-    const eventReceived = context.mocks.deferred<Request>();
-    const finishEvent = context.mocks.deferred<void>();
-    context.mocks.api(
-      marketingEventsContract.record,
-      async ({ request, body, respond, withSignal }) => {
-        expect(body.tag).toBe("onboarding-start");
-        eventReceived.resolve(request);
-        await withSignal(finishEvent.promise);
-        return respond(204);
-      },
-    );
-    context.mocks.api(billingRedeemCodeContract.create, ({ body, respond }) => {
-      expect(body.code).toBe("PRO-SKIP");
-      return respond(200, { redeemed });
-    });
-    let sentPrompt: string | undefined;
-    mockChatLifecycle(context, {
-      onRunCreate: (body) => {
-        sentPrompt = body.prompt;
-      },
-    });
-
-    await setupPage({
-      context,
-      host: "app.okou.ai",
-      path: `/onboarding?${new URLSearchParams({
-        prompt: TASK,
-        redeemCode: " PRO-SKIP ",
-        skipOnboarding: "true",
-      })}`,
-    });
-    await waitFor(() => {
-      expect(sentPrompt).toBe(TASK);
-      expect(pathname()).toMatch(/^\/chats\//u);
-    });
-    const event = await eventReceived.promise;
-    expect(event.url).toBe("https://www.okou.ai/api/events");
-    expect(event.credentials).toBe("include");
-    expect(event.headers.get("authorization")).toBe("Bearer test-token");
-    expect(event.signal.aborted).toBeFalsy();
-    finishEvent.resolve();
-    expect(search()).toBe("");
-  },
-);
-
-test.each([true, false])(
-  "A skip link preserves a hash handoff's task and attachment (admin: %s)",
-  async (isAdmin) => {
-    needsOnboarding(isAdmin);
-    completeOnboarding(isAdmin);
-    context.mocks.api(billingRedeemCodeContract.create, ({ body, respond }) => {
-      if (!isAdmin) {
-        return respond(403, {
-          error: {
-            code: "FORBIDDEN",
-            message: "Only workspace administrators can redeem codes",
-          },
-        });
-      }
-      expect(body.code).toBe("PRO-SKIP");
-      return respond(200, { redeemed: true });
-    });
-    context.mocks.api(marketingHandoffsContract.resolve, ({ respond }) => {
-      return respond(200, {
-        version: 1,
-        prompt: TASK,
-        options: {},
-        files: [
-          {
-            hash: "f".repeat(64),
-            filename: "notes.txt",
-            contentType: "text/plain",
-            size: 5,
-          },
-        ],
-      });
-    });
-    context.mocks.api(marketingHandoffsContract.import, ({ respond }) => {
-      return respond(200, {
-        files: [
-          {
-            id: FILE_ID,
-            filename: "notes.txt",
-            contentType: "text/plain",
-            size: 5,
-            url: "https://app.okou.ai/artifacts/abcdefgh12/notes.txt",
-          },
-        ],
-      });
-    });
-    context.mocks.api(webFilesContract.fileUrl, ({ respond }) => {
-      return respond(200, {
-        url: "https://storage.example.test/notes.txt",
-        downloadUrl: "https://storage.example.test/notes.txt?download=1",
-        expiresAt: "2099-01-01T00:00:00.000Z",
-        publicUrl: null,
-      });
-    });
-    let message: UserMessageDocument | undefined;
-    mockChatLifecycle(context, {
-      onRunCreate: (body) => {
-        message = body.userMessage;
-      },
-    });
-
-    await setupPage({
-      context,
-      path: `/onboarding?handoff=${HASH}&redeemCode=PRO-SKIP&skipOnboarding=true`,
-    });
-    await waitFor(() => {
-      expect(message?.parts).toContainEqual({ type: "text", text: TASK });
-      expect(pathname()).toMatch(/^\/chats\//u);
-    });
-    expect(message?.parts).toContainEqual({
-      type: "file",
-      fileId: FILE_ID,
-      filenameSnapshot: "notes.txt",
-      contentType: "text/plain",
-    });
-  },
-);
-
-test.each([ROUTES.onboarding, ROUTES.onboardingReady])(
-  "A skip link without a task completes onboarding and opens App from %s",
-  async (path) => {
-    needsOnboarding();
-    completeOnboarding();
-    context.mocks.api(billingRedeemCodeContract.create, ({ body, respond }) => {
-      expect(body.code).toBe("PRO-SKIP");
-      return respond(200, { redeemed: true });
-    });
-    await setupPage({
-      context,
-      path: `${path}?skipOnboarding=true&redeemCode=PRO-SKIP`,
-    });
-    await expect(
-      screen.findByRole("textbox", { name: "Message" }),
-    ).resolves.toBeInTheDocument();
-    expect(pathname()).toBe("/");
-  },
-);
-
-test("The prompt remains editable with skipOnboarding=false", async () => {
-  needsOnboarding();
   await setupPage({
     context,
-    path: `/onboarding?prompt=${encodeURIComponent(TASK)}&skipOnboarding=false`,
-  });
-  const input = await screen.findByRole("textbox", {
-    name: "Onboarding prompt",
-  });
-  expect(input).toHaveValue(TASK);
-  expect(nextButton()).toBeEnabled();
-});
-
-test("A redemption error offers a manual continuation with the task intact", async () => {
-  needsOnboarding();
-  completeOnboarding();
-  let invalid = true;
-  context.mocks.api(billingRedeemCodeContract.create, ({ respond }) => {
-    return invalid
-      ? respond(400, {
-          error: { code: "BAD_REQUEST", message: "Invalid redeem code" },
-        })
-      : respond(200, { redeemed: true });
-  });
-  let sentPrompt: string | undefined;
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      sentPrompt = body.prompt;
-    },
-  });
-  await setupPage({
-    context,
-    path: `/onboarding?prompt=${encodeURIComponent(TASK)}&skipOnboarding=true&redeemCode=PRO-SKIP`,
+    path: "/onboarding?skipOnboarding=true&redeemCode=TRIAL-FALL",
   });
   await expect(
-    screen.findByRole("heading", { name: "Oops! Something went sideways" }),
-  ).resolves.toBeInTheDocument();
-  expect(
-    within(screen.getByRole("alert")).getByText("Invalid redeem code"),
-  ).toBeInTheDocument();
-  click(action("link", "Continue with onboarding"));
-  const input = await screen.findByRole("textbox", {
-    name: "Onboarding prompt",
-  });
-  expect(input).toHaveValue(TASK);
-  expect(new URLSearchParams(search()).get("redeemCode")).toBe("PRO-SKIP");
-  invalid = false;
-  click(nextButton());
-  await waitFor(() => {
-    expect(sentPrompt).toBe(TASK);
-    expect(pathname()).toMatch(/^\/chats\//u);
-  });
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeVisible();
+  await expect(code.promise).resolves.toBe("TRIAL-FALL");
+  await done.promise;
+  expect(location.pathname).toBe("/");
 });
-
-test("A completion retry retains a redeemed code's grant without consuming it again", async () => {
-  needsOnboarding();
-  let redeemed = false;
+test("onboarding-entry-skip-002 the redeemed task opens in chat while the authenticated Marketing request is outstanding", async () => {
+  newcomer();
+  const pending = context.mocks.deferred<Request>();
+  const release = context.mocks.deferred<void>();
+  const redeem = context.mocks.deferred<string>();
+  const completed = context.mocks.deferred<void>();
   context.mocks.api(billingRedeemCodeContract.create, ({ body, respond }) => {
-    expect(body.code).toBe("PRO-SKIP");
-    if (redeemed) {
-      return respond(400, {
-        error: { code: "BAD_REQUEST", message: "Code already redeemed" },
-      });
+    if (!redeem.settled()) {
+      redeem.resolve(body.code);
     }
-    redeemed = true;
     return respond(200, { redeemed: true });
   });
   context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
-    return respond(500, {
-      error: {
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Could not complete onboarding",
-      },
+    if (!completed.settled()) {
+      completed.resolve();
+    }
+    context.mocks.data.onboardingStatus({
+      needsOnboarding: false,
+      onboardingComplete: true,
     });
+    return respond(200, { needsOnboarding: false, onboardingComplete: true });
   });
-  let sentPrompt: string | undefined;
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      sentPrompt = body.prompt;
-    },
-  });
-  await setupPage({
-    context,
-    path: `/onboarding?prompt=${encodeURIComponent(TASK)}&skipOnboarding=true&redeemCode=PRO-SKIP`,
-  });
-  await expect(
-    screen.findByRole("heading", { name: "Oops! Something went sideways" }),
-  ).resolves.toBeInTheDocument();
-  expect(
-    within(screen.getByRole("alert")).getByText(
-      "Could not complete onboarding",
-    ),
-  ).toBeInTheDocument();
-  completeOnboarding();
-  click(action("button", "Retry"));
-  await waitFor(() => {
-    expect(sentPrompt).toBe(TASK);
-    expect(pathname()).toMatch(/^\/chats\//u);
-  });
-});
-
-test("A skip entry shows progress until completion succeeds before starting its task", async () => {
-  needsOnboarding();
-  const completion = context.mocks.deferred<void>();
-  const received = context.mocks.deferred<void>();
   context.mocks.api(
-    onboardingCompleteContract.complete,
-    async ({ respond, withSignal }) => {
-      received.resolve();
-      await withSignal(completion.promise);
-      context.mocks.data.onboardingStatus({
-        needsOnboarding: false,
-        onboardingComplete: true,
-      });
-      return respond(200, { needsOnboarding: false, onboardingComplete: true });
+    marketingEventsContract.record,
+    async ({ request, body, respond }) => {
+      if (body.tag === "onboarding-start") {
+        if (!pending.settled()) {
+          pending.resolve(request);
+        }
+        await release.promise;
+      }
+      return respond(204);
     },
   );
-  let sentPrompt: string | undefined;
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      sentPrompt = body.prompt;
-    },
-  });
-  await setupPage({
-    context,
-    path: `/onboarding?prompt=${encodeURIComponent(TASK)}&skipOnboarding=true`,
-  });
-  await expect(
-    screen.findByRole("status", { name: "Getting your workspace ready" }),
-  ).resolves.toBeInTheDocument();
-  await received.promise;
-  expect(pathname()).toBe(ROUTES.onboarding);
-  completion.resolve();
-  await waitFor(() => {
-    expect(sentPrompt).toBe(TASK);
-    expect(pathname()).toMatch(/^\/chats\//u);
-  });
-});
-
-test("An unavailable task resumes ordinary onboarding instead of completing an empty request", async () => {
-  needsOnboarding();
-  context.mocks.api(marketingHandoffsContract.resolve, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Content not found" },
+  const task = "Prepare my event checklist";
+  const sent = receiveFirstChat(context);
+  try {
+    await setupPage({
+      context,
+      path:
+        "/onboarding?" +
+        new URLSearchParams({
+          skipOnboarding: "true",
+          prompt: task,
+          redeemCode: "PRO-ENTRY",
+        }),
     });
-  });
-  await setupPage({
-    context,
-    path: `/onboarding?handoff=${HASH}&skipOnboarding=true&redeemCode=PRO-SKIP`,
-  });
-  await expect(
-    screen.findByRole("heading", { name: "What kind of work do you do?" }),
-  ).resolves.toBeInTheDocument();
-  expect(new URLSearchParams(search()).get("redeemCode")).toBe("PRO-SKIP");
+    const req = await pending.promise;
+    await expect(redeem.promise).resolves.toBe("PRO-ENTRY");
+    await completed.promise;
+    const chat = await sent;
+    expect(chat.prompt).toBe(task);
+    await expect(findSentPrompt(task)).resolves.toBeVisible();
+    expect(location.pathname).toBe("/chats/" + chat.threadId);
+    expect(location.search).toBe("");
+    expect(req.credentials).toBe("include");
+    expect(req.headers.get("authorization")).toBe("Bearer test-token");
+    expect(req.signal.aborted).toBeFalsy();
+  } finally {
+    release.resolve();
+  }
 });

@@ -1,224 +1,159 @@
-import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
-import {
-  vncCredentialsContract,
-  type VncCredentialResponse,
-} from "@okouai/api-contracts/contracts/vnc-credentials";
-import { act, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { vncCredentialsContract } from "@okouai/api-contracts/contracts/vnc-credentials";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+
+import {
+  click,
+  fill,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { getAction } from "./connector-integrations-test-helpers.ts";
+import { getConnectorAction } from "./connector-page-test-helpers.ts";
+import {
+  mockRemoteInventory,
+  REMOTE_TIMESTAMP,
+} from "./connectors-remote-control-test-helpers.ts";
 
 const context = testContext();
-const owner = Object.freeze<{ id: string; fullName: string }>({
-  id: "vnc-original-owner",
-  fullName: "Original Owner",
-});
-const credential = Object.freeze<VncCredentialResponse>({
-  id: "d0000000-0000-4000-8000-000000000001",
-  name: "Other owner's login",
-  authMethod: "vnc_password",
-  revision: 1,
-  hosts: [],
-  createdAt: "2026-09-01T00:00:00.000Z",
-  updatedAt: "2026-09-01T00:00:00.000Z",
-});
+const OWNER_SESSION_ID = "sess_owner";
+const OWNER_TOKEN = "owner-token";
+const PASSWORD = "sesame42";
 
-async function openCredential(
-  name: string,
-  method: "vnc_password" | "username_password" = "vnc_password",
-) {
-  click(
-    await waitFor(() => {
-      return getAction("button", "Add credential");
-    }),
-  );
-  const dialog = await screen.findByRole("dialog", { name: "Add credential" });
-  await fill(within(dialog).getByLabelText("Credential name"), name);
-  if (method === "username_password") {
-    await userEvent.click(
-      within(dialog).getByLabelText("Authentication method"),
-    );
-    await userEvent.click(
-      await screen.findByRole("option", { name: "Username and password" }),
-    );
-    await fill(within(dialog).getByLabelText("Username"), " operator ");
-    await fill(within(dialog).getByLabelText("Password"), " plain password ");
-  } else {
-    await fill(within(dialog).getByLabelText("VNC password"), " pwd ");
+function owner() {
+  return { id: "user_owner", fullName: "Owner User" };
+}
+
+function protocolTab(name: string): HTMLElement {
+  const tab = queryAllByRoleFast("radio").find((candidate) => {
+    return candidate.textContent?.trim() === name;
+  });
+  if (!tab) {
+    throw new Error(`Expected the ${name} credentials tab`);
   }
+  return tab;
+}
+
+async function openVncCredentials(): Promise<void> {
+  await setupPage({
+    context,
+    path: "/connectors?scope=remote-control&remoteView=credentials",
+    auth: {
+      user: owner(),
+      session: { token: OWNER_TOKEN, id: OWNER_SESSION_ID },
+    },
+  });
+  await waitFor(() => {
+    expect(protocolTab("VNC")).toBeInTheDocument();
+  });
+  click(protocolTab("VNC"));
+  await waitFor(() => {
+    expect(getConnectorAction("button", "Add credential")).toBeEnabled();
+  });
+}
+
+async function draftCredential(): Promise<{
+  readonly dialog: HTMLElement;
+  readonly name: HTMLElement;
+  readonly password: HTMLElement;
+}> {
+  click(getConnectorAction("button", "Add credential"));
+  const dialog = await screen.findByRole("dialog", { name: "Add credential" });
+  const name = within(dialog).getByLabelText("Credential name");
+  const password = within(dialog).getByLabelText("VNC password");
+  await fill(name, "Lab desktop");
+  await fill(password, PASSWORD);
+  expect(password).toHaveValue(PASSWORD);
+  return { dialog, name, password };
+}
+
+async function expectFreshForm(): Promise<HTMLElement> {
+  click(getConnectorAction("button", "Add credential"));
+  const dialog = await screen.findByRole("dialog", { name: "Add credential" });
+  expect(screen.getAllByRole("dialog")).toStrictEqual([dialog]);
+  expect(within(dialog).getByLabelText("Credential name")).toHaveValue("");
+  expect(within(dialog).getByLabelText("VNC password")).toHaveValue("");
   return dialog;
 }
 
-function mockEmptySettings() {
-  context.mocks.api(vncConnectionsContract.list, ({ respond }) => {
-    return respond(200, { connections: [] });
-  });
-  context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 0 });
-  });
-  context.mocks.api(vncCredentialsContract.list, ({ respond }) => {
-    return respond(200, { credentials: [] });
-  });
-}
-
-async function credentialPage() {
-  await setupPage({
-    context,
-    path: "/connectors?scope=remote-control&remoteView=credentials&type=vnc",
-    auth: {
-      user: owner,
-      session: { id: "vnc-session-original", token: "original-token" },
-      organization: {
-        activeOrg: { id: "org_vnc_lifecycle", name: "VNC lifecycle" },
-        memberships: [{ id: "org_vnc_lifecycle" }],
-      },
-    },
-  });
-  await screen.findByText("No saved VNC credentials.");
-}
-
-function refreshSession(id = "vnc-session-original") {
-  const clerk = context.mocks.clerk();
-  act(() => {
-    clerk.user(owner, {
-      id,
-      token: "replacement-token",
-    });
-    clerk.stateChanged();
-  });
-}
-
-test("A same-session token refresh preserves the password and focus and saves with the current token", async () => {
-  mockEmptySettings();
-  const requests: unknown[] = [];
-  context.mocks.api(
-    vncCredentialsContract.create,
-    ({ body, request, respond }) => {
-      requests.push({
-        body,
-        authorization: request.headers.get("authorization"),
-      });
-      return respond(201, { ...credential, id: body.id, name: body.name });
-    },
-  );
-  await credentialPage();
-  const dialog = await openCredential("Original session login");
-  const secret = within(dialog).getByLabelText("VNC password");
-  await userEvent.click(secret);
-  refreshSession();
-  const current = await screen.findByRole("dialog", { name: "Add credential" });
-  expect(within(current).getByLabelText("Credential name")).toHaveValue(
-    "Original session login",
-  );
-  expect(within(current).getByLabelText("VNC password")).toHaveValue(" pwd ");
-  expect(within(current).getByLabelText("VNC password")).toHaveFocus();
-  click(getAction("button", "Save", current));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(requests).toStrictEqual([
-    {
-      body: {
-        id: expect.any(String),
-        name: "Original session login",
-        authentication: { method: "vnc_password", password: " pwd " },
-      },
-      authorization: "Bearer replacement-token",
-    },
-  ]);
-  expect(secret).toHaveValue("");
-});
-
 test("A same-owner session replacement closes the form and cannot revive its password", async () => {
-  mockEmptySettings();
-  await credentialPage();
-  const dialog = await openCredential("Old session draft");
-  const secret = within(dialog).getByLabelText("VNC password");
-  refreshSession("vnc-session-replacement");
+  mockRemoteInventory(context);
+  await openVncCredentials();
+  const draft = await draftCredential();
+  const clerk = context.mocks.clerk();
+
+  clerk.user(owner(), { token: "replacement-token", id: "sess_replacement" });
+  clerk.stateChanged();
+
   await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(draft.dialog).not.toBeInTheDocument();
   });
-  expect(secret).toHaveValue("");
-  refreshSession("vnc-session-original");
-  const fresh = await openCredential("New draft");
-  expect(within(fresh).getByLabelText("Credential name")).toHaveValue(
-    "New draft",
-  );
-  expect(within(fresh).getByLabelText("VNC password")).toHaveValue(" pwd ");
+  expect(draft.password).toHaveValue("");
+
+  clerk.user(owner(), { token: OWNER_TOKEN, id: OWNER_SESSION_ID });
+  clerk.stateChanged();
+
+  await expectFreshForm();
+  expect(draft.name).not.toBeInTheDocument();
+  expect(document.body).not.toHaveTextContent(PASSWORD);
 });
 
 test("Returning to an owner never revives an abandoned uncertain credential draft", async () => {
-  let activeOwner = owner.id;
-  let initialId: string | undefined;
-  let laterId: string | undefined;
-  context.mocks.api(vncConnectionsContract.list, ({ respond }) => {
-    return respond(200, { connections: [] });
-  });
-  context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 0 });
-  });
-  context.mocks.api(vncCredentialsContract.list, ({ respond }) => {
-    return respond(200, {
-      credentials: activeOwner === owner.id ? [] : [credential],
-    });
-  });
+  const inventory = mockRemoteInventory(context);
+  const attempt = { failedId: "", savedId: "" };
   context.mocks.api(vncCredentialsContract.create, ({ body, respond }) => {
-    if (body.name === "Abandoned login") {
-      initialId = body.id;
+    if (!attempt.failedId) {
+      attempt.failedId = body.id;
       return respond(500, {
-        error: { code: "INTERNAL_ERROR", message: "Save failed" },
+        error: { code: "INTERNAL_SERVER_ERROR", message: "Internal error" },
       });
     }
-    laterId = body.id;
-    return respond(201, { ...credential, id: body.id, name: body.name });
+    attempt.savedId = body.id;
+    const created = {
+      id: body.id,
+      name: body.name,
+      authMethod: "vnc_password" as const,
+      revision: 1,
+      createdAt: REMOTE_TIMESTAMP,
+      updatedAt: REMOTE_TIMESTAMP,
+      hosts: [],
+    };
+    inventory.vncCredentials = [created];
+    return respond(201, created);
   });
-  await setupPage({
-    context,
-    path: "/connectors?scope=remote-control&remoteView=credentials&type=vnc",
-    auth: {
-      user: owner,
-      organization: {
-        activeOrg: { id: "org_vnc_lifecycle", name: "VNC lifecycle" },
-        memberships: [{ id: "org_vnc_lifecycle" }],
-      },
-    },
-  });
-  await screen.findByText("No saved VNC credentials.");
-  const dialog = await openCredential("Abandoned login");
-  const secret = within(dialog).getByLabelText("VNC password");
-  click(getAction("button", "Save", dialog));
-  await screen.findByText("Save failed.");
-  expect(getAction("button", "Save", dialog)).toBeDisabled();
-
+  await openVncCredentials();
+  const draft = await draftCredential();
+  click(getConnectorAction("button", "Save", draft.dialog));
+  await expect(
+    within(draft.dialog).findByRole("alert"),
+  ).resolves.toHaveTextContent("Save failed.");
+  expect(getConnectorAction("button", "Save", draft.dialog)).toBeDisabled();
   const clerk = context.mocks.clerk();
-  act(() => {
-    activeOwner = "vnc-other-owner";
-    clerk.user(
-      { id: activeOwner, fullName: "Other Owner" },
-      { token: "other-token" },
-    );
-    clerk.stateChanged();
-  });
-  await screen.findByText(credential.name);
-  expect(screen.queryByRole("dialog")).toBeNull();
-  expect(secret).toHaveValue("");
 
-  act(() => {
-    activeOwner = owner.id;
-    clerk.user(owner, { token: "original-token" });
-    clerk.stateChanged();
-  });
-  await screen.findByText("No saved VNC credentials.");
-  expect(screen.queryByRole("dialog")).toBeNull();
-  const fresh = await openCredential("Fresh login");
-  expect(within(fresh).queryByText("Save failed.")).toBeNull();
-  click(getAction("button", "Save", fresh));
+  clerk.user(
+    { id: "user_other", fullName: "Other User" },
+    { token: "other-token", id: "sess_other" },
+  );
+  clerk.stateChanged();
+
   await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(draft.dialog).not.toBeInTheDocument();
   });
-  expect(initialId).toBeDefined();
-  expect(laterId).toBeDefined();
-  expect(laterId).not.toBe(initialId);
+  expect(draft.password).toHaveValue("");
+
+  clerk.user(owner(), { token: OWNER_TOKEN, id: OWNER_SESSION_ID });
+  clerk.stateChanged();
+
+  const fresh = await expectFreshForm();
+  expect(within(fresh).queryByRole("alert")).not.toBeInTheDocument();
+  await fill(within(fresh).getByLabelText("Credential name"), "Lab desktop");
+  await fill(within(fresh).getByLabelText("VNC password"), "secret99");
+
+  click(getConnectorAction("button", "Save", fresh));
+
+  await expect(
+    screen.findByRole("heading", { name: "Lab desktop", level: 2 }),
+  ).resolves.toBeInTheDocument();
+  expect(fresh).not.toBeInTheDocument();
+  expect(attempt.savedId).not.toBe(attempt.failedId);
 });

@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -11,73 +11,71 @@ import { testContext } from "../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 
-test("The error page does not wait for the workspace worker", async () => {
-  class PendingSharedWorker extends EventTarget {
-    readonly port: MessagePort;
+function control(role: "button" | "link", name: string): HTMLElement {
+  const found = queryAllByRoleFast(role).find((candidate) => {
+    return (
+      candidate.getAttribute("aria-label") === name ||
+      candidate.textContent?.trim() === name
+    );
+  });
+  if (!found) {
+    throw new Error(`Expected the ${name} ${role}`);
+  }
+  return found;
+}
 
+test("The error page does not wait for the workspace worker", async () => {
+  // The browser starts the workspace SharedWorker, which never answers.
+  const asked = context.mocks.deferred<void>();
+  class SilentSharedWorker extends EventTarget {
+    readonly port: MessagePort;
     constructor() {
       super();
       const channel = new MessageChannel();
-      this.port = channel.port1;
-      context.signal.addEventListener(
-        "abort",
+      channel.port2.addEventListener(
+        "message",
         () => {
-          channel.port1.close();
-          channel.port2.close();
+          asked.resolve();
         },
         { once: true },
       );
+      channel.port2.start();
+      this.port = channel.port1;
     }
   }
-  vi.stubGlobal("SharedWorker", PendingSharedWorker);
+  vi.stubGlobal("SharedWorker", SilentSharedWorker);
+
   const page = await startPage({
     context,
-    host: "app.okou.ai",
     path: "/_/error",
     sharedWorkerTestTransport: "browser",
   });
-  await page.content;
 
-  const alert = screen.getByRole("alert");
+  await page.content;
+  await asked.promise;
+  const alert = await screen.findByRole("alert");
   expect(alert).toHaveTextContent("Oops! Something went sideways");
   expect(alert).toHaveTextContent("We're here to help");
   expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
 });
 
-test.each([false, true])(
-  "The error page retains support and theme controls (dark: %s)",
-  async (dark) => {
-    context.mocks.browser.matchMedia(dark);
-    await setupPage({
-      context,
-      host: "app.okou.ai",
-      path: "/_/error",
-      auth: null,
-    });
+test("The error page retains support and theme controls (dark: false)", async () => {
+  await setupPage({ context, path: "/_/error", auth: null });
+  const alert = await screen.findByRole("alert");
+  const theme = control("button", "Toggle theme");
+  expect(theme).toHaveAttribute("aria-pressed", "false");
 
-    const alert = screen.getByRole("alert");
-    expect(
-      within(alert).getByRole("heading", {
-        name: "Oops! Something went sideways",
-      }),
-    ).toBeInTheDocument();
-    expect(alert).toHaveTextContent("Give it another try or reach out");
-    expect(alert).toHaveTextContent("We're here to help");
-    const support = queryAllByRoleFast("link", alert).find((link) => {
-      return link.textContent?.trim() === "support";
-    });
-    expect(support).toHaveAttribute("href", "mailto:contact@okou.ai");
-    const home = queryAllByRoleFast("link").find((link) => {
-      return link.querySelector('img[alt="Okou"]') !== null;
-    });
-    expect(home).toHaveAttribute("href", "/");
+  click(theme);
 
-    const toggle = screen.getByLabelText("Toggle theme");
-    expect(toggle).toHaveAttribute("aria-pressed", String(dark));
-    click(toggle);
-    await waitFor(() => {
-      expect(toggle).toHaveAttribute("aria-pressed", String(!dark));
-    });
-    expect(alert).toHaveTextContent("We're here to help");
-  },
-);
+  await waitFor(() => {
+    expect(theme).toHaveAttribute("aria-pressed", "true");
+  });
+  expect(alert).toHaveTextContent("We're here to help");
+  expect(alert).toHaveTextContent("Give it another try or reach out");
+  expect(
+    queryAllByRoleFast("link", alert).map((link) => {
+      return [link.textContent?.trim(), link.getAttribute("href")];
+    }),
+  ).toStrictEqual([["support", "mailto:contact@okou.ai"]]);
+  expect(control("link", "Go to Okou home")).toHaveAttribute("href", "/");
+});

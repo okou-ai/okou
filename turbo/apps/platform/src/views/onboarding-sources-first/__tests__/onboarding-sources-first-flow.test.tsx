@@ -1,1308 +1,468 @@
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
-import {
-  onboardingCompleteContract,
-  onboardingRecommendationContract,
-  onboardingStatusContract,
-} from "@okouai/api-contracts/contracts/onboarding";
-import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
-import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
-import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
-import { billingRedeemCodeContract } from "@okouai/api-contracts/contracts/billing";
-import { marketingHandoffsContract } from "@okouai/api-contracts/contracts/marketing-handoffs";
-import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
-import { DEFAULT_AGENT_DISPLAY_NAME } from "@okouai/core/brand-presentation";
-import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
-import { screen, waitFor, within } from "@testing-library/react";
+import { connectorCatalogConnectItem } from "../../../mocks/handlers/api-connectors.ts";
 import { expect, test } from "vitest";
-
+import { screen, waitFor, within } from "@testing-library/react";
 import {
-  click,
-  fill,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import { pathname, search } from "../../../signals/location.ts";
-import { localStorageSignals } from "../../../signals/external/local-storage.ts";
-import { ROUTES } from "../../../signals/route-paths.ts";
+  onboardingRecommendationContract,
+  onboardingSourcesContract,
+  onboardingCompleteContract,
+  onboardingStatusContract,
+  onboardingDraftContract,
+} from "@okouai/api-contracts/contracts/onboarding";
+import { billingRedeemCodeContract } from "@okouai/api-contracts/contracts/billing";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
+  findAction,
+  mockSlack,
+  getAction,
+} from "../../okou-page/__tests__/connector-integrations-test-helpers.ts";
+import {
+  connectedGmailSource,
   mockOnboardingConnectorCatalog,
   onboardingSourceItem,
 } from "./onboarding-catalog-test-helpers.ts";
+import {
+  receiveFirstChat,
+  findSentPrompt,
+  documentInstructions,
+} from "./onboarding-first-chat-test-helpers.ts";
 
 const context = testContext();
-const draftStorage = localStorageSignals("onboarding:sources-first-draft");
-
-const INDUSTRY_QUESTION = "What kind of work do you do?";
-const SOURCES_QUESTION = "Connect a work tool";
-const MARKETING_FIELD = "Marketing & content";
-const READY_TITLE = "Let’s start your first task";
-const START_ACTION = "Start my first task";
-/** The preset request for a marketer with Gmail connected. */
-const FALLBACK_REQUEST =
-  "Find recurring customer questions in my Gmail emails from the past week and turn them into five social post ideas.";
-const HANDOFF_PROMPT = "Draft the launch plan";
-const HANDOFF_WITH_FORMAT = `${HANDOFF_PROMPT}\n\nCreate a complete document with the results in the requested file format (Markdown by default). Upload it as an artifact and include the working artifact link in your final response.`;
-const PROMPT_TITLE = "Make this task your own";
-const PROMPT_INTRO =
-  "Connect your apps for better results and choose a format.";
-const COMPLIANCE_TITLE = "Okou’s compliance, built for your trust";
-function generatedProfile() {
-  return {
-    overview: "Your inbox has several conversations to keep moving.",
-    professionalIdentity: ["You coordinate work through email"],
-    communicationStyle: [],
-    priorities: ["Keep important replies moving"],
-  };
-}
-
-function templateFromUserMessage(document: UserMessageDocument | undefined) {
-  const part = document?.parts.find((candidate) => {
-    return candidate.type === "template";
-  });
-  return part?.type === "template" ? part.template : undefined;
-}
-
-function mockOnboardingNeeded(): void {
+const task = "Draft the launch plan";
+function newcomer(isAdmin = true) {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
+    isAdmin,
   });
 }
-
-/**
- * What the API answers an invited member who has neither
- * finished their own run nor started using the workspace: onboarding is
- * theirs to do, while `onboardingComplete` stays the organization's answer —
- * here the owner has already set the workspace up.
- */
-function mockMemberOnboardingNeeded(): void {
-  context.mocks.data.onboardingStatus({
-    needsOnboarding: true,
-    onboardingComplete: true,
-    isAdmin: false,
-  });
-  // Slack is not in the workspace yet, and a member cannot add it.
-  context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
-    return respond(200, {
-      isConnected: false,
-      isInstalled: false,
-      isAdmin: false,
-      installUrl: null,
-      connectUrl: null,
-    });
-  });
-}
-
-/**
- * Completion answers at once, while the onboarding status read the handoff to
- * the first chat waits on is held until the test releases it.
- */
-function holdChatHandoffAfterCompletion(): {
-  readonly handoffPending: Promise<void>;
-  readonly release: () => void;
-} {
-  let completed = false;
-  const handoffPending = context.mocks.deferred<void>();
-  const releaseHandoff = context.mocks.deferred<void>();
-  context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
-    completed = true;
-    return respond(200, {
-      onboardingComplete: true,
-      needsOnboarding: false,
-    });
-  });
-  context.mocks.api(
-    onboardingStatusContract.getStatus,
-    async ({ respond, withSignal }) => {
-      const finished = completed;
-      if (finished) {
-        handoffPending.resolve(undefined);
-        await withSignal(releaseHandoff.promise);
-      }
-      return respond(200, {
-        needsOnboarding: !finished,
-        onboardingComplete: finished,
-        isAdmin: true,
-        hasOrg: true,
-        hasDefaultAgent: true,
-        defaultAgentId: "c0000000-0000-4000-a000-000000000001",
-        defaultAgentMetadata: { displayName: DEFAULT_AGENT_DISPLAY_NAME },
-      });
-    },
-  );
-  return {
-    handoffPending: handoffPending.promise,
-    release: () => {
-      releaseHandoff.resolve(undefined);
-    },
-  };
-}
-
-/** A member cannot add Slack, so the step names who can and lets them go on. */
-async function leaveSlackStepWithNotNow(): Promise<void> {
-  await expect(
-    screen.findByText("Ask a workspace admin to add Okou to Slack."),
-  ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe(ROUTES.onboardingSlack);
-  click(getButtonByName("Not now"));
-  await screen.findByRole("heading", {
-    name: "More ways to get your work done",
-  });
-  click(getButtonByName("Continue"));
-}
-
-/** One catalog entry, so the source step has a grid to render. */
-function mockCatalog({
-  connected = false,
-}: {
-  connected?: boolean;
-} = {}): void {
-  mockOnboardingConnectorCatalog(context, [
-    onboardingSourceItem({
-      slug: "gmail",
-      label: "Gmail",
-      description: "Connect Gmail to continue",
-      hasAccount: connected,
-    }),
-  ]);
-}
-
-function getButtonByName(
-  name: string,
-  container: ParentNode = document.body,
-): HTMLElement {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
-    return (
-      candidate.textContent?.trim() === name ||
-      candidate.getAttribute("aria-label") === name
-    );
-  });
-  if (!button) {
-    throw new Error(`Expected button named "${name}"`);
-  }
-  return button;
-}
-
-/** The control of the field card carrying `name`, as a user would aim at it. */
-function fieldRadio(name: string): HTMLElement {
-  const card = screen.getByText(name).closest("label");
-  if (!card) {
-    throw new Error(`Expected the "${name}" choice card`);
-  }
-  const radio = queryAllByRoleFast("radio", card)[0];
-  if (!radio) {
-    throw new Error(`Expected the "${name}" radio`);
-  }
-  return radio;
-}
-
-test("/onboarding opens the field question and continues to the sources step", async () => {
-  mockOnboardingNeeded();
-  mockCatalog();
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: ROUTES.onboarding,
-  });
-
-  await expect(
-    screen.findByRole("heading", { name: INDUSTRY_QUESTION }),
-  ).resolves.toBeInTheDocument();
-  expect(getButtonByName("Continue")).toBeDisabled();
-
-  click(fieldRadio(MARKETING_FIELD));
-
-  await waitFor(() => {
-    expect(getButtonByName("Continue")).toBeEnabled();
-  });
-
-  click(getButtonByName("Continue"));
-
-  // Keep the current question in place while the next route is being set up.
-  // The full-screen app loader would otherwise flash over every step change.
-  expect(
-    screen.getByRole("heading", { name: INDUSTRY_QUESTION }),
-  ).toBeInTheDocument();
-  expect(
-    screen.queryByRole("status", { name: "Loading" }),
-  ).not.toBeInTheDocument();
-
-  await expect(
-    screen.findByRole("heading", { name: SOURCES_QUESTION }),
-  ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe(ROUTES.onboardingSources);
-  // Continue follows a connection; Skip lets the user connect later.
-  expect(getButtonByName("Continue")).toBeDisabled();
-  expect(getButtonByName("Skip")).toBeEnabled();
-
-  click(getButtonByName("Back"));
-
-  expect(
-    screen.getByRole("heading", { name: SOURCES_QUESTION }),
-  ).toBeInTheDocument();
-  expect(
-    screen.queryByRole("status", { name: "Loading" }),
-  ).not.toBeInTheDocument();
-
-  await expect(
-    screen.findByRole("heading", { name: INDUSTRY_QUESTION }),
-  ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe(ROUTES.onboarding);
-  // The answer survives the way back, so the field can be changed.
-  expect(fieldRadio(MARKETING_FIELD)).toBeChecked();
-});
-
-test("Waiting for the source catalog keeps onboarding in place and preserves its query", async () => {
-  mockOnboardingNeeded();
-  const ready = context.mocks.deferred<void>();
+function unconnectedGmail(ready?: Promise<void>, onList?: () => void) {
   mockOnboardingConnectorCatalog(
     context,
     [
       onboardingSourceItem({
         slug: "gmail",
         label: "Gmail",
-        description: "Connect Gmail to continue",
+        description: "Read work email",
         hasAccount: false,
       }),
     ],
-    { ready: ready.promise },
+    { ready, onList },
   );
-  await setupPage({
-    context,
-    path: `${ROUTES.onboarding}?redeemCode=team-promo`,
-  });
-  await screen.findByRole("heading", { name: INDUSTRY_QUESTION });
-  click(fieldRadio(MARKETING_FIELD));
-  await waitFor(() => {
-    expect(getButtonByName("Continue")).toBeEnabled();
-  });
-  click(getButtonByName("Continue"));
-  await waitFor(() => {
-    expect(getButtonByName("Continue")).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
-    expect(getButtonByName("Continue")).toHaveAttribute("aria-busy", "true");
-  });
-  expect(
-    screen.getByRole("heading", { name: INDUSTRY_QUESTION }),
-  ).toBeInTheDocument();
-  ready.resolve();
-  await screen.findByRole("heading", { name: SOURCES_QUESTION });
-  expect(pathname()).toBe(ROUTES.onboardingSources);
-  expect(new URLSearchParams(search()).get("redeemCode")).toBe("team-promo");
-});
-
-test("The first step introduces Okou and its compliance progress", async () => {
-  mockOnboardingNeeded();
-  mockCatalog();
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: ROUTES.onboarding,
-  });
-
-  await expect(
-    screen.findByRole("heading", { name: INDUSTRY_QUESTION }),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.getByText(
-      "Tell us what you do. We’ll suggest a first task that fits your work.",
-    ),
-  ).toBeInTheDocument();
-  const badges = Array.from(
-    document.querySelectorAll('[data-slot="badge"]'),
-  ).map((badge) => {
-    return badge.textContent;
-  });
-  expect(badges).toStrictEqual([
-    "SOC 2 Type IIIn progress",
-    "CCPA / CPRACompliant",
-    "GDPRCompliant",
-    "HIPAAAligned",
-    "ISO/IEC 27001Aligned",
-  ]);
-  const link = queryAllByRoleFast("link").find((candidate) => {
-    return candidate.textContent?.trim() === "Security details";
-  });
-  expect(link).toHaveAttribute(
-    "href",
-    "https://www.okou.ai/en/security#security-compliance-title",
-  );
-});
-
-test.each([
-  {
-    locale: "ja-JP" as const,
-    href: "https://www.okou.ai/ja/security",
-  },
-  {
-    locale: "zh-Hant" as const,
-    href: "https://www.okou.ai/zh-Hant/security",
-  },
-])(
-  "The source step links to the security page in $locale",
-  async ({ locale, href }) => {
-    mockOnboardingNeeded();
-    mockCatalog();
-
-    await setupPage({
-      context,
-      locale,
-      path: ROUTES.onboardingSources,
-    });
-
-    await waitFor(() => {
-      const link = queryAllByRoleFast("link").find((candidate) => {
-        return candidate.textContent?.trim() === "How Okou protects your data";
-      });
-      expect(link).toHaveAttribute("href", href);
-    });
-  },
-);
-
-test.each([false, true])(
-  "An owner can skip sources and return to connect later (mobile=%s)",
-  async (mobile) => {
-    context.mocks.browser.matchMedia((query) => {
-      return mobile && query === "(width < 640px)";
-    });
-    mockOnboardingNeeded();
-    mockCatalog();
-
-    await setupPage({
-      context,
-      locale: "en-US",
-      host: "app.okou.ai",
-      path: `${ROUTES.onboardingSources}?redeemCode=LAUNCH50`,
-    });
-
-    expect(getButtonByName("Continue")).toBeDisabled();
-    click(getButtonByName("Skip"));
-
-    const dialog = await screen.findByRole("dialog", {
-      name: "Start without connecting a tool?",
-    });
-    expect(pathname()).toBe(ROUTES.onboardingSources);
-    click(getButtonByName("Connect a tool", dialog));
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
-    expect(pathname()).toBe(ROUTES.onboardingSources);
-    expect(getButtonByName("Connect Gmail")).toBeEnabled();
-
-    click(getButtonByName("Skip"));
-    const confirmation = await screen.findByRole("dialog", {
-      name: "Start without connecting a tool?",
-    });
-    click(getButtonByName("Skip for now", confirmation));
-
-    await screen.findByRole("heading", {
-      name: mobile
-        ? "Choose how to start"
-        : "How would you like to start with Okou?",
-    });
-    expect(pathname()).toBe(ROUTES.onboardingExperience);
-    expect(new URLSearchParams(search()).get("redeemCode")).toBe("LAUNCH50");
-
-    click(getButtonByName("Back"));
-
-    await screen.findByRole("heading", { name: SOURCES_QUESTION });
-    expect(pathname()).toBe(ROUTES.onboardingSources);
-    expect(getButtonByName("Connect Gmail")).toBeEnabled();
-    expect(getButtonByName("Continue")).toBeDisabled();
-    expect(getButtonByName("Skip")).toBeEnabled();
-  },
-);
-
-test("A later step opens without a connected source", async () => {
-  mockOnboardingNeeded();
-  mockCatalog();
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: ROUTES.onboardingReady,
-  });
-
-  await expect(
-    screen.findByRole("heading", { name: READY_TITLE }),
-  ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe(ROUTES.onboardingReady);
-  expect(getButtonByName(START_ACTION)).toBeEnabled();
-});
-
-const RECOMMENDATION_TOPIC = "onboardingRecommendationChanged";
-
-test("Connected account context replaces the static starting prompt", async () => {
-  mockMemberOnboardingNeeded();
-  mockCatalog({ connected: true });
-  // Installed after the catalog's slug route, so a status read lands here.
-  let statusReads = 0;
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    statusReads += 1;
-    return respond(200, { connectors: [] });
-  });
-  const jobId = "e8b94a61-0c73-4ba4-904a-45f6a9f7493e";
-  const generatedPrompt =
-    "Review my recent Gmail workload, group the messages that need a reply, and draft the three most important responses for my approval.";
-  let startBody: unknown;
-  context.mocks.api(
-    onboardingRecommendationContract.start,
-    ({ body, respond }) => {
-      startBody = body;
-      return respond(202, { jobId, status: "pending" });
-    },
-  );
-  let completed = false;
-  context.mocks.api(onboardingRecommendationContract.get, ({ respond }) => {
-    return !completed
-      ? respond(200, { jobId, status: "running" })
-      : respond(200, {
-          jobId,
-          status: "completed",
-          recommendation: {
-            kind: "task",
-            title: "Clear the replies that matter",
-            outcome: "Three priority responses ready for review",
-            prompt: generatedPrompt,
-            profile: generatedProfile(),
-          },
-        });
-  });
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: ROUTES.onboarding,
-  });
-
-  click(fieldRadio(MARKETING_FIELD));
-  await waitFor(() => {
-    expect(getButtonByName("Continue")).toBeEnabled();
-  });
-  click(getButtonByName("Continue"));
-
-  await expect(
-    screen.findByRole("heading", { name: SOURCES_QUESTION }),
-  ).resolves.toBeInTheDocument();
-  click(getButtonByName("Continue"));
-
-  await expect(
-    screen.findByRole("heading", {
-      name: "How would you like to start with Okou?",
-    }),
-  ).resolves.toBeInTheDocument();
-  click(fieldRadio("Start with Okou"));
-  click(getButtonByName("Continue"));
-  await leaveSlackStepWithNotNow();
-
-  await screen.findByRole("heading", { name: READY_TITLE });
-  await waitFor(() => {
-    expect(
-      context.mocks.ably.hasSubscription(RECOMMENDATION_TOPIC),
-    ).toBeTruthy();
-  });
-  expect(screen.queryByDisplayValue(generatedPrompt)).not.toBeInTheDocument();
-  completed = true;
-  context.mocks.ably.trigger(RECOMMENDATION_TOPIC);
-
-  await expect(
-    screen.findByText("Clear the replies that matter"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByDisplayValue(generatedPrompt)).toBeInTheDocument();
-  expect(startBody).toStrictEqual({
-    industry: "marketing",
-    locale: "en-US",
-  });
-  // Every step reads the onboarding sources, never the full catalog status.
-  expect(statusReads).toBe(0);
-});
-
-test("The ready step shows the generated request once the shared context result arrives", async () => {
-  mockMemberOnboardingNeeded();
-  mockCatalog({ connected: true });
-  const jobId = "e8b94a61-0c73-4ba4-904a-45f6a9f7496e";
-  const releaseResult = context.mocks.deferred<void>();
-  const generatedPrompt = "Draft replies to the most important messages.";
-  context.mocks.api(onboardingRecommendationContract.start, ({ respond }) => {
-    return respond(202, { jobId, status: "pending" });
-  });
-  context.mocks.api(
-    onboardingRecommendationContract.get,
-    async ({ respond }) => {
-      await releaseResult.promise;
-      return respond(200, {
-        jobId,
-        status: "completed",
-        recommendation: {
-          kind: "task",
-          title: "Clear the inbox",
-          outcome: "Priority replies ready for review",
-          prompt: generatedPrompt,
-          profile: generatedProfile(),
-        },
-      });
-    },
-  );
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: ROUTES.onboarding,
-  });
-
-  click(fieldRadio(MARKETING_FIELD));
-  await waitFor(() => {
-    expect(getButtonByName("Continue")).toBeEnabled();
-  });
-  click(getButtonByName("Continue"));
-  await screen.findByRole("heading", { name: SOURCES_QUESTION });
-  click(getButtonByName("Continue"));
-  await screen.findByRole("heading", {
-    name: "How would you like to start with Okou?",
-  });
-  click(fieldRadio("Start with Okou"));
-  click(getButtonByName("Continue"));
-  await leaveSlackStepWithNotNow();
-
-  await screen.findByRole("heading", { name: READY_TITLE });
-  expect(screen.queryByDisplayValue(generatedPrompt)).not.toBeInTheDocument();
-
-  releaseResult.resolve();
-  await expect(
-    screen.findByDisplayValue(generatedPrompt),
-  ).resolves.toBeInTheDocument();
-});
-
-test("A failed recommendation leaves the preset request on the ready step", async () => {
-  mockMemberOnboardingNeeded();
-  mockCatalog({ connected: true });
-  const failedJobId = "e8b94a61-0c73-4ba4-904a-45f6a9f7497e";
-  context.mocks.api(onboardingRecommendationContract.start, ({ respond }) => {
-    return respond(202, { jobId: failedJobId, status: "pending" });
-  });
-  context.mocks.api(onboardingRecommendationContract.get, ({ respond }) => {
-    return respond(200, { jobId: failedJobId, status: "failed" });
-  });
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: ROUTES.onboarding,
-  });
-
-  click(fieldRadio(MARKETING_FIELD));
-  await waitFor(() => {
-    expect(getButtonByName("Continue")).toBeEnabled();
-  });
-  click(getButtonByName("Continue"));
-  await screen.findByRole("heading", { name: SOURCES_QUESTION });
-  click(getButtonByName("Continue"));
-  await screen.findByRole("heading", {
-    name: "How would you like to start with Okou?",
-  });
-  click(fieldRadio("Start with Okou"));
-  click(getButtonByName("Continue"));
-  await leaveSlackStepWithNotNow();
-
-  await screen.findByRole("heading", { name: READY_TITLE });
-  await expect(
-    screen.findByDisplayValue(FALLBACK_REQUEST),
-  ).resolves.toBeInTheDocument();
-  expect(getButtonByName(START_ACTION)).toBeEnabled();
-});
-
-test("The ready step completes onboarding once, before it runs the first request", async () => {
-  mockOnboardingNeeded();
-  mockCatalog({ connected: true });
-  let runPrompt: string | undefined;
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      runPrompt = body.prompt;
-    },
-  });
-  // Where the browser still was when completion went out, so the order of the
-  // two is observable rather than assumed.
-  const completedFrom: string[] = [];
-  context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
-    completedFrom.push(pathname());
-    context.mocks.data.onboardingStatus({
-      needsOnboarding: false,
-      onboardingComplete: true,
-    });
+}
+function savedPlan(text: string) {
+  context.mocks.api(onboardingDraftContract.get, ({ respond }) => {
     return respond(200, {
-      onboardingComplete: true,
-      needsOnboarding: false,
+      draft: {
+        revision: crypto.randomUUID(),
+        step: "ready",
+        answers: {
+          industry: "marketing",
+          experienced: false,
+          provider: null,
+          startingPromptDraft: text,
+          startingPromptKey: "edited",
+          startingPromptOutput: null,
+          recommendationJobId: null,
+          recommendationStartedAt: null,
+        },
+      },
     });
   });
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: ROUTES.onboardingReady,
+}
+test("onboarding-sources-first-flow-001 the industry choice survives visiting the disconnected Gmail step", async () => {
+  newcomer();
+  const release = context.mocks.deferred<void>();
+  const requested = context.mocks.deferred<void>();
+  unconnectedGmail(release.promise, () => {
+    if (!requested.settled()) {
+      requested.resolve();
+    }
   });
-
+  await setupPage({ context, path: "/onboarding" });
+  const next = await findAction("button", "Continue");
+  expect(next).toBeDisabled();
+  click(await screen.findByText("Marketing & content"));
+  expect(next).toBeEnabled();
+  click(next);
+  try {
+    await requested.promise;
+    expect(
+      screen.queryByRole("status", { name: "Loading" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "What kind of work do you do?" }),
+    ).toBeVisible();
+    expect(location.pathname).toBe("/onboarding");
+  } finally {
+    release.resolve();
+  }
+  await screen.findByRole("heading", { name: "Connect a work tool" });
+  await expect(findAction("button", "Connect Gmail")).resolves.toBeEnabled();
+  expect(getAction("button", "Continue")).toBeDisabled();
+  click(getAction("button", "Back"));
   await expect(
-    screen.findByRole("heading", { name: READY_TITLE }),
-  ).resolves.toBeInTheDocument();
-
-  click(getButtonByName(START_ACTION));
-
-  await waitFor(() => {
-    expect(runPrompt).toBeTruthy();
-  });
-  expect(completedFrom).toStrictEqual([ROUTES.onboardingReady]);
+    screen.findByRole("radio", { name: /Marketing & content/ }),
+  ).resolves.toBeChecked();
 });
-
-test("A refreshed ready step keeps the industry and edited request", async () => {
-  mockOnboardingNeeded();
-  mockCatalog({ connected: true });
-  let runPrompt: string | undefined;
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      runPrompt = body.prompt;
-    },
+test("onboarding-sources-first-flow-006 canceling and confirming Skip preserves the redeem code through Back", async () => {
+  newcomer();
+  unconnectedGmail();
+  await setupPage({ context, path: "/onboarding/sources?redeemCode=LAUNCH50" });
+  click(await findAction("button", "Skip"));
+  const confirm = await screen.findByRole("dialog");
+  click(getAction("button", "Connect a tool", confirm));
+  await expect(findAction("button", "Connect Gmail")).resolves.toBeEnabled();
+  click(getAction("button", "Skip"));
+  click(getAction("button", "Skip for now", await screen.findByRole("dialog")));
+  await screen.findByRole("heading", {
+    name: "How would you like to start with Okou?",
   });
-  let sentIndustry: string | undefined;
+  expect(new URL(location.href).searchParams.get("redeemCode")).toBe(
+    "LAUNCH50",
+  );
+  click(getAction("button", "Back"));
+  await expect(findAction("button", "Connect Gmail")).resolves.toBeEnabled();
+  expect(getAction("button", "Continue")).toBeDisabled();
+  expect(getAction("button", "Skip")).toBeEnabled();
+});
+test("onboarding-sources-first-flow-013 the saved marketing launch plan reaches its chat and completion receipt", async () => {
+  newcomer();
+  const text = "Draft my launch plan.";
+  savedPlan(text);
+  const completed = createDeferredPromise<string | undefined | null>(
+    context.signal,
+  );
   context.mocks.api(
     onboardingCompleteContract.complete,
     ({ body, respond }) => {
-      sentIndustry = body.industry;
+      if (!completed.settled()) {
+        completed.resolve(body.industry);
+      }
       context.mocks.data.onboardingStatus({
         needsOnboarding: false,
         onboardingComplete: true,
       });
-      return respond(200, {
-        onboardingComplete: true,
-        needsOnboarding: false,
-      });
+      return respond(200, { needsOnboarding: false, onboardingComplete: true });
     },
   );
-  // A fresh browser app starts with storage from the previous app lifetime.
-  context.store.set(
-    draftStorage.set$,
-    JSON.stringify({
-      version: 2,
-      orgId: "org_default",
-      userId: "test-user-123",
-      industry: "marketing",
-      experienced: true,
-      provider: "claudeCode",
-      startingPromptDraft: "Draft my launch plan",
-      startingPromptKey: "marketing:gmail",
-      recommendationJobId: null,
-      recommendationStartedAt: null,
-    }),
+  const sent = receiveFirstChat(context);
+  await setupPage({ context, path: "/onboarding/ready" });
+  await expect(screen.findByLabelText("Your first task")).resolves.toHaveValue(
+    text,
   );
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: ROUTES.onboardingReady,
-  });
-
-  await expect(
-    screen.findByRole("heading", { name: READY_TITLE }),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByLabelText("Your first task")).toHaveValue(
-    "Draft my launch plan",
-  );
-
-  click(getButtonByName(START_ACTION));
-  await waitFor(() => {
-    expect(runPrompt).toBe("Draft my launch plan");
-  });
-  expect(sentIndustry).toBe("marketing");
+  click(await findAction("button", "Start my first task"));
+  expect((await sent).prompt).toBe(text);
+  await expect(completed.promise).resolves.toBe("marketing");
+  await expect(findSentPrompt(text)).resolves.toBeVisible();
 });
-
-test("The ready step keeps the request on screen until the first chat opens", async () => {
-  mockCatalog({ connected: true });
-  let runPrompt: string | undefined;
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      runPrompt = body.prompt;
-    },
-  });
-  const handoff = holdChatHandoffAfterCompletion();
-  context.store.set(
-    draftStorage.set$,
-    JSON.stringify({
-      version: 2,
-      orgId: "org_default",
-      userId: "test-user-123",
-      industry: "marketing",
-      experienced: true,
-      provider: null,
-      startingPromptDraft: "Draft my launch plan",
-      startingPromptKey: "marketing:gmail",
-      recommendationJobId: null,
-      recommendationStartedAt: null,
-    }),
-  );
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: ROUTES.onboardingReady,
-  });
-
-  await expect(
-    screen.findByRole("heading", { name: READY_TITLE }),
-  ).resolves.toBeInTheDocument();
-  click(getButtonByName(START_ACTION));
-  await handoff.handoffPending;
-
-  expect(screen.getByLabelText("Your first task")).toHaveValue(
-    "Draft my launch plan",
-  );
-
-  handoff.release();
-  await waitFor(() => {
-    expect(runPrompt).toBe("Draft my launch plan");
-    expect(pathname()).toMatch(/^\/chats\//u);
-  });
-});
-
-test("A member skips sources, completes their own onboarding and enters chat", async () => {
-  mockMemberOnboardingNeeded();
-  mockCatalog();
-  let runPrompt: string | undefined;
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      runPrompt = body.prompt;
-    },
-  });
-  const completedFrom: string[] = [];
-  context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
-    completedFrom.push(pathname());
-    // The member is done; the organization's answer is the owner's, unchanged.
-    context.mocks.data.onboardingStatus({ needsOnboarding: false });
-    return respond(200, {
-      onboardingComplete: true,
-      needsOnboarding: false,
+test.each([
+  ["onboarding-sources-first-flow-014", true, "Draft my launch plan"],
+  [
+    "onboarding-sources-first-flow-022",
+    false,
+    "Draft the launch plan for the EU market",
+  ],
+] as const)(
+  "%s keeps the edited request on screen until the status handoff finishes",
+  async (_id, ready, text) => {
+    newcomer();
+    if (ready) {
+      savedPlan(text);
+    }
+    let completed = false;
+    const held = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
+      completed = true;
+      return respond(200, { needsOnboarding: false, onboardingComplete: true });
     });
-  });
-
+    context.mocks.api(
+      onboardingStatusContract.getStatus,
+      async ({ respond }) => {
+        const done = completed;
+        if (done) {
+          if (!held.settled()) {
+            held.resolve();
+          }
+          await release.promise;
+        }
+        return respond(200, {
+          isAdmin: true,
+          hasOrg: true,
+          hasDefaultAgent: true,
+          defaultAgentId: "c0000000-0000-4000-a000-000000000001",
+          defaultAgentMetadata: { displayName: "Okou" },
+          needsOnboarding: !done,
+          onboardingComplete: done,
+        });
+      },
+    );
+    const sent = receiveFirstChat(context);
+    await setupPage({
+      context,
+      path: ready
+        ? "/onboarding/ready"
+        : "/onboarding?prompt=" + encodeURIComponent(task),
+    });
+    const editor = await screen.findByLabelText(
+      ready ? "Your first task" : "Onboarding prompt",
+    );
+    if (!ready) {
+      await fill(editor, text);
+    }
+    click(await findAction("button", ready ? "Start my first task" : "Next"));
+    try {
+      await held.promise;
+      expect(editor).toBeVisible();
+      expect(editor).toHaveValue(text);
+    } finally {
+      release.resolve();
+    }
+    const expected = ready ? text : text + "\n\n" + documentInstructions;
+    const chat = await sent;
+    expect(chat.prompt).toBe(expected);
+    await expect(findSentPrompt(expected)).resolves.toBeVisible();
+    expect(location.pathname).toBe("/chats/" + chat.threadId);
+  },
+);
+test("onboarding-sources-first-flow-017 a launch-plan link opens the guided single-step task", async () => {
+  newcomer();
   await setupPage({
     context,
-    locale: "en-US",
-    path: ROUTES.onboarding,
+    path: "/onboarding?prompt=Draft+the+launch+plan",
   });
-
-  click(fieldRadio(MARKETING_FIELD));
-  await waitFor(() => {
-    expect(getButtonByName("Continue")).toBeEnabled();
-  });
-  click(getButtonByName("Continue"));
-  await screen.findByRole("heading", { name: SOURCES_QUESTION });
-  click(getButtonByName("Skip"));
-  const confirmation = await screen.findByRole("dialog", {
-    name: "Start without connecting a tool?",
-  });
-  click(getButtonByName("Skip for now", confirmation));
-
-  // Confirming the skip goes to the AI question: no invite step.
-  await screen.findByRole("heading", {
-    name: "How would you like to start with Okou?",
-  });
-  expect(pathname()).toBe(ROUTES.onboardingExperience);
-  click(fieldRadio("Start with Okou"));
-  click(getButtonByName("Continue"));
-
-  await leaveSlackStepWithNotNow();
-
-  await screen.findByRole("heading", { name: READY_TITLE });
-  expect(screen.getByLabelText("Your first task")).toHaveValue(
-    "Compare the public content of three competitors and suggest three angles for my brand. Ask me which brand and audience to focus on.",
-  );
-  await fill(
-    screen.getByLabelText("Your first task"),
-    "Draft my meeting agenda",
-  );
-  click(getButtonByName(START_ACTION));
-
-  await waitFor(() => {
-    expect(runPrompt).toBe("Draft my meeting agenda");
-  });
-  // Completion went out from the last step, before the first request.
-  expect(completedFrom).toStrictEqual([ROUTES.onboardingReady]);
-  expect(pathname()).not.toMatch(/^\/onboarding/);
-});
-
-test("A step keeps the redeem code it arrived with", async () => {
-  mockOnboardingNeeded();
-  mockCatalog();
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: `${ROUTES.onboarding}?redeemCode=LAUNCH50`,
-  });
-
   await expect(
-    screen.findByRole("heading", { name: INDUSTRY_QUESTION }),
-  ).resolves.toBeInTheDocument();
-
-  click(fieldRadio(MARKETING_FIELD));
-  await waitFor(() => {
-    expect(getButtonByName("Continue")).toBeEnabled();
-  });
-  click(getButtonByName("Continue"));
-
-  await expect(
-    screen.findByRole("heading", { name: SOURCES_QUESTION }),
-  ).resolves.toBeInTheDocument();
-  const params = new URLSearchParams(search());
-  expect(params.get("redeemCode")).toBe("LAUNCH50");
-});
-
-test("A new user who brings a prompt tries it on the source-first flow's single step", async () => {
-  mockOnboardingNeeded();
-  mockCatalog();
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}`,
-  });
-
-  await expect(
-    screen.findByRole("heading", { name: PROMPT_TITLE }),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
-    HANDOFF_PROMPT,
-  );
-  // Task guidance and compliance sit beside the prompt.
-  expect(screen.getByText(PROMPT_INTRO)).toBeInTheDocument();
+    screen.findByLabelText("Onboarding prompt"),
+  ).resolves.toHaveValue(task);
   expect(
-    screen.getByRole("region", { name: COMPLIANCE_TITLE }),
-  ).toBeInTheDocument();
-  // The source-first flow's filling track, as one step of one.
+    screen.getByText(
+      "Connect your apps for better results and choose a format.",
+    ),
+  ).toBeVisible();
+  expect(screen.getByRole("region", { name: /compliance/i })).toBeVisible();
+  expect(getAction("button", "Next")).toBeEnabled();
   expect(
-    screen.getAllByRole("progressbar", { name: "Step 1 of 1" }).length,
-  ).toBeGreaterThan(0);
-  expect(getButtonByName("Next")).toBeEnabled();
-  expect(
-    screen.queryByRole("heading", { name: INDUSTRY_QUESTION }),
+    screen.queryByText("What kind of work do you do?"),
   ).not.toBeInTheDocument();
 });
-
-test("A prompt link prioritizes its connectors without duplicating recommendations", async () => {
-  mockOnboardingNeeded();
-
+test("onboarding-sources-first-flow-020 the submitted document keeps its showcase destination", async () => {
+  newcomer();
+  const sent = receiveFirstChat(context);
+  const showcase = "https://examples.test/launch";
   await setupPage({
     context,
-    locale: "en-US",
-    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent("Review last week's Google Ads campaign performance")}&connector=google-ads,gmail,gmail`,
+    path: "/onboarding?" + new URLSearchParams({ prompt: task, showcase }),
   });
-
-  await expect(
-    screen.findByRole("heading", { name: PROMPT_TITLE }),
-  ).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    expect(getButtonByName("Connect Google Ads")).toBeEnabled();
-  });
-  const recommendations = screen.getByRole("region", {
-    name: "Connect your work tools",
-  });
-  const connections = queryAllByRoleFast("button", recommendations);
-  expect(connections[0]).toHaveAttribute("aria-label", "Connect Google Ads");
-  expect(
-    connections.filter((button) => {
-      return button.getAttribute("aria-label") === "Connect Gmail";
-    }),
-  ).toHaveLength(1);
-  expect(getButtonByName("Connect Notion", recommendations)).toBeEnabled();
+  click(await findAction("button", "Next"));
+  const expected = task + "\n\n" + documentInstructions;
+  const chat = await sent;
+  expect(chat.prompt).toBe(expected);
+  await expect(findSentPrompt(expected)).resolves.toBeVisible();
+  expect(new URL(location.href).searchParams.get("showcase")).toBe(showcase);
 });
-
-test("The sheet's connector card connects the tool the prompt link names", async () => {
-  mockOnboardingNeeded();
-  context.mocks.api(
-    builtinConnectorManualGrantContract.connect,
-    ({ params, respond }) => {
-      expect(params.connectorSlug).toBe("ahrefs");
-      const connector: BuiltinConnectorResponse = {
-        id: "11111111-1111-4111-8111-111111111112",
-        slug: "ahrefs",
-        authMethod: "api-token",
-        externalId: null,
-        externalUsername: null,
-        externalEmail: null,
-        oauthScopes: null,
-        connectionStatus: "connected",
-        reconnectReason: null,
-        tokenExpiresAt: null,
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-      };
-      context.mocks.data.connectors([connector]);
-      context.mocks.ably.trigger("connector:changed", {
-        connectorSlug: connector.slug,
-      });
-      return respond(200, { ...connector, connectionId: connector.id });
-    },
-  );
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent("Track keyword rankings")}&connector=ahrefs`,
-  });
-
-  click(
-    await waitFor(() => {
-      return getButtonByName("Connect Ahrefs");
-    }),
-  );
-  const dialog = await screen.findByRole("dialog", { name: "Ahrefs" });
-  await fill(
-    within(dialog).getByPlaceholderText("your-ahrefs-api-token"),
-    "test-ahrefs-token",
-  );
-  click(getButtonByName("Save", dialog));
-
-  await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
-  expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
-    "Track keyword rankings",
-  );
-});
-
-test("A prompt with a showcase carries the showcase into the chat", async () => {
-  const showcase = "https://cdn.vm0.io/artifacts/example/launch-deck.html";
-  mockOnboardingNeeded();
-  let runPrompt: string | undefined;
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      runPrompt = body.prompt;
-    },
-  });
-  const params = new URLSearchParams({ prompt: HANDOFF_PROMPT, showcase });
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: `${ROUTES.onboarding}?${params.toString()}`,
-  });
-
-  await expect(
-    screen.findByRole("heading", { name: PROMPT_TITLE }),
-  ).resolves.toBeInTheDocument();
-  click(getButtonByName("Next"));
-
-  await waitFor(() => {
-    expect(runPrompt).toBe(HANDOFF_WITH_FORMAT);
-    expect(pathname()).toMatch(/^\/chats\//u);
-  });
-  expect(new URLSearchParams(search()).get("showcase")).toBe(showcase);
-});
-
-test("The prompt step completes onboarding, then runs the prompt as edited", async () => {
-  const editedPrompt = "Draft the launch plan for the EU market";
-  mockOnboardingNeeded();
-  let runPrompt: string | undefined;
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      runPrompt = body.prompt;
-    },
-  });
-  // Where the browser still was when completion went out, so the order of the
-  // two is observable rather than assumed.
-  const completedFrom: string[] = [];
-  context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
-    completedFrom.push(pathname());
-    context.mocks.data.onboardingStatus({
-      needsOnboarding: false,
-      onboardingComplete: true,
+test("onboarding-sources-first-flow-023 a linked coastal hotel website template reaches the first chat", async () => {
+  newcomer();
+  const template = "website-template:coastal-hotel";
+  const received = createDeferredPromise<string>(context.signal);
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    expect(body.userMessage?.parts).toContainEqual({
+      type: "template",
+      titleSnapshot: "Coastal Hotel",
+      template: { type: "website", selection: { websiteTemplateId: template } },
     });
-    return respond(200, {
-      onboardingComplete: true,
-      needsOnboarding: false,
-    });
-  });
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}`,
-  });
-
-  await expect(
-    screen.findByRole("heading", { name: PROMPT_TITLE }),
-  ).resolves.toBeInTheDocument();
-  await fill(screen.getByLabelText("Onboarding prompt"), editedPrompt);
-  click(getButtonByName("Next"));
-
-  await waitFor(() => {
-    expect(runPrompt).toBe(
-      `${editedPrompt}\n\nCreate a complete document with the results in the requested file format (Markdown by default). Upload it as an artifact and include the working artifact link in your final response.`,
-    );
-    expect(pathname()).toMatch(/^\/chats\//u);
-  });
-  expect(completedFrom).toStrictEqual([ROUTES.onboarding]);
-});
-
-test("The prompt step keeps the edited prompt on screen until the first chat opens", async () => {
-  const editedPrompt = "Draft the launch plan for the EU market";
-  let runPrompt: string | undefined;
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      runPrompt = body.prompt;
-    },
-  });
-  const handoff = holdChatHandoffAfterCompletion();
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}`,
-  });
-
-  await expect(
-    screen.findByRole("heading", { name: PROMPT_TITLE }),
-  ).resolves.toBeInTheDocument();
-  await fill(screen.getByLabelText("Onboarding prompt"), editedPrompt);
-  click(getButtonByName("Next"));
-  await handoff.handoffPending;
-
-  expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(editedPrompt);
-
-  handoff.release();
-  await waitFor(() => {
-    expect(runPrompt).toBe(
-      `${editedPrompt}\n\nCreate a complete document with the results in the requested file format (Markdown by default). Upload it as an artifact and include the working artifact link in your final response.`,
-    );
-    expect(pathname()).toMatch(/^\/chats\//u);
-  });
-});
-
-test("A prompt link's template carries into the first request", async () => {
-  const websiteTemplate = WEBSITE_TEMPLATE_ITEMS[0];
-  if (!websiteTemplate) {
-    throw new Error("Expected a website template");
-  }
-  mockOnboardingNeeded();
-  let websiteTemplateId: string | undefined;
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      const template = templateFromUserMessage(body.userMessage);
-      websiteTemplateId =
-        template?.type === "website"
-          ? template.selection.websiteTemplateId
-          : undefined;
-    },
-  });
-  const params = new URLSearchParams({
-    prompt: HANDOFF_PROMPT,
-    template: websiteTemplate.id,
-  });
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: `${ROUTES.onboarding}?${params.toString()}`,
-  });
-
-  await expect(
-    screen.findByRole("heading", { name: PROMPT_TITLE }),
-  ).resolves.toBeInTheDocument();
-  click(getButtonByName("Next"));
-
-  await waitFor(() => {
-    expect(websiteTemplateId).toBe(websiteTemplate.id);
-    expect(pathname()).toMatch(/^\/chats\//u);
-  });
-});
-
-test.each([true, false])(
-  "A prompt link attempts redemption before completion (eligible: %s)",
-  async (redeemed) => {
-    mockOnboardingNeeded();
-    let runPrompt: string | undefined;
-    mockChatLifecycle(context, {
-      onRunCreate: (body) => {
-        runPrompt = body.prompt;
-      },
-    });
-    const requests: string[] = [];
-    context.mocks.api(billingRedeemCodeContract.create, ({ body, respond }) => {
-      requests.push(`redeem:${body.code}`);
-      return respond(200, { redeemed });
-    });
-    context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
-      requests.push("complete");
-      context.mocks.data.onboardingStatus({
-        needsOnboarding: false,
-        onboardingComplete: true,
-      });
-      return respond(200, {
-        onboardingComplete: true,
-        needsOnboarding: false,
-      });
-    });
-
-    await setupPage({
-      context,
-      locale: "en-US",
-      path: `${ROUTES.onboarding}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}&redeemCode=%20LAUNCH50%20`,
-    });
-
-    await expect(
-      screen.findByRole("heading", { name: PROMPT_TITLE }),
-    ).resolves.toBeInTheDocument();
-    click(getButtonByName("Next"));
-
-    await waitFor(() => {
-      expect(runPrompt).toBe(HANDOFF_WITH_FORMAT);
-      expect(pathname()).toMatch(/^\/chats\//u);
-    });
-    expect(requests).toStrictEqual(["redeem:LAUNCH50", "complete"]);
-    expect(new URLSearchParams(search()).has("redeemCode")).toBeFalsy();
-  },
-);
-
-test("A later source-first step opened with a prompt goes back to the prompt page", async () => {
-  mockOnboardingNeeded();
-  mockCatalog({ connected: true });
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: `${ROUTES.onboardingSources}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}`,
-  });
-
-  await expect(
-    screen.findByRole("heading", { name: PROMPT_TITLE }),
-  ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe(ROUTES.onboarding);
-  expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
-    HANDOFF_PROMPT,
-  );
-});
-
-test("An invited member who brings a prompt still runs the source-first flow", async () => {
-  mockMemberOnboardingNeeded();
-  mockCatalog();
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}`,
-  });
-
-  await expect(
-    screen.findByRole("heading", { name: INDUSTRY_QUESTION }),
-  ).resolves.toBeInTheDocument();
-});
-
-test("A blank prompt still opens the source-first flow", async () => {
-  mockOnboardingNeeded();
-  mockCatalog();
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: `${ROUTES.onboarding}?prompt=%20%20`,
-  });
-
-  await expect(
-    screen.findByRole("heading", { name: INDUSTRY_QUESTION }),
-  ).resolves.toBeInTheDocument();
-});
-
-test("An already-onboarded visitor is forwarded with the prompt they brought", async () => {
-  mockCatalog({ connected: true });
-  let runPrompt: string | undefined;
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      runPrompt = body.prompt;
-    },
-  });
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: `${ROUTES.onboardingSources}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}`,
-  });
-
-  await waitFor(() => {
-    expect(runPrompt).toBe(HANDOFF_PROMPT);
-  });
-});
-
-test.each([
-  ["prompt", true],
-  ["prompt", false],
-  ["handoff", true],
-  ["handoff", false],
-] as const)(
-  "An onboarded visitor redeems before running a linked %s (eligible: %s)",
-  async (source, redeemed) => {
-    let redeemedCode: string | undefined;
-    let runPrompt: string | undefined;
-    let redeemedBeforeRun: boolean | undefined;
-    context.mocks.api(billingRedeemCodeContract.create, ({ body, respond }) => {
-      redeemedCode = body.code;
-      return respond(200, { redeemed });
-    });
-    if (source === "handoff") {
-      context.mocks.api(marketingHandoffsContract.resolve, ({ respond }) => {
-        return respond(200, {
-          version: 1,
-          prompt: HANDOFF_PROMPT,
-          files: [],
-          options: {},
-        });
-      });
-      context.mocks.api(marketingHandoffsContract.import, ({ respond }) => {
-        return respond(200, { files: [] });
-      });
+    if (!body.threadId) {
+      throw new Error("Missing destination");
     }
-    mockChatLifecycle(context, {
-      onRunCreate: (body) => {
-        runPrompt = body.prompt;
-        redeemedBeforeRun = redeemedCode === "PRO-CAMPAIGN";
-      },
+    if (!received.settled()) {
+      received.resolve(body.threadId);
+    }
+    return respond(201, {
+      threadId: body.threadId,
+      createdAt: "2026-10-15T10:20:00Z",
     });
-
+  });
+  await setupPage({
+    context,
+    path:
+      "/onboarding?" +
+      new URLSearchParams({ prompt: "Build a hotel website.", template }),
+  });
+  click(await findAction("button", "Next"));
+  const threadId = await received.promise;
+  await waitFor(() => {
+    return expect(location.pathname).toBe("/chats/" + threadId);
+  });
+});
+test("onboarding-sources-first-flow-026 a launch task arriving on sources opens the prompt editor", async () => {
+  newcomer();
+  await setupPage({
+    context,
+    path: "/onboarding/sources?prompt=Draft+the+launch+plan",
+  });
+  await expect(
+    screen.findByLabelText("Onboarding prompt"),
+  ).resolves.toHaveValue(task);
+  expect(location.pathname).toBe("/onboarding");
+});
+test.each([
+  ["onboarding-sources-first-flow-027", false, task],
+  ["onboarding-sources-first-flow-028", true, "   "],
+] as const)(
+  "%s opens the industry question with its own membership and task",
+  async (_id, owner, prompt) => {
+    newcomer(owner);
     await setupPage({
       context,
-      locale: "en-US",
-      path: `${ROUTES.onboarding}?${new URLSearchParams({
-        [source]: source === "handoff" ? "a".repeat(12) : HANDOFF_PROMPT,
-        redeemCode: "PRO-CAMPAIGN",
-      }).toString()}`,
+      path: "/onboarding?" + new URLSearchParams({ prompt }),
     });
-
-    await waitFor(() => {
-      expect(runPrompt).toBe(HANDOFF_PROMPT);
-      expect(pathname()).toMatch(/^\/chats\//u);
-    });
-    expect(redeemedBeforeRun).toBeTruthy();
-    expect(new URLSearchParams(search()).has("redeemCode")).toBeFalsy();
+    await expect(
+      screen.findByRole("heading", { name: "What kind of work do you do?" }),
+    ).resolves.toBeVisible();
+    expect(
+      screen.queryByLabelText("Onboarding prompt"),
+    ).not.toBeInTheDocument();
   },
 );
-
-test("An onboarded visitor can redeem without bringing a prompt", async () => {
-  let redeemedCode: string | undefined;
+test("onboarding-sources-first-flow-034 an onboarded owner redeems PRO-CAMPAIGN and reaches Home", async () => {
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: false,
+    onboardingComplete: true,
+  });
+  const code = createDeferredPromise<string>(context.signal);
   context.mocks.api(billingRedeemCodeContract.create, ({ body, respond }) => {
-    redeemedCode = body.code;
+    if (!code.settled()) {
+      code.resolve(body.code);
+    }
     return respond(200, { redeemed: true });
   });
-
+  await setupPage({ context, path: "/onboarding?redeemCode=PRO-CAMPAIGN" });
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeVisible();
+  await expect(code.promise).resolves.toBe("PRO-CAMPAIGN");
+  expect(location.pathname).toBe("/");
+  expect(new URL(location.href).searchParams.has("redeemCode")).toBeFalsy();
+});
+test("onboarding-sources-first-flow-019 saving an Ahrefs API token preserves the keyword task", async () => {
+  newcomer();
   await setupPage({
     context,
-    locale: "en-US",
-    path: `${ROUTES.onboarding}?redeemCode=PRO-CAMPAIGN`,
+    path: "/onboarding?prompt=Track+keyword+rankings.&connector=ahrefs",
   });
-
+  click(await findAction("button", "Connect Ahrefs"));
+  const dialog = await screen.findByRole("dialog");
+  await fill(
+    within(dialog).getByPlaceholderText("your-ahrefs-api-token"),
+    "example-ahrefs-token",
+  );
+  click(getAction("button", "Save", dialog));
   await waitFor(() => {
-    expect(pathname()).toBe("/");
+    return expect(dialog).not.toBeInTheDocument();
   });
-  expect(redeemedCode).toBe("PRO-CAMPAIGN");
-  expect(new URLSearchParams(search()).has("redeemCode")).toBeFalsy();
+  await expect(
+    screen.findByText("Ahrefs connected successfully"),
+  ).resolves.toBeVisible();
+  expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
+    "Track keyword rankings.",
+  );
+});
+
+test("onboarding-sources-first-flow-009 the invited member receives the delayed Gmail recommendation using the onboarding catalog", async () => {
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: true,
+    isAdmin: false,
+  });
+  mockSlack(context, { isAdmin: false, installUrl: null });
+  mockOnboardingConnectorCatalog(context, [connectedGmailSource()]);
+  const jobId = crypto.randomUUID(),
+    req = context.mocks.deferred<unknown>();
+  let ready = false;
+  const accessed = new Set<string>();
+  context.mocks.api(onboardingSourcesContract.list, ({ request, respond }) => {
+    accessed.add(new URL(request.url).pathname);
+    return respond(200, {
+      connectors: [connectorCatalogConnectItem(connectedGmailSource())],
+    });
+  });
+  context.mocks.api(connectorCatalogContract.status, ({ request, respond }) => {
+    accessed.add(new URL(request.url).pathname);
+    return respond(200, { connectors: [] });
+  });
+  context.mocks.api(
+    onboardingRecommendationContract.start,
+    ({ body, respond }) => {
+      if (!req.settled()) {
+        req.resolve(body);
+      }
+      return respond(202, { jobId, status: "pending" });
+    },
+  );
+  const prompt = "Review the Gmail replies that need my decision today.";
+  const title = "Clear the replies that matter";
+  context.mocks.api(onboardingRecommendationContract.get, ({ respond }) => {
+    return respond(
+      200,
+      ready
+        ? {
+            jobId,
+            status: "completed",
+            recommendation: {
+              title,
+              prompt,
+              kind: "task",
+              outcome: "Decide which replies to send",
+              profile: {
+                overview: "Marketing",
+                professionalIdentity: [],
+                communicationStyle: [],
+                priorities: [],
+              },
+            },
+          }
+        : { jobId, status: "running" },
+    );
+  });
+  await setupPage({ context, path: "/onboarding" });
+  click(await screen.findByText("Marketing & content"));
+  click(await findAction("button", "Continue"));
+  await screen.findByRole("heading", { name: "Connect a work tool" });
+  await waitFor(() => {
+    return expect(getAction("button", "Continue")).toBeEnabled();
+  });
+  click(getAction("button", "Continue"));
+  click(await screen.findByText("Start with Okou"));
+  click(await findAction("button", "Continue"));
+  await screen.findByRole("heading", { name: "Keep Okou a message away" });
+  click(await findAction("button", "Not now"));
+  await waitFor(() => {
+    return expect(location.pathname).toBe("/onboarding/capabilities");
+  });
+  click(await findAction("button", "Continue"));
+  await waitFor(() => {
+    return expect(location.pathname).toBe("/onboarding/ready");
+  });
+  expect(screen.queryByDisplayValue(prompt)).not.toBeInTheDocument();
+  expect(screen.queryByText(title)).not.toBeInTheDocument();
+  await expect(req.promise).resolves.toMatchObject({
+    industry: "marketing",
+    locale: "en-US",
+  });
+  await waitFor(() => {
+    return expect(
+      context.mocks.ably.hasSubscription("onboardingRecommendationChanged"),
+    ).toBeTruthy();
+  });
+  ready = true;
+  context.mocks.ably.trigger("onboardingRecommendationChanged", { jobId });
+  await waitFor(() => {
+    return expect(screen.getByLabelText("Your first task")).toHaveValue(prompt);
+  });
+  await expect(screen.findByText(title)).resolves.toBeVisible();
+  expect(accessed.has("/api/onboarding/sources")).toBeTruthy();
+  expect(accessed.has("/api/connector-catalog/status")).toBeFalsy();
 });

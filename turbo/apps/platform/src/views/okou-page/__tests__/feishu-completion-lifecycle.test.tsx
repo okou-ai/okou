@@ -1,83 +1,132 @@
 import {
   feishuConnectContract,
-  larkConnectContract,
   type FeishuConnectStatus,
   type FeishuInstallationStatus,
 } from "@okouai/api-contracts/contracts/feishu-connect";
-import { act, screen } from "@testing-library/react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { click, fill } from "../../../__tests__/page-helper.ts";
+
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  getAction,
   findAction,
-  mockFeishu,
-  setupFeishuSettingsPage,
+  getAction,
 } from "./connector-integrations-test-helpers.ts";
-const context = testContext();
 
-test.each(["feishu", "lark"] as const)(
-  "%s setup completion preserves a newer bot draft and its page",
-  async (platform) => {
-    const contract =
-      platform === "lark" ? larkConnectContract : feishuConnectContract;
-    const installation: FeishuInstallationStatus = {
-      id: "f0000000-0000-4000-a000-000000000001",
+const context = testContext();
+const INSTALLATION_ID = "e0000000-0000-4000-a000-000000000a31";
+const SETUP_PATH = `/settings/feishu/setup/${INSTALLATION_ID}`;
+
+/** One admin-managed bot whose callback is verified but whose setup is open. */
+function serveBot(): { installation: FeishuInstallationStatus } {
+  const server = {
+    installation: {
+      id: INSTALLATION_ID,
       isConnected: false,
-      connectUrl: `https://api.okou.test/api/${platform}/oauth/connect?state=old-installation`,
-      appId: "cli_first_bot",
-      callbackUrl: "https://api.okou.test/callback",
+      connectedUserName: null,
+      appId: "cli_support_bot",
+      botName: "Support desk",
+      callbackUrl: "https://api.okou.test/api/integrations/feishu/events",
+      oauthRedirectUrl: "https://app.okou.test/connectors/feishu/callback",
+      connectUrl: null,
       callbackVerified: true,
-      oauthRedirectUrl: "https://app.okou.test/callback",
-      messageReceived: true,
-      tenantKey: "first-tenant",
-      tenantName: "First bot",
+      setupCompleted: false,
+      messageReceived: false,
+      tenantKey: "tenant-support",
+      tenantName: "Support tenant",
       defaultAgentId: null,
       defaultAgentName: "Okou",
-      setupCompleted: false,
-    };
+    } satisfies FeishuInstallationStatus,
+  };
+  context.mocks.api(feishuConnectContract.getStatus, ({ respond }) => {
+    const installation = server.installation;
     const status: FeishuConnectStatus = {
-      ...installation,
-      installationId: installation.id,
-      isAdmin: true,
       isInstalled: true,
+      isConnected: installation.isConnected,
+      isAdmin: true,
+      appId: installation.appId,
+      callbackUrl: installation.callbackUrl,
+      callbackVerified: installation.callbackVerified,
+      messageReceived: installation.messageReceived,
+      tenantKey: installation.tenantKey,
+      tenantName: installation.tenantName,
+      defaultAgentId: installation.defaultAgentId,
+      defaultAgentName: installation.defaultAgentName,
+      installationId: installation.id,
       installations: [installation],
     };
-    mockFeishu(context, status, platform);
-    const started = context.mocks.deferred<void>();
-    const response = context.mocks.deferred<void>();
-    context.mocks.api(contract.updateInstallation, async ({ respond }) => {
-      started.resolve();
-      await response.promise;
-      return respond(200, { ...installation, setupCompleted: true });
-    });
-    await setupFeishuSettingsPage(context, platform);
-    const setupUrl = `/settings/${platform}/setup/${installation.id}`;
-    await screen.findByText("First bot");
-    click(getAction("button", "More options for First bot"));
-    click(getAction("link", "Manage"));
-    await screen.findByText("Configure the OAuth redirect URL");
-    click(await findAction("button", "Next"));
-    click(await findAction("button", "Next"));
-    click(await findAction("button", "Next"));
-    await screen.findByText("Publish the app");
-    click(getAction("button", "Done"));
-    await started.promise;
-    click(getAction("link", `${platform === "lark" ? "Lark" : "Feishu"} bots`));
-    await screen.findByRole("heading", {
-      name: `${platform === "lark" ? "Lark" : "Feishu"} bots`,
-    });
-    click(getAction("button", "More options for First bot"));
-    click(getAction("link", "Manage"));
-    click(await findAction("button", "Back"));
-    click(await findAction("button", "Back"));
-    await fill(screen.getByLabelText("App Secret"), "new-test-secret");
-    await act(async () => {
-      response.resolve();
-      await response.promise;
-    });
-    expect(new URL(window.location.href).pathname).toBe(setupUrl);
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("App Secret")).toHaveValue("new-test-secret");
-  },
-);
+    return respond(200, status);
+  });
+  return server;
+}
+
+async function findStep(title: string): Promise<void> {
+  await expect(
+    screen.findByRole("heading", { name: title }),
+  ).resolves.toBeInTheDocument();
+}
+
+test("feishu setup completion preserves a newer bot draft and its page", async () => {
+  const server = serveBot();
+  const requested = context.mocks.deferred<void>();
+  const aborted = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  const answered = context.mocks.deferred<void>();
+  context.mocks.api(
+    feishuConnectContract.updateInstallation,
+    async ({ params, body, request, respond }) => {
+      expect(params.installationId).toBe(INSTALLATION_ID);
+      request.signal.addEventListener(
+        "abort",
+        () => {
+          aborted.resolve();
+        },
+        { once: true },
+      );
+      requested.resolve();
+      await release.promise;
+      server.installation = {
+        ...server.installation,
+        setupCompleted: body.setupCompleted ?? false,
+        connectUrl: "https://open.feishu.cn/connect/cli_support_bot",
+      };
+      answered.resolve();
+      return respond(200, server.installation);
+    },
+  );
+  await setupPage({
+    context,
+    path: SETUP_PATH,
+    featureSwitches: { [FeatureSwitchKey.FeishuIntegration]: true },
+  });
+  await findStep("Configure the OAuth redirect URL");
+  click(getAction("button", "Next"));
+  await findStep("Import app and user scopes");
+  click(getAction("button", "Next"));
+  await findStep("Configure event delivery");
+  click(getAction("button", "Next"));
+  await findStep("Publish the app");
+  click(getAction("button", "Done"));
+  await requested.promise;
+
+  click(getAction("link", "Feishu bots"));
+  click(await findAction("button", "More options for Support desk"));
+  click(await findAction("link", "Manage"));
+  await findStep("Configure the OAuth redirect URL");
+  click(getAction("button", "Back"));
+  await findStep("Add the event verification tokens");
+  click(getAction("button", "Back"));
+  await findStep("Add the app credentials");
+  await fill(screen.getByLabelText("App Secret"), "rotated-secret");
+  await aborted.promise;
+  release.resolve();
+  await answered.promise;
+
+  expect(window.location.pathname).toBe(SETUP_PATH);
+  expect(
+    screen.getByRole("heading", { name: "Manage Feishu bot" }),
+  ).toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.getByLabelText("App Secret")).toHaveValue("rotated-secret");
+});

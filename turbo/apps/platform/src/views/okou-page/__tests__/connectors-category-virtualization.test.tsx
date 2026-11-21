@@ -1,59 +1,33 @@
-import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  mockConnectors,
   mockPublicConnectorStatus,
   publicStatusItem,
 } from "./connector-page-test-helpers.ts";
-
 const context = testContext();
-
-const CATEGORY = "communication-collaboration";
-const CATEGORY_SIZE = 300;
-
-function bigCategory() {
-  return Array.from({ length: CATEGORY_SIZE }, (_, index) => {
+test("connectors-category-virtualization-001 the open category reserves space for its unmounted services", async () => {
+  const category = "communication-collaboration";
+  const services = Array.from({ length: 300 }, (_, i) => {
     return publicStatusItem({
-      connectorSlug: `mail-${index}` as ConnectorSlug,
-      label: `Connector ${String(index).padStart(3, "0")}`,
-      category: CATEGORY,
-      popularityRank: index,
+      connectorSlug: "service-" + i,
+      label: "Messaging service " + i,
+      category,
     });
   });
-}
-
-function renderedLabels(): readonly string[] {
-  return screen.getAllByTestId("connector-card-label").map((element) => {
-    return element.textContent ?? "";
-  });
-}
-
-async function openCategory(): Promise<void> {
-  mockConnectors(context, []);
-  mockPublicConnectorStatus(context, bigCategory(), {
-    [CATEGORY]: CATEGORY_SIZE,
-  });
-  await setupPage({
-    context,
-    path: `/connectors?category=${CATEGORY}`,
-  });
-  await screen.findByTestId("connector-category-grid");
-}
-
-test("Mount a screen of a category instead of all of it", async () => {
-  await openCategory();
-
-  await waitFor(() => {
-    expect(renderedLabels().length).toBeGreaterThan(0);
-  });
-  // The response carries the whole category; the grid mounts a window of it
-  // and reserves the rest as grid rows no card is built for.
-  expect(renderedLabels().length).toBeLessThan(CATEGORY_SIZE);
+  mockPublicConnectorStatus(context, services, { [category]: 300 });
+  await setupPage({ context, path: "/connectors?category=" + category });
+  const grid = await screen.findByTestId("connector-category-grid");
+  const mounted = within(grid).getAllByText(/^Messaging service \d+$/);
+  expect(mounted.length).toBeGreaterThan(0);
+  expect(mounted.length).toBeLessThan(300);
+  const reserved = within(grid).getAllByTestId(
+    "connector-category-reserved-rows",
+  );
   expect(
-    screen.getAllByTestId("connector-category-reserved-rows").length,
-  ).toBeGreaterThan(0);
+    reserved.some((row) => {
+      return /^span [1-9]\d*$/.test(row.style.gridRow);
+    }),
+  ).toBeTruthy();
 });

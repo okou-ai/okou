@@ -1,59 +1,44 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  findButton,
-  FIRST_CAPABILITY_RUN_ID,
-  readyChat,
+  createChatRunFixtures,
+  findEnabledButton,
   RUN_PATH,
-  createChatCapabilityHelpers,
-} from "./chat-capability-test-helpers.ts";
-import { promptEvent } from "./chat-run-test-fixtures.ts";
-import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
+} from "./chat-run-test-fixtures.ts";
 
 const context = testContext();
-const { installCapabilityChat } = createChatCapabilityHelpers(context);
-
-function installProviderFailure(error: string): void {
-  const events: MockChatEventInput[] = [
-    promptEvent({
-      id: "provider-failure-user",
-      runId: FIRST_CAPABILITY_RUN_ID,
-      seqId: 1,
-      text: "Continue this conversation",
-    }),
-    {
-      id: "provider-failure-assistant",
-      eventType: "output.error",
-      content: null,
-      createdAt: "2026-08-01T10:00:02.000Z",
-      error,
-      runId: FIRST_CAPABILITY_RUN_ID,
-      seqId: 2,
-    },
-  ];
-  installCapabilityChat({ events });
-}
-
-test("Match model-provider recovery guidance to the failure", async () => {
-  installProviderFailure("No model provider is available for this run");
-
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-
-  await readyChat();
-  const card = await screen.findByRole("status");
-  expect(card).toHaveTextContent(
-    "No model provider is available for this run. Connect a personal subscription.",
-  );
-  const configureProvider = await findButton("Manage subscriptions");
-  expect(card).toContainElement(configureProvider);
-  click(configureProvider);
-
+test("chat-capability-model-recovery-001 opens model subscription settings from a failed chat", async () => {
+  createChatRunFixtures(context).installRunChat({
+    chatEvents: [
+      {
+        role: "user",
+        content: "Review the launch outline",
+        runId: "870a4aa7-6d56-4caf-b571-322f54b59e65",
+        createdAt: "2026-09-20T08:00:00Z",
+      },
+      {
+        role: "assistant",
+        content: null,
+        error: "No model provider is available for this run",
+        runId: "870a4aa7-6d56-4caf-b571-322f54b59e65",
+        createdAt: "2026-09-20T08:00:03Z",
+      },
+      {
+        role: "assistant",
+        content: null,
+        runLifecycleEvent: "failed",
+        runId: "870a4aa7-6d56-4caf-b571-322f54b59e65",
+        createdAt: "2026-09-20T08:00:04Z",
+      },
+    ],
+  });
+  await setupPage({ context, path: RUN_PATH });
+  await screen.findByText(/connect a personal subscription/i);
+  click(await findEnabledButton("Manage subscriptions"));
   const settings = await screen.findByRole("dialog", { name: "Settings" });
-  expect(settings).toBeVisible();
   await expect(
-    screen.findByRole("heading", { name: "Use more models" }),
-  ).resolves.toBeVisible();
+    within(settings).findByRole("heading", { name: "Use more models" }),
+  ).resolves.toBeInTheDocument();
 });

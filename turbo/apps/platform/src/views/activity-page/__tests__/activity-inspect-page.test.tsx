@@ -1,813 +1,384 @@
-import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import type { NetworkLogEntry } from "@okouai/api-contracts/contracts/runs";
-import type { LogDetail } from "@okouai/api-contracts/contracts/logs";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
   click,
-  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import type { AgentEvent } from "../../../signals/okou-page/log-types.ts";
 
 const context = testContext();
-const user = userEvent.setup();
+const SECRET_NAME = "STRIPE_SECRET_KEY";
 
-function inspectFile(): File {
-  const meta: Partial<LogDetail> = {
-    id: "b0000000-0000-4000-a000-000000000777",
-    sessionId: "session-inspect",
-    agentId: "c0000000-0000-4000-a000-000000000001",
-    displayName: "Imported Analysis",
-    framework: "claude-code",
-    modelProvider: null,
-    selectedModel: null,
-    triggerSource: "test",
-    status: "completed",
-    prompt: "Inspect the latest OAuth trace",
-    appendSystemPrompt: "Prefer concise findings",
-    createdAt: "2026-03-10T14:56:00Z",
-    startedAt: "2026-03-10T14:56:01Z",
-    completedAt: "2026-03-10T14:56:06Z",
+function assistantEvent(sequenceNumber: number, text: string) {
+  return {
+    sequenceNumber,
+    eventType: "assistant",
+    createdAt: `2026-11-20T07:00:0${sequenceNumber}.000Z`,
+    eventData: {
+      type: "assistant",
+      message: { content: [{ type: "text", text }] },
+    },
   };
-  const events: AgentEvent[] = [
-    {
-      sequenceNumber: 0,
-      eventType: "assistant",
-      eventData: {
-        message: {
-          content: [
-            {
-              type: "text",
-              text: "Collected OAuth evidence from network logs.",
-            },
-          ],
-        },
-      },
-      createdAt: "2026-03-10T14:56:02Z",
-    },
-    {
-      sequenceNumber: 1,
-      eventType: "assistant",
-      eventData: {
-        message: {
-          content: [
-            {
-              type: "text",
-              text: "Summarized billing status for the workspace.",
-            },
-          ],
-        },
-      },
-      createdAt: "2026-03-10T14:56:04Z",
-    },
-  ];
-  const runContext = {
-    prompt: "Inspect the latest OAuth trace",
-    appendSystemPrompt: "Prefer concise findings",
-    runId: "b0000000-0000-4000-a000-000000000777",
-    sessionId: "session-inspect",
-    secretNames: ["github-token"],
-    vars: { ACCOUNT_ID: "acct_123" },
-    environment: { NODE_ENV: "test" },
-    firewalls: [
-      {
-        name: "github",
-        apis: [
-          {
-            base: "https://api.github.com",
-            permissions: [
-              {
-                name: "read-repos",
-                description: "Read repositories",
-                rules: ["GET /repos/*"],
-              },
-            ],
-          },
-        ],
-      },
-    ],
-    networkPolicies: null,
-    volumes: [
-      {
-        name: "workspace",
-        mountPath: "/workspace",
-        vasStorageName: "storage-workspace",
-        vasVersionId: "version-1",
-      },
-    ],
-    artifact: {
-      mountPath: "/artifact",
-      vasStorageName: "artifact-storage",
-      vasVersionId: "artifact-version",
-    },
-    featureFlags: { okouDebug: true },
-  };
-  const networkLogs: NetworkLogEntry[] = [
-    {
-      timestamp: "2026-03-10T14:56:03.000Z",
-      type: "http",
-      action: "ALLOW",
-      method: "GET",
-      url: "https://api.github.com/repos/okou-ai/okou",
-      status: 200,
-      latency_ms: 123,
-      request_size: 42,
-      response_size: 2048,
-      firewall_name: "github",
-      firewall_permission: "read-repos",
-      browser_user_agent: true,
-      connector_diagnostic_slug: "github-connector",
-      request_headers: { "Content-Type": "application/json" },
-      request_headers_truncated: true,
-      response_headers: {},
-      response_headers_truncated: true,
-    },
-    {
-      timestamp: "2026-03-10T14:56:04.000Z",
-      type: "http",
-      action: "ALLOW",
-      method: "POST",
-      url: "https://slack.com/api/auth.test",
-      status: 401,
-      latency_ms: 87,
-      request_size: 24,
-      response_size: 512,
-      connector_diagnostic_slug: "slack-connector",
-    },
-  ];
-
-  return new File(
-    [
-      JSON.stringify({
-        meta,
-        events,
-        context: runContext,
-        networkLogs,
-      }),
-    ],
-    "activity-log.json",
-    { type: "application/json" },
-  );
 }
 
-function codexInspectFile(): File {
-  const meta: Partial<LogDetail> = {
-    id: "b0000000-0000-4000-a000-000000000778",
-    sessionId: "codex-inspect-session",
-    agentId: "c0000000-0000-4000-a000-000000000002",
-    displayName: "Imported Codex Adapter Log",
-    framework: "codex",
-    modelProvider: null,
-    selectedModel: null,
-    triggerSource: "test",
-    status: "failed",
-    prompt: "Inspect Codex adapter events",
-    appendSystemPrompt: "Prefer normalized Codex rows",
-    failureReason: "unknown",
-    createdAt: "2026-03-10T16:56:00Z",
-    startedAt: "2026-03-10T16:56:01Z",
-    completedAt: "2026-03-10T16:56:06Z",
-  };
-  const events: AgentEvent[] = [
-    {
-      sequenceNumber: 0,
-      eventType: "item.completed",
-      eventData: {
-        type: "item.completed",
-        turn_id: "inspect-turn-1",
-        item: {
-          id: "inspect-message",
-          type: "agent_message",
-          status: "completed",
-          text: "Codex inspect assistant output remains visible.",
-        },
-      },
-      createdAt: "2026-03-10T16:56:02Z",
-    },
-    {
-      sequenceNumber: 1,
-      eventType: "warning",
-      eventData: {
-        type: "warning",
-        thread_id: "codex-inspect-session",
-        message: "Inspect adapter warning",
-      },
-      createdAt: "2026-03-10T16:56:03Z",
-    },
-    {
-      sequenceNumber: 2,
-      eventType: "turn.plan.updated",
-      eventData: {
-        type: "turn.plan.updated",
-        turn_id: "inspect-turn-1",
-        explanation: "Inspect normalized plan",
-        plan: [{ step: "Review imported Codex event", status: "completed" }],
-      },
-      createdAt: "2026-03-10T16:56:04Z",
-    },
-    {
-      sequenceNumber: 3,
-      eventType: "error",
-      eventData: {
-        type: "error",
-        turn_id: "inspect-turn-1",
-        message: "Inspect transport failed",
-        error: {
-          message: "Inspect transport failed",
-          additional_details: "inspect socket closed",
-        },
-      },
-      createdAt: "2026-03-10T16:56:05Z",
-    },
-    {
-      sequenceNumber: 4,
-      eventType: "turn.completed",
-      eventData: {
-        type: "turn.completed",
-        turn: {
-          id: "inspect-turn-1",
-          status: "failed",
-          error: {
-            message: "Inspect turn failed",
-            codex_error_info: "inspect model stopped",
-          },
-        },
-      },
-      createdAt: "2026-03-10T16:56:06Z",
-    },
-  ];
-  const runContext = {
-    prompt: "Inspect Codex adapter events",
-    appendSystemPrompt: "Prefer normalized Codex rows",
-    runId: "b0000000-0000-4000-a000-000000000778",
-    sessionId: "codex-inspect-session",
-    secretNames: [],
-    vars: {},
-    environment: {},
+function runContext() {
+  return {
+    prompt: "Review the release",
+    appendSystemPrompt: null,
+    runId: "d0000000-0000-4000-a000-000000000f51",
+    sessionId: "session-f51",
+    secretNames: [SECRET_NAME],
+    vars: { REGION: "eu-west-1" },
+    environment: { NODE_ENV: "production" },
     firewalls: [],
     networkPolicies: null,
-    volumes: [],
-    artifact: null,
-    featureFlags: { okouDebug: true },
-  };
-
-  return new File(
-    [
-      JSON.stringify({
-        meta,
-        events,
-        context: runContext,
-        networkLogs: [],
-      }),
+    storageMounts: [
+      {
+        name: "release-notes",
+        version: "v3",
+        mountPath: "/workspace/notes",
+        writeback: false,
+      },
+      {
+        name: "release-artifacts",
+        version: "v7",
+        mountPath: "/workspace/artifacts",
+        writeback: true,
+      },
     ],
-    "codex-activity-log.json",
-    { type: "application/json" },
-  );
-}
-
-function codexThreadItemsInspectFile(): File {
-  const meta: Partial<LogDetail> = {
-    id: "b0000000-0000-4000-a000-000000000779",
-    sessionId: "codex-thread-items-session",
-    agentId: "c0000000-0000-4000-a000-000000000003",
-    displayName: "Imported Codex Thread Items",
-    framework: "codex",
-    modelProvider: null,
-    selectedModel: null,
-    triggerSource: "test",
-    status: "completed",
-    prompt: "Inspect Codex thread items",
-    appendSystemPrompt: null,
-    createdAt: "2026-03-10T18:00:00Z",
-    startedAt: "2026-03-10T18:00:01Z",
-    completedAt: "2026-03-10T18:00:12Z",
+    featureFlags: null,
   };
-  const events: AgentEvent[] = [
-    {
-      sequenceNumber: 0,
-      eventType: "item.started",
-      eventData: {
-        type: "item.started",
-        item: {
-          id: "collab-new-shape",
-          type: "collab_agent_tool_call",
-          tool: "spawn_agent",
-          status: "in_progress",
-          receiver_thread_ids: ["subagent-new"],
-          prompt: "inspect the new guest shape",
-          model: "gpt-5",
-          reasoning_effort: "high",
-          agents_states: {
-            "subagent-new": { status: "running", message: null },
-          },
-        },
-      },
-      createdAt: "2026-03-10T18:00:02Z",
-    },
-    {
-      sequenceNumber: 1,
-      eventType: "item.completed",
-      eventData: {
-        type: "item.completed",
-        item: {
-          id: "collab-new-shape",
-          type: "collab_agent_tool_call",
-          tool: "spawn_agent",
-          status: "completed",
-          receiver_thread_ids: ["subagent-new"],
-          prompt: "inspect the new guest shape",
-          model: "gpt-5",
-          reasoning_effort: "high",
-          agents_states: {
-            "subagent-new": {
-              status: "completed",
-              message: "new shape inspected",
-            },
-          },
-        },
-      },
-      createdAt: "2026-03-10T18:00:03Z",
-    },
-    {
-      sequenceNumber: 2,
-      eventType: "item.completed",
-      eventData: {
-        type: "item.completed",
-        item: {
-          id: "collab-old-shape",
-          type: "collab_agent_tool_call",
-          tool: "spawn_agent",
-          status: "completed",
-          receiver_thread_ids: ["subagent-old"],
-          prompt: "inspect the old guest shape",
-          model: "gpt-5",
-          reasoning_effort: "medium",
-          agents_states: {},
-        },
-      },
-      createdAt: "2026-03-10T18:00:04Z",
-    },
-    ...["started", "interacted", "interrupted", "completed"].map(
-      (kind, index): AgentEvent => {
-        return {
-          sequenceNumber: index + 3,
-          eventType: "item.completed",
-          eventData: {
-            type: "item.completed",
-            item: {
-              id: `subagent-activity-${kind}`,
-              type: "sub_agent_activity",
-              kind,
-              agent_thread_id: "subagent-new",
-              agent_path: "/root/researcher",
-            },
-          },
-          createdAt: `2026-03-10T18:00:0${index + 5}Z`,
-        };
-      },
-    ),
-    {
-      sequenceNumber: 7,
-      eventType: "item.started",
-      eventData: {
-        type: "item.started",
-        item: { id: "context-compaction", type: "context_compaction" },
-      },
-      createdAt: "2026-03-10T18:00:09Z",
-    },
-    {
-      sequenceNumber: 8,
-      eventType: "item.completed",
-      eventData: {
-        type: "item.completed",
-        item: { id: "context-compaction", type: "context_compaction" },
-      },
-      createdAt: "2026-03-10T18:00:10Z",
-    },
-    {
-      sequenceNumber: 9,
-      eventType: "item.completed",
-      eventData: {
-        type: "item.completed",
-        item: {
-          id: "future-item",
-          type: "future_operation",
-          status: "completed",
-          label: "future item remains generic",
-        },
-      },
-      createdAt: "2026-03-10T18:00:11Z",
-    },
-  ];
-
-  return new File(
-    [JSON.stringify({ meta, events, networkLogs: [] })],
-    "codex-thread-items-log.json",
-    { type: "application/json" },
-  );
 }
 
-function oversizedInspectFile(): File {
-  const file = new File(["{}"], "oversized-activity-log.json", {
+function exportedLog(overrides: Record<string, unknown> = {}): File {
+  const log = {
+    meta: {
+      id: "d0000000-0000-4000-a000-000000000f51",
+      displayName: "Release review",
+      framework: "claude-code",
+      status: "completed",
+      triggerSource: "web",
+      createdAt: "2026-11-20T07:00:00.000Z",
+      startedAt: "2026-11-20T07:00:01.000Z",
+      completedAt: "2026-11-20T07:00:31.000Z",
+      prompt: "Review the release",
+    },
+    events: [assistantEvent(1, "Checked the release checklist.")],
+    context: runContext(),
+    networkLogs: [],
+    ...overrides,
+  };
+  return new File([JSON.stringify(log)], "release-review.json", {
     type: "application/json",
   });
-  Object.defineProperty(file, "size", {
-    value: 26 * 1024 * 1024,
-  });
-  Object.defineProperty(file, "text", {
-    value: () => {
-      return Promise.reject(new Error("oversized file should not be read"));
-    },
-  });
-  return file;
 }
 
-function getFileInput(): HTMLInputElement {
-  return screen.getByLabelText<HTMLInputElement>("Upload JSON");
-}
-
-function getTabByText(text: string): HTMLElement {
-  const tab = queryAllByRoleFast("tab").find((el) => {
-    return el.textContent?.trim() === text;
+async function uploadLog(file: File, debug: boolean): Promise<void> {
+  await setupPage({
+    context,
+    path: "/activities/inspect",
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: debug },
   });
-  if (!tab) {
-    throw new Error(`Could not find tab: ${text}`);
+  await expect(
+    screen.findByRole("heading", { name: "No log loaded" }),
+  ).resolves.toBeInTheDocument();
+  const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+  if (!input) {
+    throw new Error("Expected the log upload input");
   }
-  return tab;
+  await userEvent.upload(input, file);
+}
+
+const TOKEN_URL = "https://api.stripe.test/v1/oauth/token";
+const INVOICES_URL = "https://api.stripe.test/v1/invoices";
+
+function networkLogs() {
+  return [
+    {
+      timestamp: "2026-11-20T07:00:05.000Z",
+      type: "http",
+      method: "POST",
+      url: TOKEN_URL,
+      host: "api.stripe.test",
+      status: 200,
+      latency_ms: 120,
+      firewall_name: "stripe",
+      firewall_permission: "oauth:refresh",
+      request_headers: {
+        authorization: "Bearer redacted",
+        "content-type": "application/json",
+      },
+      request_headers_truncated: true,
+      response_headers: { "content-type": "application/json" },
+      response_headers_truncated: false,
+    },
+    {
+      timestamp: "2026-11-20T07:00:06.000Z",
+      type: "http",
+      method: "GET",
+      url: INVOICES_URL,
+      host: "api.stripe.test",
+      status: 404,
+      latency_ms: 80,
+      firewall_name: "billing",
+      firewall_permission: "invoices:read",
+    },
+  ];
+}
+
+function tab(name: string): HTMLElement {
+  const found = queryAllByRoleFast("tab").find((candidate) => {
+    return candidate.textContent?.trim() === name;
+  });
+  if (!found) {
+    throw new Error(`Expected the ${name} tab`);
+  }
+  return found;
+}
+
+function disclosure(url: string): HTMLElement {
+  const found = queryAllByRoleFast("button").find((candidate) => {
+    return (
+      candidate.getAttribute("aria-label") === url &&
+      candidate.hasAttribute("aria-expanded")
+    );
+  });
+  if (!found) {
+    throw new Error(`Expected the request disclosure for ${url}`);
+  }
+  return found;
+}
+
+function requestRow(url: string): HTMLElement {
+  const row = disclosure(url).closest("tr");
+  if (!row) {
+    throw new Error(`Expected the request row for ${url}`);
+  }
+  return row;
+}
+
+async function openNetworkTab(): Promise<void> {
+  await userEvent.click(tab("Network"));
+  await waitFor(() => {
+    expect(disclosure(TOKEN_URL)).toHaveAttribute("aria-expanded", "false");
+  });
 }
 
 test("A user can inspect steps, context, and network details from an exported log", async () => {
-  await setupPage({
-    context,
-    path: "/activities/inspect",
-    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
-  });
+  await uploadLog(
+    exportedLog({
+      events: [
+        assistantEvent(1, "Refreshed the OAuth token for Stripe."),
+        assistantEvent(2, "Listed the latest invoices."),
+      ],
+      networkLogs: networkLogs(),
+    }),
+    true,
+  );
 
-  await waitFor(() => {
-    expect(screen.getByText("No log loaded")).toBeInTheDocument();
-  });
+  await expect(
+    screen.findByText("Listed the latest invoices."),
+  ).resolves.toBeInTheDocument();
   expect(
-    screen.getByText("Upload an activity log JSON file to inspect it."),
+    screen.getByText("Refreshed the OAuth token for Stripe."),
   ).toBeInTheDocument();
-
-  const fileInput = getFileInput();
-  const uploadLabel = screen.getByText("Upload JSON");
-  expect(uploadLabel).not.toHaveAttribute("role", "button");
-  // Upload through the visible label, so the test exercises its input association.
-  await user.upload(uploadLabel, inspectFile());
-  expect(fileInput).toHaveValue("");
-
-  await waitFor(() => {
-    expect(
-      screen.getByRole("heading", { name: "Imported Analysis" }),
-    ).toBeInTheDocument();
-  });
   expect(screen.getByText("Done")).toBeInTheDocument();
-  expect(screen.getByText("5.0s")).toBeInTheDocument();
-  expect(screen.getByText(/^\d{2}:\d{2}:\d{2}\.000$/)).toBeInTheDocument();
-  expect(
-    screen.getAllByText(/^\d{2}:\d{2}:\d{2}\.000 \(\+00:01\.000\)$/),
-  ).toHaveLength(2);
-  expect(
-    screen.getAllByText(/^\d{2}:\d{2}:\d{2}\.000 \(\+00:03\.000\)$/),
-  ).toHaveLength(2);
-  expect(
-    screen.getByText("Collected OAuth evidence from network logs."),
-  ).toBeInTheDocument();
-  expect(
-    screen.getByText("Summarized billing status for the workspace."),
-  ).toBeInTheDocument();
+  expect(screen.getByText("30.0s")).toBeInTheDocument();
+  // Each step carries its time relative to the run start.
+  expect(screen.getAllByText(/\(\+00:00\.000\)/u).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/\(\+00:01\.000\)/u).length).toBeGreaterThan(0);
 
-  await fill(screen.getByPlaceholderText("Search steps"), "OAuth");
-
-  await waitFor(() => {
-    expect(screen.getByText("(1/2 matched)")).toBeInTheDocument();
-  });
-  expect(
-    screen.getByText("Collected OAuth evidence from network logs."),
-  ).toBeInTheDocument();
-  expect(
-    screen.queryByText("Summarized billing status for the workspace."),
-  ).not.toBeInTheDocument();
-
-  click(getTabByText("Context"));
-
-  await waitFor(() => {
-    expect(screen.getByText("github-token")).toBeInTheDocument();
-  });
-  expect(screen.getByText("ACCOUNT_ID")).toBeInTheDocument();
-  expect(screen.getByText("acct_123")).toBeInTheDocument();
-  expect(screen.getByText("storage-workspace")).toBeInTheDocument();
-  expect(screen.getByText("artifact-storage")).toBeInTheDocument();
-  expect(screen.getByText("Read only")).toBeInTheDocument();
-  expect(screen.getByText("Read/write")).toBeInTheDocument();
-
-  click(getTabByText("Network"));
-
+  const user = userEvent.setup({ delay: null });
+  await user.type(screen.getByPlaceholderText("Search steps"), "OAuth");
   await waitFor(() => {
     expect(
-      screen.getByText("https://api.github.com/repos/okou-ai/okou"),
-    ).toBeInTheDocument();
+      screen.queryByText("Listed the latest invoices."),
+    ).not.toBeInTheDocument();
   });
-  const networkTable = screen.getByRole("table");
-  expect(within(networkTable).getByText("GET")).toBeInTheDocument();
-  expect(within(networkTable).getByText("200")).toBeInTheDocument();
-  expect(within(networkTable).getByText("123ms")).toBeInTheDocument();
-  expect(within(networkTable).getByText("github")).toBeInTheDocument();
+  expect(
+    screen.getByText("Refreshed the OAuth token for Stripe."),
+  ).toBeInTheDocument();
 
-  const networkRows = within(networkTable).getAllByRole("row");
-  const networkRow = networkRows[1];
-  if (!networkRow) {
-    throw new Error("Expected a network log row");
-  }
-  const disclosure = queryAllByRoleFast("button", networkRow)[0];
-  if (!disclosure) {
-    throw new Error("Expected a network detail disclosure button");
-  }
-  expect(disclosure).toHaveAccessibleName(
-    "https://api.github.com/repos/okou-ai/okou",
-  );
-  expect(disclosure).toHaveAttribute("aria-expanded", "false");
-  const detailsId = disclosure.getAttribute("aria-controls");
-  if (!detailsId) {
-    throw new Error("Expected a controlled network detail row");
-  }
-  const details = document.getElementById(detailsId);
-  expect(details).not.toBeVisible();
-
-  const targetText = within(networkRow).getByText(
-    "https://api.github.com/repos/okou-ai/okou",
-  );
-  expect(targetText.closest("button, a")).toBeNull();
-
-  click(within(networkRow).getByText("200"));
-  expect(disclosure).toHaveAttribute("aria-expanded", "true");
-  expect(details).toBeVisible();
-
-  click(networkRow);
-  expect(disclosure).toHaveAttribute("aria-expanded", "false");
-  expect(details).not.toBeVisible();
-
-  await user.click(disclosure);
+  await user.click(tab("Context"));
+  const root = document.body;
   await waitFor(() => {
-    expect(screen.getByText("github-connector")).toBeInTheDocument();
+    expect(root).toHaveTextContent(SECRET_NAME);
   });
-  expect(disclosure).toHaveAttribute("aria-expanded", "true");
-  expect(disclosure).toHaveFocus();
-  expect(details).toBeVisible();
-  expect(details).toHaveRole("row");
-  expect(screen.getAllByText("Connector Diagnostic")).toHaveLength(1);
-  expect(screen.getByText("Request Headers (1)")).toBeInTheDocument();
-  expect(screen.getByText("Response Headers (0)")).toBeInTheDocument();
-  expect(screen.getAllByText("truncated")).toHaveLength(2);
-
-  await user.keyboard("{Enter}");
-  expect(disclosure).toHaveAttribute("aria-expanded", "false");
-  expect(disclosure).toHaveFocus();
-  expect(details).not.toBeVisible();
-
-  await user.keyboard(" ");
-  expect(disclosure).toHaveAttribute("aria-expanded", "true");
-  expect(disclosure).toHaveFocus();
-  expect(details).toBeVisible();
-
-  const requestHeaders = screen.getByText("Request Headers (1)");
-  await user.click(requestHeaders);
-  expect(screen.getByText("Content-Type")).toBeVisible();
-  expect(disclosure).toHaveAttribute("aria-expanded", "true");
-
-  await user.click(disclosure);
-  expect(disclosure).toHaveAttribute("aria-expanded", "false");
-  expect(details).not.toBeVisible();
-  const nextDisclosure = queryAllByRoleFast("button", networkTable).find(
-    (button) => {
-      return (
-        button.getAttribute("aria-label") === "https://slack.com/api/auth.test"
-      );
-    },
+  expect(root).toHaveTextContent("REGIONeu-west-1");
+  expect(root).toHaveTextContent("NODE_ENVproduction");
+  expect(root).toHaveTextContent("release-notes/workspace/notesv3Read only");
+  expect(root).toHaveTextContent(
+    "release-artifacts/workspace/artifactsv7Read/write",
   );
-  if (!nextDisclosure) {
-    throw new Error("Expected the next network detail disclosure button");
-  }
-  expect(nextDisclosure).not.toHaveAttribute("aria-controls", detailsId);
-  await user.click(nextDisclosure);
-  expect(nextDisclosure).toHaveFocus();
-  expect(screen.getByText("slack-connector")).toBeInTheDocument();
-  expect(disclosure).toHaveAttribute("aria-expanded", "false");
+
+  await openNetworkTab();
+  const tokenRow = requestRow(TOKEN_URL);
+  expect(tokenRow).toHaveTextContent("POST");
+  expect(tokenRow).toHaveTextContent("200");
+  expect(tokenRow).toHaveTextContent("120ms");
+  expect(tokenRow).toHaveTextContent("stripe");
+
+  // Pointer opens and closes the request details.
+  click(disclosure(TOKEN_URL));
+  await waitFor(() => {
+    expect(disclosure(TOKEN_URL)).toHaveAttribute("aria-expanded", "true");
+  });
+  const details = document.getElementById(
+    disclosure(TOKEN_URL).getAttribute("aria-controls") ?? "",
+  );
+  expect(details).toHaveTextContent("Permissionoauth:refresh");
+  expect(details).toHaveTextContent("Request Headers (2)truncated");
+  expect(details).toHaveTextContent("Response Headers (1)complete");
+  click(disclosure(TOKEN_URL));
+  await waitFor(() => {
+    expect(disclosure(TOKEN_URL)).toHaveAttribute("aria-expanded", "false");
+  });
+
+  // Keyboard does the same from the focused disclosure.
+  disclosure(TOKEN_URL).focus();
+  await user.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(disclosure(TOKEN_URL)).toHaveAttribute("aria-expanded", "true");
+  });
+  await user.keyboard(" ");
+  await waitFor(() => {
+    expect(disclosure(TOKEN_URL)).toHaveAttribute("aria-expanded", "false");
+  });
+
+  click(disclosure(INVOICES_URL));
+  await waitFor(() => {
+    expect(disclosure(INVOICES_URL)).toHaveAttribute("aria-expanded", "true");
+  });
+  const invoiceDetails = document.getElementById(
+    disclosure(INVOICES_URL).getAttribute("aria-controls") ?? "",
+  );
+  expect(invoiceDetails).toHaveTextContent("Firewallbilling");
+  expect(invoiceDetails).toHaveTextContent("Permissioninvoices:read");
+  expect(invoiceDetails).not.toHaveTextContent("oauth:refresh");
 });
 
 test("Selecting and copying a network URL preserves its request details", async () => {
-  await setupPage({
-    context,
-    path: "/activities/inspect?tab=network",
-    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
-  });
-  await screen.findByText("No log loaded");
-  await user.upload(getFileInput(), inspectFile());
-  const target = "https://api.github.com/repos/okou-ai/okou";
-  const url = await screen.findByText(target);
-  const row = url.closest("tr");
-  if (!row) {
-    throw new Error("Expected the network URL in a request row");
-  }
-  const disclosure = queryAllByRoleFast("button", row)[0];
-  if (!disclosure) {
-    throw new Error("Expected a network detail disclosure button");
-  }
+  await uploadLog(exportedLog({ networkLogs: networkLogs() }), true);
+  await screen.findByText("Checked the release checklist.");
+  const user = userEvent.setup({ delay: null });
+  await openNetworkTab();
+  const urlCell = within(requestRow(TOKEN_URL)).getByText(TOKEN_URL);
+  const selectUrl = () => {
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    const range = document.createRange();
+    range.selectNodeContents(urlCell);
+    selection?.addRange(range);
+  };
 
-  await user.pointer([
-    { target: url, offset: 0, keys: "[MouseLeft>]" },
-    { offset: target.length },
-    { keys: "[/MouseLeft]" },
-  ]);
-  expect(window.getSelection()?.toString()).toBe(target);
-  expect(disclosure).toHaveAttribute("aria-expanded", "false");
+  selectUrl();
+  fireEvent.click(urlCell);
   await user.copy();
-  await expect(navigator.clipboard.readText()).resolves.toBe(target);
 
-  // Explicit arrow activation still works while a URL selection exists.
-  click(disclosure);
-  expect(disclosure).toHaveAttribute("aria-expanded", "true");
-  await user.pointer([
-    { target: url, offset: 0, keys: "[MouseLeft>]" },
-    { offset: target.length },
-    { keys: "[/MouseLeft]" },
-  ]);
-  expect(window.getSelection()?.toString()).toBe(target);
-  expect(disclosure).toHaveAttribute("aria-expanded", "true");
-  expect(screen.getByText("github-connector")).toBeInTheDocument();
+  await expect(navigator.clipboard.readText()).resolves.toBe(TOKEN_URL);
+  expect(disclosure(TOKEN_URL)).toHaveAttribute("aria-expanded", "false");
+
+  click(disclosure(TOKEN_URL));
+  await waitFor(() => {
+    expect(disclosure(TOKEN_URL)).toHaveAttribute("aria-expanded", "true");
+  });
+  selectUrl();
+  fireEvent.click(urlCell);
+  expect(disclosure(TOKEN_URL)).toHaveAttribute("aria-expanded", "true");
 
   window.getSelection()?.removeAllRanges();
-  click(within(row).getByText("GET"));
-  expect(disclosure).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(within(requestRow(TOKEN_URL)).getByText("POST"));
+  await waitFor(() => {
+    expect(disclosure(TOKEN_URL)).toHaveAttribute("aria-expanded", "false");
+  });
 });
 
 test("An imported log does not expose debug diagnostics when debug access is disabled", async () => {
-  await setupPage({
-    context,
-    path: "/activities/inspect?tab=context",
-  });
+  await uploadLog(exportedLog(), false);
 
-  await waitFor(() => {
-    expect(screen.getByText("No log loaded")).toBeInTheDocument();
-  });
-
-  await user.upload(getFileInput(), inspectFile());
-
-  await waitFor(() => {
-    expect(
-      screen.getByRole("heading", { name: "Imported Analysis" }),
-    ).toBeInTheDocument();
-  });
-
-  expect(
-    screen.getByText("Collected OAuth evidence from network logs."),
-  ).toBeInTheDocument();
-  expect(
-    queryAllByRoleFast("tab").some((element) => {
-      return element.textContent === "Context";
-    }),
-  ).toBeFalsy();
-  expect(screen.queryByText("github-token")).not.toBeInTheDocument();
-});
-
-test("Imported activities preserve their trigger source", async () => {
-  await setupPage({ context, path: "/activities/inspect" });
-  await screen.findByText("No log loaded");
-  await user.upload(getFileInput(), inspectFile());
-  await screen.findByRole("heading", { name: "Imported Analysis" });
-  expect(screen.getByText("Source")).toBeInTheDocument();
-  expect(screen.getByText("Test")).toBeInTheDocument();
-});
-
-test("The inspector presents exported Codex events as readable activity steps", async () => {
-  await setupPage({
-    context,
-    path: "/activities/inspect",
-    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
-  });
-
-  await waitFor(() => {
-    expect(screen.getByText("No log loaded")).toBeInTheDocument();
-  });
-
-  await user.upload(getFileInput(), codexInspectFile());
-
-  await waitFor(() => {
-    expect(
-      screen.getByRole("heading", { name: "Imported Codex Adapter Log" }),
-    ).toBeInTheDocument();
-  });
-
-  expect(screen.getByText("Failed")).toBeInTheDocument();
-  expect(
-    screen.getByText("Codex inspect assistant output remains visible."),
-  ).toBeInTheDocument();
   await expect(
-    screen.findByText("[warning] Inspect adapter warning"),
+    screen.findByText("Checked the release checklist."),
   ).resolves.toBeInTheDocument();
   expect(
-    screen.getByText((_, element) => {
-      return (
-        element?.tagName === "P" &&
-        element.textContent?.includes("Inspect normalized plan") === true
-      );
-    }),
+    screen.getByRole("heading", { name: "Release review" }),
   ).toBeInTheDocument();
-  expect(
-    screen.getAllByText(/Inspect transport failed \(inspect socket closed\)/u),
-  ).toHaveLength(1);
-  expect(
-    screen.getByText(/Inspect turn failed \(inspect model stopped\)/u),
-  ).toBeInTheDocument();
-  expect(screen.queryByText(/\[object Object\]/u)).not.toBeInTheDocument();
+  expect(queryAllByRoleFast("tab")).toStrictEqual([]);
+  expect(document.body).not.toHaveTextContent(SECRET_NAME);
+});
 
-  await fill(
-    screen.getByPlaceholderText("Search steps"),
-    "Inspect adapter warning",
+function codexEvent(
+  sequenceNumber: number,
+  eventType: string,
+  eventData: Record<string, unknown>,
+) {
+  return {
+    sequenceNumber,
+    eventType,
+    createdAt: `2026-11-20T07:00:0${sequenceNumber + 1}.000Z`,
+    eventData: { type: eventType, ...eventData },
+  };
+}
+
+test("The inspector presents exported Codex events as readable activity steps", async () => {
+  await uploadLog(
+    exportedLog({
+      meta: {
+        id: "d0000000-0000-4000-a000-000000000f55",
+        displayName: "Migrate billing",
+        framework: "codex",
+        status: "failed",
+        createdAt: "2026-11-20T07:00:00.000Z",
+        startedAt: "2026-11-20T07:00:01.000Z",
+        completedAt: "2026-11-20T07:00:21.000Z",
+      },
+      events: [
+        codexEvent(1, "item.completed", {
+          item: {
+            id: "msg-1",
+            type: "agent_message",
+            text: "Started the billing migration.",
+          },
+        }),
+        codexEvent(2, "warning", { message: "Rate limit is close." }),
+        codexEvent(3, "turn.plan.updated", {
+          plan: [{ step: "Run billing migrations", status: "in_progress" }],
+        }),
+        codexEvent(4, "error", {
+          message: "Sandbox denied the write to /etc/billing.",
+        }),
+        // Codex reports the failed turn's error as an object.
+        codexEvent(5, "turn.failed", {
+          error: {
+            message: "Turn stopped after the sandbox denial.",
+            code: "sandbox_denied",
+          },
+        }),
+      ],
+    }),
+    true,
   );
 
-  await waitFor(() => {
-    expect(screen.getByText("(1/4 matched)")).toBeInTheDocument();
-  });
-  expect(
-    screen.getByText("[warning] Inspect adapter warning"),
-  ).toBeInTheDocument();
-  expect(
-    screen.queryByText((_, element) => {
-      return (
-        element?.tagName === "P" &&
-        element.textContent?.includes("Inspect normalized plan") === true
-      );
-    }),
-  ).not.toBeInTheDocument();
-});
+  await expect(
+    screen.findByText("Started the billing migration."),
+  ).resolves.toBeInTheDocument();
+  const root = document.body;
+  expect(screen.getByText("Failed")).toBeInTheDocument();
+  expect(root).toHaveTextContent("[warning] Rate limit is close.");
+  expect(root).toHaveTextContent("[plan] in progress: Run billing migrations");
+  expect(root).toHaveTextContent("Sandbox denied the write to /etc/billing.");
+  expect(root).toHaveTextContent("Turn stopped after the sandbox denial.");
+  expect(root).not.toHaveTextContent("[object Object]");
 
-test("The activity inspector explains Codex collaboration events", async () => {
-  await setupPage({
-    context,
-    path: "/activities/inspect",
-    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
-  });
+  const user = userEvent.setup({ delay: null });
+  await user.type(screen.getByPlaceholderText("Search steps"), "Rate limit");
 
   await waitFor(() => {
-    expect(screen.getByText("No log loaded")).toBeInTheDocument();
+    expect(root).toHaveTextContent("(1/4 matched)");
   });
-
-  await user.upload(getFileInput(), codexThreadItemsInspectFile());
-
-  await waitFor(() => {
-    expect(
-      screen.getByRole("heading", { name: "Imported Codex Thread Items" }),
-    ).toBeInTheDocument();
-  });
-
-  expect(screen.getAllByTestId("tool-summary")).toHaveLength(2);
-  expect(screen.getAllByText("SpawnAgent")).toHaveLength(2);
-  expect(screen.getByText("Started subagent")).toBeInTheDocument();
-  expect(screen.getByText("Interacted with subagent")).toBeInTheDocument();
-  expect(screen.getByText("Interrupted subagent")).toBeInTheDocument();
-  expect(screen.getByText("Completed subagent")).toBeInTheDocument();
-  expect(screen.getAllByText("/root/researcher")).toHaveLength(4);
-  expect(screen.getAllByText("Compacted context")).toHaveLength(1);
-  expect(screen.getByText(/Codex future_operation/u)).toBeInTheDocument();
-  expect(screen.queryByText("Unknown")).not.toBeInTheDocument();
-  expect(
-    screen.queryByText(/Codex collab_agent_tool_call/u),
-  ).not.toBeInTheDocument();
-  expect(
-    screen.queryByText(/Codex sub_agent_activity/u),
-  ).not.toBeInTheDocument();
-  expect(
-    screen.queryByText(/Codex context_compaction/u),
-  ).not.toBeInTheDocument();
-});
-
-test("The inspector rejects activity logs larger than 25 MB", async () => {
-  await setupPage({
-    context,
-    path: "/activities/inspect",
-  });
-
-  await waitFor(() => {
-    expect(screen.getByText("No log loaded")).toBeInTheDocument();
-  });
-
-  await user.upload(getFileInput(), oversizedInspectFile());
-
-  await waitFor(() => {
-    expect(
-      screen.getByText(
-        "JSON file is too large. Upload an exported activity log JSON file under 25 MB.",
-      ),
-    ).toBeInTheDocument();
-  });
-  expect(
-    screen.queryByRole("heading", { name: "Imported Log" }),
-  ).not.toBeInTheDocument();
+  expect(root).not.toHaveTextContent("Run billing migrations");
+  expect(root).toHaveTextContent("[warning] Rate limit is close.");
 });

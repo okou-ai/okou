@@ -1,620 +1,277 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { HttpResponse } from "msw";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import {
+  chatThreadDraftContract,
+  type UserMessageDocument,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { workflowsCollectionContract } from "@okouai/api-contracts/contracts/workflows";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import {
-  uploadsContract,
-  workflowsCollectionContract,
-} from "@okouai/api-contracts";
-import {
-  PRESENTATION_TEMPLATE_PICKER_ITEMS,
-  WORKFLOW_TEMPLATE_ITEMS,
-} from "@okouai/core";
 import { expect, test } from "vitest";
-import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
-import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
-
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  click,
-  fill,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import { mockChatLifecycle } from "./chat-test-helpers.ts";
-import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
-import {
-  composerInlineTemplates,
-  expectInlineTemplateInComposer,
-  findComposerEditor,
-  selectTemplate,
-  THREAD_ID,
-  createChatComposerHelpers,
-} from "./chat-composer-test-helpers.ts";
+  createChatRunFixtures,
+  promptEvent,
+  RUN_PATH,
+} from "./chat-run-test-fixtures.ts";
+import { findAction } from "./connector-integrations-test-helpers.ts";
+import { workflowOptions, slashChoice } from "./workflow-composer-boundary.ts";
 
 const context = testContext();
-const { mockActiveTemplateThread, mockAgent, mockThread } =
-  createChatComposerHelpers(context);
 
-function installWorkflows(read: () => readonly ComposerWorkflow[]): void {
-  context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
-    return respond(200, [...read()]);
-  });
-}
-
-function workflow(
-  name: string,
-  options: {
-    readonly displayName?: string | null;
-    readonly description?: string | null;
-  } = {},
-): ComposerWorkflow {
+function deck(title: string, id: string) {
   return {
-    id: crypto.randomUUID(),
-    name,
-    displayName: options.displayName ?? null,
-    description: options.description ?? `${name} description`,
+    type: "template" as const,
+    titleSnapshot: title,
+    template: { type: "presentation" as const, selection: { templateId: id } },
   };
 }
 
-function slashMenu(): HTMLElement {
-  return screen.getByTestId("slash-workflow-menu");
-}
-
-function slashMenuButtons(): HTMLElement[] {
-  return queryAllByRoleFast("button", slashMenu());
-}
-
-function slashWorkflowNames(): string[] {
-  return Array.from(
-    slashMenu().querySelectorAll('[data-slot="slash-workflow-name"]'),
-    (element) => {
-      return element.textContent ?? "";
-    },
-  );
-}
-
-function slashButton(name: string): HTMLElement {
-  const button = slashMenuButtons().find((candidate) => {
-    return candidate.textContent?.replace(/\s+/gu, " ").trim().startsWith(name);
-  });
-  if (!button) {
-    throw new Error(`Expected slash workflow button ${name}`);
-  }
-  return button;
-}
-
-function templateTab(name: string): HTMLElement {
-  const tab = queryAllByRoleFast("tab").find((candidate) => {
-    return candidate.textContent?.trim() === name;
-  });
-  if (!tab) {
-    throw new Error(`Expected template tab ${name}`);
-  }
-  return tab;
-}
-
-async function openTemplateCategory(category: string): Promise<HTMLElement> {
-  await clickComposerAddMenuItem("Template");
-  const dialog = await waitFor(() => {
-    const element = document.querySelector<HTMLElement>('[role="dialog"]');
-    if (!element) {
-      throw new Error("Expected the template picker dialog");
-    }
-    expect(element).toBeVisible();
-    return element;
-  });
-  const tab = templateTab(category);
-  click(tab);
-  await waitFor(() => {
-    expect(tab).toHaveAttribute("aria-selected", "true");
-  });
-  return dialog;
-}
-
-function structuredTemplateReferences(): HTMLElement[] {
-  return Array.from(
-    document.querySelectorAll<HTMLElement>(
-      "[data-structured-template-reference]",
-    ),
-  );
-}
-
-function workflowHighlights(editor: HTMLElement): HTMLElement[] {
-  return Array.from(
-    editor.querySelectorAll<HTMLElement>("span.text-brand-text"),
-  );
-}
-
-function composerFileInput(): HTMLInputElement {
-  const input = document.querySelector<HTMLInputElement>(
-    '[data-slot="chat-composer-card"] input[type="file"]',
-  );
-  if (!input) {
-    throw new Error("Expected composer file input");
-  }
-  return input;
-}
-
-function namedButton(name: string): HTMLElement {
-  const button = queryAllByRoleFast("button").find((candidate) => {
-    return (
-      candidate.getAttribute("aria-label") === name ||
-      candidate.textContent?.trim() === name
-    );
-  });
-  if (!button) {
-    throw new Error(`Expected button ${name}`);
-  }
-  return button;
-}
-
-test("Multiple inline templates preserve every reference when you send", async () => {
-  const first = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
-  const second = PRESENTATION_TEMPLATE_PICKER_ITEMS[1];
-  if (!first || !second) {
-    throw new Error("Expected at least two presentation templates");
-  }
-  let sentTemplateTitles: string[] = [];
-  mockAgent();
-  mockChatLifecycle(context, {
-    threadId: THREAD_ID,
-    threadTitle: "My thread",
-    onSendRequest: (body) => {
-      sentTemplateTitles =
-        body.userMessage?.parts.flatMap((part) => {
-          return part.type === "template" ? [part.titleSnapshot] : [];
-        }) ?? [];
-    },
-  });
-  installWorkflows(() => {
-    return [];
-  });
+function restore(parts: ReturnType<typeof deck>[]) {
   context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
     return respond(200, {
-      draftUserMessage: {
-        version: 1,
-        parts: [first, second].map((template) => {
-          return {
-            type: "template" as const,
-            titleSnapshot: template.title,
-            template: {
-              type: "presentation" as const,
-              selection: { templateId: template.templateId },
-            },
-          };
-        }),
-      },
+      draftUserMessage: { version: 1, parts },
       draftAttachments: null,
     });
   });
+}
 
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-
-  const user = userEvent.setup();
-  const editor = await findComposerEditor();
-  await expect(screen.findByLabelText("Add")).resolves.toBeVisible();
-
-  await waitFor(() => {
-    return expect(composerInlineTemplates()).toHaveLength(2);
-  });
-  expect(editor.textContent).not.toContain("Ask me to automate");
-
-  await user.click(editor);
-  await user.keyboard("{Enter}");
-
-  await waitFor(() => {
-    expect(sentTemplateTitles).toStrictEqual([first.title, second.title]);
-    expect(structuredTemplateReferences()).toHaveLength(2);
-  });
-  expect(
-    structuredTemplateReferences().map((reference) => {
-      return reference.textContent;
-    }),
-  ).toStrictEqual([first.title, second.title]);
-  expect(composerInlineTemplates()).toHaveLength(0);
-});
-
-test("Insert an attached workflow with slash suggestions", async () => {
-  mockAgent();
-  mockThread();
-  installWorkflows(() => {
-    return [
-      workflow("sales-research", { description: "Research qualified leads" }),
-      workflow("support-escalation", {
-        description: "Escalate support cases",
+test.each([
+  ["chat-composer-workflows-001", false],
+  ["chat-composer-workflows-006", true],
+] as const)(
+  "%s sends the selected presentation references and clears the composer",
+  async (_id, active) => {
+    const items = active
+      ? [deck("Inventory charts", "inventory")]
+      : [
+          deck("Field report", "field-report"),
+          deck("Revenue outlook", "revenue"),
+        ];
+    const sent = context.mocks.deferred<UserMessageDocument | undefined>();
+    createChatRunFixtures(context).installRunChat({
+      chatEvents: active
+        ? [
+            promptEvent({
+              id: crypto.randomUUID(),
+              runId: crypto.randomUUID(),
+              seqId: 1,
+              text: "Collect receipts",
+            }),
+          ]
+        : [],
+      onSendRequest: (b) => {
+        return sent.resolve(b.userMessage);
+      },
+      onQueuedEventAppend: (b) => {
+        return sent.resolve(b.userMessage);
+      },
+    });
+    restore(items);
+    await setupPage({ context, path: RUN_PATH });
+    if (active) {
+      await screen.findByText("Collect receipts", {
+        selector: '[data-role="user"] *',
+      });
+    }
+    const editor = await screen.findByLabelText("Message");
+    await waitFor(() => {
+      return expect(editor).toHaveTextContent(items[0].titleSnapshot);
+    });
+    click(await findAction("button", "Send"));
+    const submitted = await sent.promise;
+    expect(
+      submitted?.parts.filter((p) => {
+        return p.type === "template";
       }),
-      workflow("research-digest", { description: "Digest research" }),
-    ];
-  });
+    ).toStrictEqual(items);
+    await waitFor(() => {
+      return expect(editor.textContent?.trim()).toBe("");
+    });
+    const reference = await screen.findByText(items[0].titleSnapshot, {
+      exact: true,
+    });
+    expect(reference).toBeVisible();
+    const message = reference.closest('[data-role="user"]');
+    const chips = Array.from(
+      message!.querySelectorAll("[data-structured-template-reference]"),
+    );
+    expect(
+      chips.map((chip) => {
+        return chip.textContent;
+      }),
+    ).toStrictEqual(
+      items.map((item) => {
+        return item.titleSnapshot;
+      }),
+    );
+    for (const [index, chip] of chips.entries()) {
+      expect(chip).toBeVisible();
+      expect(chip).toHaveAccessibleDescription(
+        "Presentation · " + items[index].titleSnapshot,
+      );
+    }
+  },
+);
 
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-  });
-
-  const user = userEvent.setup();
-  const editor = await findComposerEditor();
-  await user.click(editor);
-  await user.keyboard("/");
-
+test("chat-composer-workflows-010 a URL after a workflow remains literal and creates no second highlight", async () => {
+  createChatRunFixtures(context).installRunChat();
+  workflowOptions(context, ["pr-review"]);
+  await setupPage({ context, path: RUN_PATH });
+  const editor = await screen.findByLabelText("Message");
+  await fill(editor, "/pr-review");
+  await slashChoice("pr-review");
+  await userEvent.keyboard(" ");
+  const url = "https://www.okou.ai/en/use-cases/pr-review";
+  await userEvent.setup({ delay: null }).paste(url);
   await waitFor(() => {
-    expect(slashButton("/sales-research")).toBeVisible();
-    expect(slashButton("/support-escalation")).toBeVisible();
+    return expect(editor).toHaveTextContent(url);
   });
-
-  await user.keyboard("ReSeArCh");
-  const prefix = await waitFor(() => {
-    return slashButton("/research-digest");
-  });
-  const substring = slashButton("/sales-research");
   expect(
-    prefix.compareDocumentPosition(substring) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  const emphasizedMatch = slashButton("/sales-research").querySelector(
-    '[data-slot="workflow-query-match"]',
-  );
-  expect(emphasizedMatch).toHaveTextContent("research");
-
-  // The matching Deep research capability precedes the workflow rows.
-  await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
-
-  await waitFor(() => {
-    expect(editor).toHaveTextContent("/sales-research");
-    expect(workflowHighlights(editor)).toHaveLength(1);
-    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-  });
+    [...editor.querySelectorAll(".text-brand-text")].map((n) => {
+      return n.textContent;
+    }),
+  ).toStrictEqual(["/pr-review"]);
+  expect(screen.queryByTestId("slash-workflow-menu")).not.toBeInTheDocument();
 });
 
-test("Reopen workflow suggestions after clearing a pending draft", async () => {
-  mockAgent();
-  mockThread();
-  const response = context.mocks.deferred<void>();
-  let workflows = [workflow("pr-review")];
+test("chat-composer-workflows-003 a reopened pending lookup resolves and its workflow remains selectable on a later search", async () => {
+  createChatRunFixtures(context).installRunChat();
+  const first = context.mocks.deferred<void>(),
+    started = context.mocks.deferred<void>();
+  const entry = {
+    id: crypto.randomUUID(),
+    name: "pr-review",
+    description: null,
+    displayName: null,
+  };
+  let available = true;
   context.mocks.api(
     workflowsCollectionContract.composer,
     async ({ respond }) => {
-      const items = [...workflows];
-      await response.promise;
-      return respond(200, items);
+      const result = available ? [entry] : [];
+      if (!started.settled()) {
+        started.resolve();
+      }
+      await first.promise;
+      return respond(200, result);
     },
   );
-
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-
-  const editor = await findComposerEditor();
+  await setupPage({ context, path: RUN_PATH });
+  const editor = await screen.findByLabelText("Message");
   await fill(editor, "/pr");
-  await expect(
-    screen.findByRole("status", { name: "Loading workflows..." }),
-  ).resolves.toBeInTheDocument();
-
+  await started.promise;
   await fill(editor, "");
   await fill(editor, "/pr");
-  response.resolve();
-  await waitFor(() => {
-    expect(slashButton("/pr-review")).toBeInTheDocument();
-  });
-
-  workflows = [];
+  first.resolve();
+  await slashChoice("pr-review");
   await fill(editor, "");
+  available = false;
   await fill(editor, "/pr");
-  const review = await waitFor(() => {
-    return slashButton("/pr-review");
-  });
-  click(review);
+  click(await slashChoice("pr-review"));
   await waitFor(() => {
-    expect(workflowHighlights(editor)).toHaveLength(1);
-  });
-  expect(workflowHighlights(editor)[0]).toHaveTextContent("/pr-review");
-});
-
-test("Find and insert a workflow with an abbreviated name", async () => {
-  mockAgent();
-  mockThread();
-  installWorkflows(() => {
-    return [
-      workflow("pr-design-acceptance-url"),
-      workflow("pr-url-design-acceptance"),
-      workflow("pr-auto"),
-    ];
-  });
-
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-
-  const user = userEvent.setup();
-  const editor = await findComposerEditor();
-  await user.click(editor);
-  await user.keyboard("Review /PdAu");
-
-  await waitFor(() => {
-    expect(slashWorkflowNames()).toStrictEqual(["/pr-design-acceptance-url"]);
-  });
-  const highlighted = Array.from(
-    slashButton("/pr-design-acceptance-url").querySelectorAll(
-      '[data-slot="workflow-query-match"]',
-    ),
-    (element) => {
-      return element.textContent;
-    },
-  );
-  expect(highlighted).toStrictEqual(["p", "d", "a", "u"]);
-
-  await user.keyboard("{Enter}");
-
-  await waitFor(() => {
-    expect(editor).toHaveTextContent(/^Review \/pr-design-acceptance-url\s*$/);
-    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+    return expect(editor.querySelector(".text-brand-text")).toHaveTextContent(
+      "/pr-review",
+    );
   });
 });
 
-test("Keep exact workflow names at the top ahead of prefixes, substrings, and abbreviations", async () => {
-  mockAgent();
-  mockThread();
-  installWorkflows(() => {
-    return [
-      workflow("pr-audit-report"),
-      workflow("team-pr-auto"),
-      workflow("pr-auto-deploy"),
-      workflow("pr-auto"),
-    ];
-  });
-
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-
-  const user = userEvent.setup();
-  const editor = await findComposerEditor();
-  await user.click(editor);
-  await user.keyboard("/pr-auto");
-
-  await waitFor(() => {
-    expect(slashWorkflowNames()).toStrictEqual([
-      "/pr-auto",
-      "/pr-auto-deploy",
-      "/team-pr-auto",
-      "/pr-audit-report",
-    ]);
-  });
-
-  await user.keyboard("{Enter}");
-
-  await waitFor(() => {
-    expect(editor).toHaveTextContent(/^\/pr-auto\s*$/);
-    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-  });
-});
-
-test("Send a template while the current run is active", async () => {
-  const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
-  if (!template) {
-    throw new Error("Expected a presentation template");
-  }
-  mockAgent();
-  mockActiveTemplateThread();
-  installWorkflows(() => {
-    return [];
-  });
-
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-
-  await findComposerEditor();
-  await expect(
-    screen.findByText("Start an active deck run"),
-  ).resolves.toBeVisible();
-  await selectTemplate(template);
-  await waitFor(() => {
-    expect(namedButton("Send")).toBeEnabled();
-  });
-  click(namedButton("Send"));
-
-  await waitFor(() => {
-    expect(composerInlineTemplates()).toHaveLength(0);
-    const reference = screen.getByText(template.title, {
-      selector: "[data-structured-template-reference] span",
-    });
-    expect(reference).toBeVisible();
-  });
-  expect((await findComposerEditor()).textContent).toBe("");
-});
-
-test("Use the workflow template picker to send a workflow template", async () => {
-  const template = WORKFLOW_TEMPLATE_ITEMS.find((item) => {
-    return item.id === "workflow-template:github-pr-summarizer";
-  });
-  if (!template) {
-    throw new Error("Expected the GitHub PR summarizer workflow template");
-  }
-  let sentTemplateTitle: string | undefined;
-  mockAgent();
-  mockChatLifecycle(context, {
-    threadId: THREAD_ID,
-    threadTitle: "Workflow templates",
-    onSendRequest: (body) => {
-      sentTemplateTitle = body.userMessage?.parts.find((part) => {
-        return part.type === "template";
-      })?.titleSnapshot;
+test("chat-composer-workflows-007 selecting GitHub PR summarizer sends the same workflow reference shown inline", async () => {
+  const sent = context.mocks.deferred<UserMessageDocument | undefined>();
+  createChatRunFixtures(context).installRunChat({
+    onSendRequest: (b) => {
+      return sent.resolve(b.userMessage);
     },
   });
-  installWorkflows(() => {
-    return [];
-  });
-
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-
-  const user = userEvent.setup({ delay: null });
-  const editor = await findComposerEditor();
-  const dialog = await openTemplateCategory("Workflow");
-  const search = within(dialog).getByLabelText("Search templates");
-  expect(search).toBeVisible();
-  await fill(search, template.title);
+  await setupPage({ context, path: "/" });
+  await screen.findByLabelText("Message");
+  click(await findAction("button", "Advanced workflows"));
+  click(await findAction("button", "View all"));
+  const dialog = await screen.findByRole("dialog");
+  const input = dialog.querySelector("input");
+  if (!input) {
+    throw new Error("Missing template search");
+  }
+  await fill(input, "GitHub PR summarizer");
   click(
-    await within(dialog).findByLabelText(
-      `Select workflow template ${template.title}`,
+    await findAction(
+      "button",
+      "Select workflow template GitHub PR summarizer",
+      dialog,
     ),
   );
-
-  await expectInlineTemplateInComposer(template.title);
-  await user.click(editor);
-  await user.keyboard("{Enter}");
-
+  const editor = await screen.findByLabelText("Message");
   await waitFor(() => {
-    expect(sentTemplateTitle).toBe(template.title);
-    expect(
-      structuredTemplateReferences().some((reference) => {
-        return reference.textContent === template.title;
-      }),
-    ).toBeTruthy();
+    return expect(editor).toHaveTextContent("GitHub PR summarizer");
   });
+  click(await findAction("button", "Send"));
+  expect((await sent.promise)?.parts).toContainEqual(
+    expect.objectContaining({
+      type: "template",
+      titleSnapshot: "GitHub PR summarizer",
+      template: {
+        type: "workflow",
+        selection: {
+          workflowTemplateId: "workflow-template:github-pr-summarizer",
+        },
+      },
+    }),
+  );
+  const title = await screen.findByText("GitHub PR summarizer", {
+    selector: '[data-role="user"] [data-structured-template-reference] *',
+  });
+  expect(title).toBeVisible();
+  expect(
+    title.closest("[data-structured-template-reference]"),
+  ).toHaveAccessibleDescription("Workflow · GitHub PR summarizer");
 });
 
-test("Workflow category filters narrow templates and preserve the search", async () => {
-  mockAgent();
-  mockThread();
-  installWorkflows(() => {
-    return [];
-  });
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-  await findComposerEditor();
-
-  const dialog = await openTemplateCategory("Workflow");
-  const everyone = namedButton("Everyone");
-  const engineering = namedButton("Engineering");
-  const inboxTemplateLabel = "Select workflow template Auto-inbox label";
-  const engineeringTemplateLabel =
-    "Select workflow template GitHub PR summarizer";
-  await within(dialog).findByLabelText(inboxTemplateLabel);
-  expect(
-    within(dialog).getByLabelText(engineeringTemplateLabel),
-  ).toBeInTheDocument();
-
-  click(everyone);
-
-  expect(everyone).toHaveAttribute("aria-pressed", "true");
-  expect(within(dialog).getByLabelText(inboxTemplateLabel)).toBeInTheDocument();
-  expect(
-    within(dialog).queryByLabelText(engineeringTemplateLabel),
-  ).not.toBeInTheDocument();
-
-  const search = within(dialog).getByLabelText("Search templates");
-  await fill(search, "merged pull requests");
-  click(engineering);
-
-  expect(search).toHaveValue("merged pull requests");
-  await within(dialog).findByLabelText(engineeringTemplateLabel);
-  expect(
-    within(dialog).queryByLabelText(inboxTemplateLabel),
-  ).not.toBeInTheDocument();
-});
-
-test("Wait for a template attachment before sending", async () => {
-  const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
-  if (!template) {
-    throw new Error("Expected a presentation template");
-  }
-  const uploadId = "a1000000-0000-4000-a000-000000000901";
-  const uploadUrl = `https://mock-upload.r2.test/${uploadId}`;
-  const publicUrl = `https://cdn.vm7.io/chat/${uploadId}/brief.txt`;
-  const uploadGate = context.mocks.deferred<void>();
-  let sends = 0;
-  mockAgent();
-  mockChatLifecycle(context, {
-    threadId: THREAD_ID,
-    threadTitle: "Template upload",
-    onSendRequest: () => {
-      sends += 1;
-    },
-  });
-  installWorkflows(() => {
-    return [];
-  });
-  context.mocks.api(uploadsContract.prepare, ({ body, respond }) => {
+test("chat-composer-workflows-009 an unfinished file upload holds the selected presentation draft", async () => {
+  const gate = context.mocks.deferred<void>();
+  const item = deck("Launch plan slides", "launch-plan");
+  createChatRunFixtures(context).installRunChat();
+  restore([item]);
+  const file = {
+    id: crypto.randomUUID(),
+    filename: "brief.txt",
+    contentType: "text/plain",
+    size: 5,
+    url: "https://files.example.org/brief.txt",
+  };
+  context.mocks.upload.success(file);
+  context.mocks.api(uploadsContract.prepare, async ({ respond }) => {
+    await gate.promise;
     return respond(200, {
-      id: uploadId,
-      filename: body.filename,
-      contentType: body.contentType,
-      size: body.size,
-      url: publicUrl,
-      uploadUrl,
+      ...file,
+      uploadUrl: "https://mock-upload.r2.test/" + file.id,
       uploadHeaders: {},
     });
   });
-  context.mocks.http.put(uploadUrl, async ({ withSignal }) => {
-    await withSignal(uploadGate.promise);
-    return new HttpResponse(null, { status: 200 });
-  });
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-
-  await findComposerEditor();
-  await selectTemplate(template);
-  const file = new File(["launch brief"], "brief.txt", {
-    type: "text/plain",
-  });
-  fireEvent.change(composerFileInput(), { target: { files: [file] } });
-  await expect(screen.findByText("brief.txt")).resolves.toBeVisible();
+  await setupPage({ context, path: RUN_PATH });
+  const editor = await screen.findByLabelText("Message");
   await waitFor(() => {
-    expect(namedButton("Cancel upload brief.txt")).toBeVisible();
-    expect(namedButton("Send")).toBeDisabled();
+    return expect(editor).toHaveTextContent(item.titleSnapshot);
   });
-
-  click(namedButton("Send"));
-  expect(sends).toBe(0);
-
-  uploadGate.resolve();
-
-  await waitFor(() => {
-    expect(namedButton("Remove brief.txt")).toBeVisible();
-    expect(namedButton("Send")).toBeEnabled();
-    expect(screen.getByText("brief.txt")).toBeVisible();
-    expect(composerInlineTemplates()).toHaveLength(1);
-  });
-});
-
-test("Distinguish workflow tokens from text inside URLs", async () => {
-  mockAgent();
-  mockThread();
-  installWorkflows(() => {
-    return [workflow("pr-review")];
-  });
-
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-
-  const user = userEvent.setup();
-  const editor = await findComposerEditor();
-  const url = "https://www.okou.ai/en/use-cases/pr-review";
-  await user.click(editor);
-  await user.keyboard("/pr-review ");
-  await waitFor(() => {
-    expect(workflowHighlights(editor)).toHaveLength(1);
-  });
-  await user.keyboard(url);
-
-  await waitFor(() => {
-    expect(editor).toHaveTextContent(url);
-    expect(workflowHighlights(editor)).toHaveLength(1);
-    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-  });
-});
-
-test("Highlight a workflow in a restored draft", async () => {
-  mockAgent();
-  mockThread();
-  installWorkflows(() => {
-    return [workflow("pr-review")];
-  });
-  context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
-    return respond(200, {
-      draftUserMessage: {
-        version: 1,
-        parts: [{ type: "text" as const, text: "Please run /pr-review" }],
-      },
-      draftAttachments: null,
-    });
-  });
-
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-
-  const editor = await findComposerEditor();
-  await waitFor(() => {
-    expect(workflowHighlights(editor)).toHaveLength(1);
-  });
-  expect(workflowHighlights(editor)[0]).toHaveTextContent("/pr-review");
+  await expect(findAction("button", "Send")).resolves.toBeEnabled();
+  await userEvent
+    .setup({ delay: null })
+    .upload(
+      await screen.findByLabelText("Attach", { selector: "input" }),
+      new File(["brief"], "brief.txt", { type: "text/plain" }),
+    );
+  try {
+    await screen.findByRole("progressbar");
+    const held = await findAction("button", "Send");
+    expect(held).toBeDisabled();
+    await userEvent.click(held);
+    gate.resolve();
+    await findAction("button", "Remove brief.txt");
+    await expect(findAction("button", "Send")).resolves.toBeEnabled();
+    expect(editor).toHaveTextContent(item.titleSnapshot);
+    expect(document.querySelector('[data-role="user"]')).toBeNull();
+  } finally {
+    if (!gate.settled()) {
+      gate.resolve();
+    }
+  }
 });

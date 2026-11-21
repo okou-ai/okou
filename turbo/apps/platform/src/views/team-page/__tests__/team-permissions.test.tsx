@@ -1,636 +1,145 @@
-import {
-  connectorPermissionsContract,
-  type ApplyConnectorPermissions,
-} from "@okouai/api-contracts/contracts/connector-permissions";
-import {
-  connectorPermissionsResponse,
-  type ConnectorPermissionFixture,
-} from "../../../__tests__/connector-permissions.ts";
 import { screen, waitFor } from "@testing-library/react";
-import {
-  type PublicConnectorCatalogPermissionDetail,
-  connectorCatalogContract,
-  type PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog";
-import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
-
-import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";
-
 import { expect, test } from "vitest";
-
+import { click } from "../../../__tests__/page-helper.ts";
+import { mockNow } from "../../../lib/time.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { permissionMetadataFixture } from "./team-page-test-helpers.ts";
 import {
-  click,
-  fill,
-  setupPage,
-  queryAllByRoleFast,
-} from "../../../__tests__/page-helper.ts";
-import { mockNow } from "../../../__tests__/time.ts";
+  memberPolicies,
+  policyTime,
+  expiresInHours,
+} from "./member-policy-fixture.ts";
 import {
-  testContext,
-  type TestContext,
-} from "../../../signals/__tests__/test-helpers.ts";
-import {
-  catalogConnectorFixture,
-  mockConnectorOverview,
-  permissionGrantFixture,
-  permissionMetadataFixture,
-} from "./team-page-test-helpers.ts";
-import {
-  mockPublicConnectorStatus,
-  getConnectorCard,
-} from "../../okou-page/__tests__/connector-page-test-helpers.ts";
-import { findFastControl } from "../../okou-page/__tests__/chat-message-experience-test-helpers.ts";
+  mockConnectorPermissionRules,
+  openConnectorPermissions,
+  showPermissionsDialog,
+  permissionRow,
+  allowDuration,
+  policyButton,
+  chooseAllowDuration,
+  dialogAction,
+  otherEndpoints,
+} from "./permission-editor-test-helpers.ts";
 
 const context = testContext();
-const FIXED_NOW_ISO = "2026-08-18T12:00:00.000Z";
-
-interface PermissionSurfaceOptions {
-  readonly connector: PublicConnectorCatalogStatusItem;
-  readonly metadata: PublicConnectorCatalogPermissionDetail;
-  readonly initialGrants?: readonly ConnectorPermissionFixture[];
-  readonly onApply?: (request: ApplyConnectorPermissions) => void;
-}
-
-function expiresAtFor(expiresIn: "1h" | "24h" | "7d" | "always" | undefined) {
-  switch (expiresIn) {
-    case "1h": {
-      return "2026-08-18T13:00:00.000Z";
-    }
-    case "24h": {
-      return "2026-08-19T12:00:00.000Z";
-    }
-    case "7d": {
-      return "2026-08-25T12:00:00.000Z";
-    }
-    case "always":
-    case undefined: {
-      return null;
-    }
-  }
-}
-
-function mockPermissionSurface(
-  testContextValue: TestContext,
-  options: PermissionSurfaceOptions,
-): void {
-  let grants = [...(options.initialGrants ?? [])];
-  mockConnectorOverview(testContextValue, [options.connector]);
-  mockPublicConnectorStatus(testContextValue, [options.connector]);
-  testContextValue.mocks.api(
-    connectorCatalogContract.permissions,
-    ({ respond }) => {
-      return respond(200, { permissions: options.metadata });
-    },
-  );
-  testContextValue.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    return respond(200, { connectors: [] });
-  });
-  testContextValue.mocks.api(
-    connectorPermissionsContract.get,
-    ({ query, respond }) => {
-      return respond(200, connectorPermissionsResponse(query, grants));
-    },
-  );
-  testContextValue.mocks.api(
-    connectorPermissionsContract.apply,
-    ({ body, respond }) => {
-      if (body.target.kind !== "builtin") {
-        throw new Error("Expected a builtin connector");
-      }
-      const { connectorSlug } = body.target;
-      options.onApply?.(body);
-      const incoming = body.grants.map((grant) => {
-        return permissionGrantFixture(
-          connectorSlug,
-          grant.permission,
-          grant.action,
-          grant.action === "allow" ? expiresAtFor(grant.expiresIn) : null,
-        );
-      });
-      if (body.mode === "replace") {
-        grants = [
-          ...grants.filter((grant) => {
-            return grant.connectorSlug !== connectorSlug;
-          }),
-          ...incoming,
-        ];
-      } else {
-        const updatedNames = new Set(
-          incoming.map((grant) => {
-            return grant.permission;
-          }),
-        );
-        grants = [
-          ...grants.filter((grant) => {
-            return (
-              grant.connectorSlug !== connectorSlug ||
-              !updatedNames.has(grant.permission)
-            );
-          }),
-          ...incoming,
-        ];
-      }
-      return respond(200, connectorPermissionsResponse(body.target, grants));
-    },
-  );
-}
-
-function exactButton(name: string, container: ParentNode = document.body) {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
-    return candidate.textContent?.trim() === name;
-  });
-  if (!button) {
-    throw new Error(`Button not found: ${name}`);
-  }
-  return button;
-}
-
-function labelledButton(name: string, container: ParentNode = document.body) {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
-    return candidate.getAttribute("aria-label") === name;
-  });
-  if (!button) {
-    throw new Error(`Labelled button not found: ${name}`);
-  }
-  return button;
-}
-
-function exactDurationOption(name: string) {
-  const item = queryAllByRoleFast("menuitemradio").find((candidate) => {
-    return candidate.textContent?.trim() === name;
-  });
-  if (!item) {
-    throw new Error(`Duration option not found: ${name}`);
-  }
-  return item;
-}
-
-function permissionRow(name: string): HTMLElement {
-  const label = screen.getByText(name, { selector: "code" });
-  const row = label.parentElement?.parentElement;
-  if (!row) {
-    throw new Error(`Permission row not found: ${name}`);
-  }
-  return row;
-}
-
-function otherEndpointsRow(): HTMLElement {
-  const label = screen.getByText("Other endpoints");
-  const row = label.parentElement?.parentElement;
-  if (!row) {
-    throw new Error("Other endpoints row not found");
-  }
-  return row;
-}
-
-function categoryRow(name: string): HTMLElement {
-  const toggle = queryAllByRoleFast("button").find((candidate) => {
-    return candidate.textContent?.trim().startsWith(`${name} (`) ?? false;
-  });
-  const row = toggle?.parentElement;
-  if (!row) {
-    throw new Error(`Permission category not found: ${name}`);
-  }
-  return row;
-}
-
-function policyButton(row: HTMLElement, policy: "Allow" | "Deny") {
-  return exactButton(policy, row);
-}
-
-function expectPolicy(
-  row: HTMLElement,
-  policy: "Allow" | "Deny",
-  pressed: boolean,
-): void {
-  expect(policyButton(row, policy)).toHaveAttribute(
-    "aria-pressed",
-    String(pressed),
-  );
-}
-
-function chooseDuration(permission: string, option: string): void {
-  click(labelledButton(`${permission} allow options`));
-  click(exactDurationOption(option));
-}
-
-async function openPermissions(connectorName: string): Promise<void> {
-  await screen.findByText(connectorName);
-  click(
-    await findFastControl(
-      "button",
-      "Permissions",
-      getConnectorCard(connectorName),
-    ),
-  );
-  await screen.findByRole("heading", {
-    name: (accessibleName) => {
-      return accessibleName.startsWith(`${connectorName} permissions`);
-    },
-  });
-}
-
-function startPermissionPage(
-  connector: PublicConnectorCatalogStatusItem,
-  metadata: PublicConnectorCatalogPermissionDetail,
-  options: Omit<PermissionSurfaceOptions, "connector" | "metadata"> = {},
-): Promise<void> {
-  mockNow(new Date(FIXED_NOW_ISO), context.signal);
-  mockPermissionSurface(context, { connector, metadata, ...options });
-  return setupPage({ context, path: "/connectors?scope=connected" });
-}
-
-async function setupAppliedAxiomPermission() {
-  const requests: ApplyConnectorPermissions[] = [];
-  const connector = catalogConnectorFixture("axiom", "Axiom");
-  const metadata = permissionMetadataFixture(
-    "axiom",
-    "Axiom",
-    ["annotations|create"],
-    { permissionDefault: "allow", unknownPolicy: "deny" },
-  );
-  await startPermissionPage(connector, metadata, {
-    initialGrants: [
-      permissionGrantFixture("axiom", "annotations|create", "deny", null),
-      permissionGrantFixture("axiom", UNKNOWN_PERMISSION_GRANT, "allow", null),
-    ],
-    onApply: (request) => {
-      requests.push(request);
-    },
-  });
-  await openPermissions("Axiom");
-  const annotation = permissionRow("annotations|create");
-  click(policyButton(annotation, "Allow"));
-  click(labelledButton("annotations|create allow options"));
-  expect(exactDurationOption("Allow always")).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
-  expect(exactDurationOption("Allow for 24h")).toHaveAttribute(
-    "aria-checked",
-    "false",
-  );
-  click(exactDurationOption("Allow for 24h"));
-  click(labelledButton("annotations|create allow options"));
-  expect(exactDurationOption("Allow for 24h")).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
-  expect(exactDurationOption("Allow always")).toHaveAttribute(
-    "aria-checked",
-    "false",
-  );
-  click(exactDurationOption("Allow for 24h"));
-  click(exactButton("Apply"));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(
-      screen.queryByRole("heading", { name: /^Axiom permissions\b/u }),
-    ).not.toBeInTheDocument();
-  });
-  return requests;
-}
-
-test("A user can apply a temporary connector policy", async () => {
-  const requests = await setupAppliedAxiomPermission();
-  expect(requests[0]?.grants).toStrictEqual([
-    {
-      permission: "annotations|create",
-      action: "allow",
-      expiresIn: "24h",
-    },
-  ]);
-});
-
-test("A user can restore the saved connector-policy baseline", async () => {
-  const requests = await setupAppliedAxiomPermission();
-  click(
-    await findFastControl("button", "Permissions", getConnectorCard("Axiom")),
-  );
-  await screen.findByRole("heading", { name: /^Axiom permissions\b/u });
-  click(policyButton(permissionRow("annotations|create"), "Deny"));
-  click(policyButton(otherEndpointsRow(), "Deny"));
-  click(exactButton("Restore"));
-
-  expectPolicy(permissionRow("annotations|create"), "Allow", true);
-  expectPolicy(otherEndpointsRow(), "Deny", true);
-  expect(exactButton("Apply")).toBeEnabled();
-  click(exactButton("Apply"));
-  await waitFor(() => {
-    expect(requests).toHaveLength(2);
-    expect(
-      screen.queryByRole("heading", { name: /^Axiom permissions\b/u }),
-    ).not.toBeInTheDocument();
-  });
-  expect(requests[1]).toMatchObject({
-    target: { kind: "builtin", connectorSlug: "axiom" },
-    mode: "replace",
-    grants: [],
-  });
-});
-
-test("Closing connector permissions discards unapplied changes", async () => {
-  const requests: ApplyConnectorPermissions[] = [];
-  const connector = catalogConnectorFixture("axiom", "Axiom");
-  const metadata = permissionMetadataFixture(
-    "axiom",
-    "Axiom",
-    ["annotations|create"],
-    { permissionDefault: "deny" },
-  );
-  await startPermissionPage(connector, metadata, {
-    initialGrants: [
-      permissionGrantFixture("axiom", "annotations|create", "deny", null),
-    ],
-    onApply: (request) => {
-      requests.push(request);
-    },
-  });
-
-  await openPermissions("Axiom");
-  click(policyButton(permissionRow("annotations|create"), "Allow"));
-  chooseDuration("annotations|create", "Allow for 24h");
-  click(exactButton("Cancel"));
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("heading", { name: /^Axiom permissions\b/u }),
-    ).not.toBeInTheDocument();
-  });
-  expect(requests).toStrictEqual([]);
-
-  click(
-    await findFastControl("button", "Permissions", getConnectorCard("Axiom")),
-  );
-  await screen.findByRole("heading", { name: /^Axiom permissions\b/u });
-  const reopened = permissionRow("annotations|create");
-  expectPolicy(reopened, "Deny", true);
-  expect(reopened).not.toHaveTextContent("24h");
-  expect(exactButton("Apply")).toBeDisabled();
-});
-
-test("An expired allow grant falls back to the connector's current default", async () => {
-  const connector = catalogConnectorFixture("slack", "Slack");
-  const metadata = permissionMetadataFixture(
-    "slack",
-    "Slack",
-    ["channels:join"],
-    {
-      categories: { "channels:join": "Misc" },
-      displayOrder: ["Misc"],
-      permissionDefault: "deny",
-    },
-  );
-  await startPermissionPage(connector, metadata, {
-    initialGrants: [
-      permissionGrantFixture(
-        "slack",
-        "channels:join",
-        "allow",
-        "2026-08-18T11:59:00.000Z",
-      ),
-    ],
-  });
-
-  await openPermissions("Slack");
-  click(exactButton("Misc (1)"));
-  const row = permissionRow("channels:join");
-  expectPolicy(row, "Deny", true);
-  expectPolicy(row, "Allow", false);
-  expect(exactButton("Restore")).toBeDisabled();
-});
-
-async function setupGroupedSlackPermissions() {
-  const requests: ApplyConnectorPermissions[] = [];
-  const connector = catalogConnectorFixture("slack", "Slack", {
-    permissionCount: 5,
-  });
-  const metadata = permissionMetadataFixture(
-    "slack",
-    "Slack",
-    [
-      "bookmarks:read",
-      "channels:read",
-      "messages:write",
-      "channels:join",
-      "pins:add",
-    ],
-    {
-      categories: {
-        "bookmarks:read": "Read",
-        "channels:read": "Read",
-        "messages:write": "Write",
-        "channels:join": "Misc",
-        "pins:add": "Misc",
-      },
-      displayOrder: ["Read", "Write", "Misc"],
-      permissionDefault: "deny",
-    },
-  );
-  await startPermissionPage(connector, metadata, {
-    initialGrants: [
-      permissionGrantFixture("slack", "channels:read", "allow", null),
-    ],
-    onApply: (request) => {
-      requests.push(request);
-    },
-  });
-  await openPermissions("Slack");
-  return requests;
-}
-
-function editReadCategory() {
-  const readCategory = categoryRow("Read");
-  click(policyButton(readCategory, "Allow"));
-  chooseDuration("Read", "Allow for 7d");
-  expect(readCategory).toHaveTextContent("Allow");
-  expect(readCategory).toHaveTextContent("7d");
-  click(exactButton("Read (2)"));
-  chooseDuration("bookmarks:read", "Allow for 1h");
-  expect(readCategory).toHaveTextContent("Mixed");
-  expect(readCategory).not.toHaveTextContent("7d");
-  chooseDuration("bookmarks:read", "Allow for 7d");
-  expect(readCategory).toHaveTextContent("Allow");
-  expect(readCategory).toHaveTextContent("7d");
-}
-
-function editMiscPermission() {
-  click(exactButton("Misc (2)"));
-  const channelsJoin = permissionRow("channels:join");
-  click(policyButton(channelsJoin, "Allow"));
-  chooseDuration("channels:join", "Allow for 7d");
-  expect(channelsJoin).toHaveTextContent("7d");
-  click(policyButton(channelsJoin, "Deny"));
-  expect(channelsJoin).not.toHaveTextContent("7d");
-  click(policyButton(channelsJoin, "Allow"));
-  chooseDuration("channels:join", "Allow always");
-  expect(channelsJoin).toHaveTextContent("Always");
-  expect(channelsJoin).not.toHaveTextContent("7d");
-}
-
-test("Grouped and individual connector policies submit together", async () => {
-  const requests = await setupGroupedSlackPermissions();
-  editReadCategory();
-  editMiscPermission();
-  const other = otherEndpointsRow();
-  click(policyButton(other, "Allow"));
-  chooseDuration(UNKNOWN_PERMISSION_GRANT, "Allow for 1h");
-  click(exactButton("Apply"));
-  await waitFor(() => {
-    expect(requests).toHaveLength(1);
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(
-    new Set(
-      requests[0]?.grants.map((grant) => {
-        return grant.permission;
-      }),
-    ),
-  ).toStrictEqual(
-    new Set([
-      "bookmarks:read",
-      "channels:read",
-      "channels:join",
-      UNKNOWN_PERMISSION_GRANT,
-    ]),
-  );
-  expect(requests[0]?.grants).toContainEqual({
-    permission: UNKNOWN_PERMISSION_GRANT,
-    action: "allow",
-    expiresIn: "1h",
-  });
-});
-
-test("A user can change one connector permission from temporary to permanent", async () => {
-  const requests: ApplyConnectorPermissions[] = [];
-  const connector = catalogConnectorFixture("axiom", "Axiom", {
-    permissionCount: 2,
-  });
-  const metadata = permissionMetadataFixture(
-    "axiom",
-    "Axiom",
-    ["annotations|create", "datasets|read"],
-    { permissionDefault: "deny" },
-  );
-  await startPermissionPage(connector, metadata, {
-    initialGrants: [
-      permissionGrantFixture(
-        "axiom",
-        "annotations|create",
-        "allow",
-        "2026-08-18T12:30:00.000Z",
-      ),
-      permissionGrantFixture(
-        "axiom",
+const annotation = "annotations|create";
+test.each([
+  {
+    id: "team-permissions-001",
+    initial: "deny",
+    duration: "24h",
+    label: "Allow for 24h",
+  },
+  {
+    id: "team-permissions-006",
+    initial: "allow",
+    duration: "always",
+    label: "Allow always",
+  },
+] as const)(
+  "$id applying an Axiom duration changes only the annotation rule",
+  async ({ initial, duration, label }) => {
+    mockNow(new Date(policyTime), context.signal);
+    const others =
+      initial === "deny"
+        ? []
+        : [
+            {
+              permission: "datasets|read",
+              action: "allow" as const,
+              expiresAt: expiresInHours(48),
+            },
+            {
+              permission: "retired|write",
+              action: "deny" as const,
+              expiresAt: null,
+            },
+            {
+              permission: "expired|read",
+              action: "allow" as const,
+              expiresAt: expiresInHours(-24),
+            },
+          ];
+    const data = memberPolicies(
+      context,
+      permissionMetadataFixture("axiom", "Axiom", [
+        annotation,
         "datasets|read",
-        "allow",
-        "2026-08-20T12:00:00.000Z",
-      ),
-      permissionGrantFixture("axiom", "retired|write", "deny", null),
-      permissionGrantFixture(
-        "axiom",
-        "expired|read",
-        "allow",
-        "2026-08-18T11:00:00.000Z",
-      ),
-    ],
-    onApply: (request) => {
-      requests.push(request);
-    },
-  });
-
-  await openPermissions("Axiom");
-  const annotation = permissionRow("annotations|create");
-  expect(annotation).toHaveTextContent("1 hour");
-  click(labelledButton("annotations|create allow options"));
-  const durationOptions = queryAllByRoleFast("menuitemradio");
-  expect(durationOptions).toHaveLength(4);
-  for (const option of durationOptions) {
-    expect(option).toHaveAttribute("aria-checked", "false");
-  }
-  click(exactDurationOption("Allow always"));
-  click(exactButton("Apply"));
-  await waitFor(() => {
-    expect(requests).toHaveLength(1);
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(requests[0]).toMatchObject({
-    target: { kind: "builtin", connectorSlug: "axiom" },
-    mode: "patch",
-    grants: [
+      ]),
+      [
+        {
+          permission: annotation,
+          action: initial,
+          expiresAt: initial === "allow" ? expiresInHours(1) : null,
+        },
+        ...others,
+      ],
+    );
+    const dialog = await openConnectorPermissions(context, "Axiom");
+    const row = permissionRow(dialog, annotation);
+    expect(
+      policyButton(row, initial === "deny" ? "Deny" : "Allow"),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(allowDuration(row, annotation)?.textContent ?? null).toBe(
+      initial === "allow" ? "1 hour" : null,
+    );
+    if (initial === "deny") {
+      click(policyButton(row, "Allow"));
+    }
+    await chooseAllowDuration(row, annotation, label);
+    click(dialogAction(dialog, "Apply"));
+    await waitFor(() => {
+      return expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(data.changes).toStrictEqual([
       {
-        permission: "annotations|create",
+        target: { kind: "builtin", connectorSlug: "axiom" },
+        mode: "patch",
+        grants: [
+          { permission: annotation, action: "allow", expiresIn: duration },
+        ],
+      },
+    ]);
+    const savedDialog = await showPermissionsDialog("Axiom");
+    expect(
+      allowDuration(permissionRow(savedDialog, annotation), annotation),
+    ).toHaveTextContent(duration === "24h" ? "24 hours" : "Always");
+    expect([...data.saved.values()]).toStrictEqual([
+      {
+        permission: annotation,
         action: "allow",
-        expiresIn: "always",
+        expiresAt: duration === "always" ? null : expiresInHours(24),
       },
-    ],
-  });
-});
+      ...others,
+    ]);
+  },
+);
 
-test("A user can find and save a permission beyond the initially visible list", async () => {
-  const requests: ApplyConnectorPermissions[] = [];
-  const permissionNames = Array.from({ length: 110 }, (_, index) => {
-    return `catalog.${String(index + 1).padStart(3, "0")}.read`;
-  });
-  permissionNames.push("memberships.read");
-  const connector = catalogConnectorFixture("cloudflare", "Cloudflare", {
-    permissionCount: permissionNames.length,
-  });
+test("team-permissions-008 restoring unknown Cloudflare endpoints returns to their own deny default", async () => {
   const metadata = permissionMetadataFixture(
     "cloudflare",
     "Cloudflare",
-    permissionNames,
-    { permissionDefault: "allow" },
-  );
-  await startPermissionPage(connector, metadata, {
-    onApply: (request) => {
-      requests.push(request);
-    },
-  });
-
-  await openPermissions("Cloudflare");
-  expect(screen.queryByText("memberships.read")).not.toBeInTheDocument();
-  await fill(screen.getByLabelText("Find permissions"), "memberships.read");
-  const membership = await screen.findByText("memberships.read");
-  expect(membership).toBeVisible();
-  click(policyButton(permissionRow("memberships.read"), "Deny"));
-  click(exactButton("Apply"));
-  await waitFor(() => {
-    expect(requests).toHaveLength(1);
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(requests[0]).toMatchObject({
-    target: { kind: "builtin", connectorSlug: "cloudflare" },
-    mode: "patch",
-    grants: [
-      {
-        permission: "memberships.read",
-        action: "deny",
-      },
-    ],
-  });
-});
-
-test("Other endpoints starts from and can return to the connector default", async () => {
-  const connector = catalogConnectorFixture("cloudflare", "Cloudflare");
-  const metadata = permissionMetadataFixture(
-    "cloudflare",
-    "Cloudflare",
-    ["memberships.read"],
+    ["zones.read"],
     { permissionDefault: "allow", unknownPolicy: "deny" },
   );
-  await startPermissionPage(connector, metadata);
-
-  await openPermissions("Cloudflare");
-  const other = otherEndpointsRow();
-  expectPolicy(other, "Deny", true);
-  expectPolicy(other, "Allow", false);
-  expect(exactButton("Restore")).toBeDisabled();
-
-  click(policyButton(other, "Allow"));
-  expectPolicy(other, "Allow", true);
-  expect(exactButton("Restore")).toBeEnabled();
-
-  click(exactButton("Restore"));
-  expectPolicy(otherEndpointsRow(), "Deny", true);
-  expect(exactButton("Restore")).toBeDisabled();
+  mockConnectorPermissionRules(context, metadata, []);
+  const dialog = await openConnectorPermissions(context, "Cloudflare");
+  const known = policyButton(permissionRow(dialog, "zones.read"), "Allow");
+  const endpoints = otherEndpoints(dialog);
+  const allow = policyButton(endpoints, "Allow");
+  const deny = policyButton(endpoints, "Deny");
+  const restore = dialogAction(dialog, "Restore");
+  expect(known).toHaveAttribute("aria-pressed", "true");
+  expect(restore).toBeDisabled();
+  expect(allow).toHaveAttribute("aria-pressed", "false");
+  expect(deny).toHaveAttribute("aria-pressed", "true");
+  click(allow);
+  expect(restore).toBeEnabled();
+  expect(allow).toHaveAttribute("aria-pressed", "true");
+  expect(known).toHaveAttribute("aria-pressed", "true");
+  click(restore);
+  expect(restore).toBeDisabled();
+  expect(deny).toHaveAttribute("aria-pressed", "true");
+  expect(allow).toHaveAttribute("aria-pressed", "false");
+  expect(known).toHaveAttribute("aria-pressed", "true");
 });

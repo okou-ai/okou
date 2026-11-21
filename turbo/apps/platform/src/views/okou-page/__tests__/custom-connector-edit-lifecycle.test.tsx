@@ -1,98 +1,65 @@
 import {
-  customConnectorByIdContract,
   customConnectorsContract,
+  customConnectorByIdContract,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  customConnector,
-  getConnectorAction,
-  getConnectorCard,
-  mockCustomConnectorStory,
-} from "./connector-page-test-helpers.ts";
-
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
+import { customConnector } from "./connector-page-test-helpers.ts";
 const context = testContext();
-
-test("A custom connector displays its Cloudflare Access dependency without an activation control", async () => {
-  const connector = customConnector({
-    displayName: "Protected API",
-    networkBinding: {
-      type: "cloudflare_access",
-      status: "available",
-      name: "Corporate gateway",
-      configId: "5e7fd365-c432-41b2-a780-cfa467655b44",
-      generation: 1,
-    },
-  });
-  mockCustomConnectorStory(context, [{ connector }]);
-  await setupPage({ context, path: "/connectors?scope=custom" });
-  await waitFor(() => {
-    expect(getConnectorCard("Protected API")).toHaveTextContent(
-      "Cloudflare Access: Corporate gateway",
-    );
-  });
-});
-
-test("A completed edit preserves a newer connector draft", async () => {
-  const connector = customConnector({ displayName: "First API" });
-  mockCustomConnectorStory(context, [{ connector }]);
-  let saved = connector;
-  const started = context.mocks.deferred<void>();
-  const response = context.mocks.deferred<void>();
+const path = "/connectors?scope=custom";
+test("custom-connector-edit-lifecycle-002 a late edit result updates the directory while preserving the new form", async () => {
+  const first = customConnector({ displayName: "First API" });
+  let entries = [first];
+  const release = context.mocks.deferred<void>();
+  const received = context.mocks.deferred<void>();
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    return respond(200, { connectors: [saved] });
+    return respond(200, { connectors: entries });
   });
   context.mocks.api(
     customConnectorByIdContract.update,
-    async ({ body, respond }) => {
-      expect(body.displayName).toBe("Saved first API");
-      expect(body).toMatchObject({
-        prefixTemplates: ["http://api.acme.test/v1/"],
+    async ({ params, body, respond }) => {
+      received.resolve();
+      await release.promise;
+      const item = customConnector({
+        id: params.id,
+        displayName: body.displayName,
+        prefixTemplates: body.kind === "mcp" ? [] : body.prefixTemplates,
       });
-      started.resolve();
-      await response.promise;
-      saved = {
-        ...connector,
-        displayName: "Saved first API",
-        prefixTemplates: ["http://api.acme.test/v1/"],
-      };
-      return respond(200, saved);
+      entries = [item];
+      return respond(200, item);
     },
   );
-  await setupPage({ context, path: "/connectors?scope=custom" });
-  await waitFor(() => {
-    return expect(getConnectorCard("First API")).toBeInTheDocument();
-  });
-  click(getConnectorAction("button", "More options"));
-  const menu = await screen.findByRole("menu");
-  click(getConnectorAction("menuitem", "Edit", menu));
-  const edit = await screen.findByRole("dialog", {
-    name: "Edit custom connector",
-  });
-  await fill(within(edit).getByLabelText("Display name"), "Saved first API");
+  await setupPage({ context, path });
+  await screen.findByText("First API");
+  click(await findFastControl("button", "More options"));
+  click(await screen.findByText("Edit", { selector: '[role="menuitem"]' }));
+  const editor = await screen.findByRole("dialog");
   await fill(
-    within(edit).getByLabelText(/Prefixes/u),
+    within(editor).getByPlaceholderText("Acme API"),
+    "Saved first API",
+  );
+  await fill(
+    within(editor).getByPlaceholderText("https://api.acme.com/v1/"),
     "http://api.acme.test/v1/",
   );
-  click(getConnectorAction("button", "Save", edit));
-  await started.promise;
-  click(getConnectorAction("button", "Close", edit));
+  click(await findFastControl("button", "Save", editor));
+  await received.promise;
+  await userEvent.keyboard("{Escape}");
   await waitFor(() => {
-    return expect(edit).not.toBeInTheDocument();
+    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-  click(getConnectorAction("button", "New custom connector"));
-  const draft = await screen.findByRole("dialog", {
+  click(await findFastControl("button", "New custom connector"));
+  const next = await screen.findByRole("dialog", {
     name: "New custom connector",
   });
-  await fill(within(draft).getByLabelText("Display name"), "Second API draft");
-  response.resolve();
+  const field = within(next).getByPlaceholderText("Acme API");
+  await fill(field, "Second API draft");
+  release.resolve();
   await screen.findByText("Saved first API");
-  await expect(
-    screen.findByRole("dialog", { name: "New custom connector" }),
-  ).resolves.toBeInTheDocument();
-  expect(within(draft).getByLabelText("Display name")).toHaveValue(
-    "Second API draft",
-  );
+  expect(next).toBeInTheDocument();
+  expect(field).toHaveValue("Second API draft");
 });

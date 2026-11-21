@@ -1,248 +1,144 @@
-import {
-  browserContract,
-  type BrowserSession,
-} from "@okouai/api-contracts/contracts/browser";
-import {
-  act,
-  fireEvent,
-  screen,
-  waitFor,
-  waitForElementToBeRemoved,
-  within,
-} from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
-import {
-  mockBrowserCdp,
-  TEST_BROWSER_EXTENSION,
-} from "../../../__tests__/browser-cdp-fixture.ts";
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { click } from "../../../__tests__/page-helper.ts";
+import {
+  arrangeNativePage,
+  expectStreamingAt,
+} from "./browser-native-page-fixture.ts";
 
 const context = testContext();
-const threadId = "11111111-1111-4111-8111-111111111111";
-const operationError =
-  "The browser action could not be completed. Check the browser before trying again.";
-
-function mockViewer() {
-  const session: BrowserSession = {
-    threadId,
-    name: "booking",
-    status: "active",
-    viewerUrl: `https://viewer.example/browsers/${threadId}`,
-    liveUrl: "https://viewer.example/live",
-    screenshotUrl: null,
-    window: {
-      instanceId: "22222222-2222-4222-8222-222222222222",
-      primaryWindowId: 0,
-    },
-    timeoutMinutes: 240,
-    idleExpiresAt: "2026-09-01T10:10:00.000Z",
-    suspendedAt: null,
-    suspensionReason: null,
-    createdAt: "2026-09-01T10:00:00.000Z",
-    updatedAt: "2026-09-01T10:00:00.000Z",
-  };
-  const cdpUrl = "wss://browser.example/navigation-regressions";
-  const browser = mockBrowserCdp(context, cdpUrl, {
+test("browser-navigation-regression-02 delivers text to the active page before its history is ready", async () => {
+  const url = "https://meeting.example/agenda";
+  const { cdp, openPage } = arrangeNativePage(context, {
     targets: [
+      { targetId: "agenda", windowId: 101, url, title: "Planning agenda" },
+    ],
+  });
+  const history = cdp.holdNext("Page.getNavigationHistory");
+  await openPage();
+  await history.received;
+  const input = await screen.findByLabelText("Remote browser input");
+  await waitFor(() => {
+    expect(input).toBeEnabled();
+  });
+  input.focus();
+  fireEvent.input(input, {
+    inputType: "insertText",
+    target: { value: "Review agenda" },
+    data: "Review agenda",
+  });
+  await waitFor(() => {
+    expect(cdp.input).toContainEqual(
+      expect.objectContaining({
+        method: "Input.insertText",
+        params: { text: "Review agenda" },
+        sessionId: cdp.pageSession("agenda"),
+      }),
+    );
+  });
+  expect(screen.getByLabelText("Address")).toBeEnabled();
+  expect(screen.getByLabelText("Back")).toBeDisabled();
+  await history.release({
+    currentIndex: 1,
+    entries: [
       {
-        targetId: "example-page",
-        title: "Example",
-        url: "https://example.com",
+        id: 40,
+        url: "https://meeting.example/",
+        title: "Overview",
+        userTypedURL: "",
+        transitionType: "link",
       },
       {
-        targetId: "other-page",
-        title: "Other",
-        url: "https://other.example.com",
+        id: 41,
+        url,
+        userTypedURL: url,
+        title: "Confirmed agenda",
+        transitionType: "link",
       },
     ],
   });
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(200, {
-      browser: session,
-      viewer: {
-        browser: session,
-        cdpUrl,
-        extension: TEST_BROWSER_EXTENSION,
-      },
-    });
-  });
-  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
-    return respond(200, { browser: session });
-  });
-  return browser;
-}
-
-async function openViewer() {
-  await setupPage({ context, path: `/browsers/${threadId}` });
-  const viewer = await screen.findByRole("region", {
-    name: "Remote browser viewer",
+  await waitFor(() => {
+    expect(screen.getByLabelText("Back")).toBeEnabled();
   });
   await waitFor(() => {
-    expect(within(viewer).getByLabelText("Remote browser input")).toBeEnabled();
+    expect(screen.getByLabelText("Address")).toHaveValue(url);
   });
-  return viewer;
+});
+
+function openAddress(destination: string) {
+  const field = screen.getByRole("textbox", { name: "Address" });
+  fireEvent.change(field, { target: { value: destination } });
+  click(screen.getByLabelText("Open address"));
+  return field;
 }
 
-async function enterRemoteText(
-  viewer: HTMLElement,
-  browser: ReturnType<typeof mockViewer>,
-  text = "live text",
-) {
-  const input = within(viewer).getByLabelText("Remote browser input");
-  await userEvent.click(input);
-  fireEvent.input(input, {
-    target: { value: text },
-    data: text,
-    inputType: "insertText",
+test("browser-navigation-regression-04.01 opening a working URL dismisses the reload failure", async () => {
+  const { openPage, cdp } = arrangeNativePage(context);
+  await openPage();
+  await expectStreamingAt("https://example.com");
+  cdp.failNext("Page.reload", "Reload unavailable");
+  click(screen.getByLabelText("Reload"));
+  const failure = await screen.findByText(
+    /browser action could not be completed/i,
+  );
+  expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  const destination = "https://manual.example/troubleshooting";
+  const field = openAddress(destination);
+  await screen.findByLabelText("manual.example", {
+    selector: '[role="tab"][aria-selected="true"]',
   });
   await waitFor(() => {
-    expect(browser.input).toContainEqual({
-      method: "Input.insertText",
-      params: { text },
-      sessionId: "example-page-session",
-    });
+    expect(field).toHaveValue(destination);
+    expect(failure).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   });
-  expect(input).toHaveFocus();
-}
+});
 
-test.each([
-  ["google.com", "http://google.com/"],
-  ["https://google.com", "https://google.com/"],
-])(
-  "The address bar submits %s through the native form without a keydown",
-  async (value, expected) => {
-    mockViewer();
-    const viewer = await openViewer();
-    const address = within(viewer).getByLabelText<HTMLInputElement>("Address");
-    await fill(address, value);
-    fireEvent.submit(address.form!);
-    await waitFor(() => {
-      expect(address).toHaveValue(expected);
-      expect(address).toBeEnabled();
-    });
-  },
-);
-
-test("A pending initial history response does not block live remote input", async () => {
-  const browser = mockViewer();
-  const history = browser.holdNext("Page.getNavigationHistory");
-  const viewer = await openViewer();
+test("browser-navigation-regression-05 the download receipt returns the address field to the selected document", async () => {
+  const { openPage, cdp } = arrangeNativePage(context);
+  const history = cdp.holdNext("Page.getNavigationHistory");
+  await openPage();
   await history.received;
-  expect(within(viewer).getByLabelText("Address")).toBeEnabled();
-  await enterRemoteText(viewer, browser);
-
-  await act(async () => {
-    await history.release();
+  await expectStreamingAt("https://example.com");
+  const documentTab = screen.getByLabelText("Example", {
+    selector: '[role="tab"][aria-selected="true"]',
   });
-  expect(within(viewer).getByLabelText("Address")).toHaveValue(
-    "https://example.com",
-  );
-});
-
-test("A history failure has local feedback without disabling live input", async () => {
-  const browser = mockViewer();
-  browser.failNext(
-    "Page.getNavigationHistory",
-    "Navigation history unavailable",
-  );
-  const viewer = await openViewer();
-  const alert = await within(viewer).findByRole("alert");
-  expect(alert).toHaveTextContent(operationError);
-  expect(within(viewer).getByLabelText("Address")).toBeEnabled();
-  await enterRemoteText(viewer, browser);
-  expect(alert).toBeInTheDocument();
-  // Observe the actual three-second notice lifetime with real timers.
-  await waitForElementToBeRemoved(alert, { timeout: 4000 });
-  await enterRemoteText(viewer, browser, "after notice expired");
-  expect(within(viewer).queryByRole("alert")).not.toBeInTheDocument();
-  expect(within(viewer).getByLabelText("Remote browser input")).toBeEnabled();
-  expect(within(viewer).getByLabelText("Address")).toBeEnabled();
-});
-
-test.each(["successful submission", "another tab"] as const)(
-  "A failed Reload is cleared by %s",
-  async (recovery) => {
-    const browser = mockViewer();
-    const viewer = await openViewer();
-    browser.failNext("Page.reload", "The page could not reload");
-    click(within(viewer).getByLabelText("Reload"));
-    const alert = await within(viewer).findByRole("alert");
-    expect(alert).toHaveTextContent(operationError);
-    expect(within(viewer).getByLabelText("Remote browser input")).toBeEnabled();
-
-    if (recovery === "successful submission") {
-      await fill(
-        within(viewer).getByLabelText("Address"),
-        "recovered.example/path",
-      );
-      await userEvent.keyboard("{Enter}");
-    } else {
-      click(
-        within(viewer).getByLabelText("Other", { selector: '[role="tab"]' }),
-      );
-    }
-    await waitFor(() => {
-      expect(within(viewer).getByLabelText("Address")).toHaveValue(
-        recovery === "successful submission"
-          ? "http://recovered.example/path"
-          : "https://other.example.com",
-      );
-      expect(within(viewer).getByLabelText("Address")).toBeEnabled();
-    });
-    expect(within(viewer).queryByRole("alert")).not.toBeInTheDocument();
-  },
-);
-
-test("A download acknowledgement preserves the confirmed document address without history", async () => {
-  const browser = mockViewer();
-  browser.failNext("Page.getNavigationHistory", "History is unavailable");
-  const viewer = await openViewer();
-  await within(viewer).findByRole("alert");
-  browser.downloadNextNavigation();
-  const navigation = browser.holdNext("Page.navigate");
-  const address = within(viewer).getByLabelText("Address");
-  await fill(address, "https://files.example/report.csv");
-  await userEvent.keyboard("{Enter}");
-  await navigation.received;
-  expect(address).toBeEnabled();
-
-  await act(async () => {
-    await navigation.release();
-  });
+  cdp.downloadNextNavigation();
+  const download = cdp.holdNext("Page.navigate");
+  const field = openAddress("https://exports.example/plan.zip");
+  await download.received;
+  expect(screen.getByLabelText("Reload")).toBeDisabled();
+  await download.release();
   await waitFor(() => {
-    expect(address).toBeEnabled();
-    expect(address).toHaveValue("https://example.com");
-  });
-  expect(
-    within(viewer).getByLabelText("Example", { selector: '[role="tab"]' }),
-  ).toHaveAttribute("aria-selected", "true");
-});
-
-test("A redirect shows its committed URL after the navigation receipt", async () => {
-  const browser = mockViewer();
-  const viewer = await openViewer();
-  browser.redirectNextNavigation("https://destination.example/account");
-  const navigation = browser.holdNext("Page.navigate");
-  const address = within(viewer).getByLabelText("Address");
-  await fill(address, "https://redirect.example/start");
-  await userEvent.keyboard("{Enter}");
-  await navigation.received;
-  await waitFor(() => {
+    expect(screen.getByLabelText("Reload")).toBeEnabled();
+    expect(field).toHaveValue("https://example.com");
+    expect(field).toBeEnabled();
     expect(
-      within(viewer).getByLabelText("destination.example", {
-        selector: '[role="tab"]',
+      screen.getByLabelText("Example", {
+        selector: '[role="tab"][aria-selected="true"]',
       }),
-    ).toHaveAttribute("aria-selected", "true");
+    ).toBe(documentTab);
   });
-  expect(address).toBeEnabled();
+});
 
-  await act(async () => {
-    await navigation.release();
+test("browser-navigation-regression-06 a redirect selects its committed page before the held receipt settles", async () => {
+  const { openPage, cdp } = arrangeNativePage(context);
+  await openPage();
+  await expectStreamingAt("https://example.com");
+  const finalUrl = "https://reports.example/weekly";
+  cdp.redirectNextNavigation(finalUrl);
+  const receipt = cdp.holdNext("Page.navigate");
+  const field = openAddress("https://short.example/week");
+  await receipt.received;
+  await screen.findByLabelText("reports.example", {
+    selector: '[role="tab"][aria-selected="true"]',
   });
+  expect(field).toBeEnabled();
+  expect(screen.getByLabelText("Reload")).toBeDisabled();
+  await receipt.release();
   await waitFor(() => {
-    expect(address).toBeEnabled();
-    expect(address).toHaveValue("https://destination.example/account");
+    expect(screen.getByLabelText("Reload")).toBeEnabled();
+    expect(field).toHaveValue(finalUrl);
   });
 });

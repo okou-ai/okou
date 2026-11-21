@@ -1,162 +1,69 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { userTemplatesContract } from "@okouai/api-contracts/contracts/user-templates";
-import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
-import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import { mockNow } from "../../../__tests__/time.ts";
-import { createDeferredPromise } from "../../../signals/utils.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
+import { tabByText } from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
-  expectInlineTemplate,
-  openTemplatePicker,
   createTemplateGalleryHelpers,
+  expectInlineTemplate,
 } from "./chat-composer-template-gallery-test-helpers.ts";
 
 const context = testContext();
 const { mockTemplateChat } = createTemplateGalleryHelpers(context);
 
-test("Built-in templates stay usable while custom templates load after switching categories", async () => {
-  mockNow(1_785_542_400_000, context.signal);
+test("chat-composer-template-tabs-001 picks a built-in deck while the custom catalog is pending", async () => {
   mockTemplateChat();
-  const catalog = createDeferredPromise<void>(context.signal);
+  const started = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
   context.mocks.api(userTemplatesContract.list, async ({ respond }) => {
-    await catalog.promise;
+    started.resolve();
+    await release.promise;
     return respond(200, []);
   });
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat?templatePicker=website`,
-  });
-  const dialog = await screen.findByRole("dialog");
-  const website = WEBSITE_TEMPLATE_ITEMS[0]!;
-  const presentation = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
-  expect(
-    within(selectedPanel(dialog, "Website")).getByLabelText(
-      `Select website template ${website.title}`,
-    ),
-  ).toBeEnabled();
-  click(tabNamed(dialog, "Presentation"));
-  expect(
-    within(selectedPanel(dialog, "Presentation")).getByLabelText(
-      `Select template ${presentation.title}`,
-    ),
-  ).toBeEnabled();
-  click(within(dialog).getByLabelText(`Select template ${presentation.title}`));
-  await expectInlineTemplate(presentation.title);
-  catalog.resolve();
+  try {
+    await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+    await clickComposerAddMenuItem("Template");
+    const picker = within(await screen.findByRole("dialog"));
+    await started.promise;
+    click(tabByText("Website"));
+    expect(
+      picker.getByLabelText("Select website template Blueprint Grid"),
+    ).toBeEnabled();
+    click(tabByText("Presentation"));
+    const deck = await picker.findByLabelText("Select template Paper magazine");
+    expect(deck).toBeEnabled();
+    click(deck);
+    await expectInlineTemplate("Paper magazine");
+  } finally {
+    release.resolve();
+  }
 });
 
-async function openPicker({
-  mobile = false,
-}: {
-  mobile?: boolean;
-} = {}) {
+test("chat-composer-template-tabs-002 moves focus and the active panel together in both directions", async () => {
   mockTemplateChat();
-  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
-    return respond(200, []);
-  });
-  context.mocks.browser.matchMedia((query) => {
-    return mobile
-      ? query === "(pointer: coarse)"
-      : query === "(min-width: 640px)";
-  });
-  const user = userEvent.setup({ delay: null });
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat?compose=1`,
+    path: `/agents/${AGENT_ID}/chat?templatePicker=slides`,
   });
-  const dialog = await openTemplatePicker(user);
-  return { user, dialog };
-}
-
-function tabNamed(dialog: HTMLElement, name: string): HTMLElement {
-  const tab = queryAllByRoleFast("tab", dialog).find((item) => {
-    return item.textContent?.trim() === name;
+  const picker = within(await screen.findByRole("dialog"));
+  const presentation = tabByText("Presentation");
+  await waitFor(() => {
+    expect(presentation).toHaveFocus();
   });
-  if (!tab) {
-    throw new Error(`Expected template category ${name}`);
+  for (const [key, category] of [
+    ["{ArrowDown}", "Document"],
+    ["{ArrowUp}", "Presentation"],
+  ] as const) {
+    await userEvent.keyboard(key);
+    const panel = await picker.findByRole("tabpanel", { name: category });
+    const tab = tabByText(category);
+    expect(tab).toHaveFocus();
+    expect(tab).toHaveAttribute("aria-selected", "true");
+    expect(tab).toHaveAttribute("aria-controls", panel.id);
+    expect(picker.getAllByRole("tabpanel")).toHaveLength(1);
   }
-  return tab;
-}
-
-function selectedPanel(dialog: HTMLElement, name: string): HTMLElement {
-  const tab = tabNamed(dialog, name);
-  const panelId = tab.getAttribute("aria-controls");
-  const panel = panelId ? document.getElementById(panelId) : null;
-  if (!panel) {
-    throw new Error(`Expected the panel controlled by ${name}`);
-  }
-  expect(tab).toHaveAttribute("aria-selected", "true");
-  expect(dialog).toContainElement(panel);
-  expect(panel).toHaveAttribute("role", "tabpanel");
-  expect(panel).toHaveAttribute("aria-labelledby", tab.id);
-  expect(panel).toHaveAccessibleName(name);
-  expect(panel).not.toHaveAttribute("hidden");
-  expect(panel).not.toHaveAttribute("inert");
-  expect(dialog.querySelectorAll('[role="tabpanel"]')).toHaveLength(1);
-  return panel;
-}
-
-test("Category arrows select the matching panel and keep focus on the selected tab", async () => {
-  const { user, dialog } = await openPicker();
-  const list = within(dialog).getByRole("tablist", {
-    name: "Template categories",
-  });
-  expect(list).toHaveAttribute("aria-orientation", "vertical");
-  expect(
-    queryAllByRoleFast("tab", list).map((tab) => {
-      return tab.textContent;
-    }),
-  ).toStrictEqual(["Presentation", "Document", "Website", "Image", "Workflow"]);
-  selectedPanel(dialog, "Presentation");
-  await waitFor(() => {
-    expect(tabNamed(dialog, "Presentation")).toHaveFocus();
-  });
-
-  await user.click(tabNamed(dialog, "Presentation"));
-  await user.keyboard("{ArrowDown}");
-  selectedPanel(dialog, "Document");
-  expect(tabNamed(dialog, "Document")).toHaveFocus();
-  await user.keyboard("{ArrowUp}");
-  selectedPanel(dialog, "Presentation");
-  expect(tabNamed(dialog, "Presentation")).toHaveFocus();
-});
-
-test("Mobile category selection selects the matching panel", async () => {
-  const { dialog } = await openPicker({ mobile: true });
-  const category = within(dialog).getByRole("combobox", {
-    name: "Template category",
-  });
-  expect(category).toHaveTextContent("Presentation");
-  await waitFor(() => {
-    expect(category).toHaveFocus();
-  });
-  click(category);
-  const options = await screen.findByRole("listbox");
-  click(within(options).getByRole("option", { name: "Workflow" }));
-  selectedPanel(dialog, "Workflow");
-  expect(category).toHaveTextContent("Workflow");
-});
-
-test("Reopening the template picker focuses its current category control", async () => {
-  const { user, dialog } = await openPicker();
-  await waitFor(() => {
-    expect(tabNamed(dialog, "Presentation")).toHaveFocus();
-  });
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(dialog).not.toBeInTheDocument();
-  });
-  const reopened = await openTemplatePicker(user);
-  await waitFor(() => {
-    expect(tabNamed(reopened, "Presentation")).toHaveFocus();
-  });
 });

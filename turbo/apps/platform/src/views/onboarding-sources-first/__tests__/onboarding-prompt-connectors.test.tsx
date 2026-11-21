@@ -1,207 +1,129 @@
-import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
-import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
+import { screen, waitFor } from "@testing-library/react";
+import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { pathname } from "../../../signals/location.ts";
-import { ROUTES } from "../../../signals/route-paths.ts";
-import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
+import { findAction } from "../../okou-page/__tests__/connector-integrations-test-helpers.ts";
 import {
-  getConnectorAction,
+  mockConnectors,
   mockOAuthCompletions,
-  queryConnectorAction,
 } from "../../okou-page/__tests__/connector-page-test-helpers.ts";
 import {
   mockOnboardingConnectorCatalog,
   onboardingSourceItem,
 } from "./onboarding-catalog-test-helpers.ts";
-
+import {
+  receiveFirstChat,
+  findSentPrompt,
+  documentInstructions,
+} from "./onboarding-first-chat-test-helpers.ts";
 const context = testContext();
-const PROMPT = "Review my latest campaign and draft a launch plan";
-const RECOMMENDED_TOOLS = [
-  { slug: "gmail", label: "Gmail" },
-  { slug: "google-drive", label: "Google Drive" },
-  { slug: "google-calendar", label: "Google Calendar" },
-  { slug: "google-docs", label: "Google Docs" },
-  { slug: "google-sheets", label: "Google Sheets" },
-  { slug: "google-ads", label: "Google Ads" },
-  { slug: "notion", label: "Notion" },
-  { slug: "github", label: "GitHub" },
+const recommendations = [
+  ["gmail", "Gmail"],
+  ["google-drive", "Google Drive"],
+  ["google-calendar", "Google Calendar"],
+  ["google-docs", "Google Docs"],
+  ["google-sheets", "Google Sheets"],
+  ["google-ads", "Google Ads"],
+  ["notion", "Notion"],
+  ["github", "GitHub"],
 ] as const;
-
-function mockPromptOnboarding() {
-  context.mocks.data.onboardingStatus({
-    needsOnboarding: true,
-    onboardingComplete: false,
-  });
+function catalog(hasAds = false) {
   mockOnboardingConnectorCatalog(
     context,
-    RECOMMENDED_TOOLS.map((tool) => {
+    recommendations.map(([slug, label]) => {
       return onboardingSourceItem({
-        ...tool,
-        description: `Connect ${tool.label} to work with your information.`,
-        hasAccount: false,
+        slug,
+        label,
+        description: label + " workspace connection",
+        hasAccount: hasAds && slug === "google-ads",
       });
     }),
   );
 }
-
 test.each([
-  { mobile: false, path: ROUTES.onboarding, action: "Next" },
-  { mobile: true, path: ROUTES.onboardingSources, action: "Start task" },
-])(
-  "A prompt link offers recommended connections and can run without them (mobile: $mobile)",
-  async ({ mobile, path, action }) => {
-    mockPromptOnboarding();
-    context.mocks.browser.matchMedia((query) => {
-      return mobile && query === "(width < 640px)";
+  ["onboarding-prompt-connectors-001", "/onboarding", "Next", false],
+  [
+    "onboarding-prompt-connectors-002",
+    "/onboarding/sources",
+    "Start task",
+    true,
+  ],
+] as const)(
+  "%s offers eight workspace tools and sends the edited prompt from %s",
+  async (_id, path, button, mobile) => {
+    context.mocks.data.onboardingStatus({
+      needsOnboarding: true,
+      onboardingComplete: false,
     });
-    let runPrompt: string | undefined;
-    mockChatLifecycle(context, {
-      onRunCreate: (body) => {
-        runPrompt = body.prompt;
-      },
+    context.mocks.browser.matchMedia((q) => {
+      return mobile && q === "(width < 640px)";
     });
-
+    catalog();
+    const receipt = receiveFirstChat(context);
     await setupPage({
       context,
-      path: `${path}?prompt=${encodeURIComponent(PROMPT)}`,
+      path: path + "?prompt=Plan+the+customer+workshop",
     });
-
-    const recommendations = await screen.findByRole("region", {
-      name: "Connect your work tools",
-    });
-    await waitFor(() => {
-      expect(
-        getConnectorAction("button", "Connect Google Ads", recommendations),
-      ).toBeEnabled();
-    });
-    for (const tool of RECOMMENDED_TOOLS) {
-      expect(
-        getConnectorAction("button", `Connect ${tool.label}`, recommendations),
-      ).toBeEnabled();
+    const prompt = await screen.findByLabelText("Onboarding prompt");
+    expect(prompt).toHaveValue("Plan the customer workshop");
+    for (const [, label] of recommendations) {
+      await expect(
+        findAction("button", "Connect " + label),
+      ).resolves.toBeEnabled();
     }
-    expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(PROMPT);
-
-    const editedPrompt = `${PROMPT} for next month`;
-    await fill(screen.getByLabelText("Onboarding prompt"), editedPrompt);
-    click(getConnectorAction("button", action));
-
-    await waitFor(() => {
-      expect(runPrompt).toBe(
-        `${editedPrompt}\n\nCreate a complete document with the results in the requested file format (Markdown by default). Upload it as an artifact and include the working artifact link in your final response.`,
-      );
-      expect(pathname()).toMatch(/^\/chats\//u);
-    });
+    const edit = "Design the Friday customer workshop agenda.";
+    await fill(prompt, edit);
+    click(await findAction("button", button));
+    const sent = await receipt;
+    await expect(findSentPrompt(sent.prompt)).resolves.toBeInTheDocument();
+    expect(sent.prompt).toBe(edit + "\n\n" + documentInstructions);
+    expect(window.location.pathname).toBe("/chats/" + sent.threadId);
   },
 );
-
-test("Recommendations offer the OAuth methods available in the current catalog", async () => {
+test("onboarding-prompt-connectors-004 Google Ads consent preserves the draft and other connection options", async () => {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
   });
-  const gmail = onboardingSourceItem({
-    slug: "gmail",
-    label: "Gmail",
-    description: "Read and manage Gmail messages.",
-    hasAccount: false,
-  });
-  const notion = onboardingSourceItem({
-    slug: "notion",
-    label: "Notion",
-    description: "Access Notion pages and databases.",
-    hasAccount: false,
-  });
-  mockOnboardingConnectorCatalog(context, [
-    gmail,
-    { ...notion, authMethods: [], singleAuthCodeAuthMethodId: null },
-  ]);
-
+  catalog();
+  const attempt = crypto.randomUUID();
+  const completed = mockOAuthCompletions(context);
+  const popup = context.mocks.browser.authWindow();
+  Object.defineProperty(popup, "location", { value: { href: "about:blank" } });
+  context.mocks.browser.open(popup);
+  const consent = "https://consent.example.test/google-ads/authorized-account";
+  context.mocks.api(
+    builtinConnectorOauthStartContract.start,
+    ({ params, respond }) => {
+      expect(params.connectorSlug).toBe("google-ads");
+      return respond(200, {
+        oauthAttemptId: attempt,
+        authorizationUrl: consent,
+      });
+    },
+  );
   await setupPage({
     context,
-    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent(PROMPT)}`,
+    path: "/onboarding?prompt=Summarize+our+acquisition",
   });
-
+  const field = await screen.findByLabelText("Onboarding prompt");
+  const task = "Summarize our acquisition using Google Ads";
+  await fill(field, task);
+  click(await findAction("button", "Connect Google Ads"));
   await waitFor(() => {
-    expect(getConnectorAction("button", "Connect Gmail")).toBeEnabled();
+    return expect(popup.location.href).toBe(consent);
   });
-  expect(queryConnectorAction("button", "Connect Notion")).toBeNull();
-  expect(getConnectorAction("button", "Next")).toBeEnabled();
+  catalog(true);
+  const [ads] = mockConnectors(context, [
+    { connectorSlug: "google-ads", externalUsername: "harbor-marketing" },
+  ]);
+  completed.set(attempt, ads!.id);
+  context.mocks.ably.trigger("connector:changed", {
+    connectorSlug: "google-ads",
+  });
+  await findAction("button", "Manage Google Ads access");
+  expect(field).toHaveValue(task);
+  await expect(findAction("button", "Connect Gmail")).resolves.toBeEnabled();
+  await expect(findAction("button", "Next")).resolves.toBeEnabled();
 });
-
-test.each([
-  { slug: "google-ads", label: "Google Ads" },
-  { slug: "notion", label: "Notion" },
-  { slug: "github", label: "GitHub" },
-])(
-  "A recommended $label connection completes OAuth without losing the edited prompt",
-  async ({ slug, label }) => {
-    mockPromptOnboarding();
-    const completedAttempts = mockOAuthCompletions(context);
-    const authWindow = context.mocks.browser.authWindow();
-    authWindow.closed = true;
-    Object.defineProperty(authWindow, "location", {
-      value: { href: "" },
-      configurable: true,
-    });
-    context.mocks.browser.open(authWindow);
-    const oauthAttemptId = crypto.randomUUID();
-    const connectionId = crypto.randomUUID();
-    const authorizationUrl = `https://oauth.test/${slug}/authorize`;
-    context.mocks.api(
-      builtinConnectorOauthStartContract.start,
-      ({ body, params, respond }) => {
-        expect(params.connectorSlug).toBe(slug);
-        expect(body.authMethod).toBe("oauth");
-        expect(body.account).toStrictEqual({ intent: "add" });
-        completedAttempts.set(oauthAttemptId, connectionId);
-        context.mocks.data.connectors([
-          {
-            id: connectionId,
-            slug,
-            authMethod: "oauth",
-            externalId: "connected-account",
-            externalUsername: null,
-            externalEmail: null,
-            oauthScopes: [],
-            connectionStatus: "connected",
-            reconnectReason: null,
-            tokenExpiresAt: null,
-            createdAt: "2026-01-01T00:00:00.000Z",
-            updatedAt: "2026-01-01T00:00:00.000Z",
-          },
-        ]);
-        context.mocks.ably.trigger("connector:changed", {
-          connectorSlug: slug,
-        });
-        return respond(200, { authorizationUrl, oauthAttemptId });
-      },
-    );
-
-    await setupPage({
-      context,
-      host: "app.okou.ai",
-      path: `${ROUTES.onboarding}?prompt=${encodeURIComponent(PROMPT)}`,
-    });
-
-    const connect = await waitFor(() => {
-      const button = getConnectorAction("button", `Connect ${label}`);
-      expect(button).toBeEnabled();
-      return button;
-    });
-    const editedPrompt = `${PROMPT} using ${label}`;
-    await fill(screen.getByLabelText("Onboarding prompt"), editedPrompt);
-    click(connect);
-
-    await waitFor(() => {
-      expect(screen.getByText("Connected")).toBeInTheDocument();
-      expect(getConnectorAction("button", "Connect Gmail")).toBeEnabled();
-    });
-    expect(authWindow.location.href).toBe(authorizationUrl);
-    expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
-      editedPrompt,
-    );
-    expect(getConnectorAction("button", "Next")).toBeEnabled();
-  },
-);

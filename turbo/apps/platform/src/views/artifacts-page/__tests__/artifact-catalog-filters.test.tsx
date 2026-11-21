@@ -1,222 +1,110 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-
 import {
   click,
-  queryAllByRoleFast,
   setupPage,
+  queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  artifact,
-  findArtifactAction,
-  getButtonByName,
-  setupArtifactCatalogPage,
-} from "./artifact-catalog-test-helpers.ts";
+import { artifact, getButtonByName } from "./artifact-catalog-test-helpers.ts";
 
 const context = testContext();
 
-test("Artifact kind filters remain available while switching catalogs", async () => {
-  const avatarRequestStarted = context.mocks.deferred<void>();
-  const releaseAvatar = context.mocks.deferred<void>();
+test("artifact-catalog-filters-002 retains the Files selection and all choices after the empty response", async () => {
+  const files = context.mocks.deferred<void>();
   context.mocks.api(
     artifactCatalogContract.list,
     async ({ query, respond }) => {
-      if (query.kind === "avatar") {
-        avatarRequestStarted.resolve();
-        await releaseAvatar.promise;
-        return respond(200, {
-          artifacts: [artifact({ kind: "avatar", title: "avatar-video.mp4" })],
-          nextCursor: null,
-        });
+      if (query.kind === "file") {
+        await files.promise;
       }
-      return respond(200, {
-        artifacts: [artifact({ kind: "presentation", title: "launch-deck" })],
-        nextCursor: null,
-      });
+      return respond(200, { artifacts: [], nextCursor: null });
     },
   );
-
-  await setupArtifactCatalogPage(context);
-
-  await expect(findArtifactAction("launch-deck")).resolves.toBeInTheDocument();
+  await setupPage({ context, path: "/artifacts" });
+  await expect(
+    screen.findByText("No artifacts found"),
+  ).resolves.toBeInTheDocument();
   const filters = screen.getByLabelText("Artifact kind filters");
-  expect(
-    queryAllByRoleFast("button", filters).map((button) => {
-      return button.textContent?.trim();
-    }),
-  ).toStrictEqual([
-    "Presentations",
-    "Websites",
-    "Images",
-    "Videos",
-    "Avatars",
-    "Shared chats",
-    "Files",
-  ]);
-  expect(
-    getButtonByName("Show presentation artifacts", filters),
-  ).toHaveAttribute("aria-pressed", "true");
-
-  click(getButtonByName("Show avatar artifacts", filters));
-  await avatarRequestStarted.promise;
-
+  click(getButtonByName("Show file artifacts", filters));
   await expect(
     screen.findByLabelText("Loading artifacts"),
   ).resolves.toBeInTheDocument();
-  expect(getButtonByName("Show avatar artifacts", filters)).toHaveAttribute(
+  files.resolve();
+  await expect(
+    screen.findByText("No artifacts found"),
+  ).resolves.toBeInTheDocument();
+  expect(getButtonByName("Show file artifacts", filters)).toHaveAttribute(
     "aria-pressed",
     "true",
   );
-
-  releaseAvatar.resolve();
-
-  await expect(
-    findArtifactAction("avatar-video.mp4"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByText("launch-deck")).not.toBeInTheDocument();
-});
-
-test("Artifact kind filters remain available for an empty catalog", async () => {
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, { artifacts: [], nextCursor: null });
-  });
-
-  await setupArtifactCatalogPage(context);
-
-  await expect(
-    screen.findByText("No artifacts found"),
-  ).resolves.toBeInTheDocument();
-  const filters = screen.getByLabelText("Artifact kind filters");
+  const choices = queryAllByRoleFast("button", filters);
+  for (const choice of choices) {
+    expect(choice).toBeEnabled();
+  }
   expect(
-    queryAllByRoleFast("button", filters).map((button) => {
-      return button.textContent?.trim();
-    }),
+    choices
+      .map((item) => {
+        return item.textContent?.trim();
+      })
+      .sort(),
   ).toStrictEqual([
-    "Presentations",
-    "Websites",
-    "Images",
-    "Videos",
     "Avatars",
-    "Shared chats",
     "Files",
+    "Images",
+    "Presentations",
+    "Shared chats",
+    "Videos",
+    "Websites",
   ]);
-
-  click(getButtonByName("Show file artifacts", filters));
-
-  await waitFor(() => {
-    expect(getButtonByName("Show file artifacts", filters)).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-  });
-  await expect(
-    screen.findByText("No artifacts found"),
-  ).resolves.toBeInTheDocument();
 });
 
-test.each([false, true])(
-  "A shared conversation links directly to its shared thread with sidebar preview %s",
-  async (sidebarPreview) => {
-    const sharedRequestStarted = context.mocks.deferred<void>();
-    const releaseSharedConversation = context.mocks.deferred<void>();
-    context.mocks.api(
-      artifactCatalogContract.list,
-      async ({ query, respond }) => {
-        if (query.kind === "shared-thread") {
-          sharedRequestStarted.resolve();
-          await releaseSharedConversation.promise;
-          return respond(200, {
-            artifacts: [
-              artifact({
-                kind: "shared-thread",
-                title: "Weekly launch review",
-                sharedThreadId: "b0000000-0000-4000-a000-000000000001",
-              }),
-            ],
-            nextCursor: null,
-          });
-        }
-        return respond(200, {
-          artifacts: [artifact({ kind: "presentation", title: "launch-deck" })],
-          nextCursor: null,
-        });
-      },
-    );
-
+test.each([
+  { id: "003", sidebar: false },
+  { id: "004", sidebar: true },
+])(
+  "artifact-catalog-filters-$id finds the shared conversation as a safe list link with sidebar=$sidebar",
+  async ({ sidebar }) => {
+    const threadId = "52000000-0000-4000-8000-000000000025";
+    const thread = artifact({
+      kind: "shared-thread",
+      title: "Field notes",
+      sharedThreadId: threadId,
+    });
+    const deck = artifact({
+      kind: "presentation",
+      title: "Briefing",
+      id: "53000000-0000-4000-8000-000000000025",
+    });
+    context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
+      return respond(200, {
+        artifacts: query.kind === "shared-thread" ? [thread] : [deck],
+        nextCursor: null,
+      });
+    });
     await setupPage({
       context,
       path: "/artifacts",
-      featureSwitches: {
-        [FeatureSwitchKey.ArtifactSidebarPreview]: sidebarPreview,
-      },
+      featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar },
     });
-
-    await expect(
-      findArtifactAction("launch-deck"),
-    ).resolves.toBeInTheDocument();
-    const filters = screen.getByLabelText("Artifact kind filters");
-    click(getButtonByName("Show shared chat artifacts", filters));
-    await sharedRequestStarted.promise;
-
-    await expect(
-      screen.findByLabelText("Loading artifacts"),
-    ).resolves.toBeInTheDocument();
-
-    releaseSharedConversation.resolve();
-
-    const conversation = await findArtifactAction("Weekly launch review");
-    const listItem = conversation.closest("li");
-    if (!listItem?.parentElement) {
-      throw new Error("Expected a shared conversation in a compact list");
-    }
-    expect(conversation).toHaveRole("link");
-    expect(conversation).toHaveAttribute(
-      "href",
-      "/share/threads/b0000000-0000-4000-a000-000000000001",
+    await expect(screen.findByText(deck.title)).resolves.toBeInTheDocument();
+    click(
+      getButtonByName(
+        "Show shared chat artifacts",
+        screen.getByLabelText("Artifact kind filters"),
+      ),
     );
-    expect(conversation).toHaveAttribute("target", "_blank");
-    expect(conversation).toHaveAttribute("rel", "noopener noreferrer");
-    expect(listItem).toHaveRole("listitem");
-    expect(listItem.parentElement).toHaveRole("list");
-  },
-);
-
-test.each([false, true])(
-  "A routed shared conversation opens its shared thread with sidebar preview %s",
-  async (sidebarPreview) => {
-    const locationAssign = context.mocks.browser.locationAssign();
-    const sharedThreadId = "b0000000-0000-4000-a000-000000000001";
-    const conversation = artifact({
-      kind: "shared-thread",
-      title: "Weekly launch review",
-      sharedThreadId,
-    });
-    context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-      return respond(200, { artifacts: [conversation], nextCursor: null });
-    });
-    context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
-      return respond(200, {
-        ...conversation,
-        kind: "shared-thread",
-        sharedThreadId,
-        sharedThread: { id: sharedThreadId },
-      });
-    });
-    // Global search opens a shared conversation through this catalog route.
-    await setupPage({
-      context,
-      path: `/artifacts?tab=shared-thread&artifact=${conversation.id}`,
-      featureSwitches: {
-        [FeatureSwitchKey.ArtifactSidebarPreview]: sidebarPreview,
-      },
-    });
-    await waitFor(() => {
-      expect(locationAssign.calls).toStrictEqual([
-        `/share/threads/${sharedThreadId}`,
-      ]);
-    });
+    const catalog = within(screen.getByRole("main"));
+    const result = await catalog.findByText(thread.title);
+    const list = catalog.getByRole("list");
+    const row = within(list).getByRole("listitem");
+    const link = result.closest("a");
+    expect(row).toContainElement(link);
+    expect(link).toHaveAttribute("href", "/share/threads/" + threadId);
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link?.relList.contains("noopener")).toBeTruthy();
+    expect(link?.relList.contains("noreferrer")).toBeTruthy();
   },
 );

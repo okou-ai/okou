@@ -1,395 +1,163 @@
-import { selectDesktopHeaderAction } from "./chat-header-test-helpers.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   workflowAutomationsContract,
   type ChatThreadWorkflowAutomation,
-  type WorkflowAutomationSummary,
-  type WorkflowAutomationUpdateRequest,
 } from "@okouai/api-contracts/contracts/workflows";
 import { screen, waitFor, within } from "@testing-library/react";
-import { expect, test } from "vitest";
-
+import { test, expect } from "vitest";
 import {
   click,
-  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { completedEvent, assistantEvent } from "./chat-run-test-fixtures.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { AGENT_ID } from "./chat-lifecycle-test-helpers.ts";
 import {
-  completedConversation,
-  FIRST_CAPABILITY_RUN_ID,
-  readyChat,
+  createChatRunFixtures,
+  findButton,
+  findEnabledButton,
   RUN_PATH,
   RUN_THREAD_ID,
-  SECOND_CAPABILITY_RUN_ID,
-  createChatCapabilityHelpers,
-} from "./chat-capability-test-helpers.ts";
+  completedEvent,
+} from "./chat-run-test-fixtures.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 
 const context = testContext();
-const { installCapabilityChat } = createChatCapabilityHelpers(context);
-
-const WORKFLOW_ID = "e0000000-0000-4000-a000-000000000861";
-const AUTOMATION_ID = "e0000000-0000-4000-a000-000000000862";
-const WORKFLOW_AGENT_ID = "e0000000-0000-4000-a000-000000000863";
-const OWNER_USER_ID = "test-user-123";
-type ScheduleAutomation = Extract<
-  ChatThreadWorkflowAutomation,
-  { readonly kind: "schedule" }
->;
-type GmailMatchAutomation = Extract<
-  ChatThreadWorkflowAutomation,
-  { readonly eventType: "gmail-new-message" }
->;
-const WORKFLOW = {
-  id: WORKFLOW_ID,
-  agentId: WORKFLOW_AGENT_ID,
-  name: "release-review",
-  displayName: "Release review",
-  description: "Review release readiness",
-} satisfies ChatThreadWorkflowAutomation["workflow"];
-
-function automationBase() {
-  return {
-    id: AUTOMATION_ID,
-    ownerUserId: OWNER_USER_ID,
-    enabled: true,
-    chatThreadId: RUN_THREAD_ID,
-    nextRunAt: null,
-    lastRunAt: "2026-08-01T09:00:00.000Z",
-    official: null,
-    workflow: WORKFLOW,
-  } as const;
-}
-
-function scheduleAutomation(intervalSeconds: number): ScheduleAutomation {
-  return {
-    ...automationBase(),
-    kind: "schedule",
-    schedule: { type: "loop", intervalSeconds },
-    scheduleSummary: `Every ${intervalSeconds / 60} minutes`,
-    nextRunAt: "2026-08-01T10:15:00.000Z",
-  };
-}
-
-function gmailMatchAutomation(
-  eventConfig: GmailMatchAutomation["eventConfig"],
-): GmailMatchAutomation {
-  return {
-    ...automationBase(),
-    kind: "event",
-    eventType: "gmail-new-message",
-    eventConfig,
-    schedule: null,
-    scheduleSummary: null,
-  };
-}
-
-function scheduleSummary(
-  automation: ScheduleAutomation,
-): WorkflowAutomationSummary {
-  return {
-    id: automation.id,
-    ownerUserId: automation.ownerUserId,
-    enabled: automation.enabled,
-    chatThreadId: automation.chatThreadId,
-    nextRunAt: automation.nextRunAt,
-    lastRunAt: automation.lastRunAt,
-    official: automation.official,
-    kind: automation.kind,
-    schedule: automation.schedule,
-    scheduleSummary: automation.scheduleSummary,
-  };
-}
-
-function gmailMatchSummary(
-  automation: GmailMatchAutomation,
-): WorkflowAutomationSummary {
-  return {
-    id: automation.id,
-    ownerUserId: automation.ownerUserId,
-    enabled: automation.enabled,
-    chatThreadId: automation.chatThreadId,
-    nextRunAt: automation.nextRunAt,
-    lastRunAt: automation.lastRunAt,
-    official: automation.official,
-    kind: automation.kind,
-    eventType: automation.eventType,
-    eventConfig: automation.eventConfig,
-    schedule: null,
-    scheduleSummary: null,
-  };
-}
-
-function installAutomationConversation(): void {
-  installCapabilityChat({
-    events: completedConversation(
-      "The workflow automation is ready to review.",
-    ),
-  });
-}
-
-function installAutomationList(
-  current: () => ChatThreadWorkflowAutomation,
-): void {
+const workflowId = "a4c00000-0000-4000-8000-000000000018";
+test("chat-capability-workflows-001 editing the audit schedule replaces the five-minute rule and closes its editor", async () => {
+  createChatRunFixtures(context).installRunChat();
+  let automation: Extract<ChatThreadWorkflowAutomation, { kind: "schedule" }> =
+    {
+      id: crypto.randomUUID(),
+      ownerUserId: "test-user-123",
+      enabled: true,
+      chatThreadId: RUN_THREAD_ID,
+      nextRunAt: null,
+      lastRunAt: null,
+      official: null,
+      workflow: {
+        id: workflowId,
+        agentId: AGENT_ID,
+        name: "audit-receipts",
+        description: null,
+        displayName: "Receipt audit",
+      },
+      kind: "schedule",
+      schedule: { type: "loop", intervalSeconds: 300 },
+      scheduleSummary: "Every 5 minutes",
+    };
   context.mocks.api(
     workflowAutomationsContract.listForChatThread,
-    ({ respond }) => {
-      return respond(200, [current()]);
-    },
-  );
-}
-
-function normalizedText(element: HTMLElement): string {
-  return element.textContent?.replace(/\s+/gu, " ").trim() ?? "";
-}
-
-function queryButton(
-  name: string,
-  container: ParentNode = document.body,
-): HTMLElement | null {
-  return (
-    queryAllByRoleFast("button", container).find((element) => {
-      return (
-        element.getAttribute("aria-label") === name ||
-        normalizedText(element) === name
+    ({ params, respond }) => {
+      return respond(
+        200,
+        params.threadId === RUN_THREAD_ID ? [automation] : [],
       );
-    }) ?? null
+    },
   );
-}
-
-function findButton(
-  name: string,
-  container: ParentNode = document.body,
-): Promise<HTMLElement> {
-  return waitFor(() => {
-    const button = queryButton(name, container);
-    if (!button) {
-      throw new Error(`${name} button was not visible`);
-    }
-    return button;
-  });
-}
-
-async function openAutomationEditor(): Promise<HTMLElement> {
-  await readyChat();
-  await selectDesktopHeaderAction("Automations");
-  const sidebar = await screen.findByRole("complementary", {
-    name: "Automations",
-  });
-  click(await findButton("Edit", sidebar));
-  return await screen.findByRole("dialog", { name: "Edit automation" });
-}
-
-test("Edit schedule and Gmail workflow triggers", async () => {
-  const updates: WorkflowAutomationUpdateRequest[] = [];
-  let current = scheduleAutomation(300);
-  installAutomationConversation();
-  installAutomationList(() => {
-    return current;
-  });
-  context.mocks.api(workflowAutomationsContract.update, ({ body, respond }) => {
-    updates.push(body);
-    if (!("schedule" in body) || body.schedule.type !== "loop") {
-      throw new Error("Expected a schedule update");
-    }
-    current = scheduleAutomation(body.schedule.intervalSeconds);
-    return respond(200, scheduleSummary(current));
-  });
-
+  context.mocks.api(
+    workflowAutomationsContract.update,
+    ({ body, params, respond }) => {
+      if (
+        params.id !== automation.id ||
+        !("schedule" in body) ||
+        body.schedule.type !== "loop"
+      ) {
+        throw new Error("Expected an interval change to the receipt audit");
+      }
+      automation = {
+        ...automation,
+        schedule: body.schedule,
+        scheduleSummary:
+          "Every " + body.schedule.intervalSeconds / 60 + " minutes",
+      };
+      return respond(200, automation);
+    },
+  );
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-
-  const dialog = await openAutomationEditor();
-  click(within(dialog).getByRole("combobox", { name: "Every" }));
+  click(await findButton("More actions"));
+  click(
+    await waitFor(() => {
+      const item = queryAllByRoleFast("menuitem").find((el) => {
+        return el.textContent?.trim() === "Automations";
+      });
+      expect(item).toBeDefined();
+      return item!;
+    }),
+  );
+  const sidebar = await screen.findByTestId("automation-sidebar");
+  const panel = within(sidebar);
+  await panel.findByText("Every 5 minutes");
+  click(await findEnabledButton("Edit", sidebar));
+  const dialog = await screen.findByRole("dialog");
+  const editor = within(dialog);
+  click(editor.getByRole("combobox", { name: "Every" }));
   click(await screen.findByRole("option", { name: "15 minutes" }));
-  click(await findButton("Save automation", dialog));
-
-  await waitFor(() => {
-    expect(updates).toStrictEqual([
-      { schedule: { type: "loop", intervalSeconds: 900 } },
-    ]);
-    expect(screen.getByText("Every 15 minutes")).toBeVisible();
-    expect(
-      screen.queryByRole("dialog", { name: "Edit automation" }),
-    ).not.toBeInTheDocument();
-  });
+  click(await findEnabledButton("Save automation", dialog));
+  await panel.findByText("Every 15 minutes");
+  expect(panel.queryByText("Every 5 minutes")).toBeNull();
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
-
-test("Edit Gmail match workflow trigger filters", async () => {
-  const updates: WorkflowAutomationUpdateRequest[] = [];
-  let current = gmailMatchAutomation({
-    provider: "gmail",
-    event: "new_message",
-    threadId: "gmail-thread-42",
-    match: { from: { contains: "alerts@example.com" } },
+test("chat-capability-workflows-003 completed, legacy and pending triggers render their corresponding workflow content", async () => {
+  const main = crypto.randomUUID(),
+    legacy = crypto.randomUUID();
+  const prompt = "Review the unposted September invoices";
+  const ignored = "Summarize outstanding receipts";
+  const old = "Gather the legacy receipt bundle";
+  const waiting = "Collect pending hotel expenses";
+  function trigger(
+    seqId: number,
+    runId: string | undefined,
+    name: string,
+    brief: string,
+    withPrompt = false,
+  ): MockChatEventInput {
+    return {
+      id: crypto.randomUUID(),
+      seqId,
+      runId,
+      createdAt: "2026-08-01T10:00:0" + seqId + ".000Z",
+      role: "user",
+      content: null,
+      eventType: "input.automation",
+      userMessage: {
+        version: 1,
+        parts: [
+          {
+            type: "automation",
+            workflowName: name,
+            automationBrief: brief,
+            ...(withPrompt ? { workflowId } : {}),
+          },
+          ...(withPrompt ? [{ type: "text" as const, text: prompt }] : []),
+        ],
+      },
+    };
+  }
+  createChatRunFixtures(context).installRunChat({
+    chatEvents: [
+      trigger(1, main, "receipt-audit", ignored, true),
+      completedEvent({ id: "audit-done", runId: main, seqId: 2 }),
+      trigger(3, legacy, "legacy-audit", old),
+      completedEvent({ id: "legacy-done", runId: legacy, seqId: 4 }),
+      trigger(5, undefined, "pending-audit", waiting),
+    ],
   });
-  installAutomationConversation();
-  installAutomationList(() => {
-    return current;
-  });
-  context.mocks.api(workflowAutomationsContract.update, ({ body, respond }) => {
-    updates.push(body);
-    if (!("eventConfig" in body) || body.eventConfig.event !== "new_message") {
-      throw new Error("Expected a Gmail message update");
-    }
-    current = gmailMatchAutomation(body.eventConfig);
-    return respond(200, gmailMatchSummary(current));
-  });
-
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-
-  const dialog = await openAutomationEditor();
-  const fixedField = within(dialog).getByLabelText("Thread ID field");
-  const fixedOperator = within(dialog).getByLabelText("Thread ID operator");
-  expect(fixedField).toBeDisabled();
-  expect(fixedField).toHaveValue("Thread ID");
-  expect(fixedOperator).toBeDisabled();
-  expect(fixedOperator).toHaveValue("Is");
-  await fill(
-    within(dialog).getByLabelText("From contains"),
-    "billing@example.com",
-  );
-  await fill(
-    within(dialog).getByLabelText("Subject contains any"),
-    "invoice, receipt",
-  );
-  click(await findButton("Save automation", dialog));
-
-  const expectedConfig = {
-    provider: "gmail" as const,
-    event: "new_message" as const,
-    threadId: "gmail-thread-42",
-    match: {
-      from: { contains: "billing@example.com" },
-      subject: { containsAny: ["invoice", "receipt"] },
-    },
-  };
-  await waitFor(() => {
-    expect(updates).toStrictEqual([{ eventConfig: expectedConfig }]);
-    expect(
-      screen.getByText(
-        'Thread ID is "gmail-thread-42"; From contains "billing@example.com"; Subject contains any of "invoice", "receipt"',
-      ),
-    ).toBeVisible();
-    expect(
-      screen.queryByRole("dialog", { name: "Edit automation" }),
-    ).not.toBeInTheDocument();
-  });
-  const sidebar = screen.getByRole("complementary", { name: "Automations" });
-  expect(within(sidebar).queryByText("Next run")).not.toBeInTheDocument();
-});
-
-function automationInput(args: {
-  readonly id: string;
-  readonly seqId: number;
-  readonly workflowName: string;
-  readonly workflowId?: string;
-  readonly automationBrief: string;
-  readonly prompt?: string;
-  readonly runId?: string;
-}): MockChatEventInput {
-  const parts: UserMessageDocument["parts"] = [
-    {
-      type: "automation",
-      workflowName: args.workflowName,
-      ...(args.workflowId ? { workflowId: args.workflowId } : {}),
-      automationBrief: args.automationBrief,
-    },
-    ...(args.prompt ? [{ type: "text" as const, text: args.prompt }] : []),
-  ];
-  return {
-    id: args.id,
-    eventType: "input.automation",
-    content: null,
-    createdAt: `2026-08-01T10:00:${String(args.seqId).padStart(2, "0")}.000Z`,
-    seqId: args.seqId,
-    runId: args.runId,
-    userMessage: { version: 1, parts },
-  };
-}
-
-test("Present workflow trigger events as meaningful chat history", async () => {
-  const actualTriggerPrompt =
-    "Review pull request 481 before the production deployment.";
-  const unusedBrief = "A different release summary";
-  const legacyBrief = "Summarize pipeline failures every Monday.";
-  const pendingBrief = "Route new support email to the response queue.";
-  const events: MockChatEventInput[] = [
-    automationInput({
-      id: "workflow-trigger-full",
-      seqId: 1,
-      runId: FIRST_CAPABILITY_RUN_ID,
-      workflowName: "Daily release review",
-      workflowId: WORKFLOW_ID,
-      automationBrief: unusedBrief,
-      prompt: actualTriggerPrompt,
-    }),
-    assistantEvent({
-      id: "workflow-trigger-full-output",
-      runId: FIRST_CAPABILITY_RUN_ID,
-      seqId: 2,
-      text: "The release review is complete.",
-    }),
-    completedEvent({
-      id: "workflow-trigger-full-completed",
-      runId: FIRST_CAPABILITY_RUN_ID,
-      seqId: 3,
-    }),
-    automationInput({
-      id: "workflow-trigger-legacy",
-      seqId: 4,
-      runId: SECOND_CAPABILITY_RUN_ID,
-      workflowName: "Weekly pipeline summary",
-      automationBrief: legacyBrief,
-    }),
-    assistantEvent({
-      id: "workflow-trigger-legacy-output",
-      runId: SECOND_CAPABILITY_RUN_ID,
-      seqId: 5,
-      text: "The pipeline summary is complete.",
-    }),
-    completedEvent({
-      id: "workflow-trigger-legacy-completed",
-      runId: SECOND_CAPABILITY_RUN_ID,
-      seqId: 6,
-    }),
-    automationInput({
-      id: "workflow-trigger-pending",
-      seqId: 7,
-      workflowName: "Support email routing",
-      automationBrief: pendingBrief,
-    }),
-  ];
-  installCapabilityChat({ events });
-
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-
-  const chat = await readyChat();
-  const workflowLink = within(chat).getByLabelText(
-    "Open workflow Daily release review",
-  );
-  expect(workflowLink).toHaveTextContent("Daily release review");
-  expect(workflowLink).toHaveAttribute(
-    "href",
-    `/workflows/${WORKFLOW_ID}/automations`,
-  );
-  const triggerPrompt = within(chat).getByText(actualTriggerPrompt);
-  expect(triggerPrompt).toBeInTheDocument();
-  click(triggerPrompt);
-  expect(window.location.pathname).toBe(RUN_PATH);
-  expect(within(chat).queryByText(unusedBrief)).not.toBeInTheDocument();
+  const text = await screen.findByText(prompt);
+  const message = text.closest<HTMLElement>('[data-role="user"]')!;
+  const turn = within(message);
   expect(
-    within(chat).getByLabelText("Workflow Weekly pipeline summary"),
-  ).toBeVisible();
-  expect(within(chat).getByText(legacyBrief)).toBeVisible();
-
+    queryAllByRoleFast("link", message).find((link) => {
+      return link.getAttribute("aria-label") === "Open workflow receipt-audit";
+    }),
+  ).toHaveAttribute("href", "/workflows/" + workflowId + "/automations");
+  expect(turn.queryByText(ignored)).toBeNull();
+  click(text);
+  expect(window.location.pathname).toBe(RUN_PATH);
+  await expect(screen.findByText(old)).resolves.toBeInTheDocument();
   const pending = await screen.findByRole("listitem", {
     name: "Pending automation event",
   });
-  expect(pending).toHaveTextContent(pendingBrief);
-  expect(
-    screen.queryByRole("listitem", { name: "Queued message" }),
-  ).not.toBeInTheDocument();
+  expect(within(pending).getByText(waiting)).toBeInTheDocument();
+  expect(screen.queryByRole("listitem", { name: "Queued message" })).toBeNull();
 });

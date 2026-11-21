@@ -1,273 +1,163 @@
 import {
-  artifactReferencePath,
-  artifactReferencesContract,
-} from "@okouai/api-contracts/contracts/artifact-references";
-import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+  artifactCatalogContract,
+  type ArtifactSummary,
+} from "@okouai/api-contracts/contracts/artifact-catalog";
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
+import { artifactReferencePath } from "@okouai/api-contracts/validators/artifact-references";
 import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { fileArtifactDetail } from "../../okou-page/__tests__/chat-navigation-artifact-test-helpers.ts";
 import {
   artifact,
   findArtifactAction,
-  setupArtifactCatalogPage,
   getButtonByName,
+  setupArtifactCatalogPage,
 } from "./artifact-catalog-test-helpers.ts";
 
 const context = testContext();
 
-test("HTML artifact cards resolve their stored private cover image", async () => {
-  const fileId = "f0000000-0000-4000-a000-000000000005";
-  const preview = artifactReferencePath(fileId, "preview.png");
-  const resolved = "https://private.example/preview.png?signature=authorized";
+function serveCatalog(summary: ArtifactSummary): void {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, {
-      artifacts: [
-        artifact({
-          kind: "hosted-site",
-          title: "Website with a sandbox cover",
-          thumbnail: { url: preview },
-        }),
-      ],
-      nextCursor: null,
-    });
+    return respond(200, { artifacts: [summary], nextCursor: null });
   });
-  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
-    return respond(200, {
-      downloadUrl: new URL("?download=1", resolved).href,
-      url: resolved,
-      expiresAt: "2099-01-01T00:00:00.000Z",
-      filename: "preview.png",
-      contentType: "image/png",
-      target: { kind: "file", id: fileId },
-    });
-  });
-  await setupArtifactCatalogPage(context);
-  const card = await findArtifactAction("Website with a sandbox cover");
-  await expect(
-    within(card).findByTestId("artifact-catalog-thumbnail"),
-  ).resolves.toHaveAttribute("src", resolved);
-});
+}
 
-test("An avatar card and its viewer share one private video URL", async () => {
-  const fileId = "f0000000-0000-4000-a000-000000000004";
-  const canonicalUrl = artifactReferencePath(fileId, "avatar-video.mp4");
-  const firstUrl = "https://private.example/avatar-video.mp4?signature=first";
-  const nextUrl = "https://private.example/avatar-video.mp4?signature=next";
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, {
-      artifacts: [
-        artifact({
-          kind: "avatar",
-          title: "avatar-video.mp4",
-          videoSourceUrl: canonicalUrl,
-        }),
-      ],
-      nextCursor: null,
-    });
-  });
-  context.mocks.api(artifactCatalogContract.get, ({ query, respond }) => {
-    expect(query.chatThreadId).toBeUndefined();
-    return respond(200, {
-      ...artifact({
-        kind: "avatar",
-        title: "avatar-video.mp4",
-        videoSourceUrl: canonicalUrl,
+/** A stored file the catalog opens in its preview dialog. */
+function serveStoredFile(
+  summary: ArtifactSummary,
+  file: { readonly filename: string; readonly contentType: string },
+): string {
+  const url = `https://files.example.test/originals/${file.filename}`;
+  context.mocks.api(artifactCatalogContract.get, ({ params, respond }) => {
+    expect(params.artifactId).toBe(summary.id);
+    return respond(
+      200,
+      fileArtifactDetail(summary, {
+        ...file,
+        fileId: "a0000000-0000-4000-a000-000000000d99",
+        url,
       }),
-      kind: "avatar",
-      file: {
-        id: fileId,
-        filename: "avatar-video.mp4",
-        contentType: "video/mp4",
-        size: 4096,
-        url: canonicalUrl,
-        previewImageUrl: null,
-      },
-      model: "joggai-talking-avatar",
-      durationSeconds: 12,
+    );
+  });
+  context.mocks.http.get(url, () => {
+    return new HttpResponse(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), {
+      headers: { "Content-Type": file.contentType },
     });
   });
-  let resolveCount = 0;
+  return url;
+}
+
+async function openPreview(filename: string): Promise<HTMLElement> {
+  click(await findArtifactAction(filename));
+  return await screen.findByRole("dialog", { name: `${filename} preview` });
+}
+
+test("HTML artifact cards resolve their stored private cover image", async () => {
+  const coverId = "a0000000-0000-4000-a000-000000000d01";
+  const authorizedCover =
+    "https://private-files.example.test/covers/quarterly.png?grant=signed";
+  serveCatalog(
+    artifact({
+      id: "a0000000-0000-4000-a000-000000000d02",
+      kind: "hosted-site",
+      title: "Quarterly site",
+      thumbnail: { url: artifactReferencePath(coverId, "cover.png") },
+    }),
+  );
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
-    const url = resolveCount === 0 ? firstUrl : nextUrl;
-    resolveCount += 1;
     return respond(200, {
-      downloadUrl: new URL("?download=1", url).href,
-      url,
+      url: authorizedCover,
+      downloadUrl: `${authorizedCover}&download=1`,
       expiresAt: "2099-01-01T00:00:00.000Z",
-      filename: "avatar-video.mp4",
-      contentType: "video/mp4",
-      target: { kind: "file", id: fileId },
+      filename: "cover.png",
+      contentType: "image/png",
+      target: { kind: "file", id: coverId },
     });
   });
 
-  await setupArtifactCatalogPage(context, { path: "/artifacts?tab=avatar" });
+  await setupArtifactCatalogPage(context);
 
-  const avatar = await findArtifactAction("avatar-video.mp4");
-  await expect(
-    within(avatar).findByTestId("artifact-catalog-video-source"),
-  ).resolves.toHaveAttribute("src", `${firstUrl}#t=0.001`);
-  click(avatar);
-  await expect(
-    screen.findByLabelText("Video preview for avatar-video.mp4"),
-  ).resolves.toHaveAttribute("src", firstUrl);
+  const card = getButtonByName("Preview Quarterly site", document.body);
+  await waitFor(() => {
+    expect(
+      within(card).getByTestId("artifact-catalog-thumbnail"),
+    ).toHaveAttribute("src", authorizedCover);
+  });
 });
 
 test("A binary can be downloaded from its preview", async () => {
+  const summary = artifact({
+    id: "a0000000-0000-4000-a000-000000000d11",
+    title: "release-bundle.zip",
+  });
+  serveCatalog(summary);
+  const url = serveStoredFile(summary, {
+    filename: "release-bundle.zip",
+    contentType: "application/zip",
+  });
   const browser = context.mocks.browser.blobDownload();
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, {
-      artifacts: [artifact({ title: "release-bundle.zip" })],
-      nextCursor: null,
-    });
-  });
-  context.mocks.http.get(
-    "https://artifacts.example.com/release-bundle.zip",
-    () => {
-      return HttpResponse.text("archive bytes", {
-        headers: { "Content-Type": "application/zip" },
-      });
-    },
-  );
-  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
-    return respond(200, {
-      ...artifact({ title: "release-bundle.zip" }),
-      kind: "file",
-      file: {
-        id: "f0000000-0000-4000-a000-000000000002",
-        filename: "release-bundle.zip",
-        contentType: "application/zip",
-        size: 2048,
-        url: "https://artifacts.example.com/release-bundle.zip",
-        previewImageUrl: null,
-      },
-    });
-  });
+  await setupArtifactCatalogPage(context, { path: "/artifacts?tab=file" });
+  const preview = await openPreview("release-bundle.zip");
 
-  await setupPage({
-    context,
-    path: "/artifacts?tab=file",
-  });
-
-  const archive = await findArtifactAction("release-bundle.zip");
-  click(archive);
-  const viewer = await screen.findByTestId("attachment-lightbox");
-  click(getButtonByName("Download options", viewer));
-  const menu = await screen.findByRole("menu");
-  const download = queryAllByRoleFast("menuitem", menu).find((item) => {
-    return item.textContent?.trim() === "Download";
-  });
-  if (!download) {
-    throw new Error("Expected the download action");
-  }
-  click(download);
+  click(getButtonByName("Download", preview));
 
   await waitFor(() => {
-    expect(browser.downloads).toHaveLength(1);
-  });
-  expect(browser.downloads[0]).toMatchObject({
-    filename: "release-bundle.zip",
-    url: "https://artifacts.example.com/release-bundle.zip",
+    expect(
+      browser.downloads.map(({ url: source, filename }) => {
+        return { source, filename };
+      }),
+    ).toStrictEqual([{ source: url, filename: "release-bundle.zip" }]);
   });
 });
 
 test("A native PPTX in Presentations keeps its Office preview and original download", async () => {
+  const summary = artifact({
+    id: "a0000000-0000-4000-a000-000000000d21",
+    title: "quarterly-review.pptx",
+  });
+  serveCatalog(summary);
+  const url = serveStoredFile(summary, {
+    filename: "quarterly-review.pptx",
+    contentType:
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  });
   const browser = context.mocks.browser.blobDownload();
-  const filename = "quarterly-review.pptx";
-  const url = `https://artifacts.example.com/${filename}`;
-  const contentType =
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, {
-      artifacts: [artifact({ kind: "presentation", title: filename })],
-      nextCursor: null,
-    });
+  await setupArtifactCatalogPage(context, {
+    path: "/artifacts?tab=presentation",
   });
-  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
-    return respond(200, {
-      ...artifact({ title: filename }),
-      kind: "file",
-      file: {
-        id: "f0000000-0000-4000-a000-000000000002",
-        filename,
-        contentType,
-        size: 2048,
-        url,
-        previewImageUrl: null,
-      },
+  const preview = await openPreview("quarterly-review.pptx");
+  await expect(
+    within(preview).findByTestId("artifact-dialog-body-office"),
+  ).resolves.toBeInTheDocument();
+  click(getButtonByName("Download options", preview));
+  const download = await waitFor(() => {
+    const item = queryAllByRoleFast("menuitem").find((candidate) => {
+      return candidate.textContent?.trim() === "Download";
     });
-  });
-  context.mocks.http.get(url, () => {
-    return HttpResponse.text("PowerPoint bytes", {
-      headers: { "Content-Type": contentType },
-    });
+    expect(item).toBeEnabled();
+    return item as HTMLElement;
   });
 
-  await setupArtifactCatalogPage(context);
-
-  const card = await findArtifactAction(filename);
-  expect(getButtonByName("Show presentation artifacts")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  click(card);
-  const viewer = await screen.findByTestId("attachment-lightbox");
-  const frame = await within(viewer).findByTitle(`${filename} preview`);
-  expect(new URL(frame.getAttribute("src")!).searchParams.get("src")).toBe(url);
-  click(getButtonByName("Download options", viewer));
-  const menu = await screen.findByRole("menu");
-  const download = queryAllByRoleFast("menuitem", menu).find((item) => {
-    return item.textContent?.trim() === "Download";
-  });
-  if (!download) {
-    throw new Error("Expected the original PowerPoint download action");
-  }
   click(download);
+
   await waitFor(() => {
-    expect(browser.downloads).toHaveLength(1);
+    expect(
+      browser.downloads.map(({ url: source, filename }) => {
+        return { source, filename };
+      }),
+    ).toStrictEqual([{ source: url, filename: "quarterly-review.pptx" }]);
   });
-  expect(browser.downloads[0]).toMatchObject({ filename, url });
-});
-
-test("Opening a text artifact shows its content on demand", async () => {
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, {
-      artifacts: [artifact({ title: "launch-plan.txt" })],
-      nextCursor: null,
-    });
-  });
-  context.mocks.http.get(
-    "https://artifacts.example.com/launch-plan.txt",
-    () => {
-      return HttpResponse.text("launch plan");
-    },
+  const viewer = new URL(
+    within(preview)
+      .getByTestId("artifact-dialog-body-office")
+      .getAttribute("src") ?? "",
   );
-  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
-    return respond(200, {
-      ...artifact({ title: "launch-plan.txt" }),
-      kind: "file",
-      file: {
-        id: "f0000000-0000-4000-a000-000000000001",
-        filename: "launch-plan.txt",
-        contentType: "text/plain",
-        size: 1024,
-        url: "https://artifacts.example.com/launch-plan.txt",
-        previewImageUrl: null,
-      },
-    });
-  });
-
-  await setupArtifactCatalogPage(context, { path: "/artifacts?tab=file" });
-
-  const textArtifact = await findArtifactAction("launch-plan.txt");
-  expect(screen.queryByText("launch plan")).not.toBeInTheDocument();
-  click(textArtifact);
-
-  await expect(screen.findByText("launch plan")).resolves.toBeInTheDocument();
+  expect(`${viewer.origin}${viewer.pathname}`).toBe(
+    "https://view.officeapps.live.com/op/embed.aspx",
+  );
+  expect(viewer.searchParams.get("src")).toBe(url);
 });

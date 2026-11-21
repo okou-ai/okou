@@ -1,4242 +1,1222 @@
-import { mockOAuthCompletions } from "../../okou-page/__tests__/connector-page-test-helpers.ts";
-import {
-  act,
-  fireEvent,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import {
-  billingStatusContract,
-  type BillingStatusResponse,
-} from "@okouai/api-contracts/contracts/billing";
-import {
-  connectorAccountsContract,
-  type ConnectorAccountConnection,
-} from "@okouai/api-contracts/contracts/connector-accounts";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
+import { connectorAccountFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
+import {
+  mockPublicConnectorStatus,
+  mockSavedConnectorAccounts,
+} from "../../okou-page/__tests__/connector-page-test-helpers.ts";
+import {
+  browserAuthMethod,
+  catalogConnector,
+} from "../../okou-page/__tests__/chat-capability-connector-test-helpers.ts";
+import userEvent from "@testing-library/user-event";
+import { integrationsGithubContract } from "@okouai/api-contracts/contracts/integrations-github";
+import { createDefaultMockGithubIntegration } from "../../../mocks/handlers/api-integrations-github.ts";
+import {
+  slashChoice,
+  slashRows,
+} from "../../okou-page/__tests__/workflow-composer-boundary.ts";
 import {
   workflowsCollectionContract,
   workflowsDetailContract,
-  workflowVisibilityContract,
   workflowAutomationsContract,
-  type WorkflowAutomationCreateRequest,
-  type WorkflowAutomationUpdateRequest,
-  type WorkflowUpdateRequest,
-  type WorkflowDetailResponse,
-  type WorkflowSummary,
   type WorkflowAutomationSummary,
-  type GoogleCalendarAutomationEventConfig,
 } from "@okouai/api-contracts/contracts/workflows";
+import { screen, waitFor, within, fireEvent } from "@testing-library/react";
+import { expect, test, vi } from "vitest";
 import {
-  agentsByIdContract,
-  type AgentResponse,
-} from "@okouai/api-contracts/contracts/agents";
-import { integrationsGithubContract } from "@okouai/api-contracts/contracts/integrations-github";
-import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { expect, test, vi, type Mock } from "vitest";
-
-import {
-  click,
   setupPage,
+  click,
   fill,
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
-import { pathname, search } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
 import {
-  createDefaultMockGithubIntegration,
-  setMockGithubIntegration,
-} from "../../../mocks/handlers/api-integrations-github.ts";
-import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
+  findAction,
+  queryAction,
+} from "../../okou-page/__tests__/connector-integrations-test-helpers.ts";
+import {
+  createChatRunFixtures,
+  RUN_THREAD_ID,
+} from "../../okou-page/__tests__/chat-run-test-fixtures.ts";
+import { salesWorkflow, serveWorkflows } from "./workflow-boundary.ts";
 
 const context = testContext();
-const CURRENT_USER_ID = "test-user-123";
-const UPDATED_USER_ID = "test-user-456";
-const AGENT_ID = "c0000000-0000-4000-a000-000000000101";
-const OTHER_AGENT_ID = "c0000000-0000-4000-a000-000000000102";
-const SALES_WORKFLOW_ID = "d0000000-0000-4000-a000-000000000201";
-const OPS_WORKFLOW_ID = "d0000000-0000-4000-a000-000000000202";
-const OTHER_WORKFLOW_ID = "d0000000-0000-4000-a000-000000000203";
-const CHECKLIST_WORKFLOW_ID = "d0000000-0000-4000-a000-000000000204";
-const COPIED_WORKFLOW_ID = "d0000000-0000-4000-a000-000000000205";
-const MORNING_BRIEF_WORKFLOW_ID = "d0000000-0000-4000-a000-000000000206";
-const GMAIL_AUTOMATION_ID = "workflow-automation-gmail-new-message";
-const GMAIL_LABEL_AUTOMATION_ID = "workflow-automation-gmail-label-applied";
-const GITHUB_PULL_REQUEST_AUTOMATION_ID =
-  "workflow-automation-github-pull-request";
-const GOOGLE_CALENDAR_AUTOMATION_ID =
-  "workflow-automation-google-calendar-created";
-const GOOGLE_MEET_AUTOMATION_ID = "workflow-automation-google-meet-transcript";
-const WORKFLOW_CHAT_THREAD_ID = "00000000-0000-4000-a000-000000000300";
-const AUTOMATION_RUN_THREAD_ID = "00000000-0000-4000-a000-000000000301";
-const OFFICIAL_BLUEPRINT_FINGERPRINT = "b".repeat(64);
 
-type WorkflowDetailTestTab = "automations" | "instructions" | "info";
-
-function workflowDetailPath(tab: WorkflowDetailTestTab): string {
-  return `/workflows/${SALES_WORKFLOW_ID}/${tab}`;
-}
-
-function setupWorkflowDetailPage(
-  path: string,
-  featureSwitches: Partial<Record<FeatureSwitchKey, boolean>> = {},
-  billingTier = "team",
-  billingCapabilities: Partial<BillingStatusResponse> = {},
-) {
-  mockBillingTier(billingTier, billingCapabilities);
-  return setupPage({
-    context,
-    path,
-    featureSwitches: {
-      ...featureSwitches,
-    },
+function directory() {
+  const sales = salesWorkflow(context),
+    ops = salesWorkflow(context, {
+      id: crypto.randomUUID(),
+      agentId: sales.agentId,
+      name: "ops-playbook",
+      displayName: "Ops Playbook",
+    });
+  const entries = [sales, ops];
+  serveWorkflows(context, () => {
+    return entries;
   });
+  return { sales, entries, base: "/workflows/" + sales.id };
 }
 
-function installScrollIntoViewMock(): Mock<HTMLElement["scrollIntoView"]> {
-  const scrollIntoView = vi.fn<HTMLElement["scrollIntoView"]>();
-  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
-    configurable: true,
-    value: scrollIntoView,
-  });
-  return scrollIntoView;
-}
-
-function createAuthWindow(): Window {
-  const authWindow = context.mocks.browser.authWindow();
-  Object.defineProperty(authWindow, "location", {
-    configurable: true,
-    value: { href: "" },
-  });
-  return authWindow;
-}
-
-function billingStatus(
-  tier: string,
-  capabilities: Partial<BillingStatusResponse> = {},
-): BillingStatusResponse {
+function weekday(): Extract<WorkflowAutomationSummary, { kind: "schedule" }> {
   return {
-    showUsagePack: false,
-    tier,
-    ...billingPlanCapabilities(tier),
-    credits: 20_000,
-    onboardingPaymentPending: false,
-    subscriptionStatus: tier === "team" ? "active" : null,
-    currentPeriodEnd: null,
-    cancelAtPeriodEnd: false,
-    scheduledChange: null,
-    hasSubscription: tier === "pro" || tier === "team",
-    autoRecharge: { enabled: false, threshold: null, amount: null },
-    creditExpiry: { expiringNextCycle: 0, nextExpiryDate: null },
-    creditBreakdown: [],
-    creditGrants: [],
-    concurrencyLimit: 0,
-    concurrencySubscriptions: [],
-    ...capabilities,
-  };
-}
-
-function mockBillingTier(
-  tier: string,
-  capabilities: Partial<BillingStatusResponse> = {},
-): void {
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, billingStatus(tier, capabilities));
-  });
-}
-
-async function findComposerEditor(): Promise<HTMLElement> {
-  return await waitFor(() => {
-    const editor = document.querySelector(
-      '[data-slot="chat-composer-card"] [contenteditable="true"]',
-    );
-    if (!(editor instanceof HTMLElement)) {
-      throw new Error("Composer editor not found");
-    }
-    return editor;
-  });
-}
-
-async function expectComposerText(text: string): Promise<void> {
-  const editor = await findComposerEditor();
-  await waitFor(() => {
-    expect(editor.textContent).toContain(text);
-  });
-}
-
-type WorkflowScheduleAutomationSummary = Extract<
-  WorkflowAutomationSummary,
-  { kind: "schedule" }
->;
-type WorkflowGmailNewMessageAutomationSummary = Extract<
-  WorkflowAutomationSummary,
-  { kind: "event"; eventType: "gmail-new-message" }
->;
-type WorkflowWebhookAutomationSummary = Extract<
-  WorkflowAutomationSummary,
-  { kind: "event"; eventType: "webhook-received" }
->;
-type WorkflowGmailLabelAppliedAutomationSummary = Extract<
-  WorkflowAutomationSummary,
-  { kind: "event"; eventType: "gmail-label-applied" }
->;
-type WorkflowGithubPullRequestAutomationSummary = Extract<
-  WorkflowAutomationSummary,
-  { kind: "event"; eventType: "github-pull-request" }
->;
-type WorkflowGoogleCalendarEventCreatedAutomationSummary = Extract<
-  WorkflowAutomationSummary,
-  { kind: "event"; eventType: "google-calendar-event-created" }
->;
-type WorkflowGoogleCalendarEventUpdatedAutomationSummary = Extract<
-  WorkflowAutomationSummary,
-  { kind: "event"; eventType: "google-calendar-event-updated" }
->;
-type WorkflowGoogleCalendarEventCancelledAutomationSummary = Extract<
-  WorkflowAutomationSummary,
-  { kind: "event"; eventType: "google-calendar-event-cancelled" }
->;
-type WorkflowGoogleCalendarAutomationSummary =
-  | WorkflowGoogleCalendarEventCreatedAutomationSummary
-  | WorkflowGoogleCalendarEventUpdatedAutomationSummary
-  | WorkflowGoogleCalendarEventCancelledAutomationSummary;
-type WorkflowGoogleFormsResponseSubmittedAutomationSummary = Extract<
-  WorkflowAutomationSummary,
-  { kind: "event"; eventType: "google-forms-response-submitted" }
->;
-type WorkflowGoogleMeetTranscriptGeneratedAutomationSummary = Extract<
-  WorkflowAutomationSummary,
-  { kind: "event"; eventType: "google-meet-transcript-generated" }
->;
-type WorkflowNotionChildPageCreatedAutomationSummary = Extract<
-  WorkflowAutomationSummary,
-  { kind: "event"; eventType: "notion-child-page-created" }
->;
-type WorkflowNotionDatabaseItemCreatedAutomationSummary = Extract<
-  WorkflowAutomationSummary,
-  { kind: "event"; eventType: "notion-database-item-created" }
->;
-type WorkflowNotionPageContentUpdatedAutomationSummary = Extract<
-  WorkflowAutomationSummary,
-  { kind: "event"; eventType: "notion-page-content-updated" }
->;
-
-function workflowAutomations(): WorkflowAutomationSummary[] {
-  return [weekdayWorkflowAutomation()];
-}
-
-function weekdayWorkflowAutomation(): WorkflowScheduleAutomationSummary {
-  return {
-    id: "workflow-automation-weekday-brief",
+    id: crypto.randomUUID(),
+    ownerUserId: "test-user-123",
+    enabled: true,
     kind: "schedule",
-    schedule: {
-      type: "cron",
-      cronExpression: "0 9 * * 1-5",
-      timezone: "UTC",
-    },
-    scheduleSummary: "Weekdays at 9:00 AM",
-    ownerUserId: CURRENT_USER_ID,
-    enabled: true,
-    chatThreadId: "thread_weekday_brief",
-    nextRunAt: "2026-06-19T01:00:00.000Z",
-    lastRunAt: "2026-06-18T01:00:00.000Z",
-    official: null,
-  };
-}
-
-function gmailWorkflowAutomation(): WorkflowGmailNewMessageAutomationSummary {
-  return {
-    id: GMAIL_AUTOMATION_ID,
-    kind: "event",
-    eventType: "gmail-new-message",
-    eventConfig: {
-      provider: "gmail",
-      event: "new_message",
-      match: {
-        from: { contains: "@acme.com" },
-        subject: { doesNotContain: "newsletter" },
-      },
-    },
-    schedule: null,
-    scheduleSummary: null,
-    ownerUserId: CURRENT_USER_ID,
-    enabled: true,
-    chatThreadId: "thread_gmail_new_message",
-    nextRunAt: null,
+    chatThreadId: null,
     lastRunAt: null,
-    official: null,
-  };
-}
-
-function gmailLabelWorkflowAutomation(): WorkflowGmailLabelAppliedAutomationSummary {
-  return {
-    id: GMAIL_LABEL_AUTOMATION_ID,
-    kind: "event",
-    eventType: "gmail-label-applied",
-    eventConfig: {
-      provider: "gmail",
-      event: "label_applied",
-      labelName: "Support",
-      resolvedLabelId: "Label_support",
-    },
-    schedule: null,
-    scheduleSummary: null,
-    ownerUserId: CURRENT_USER_ID,
-    enabled: true,
-    chatThreadId: "thread_gmail_label_applied",
     nextRunAt: null,
-    lastRunAt: null,
     official: null,
+    schedule: { type: "cron", cronExpression: "0 9 * * 1-5", timezone: "UTC" },
+    scheduleSummary: "Weekday schedule",
   };
 }
 
-function githubPullRequestWorkflowAutomation(): WorkflowGithubPullRequestAutomationSummary {
-  return {
-    id: GITHUB_PULL_REQUEST_AUTOMATION_ID,
-    kind: "event",
-    eventType: "github-pull-request",
-    eventConfig: {
-      provider: "github",
-      event: "pull_request",
-      repository: "okou-ai/okou",
-      action: "closed",
-      merged: true,
-      filters: {},
-    },
-    schedule: null,
-    scheduleSummary: null,
-    ownerUserId: CURRENT_USER_ID,
-    enabled: true,
-    chatThreadId: "thread_github_pull_request",
-    nextRunAt: null,
-    lastRunAt: null,
-    official: null,
-  };
-}
-
-function googleCalendarWorkflowAutomation(
-  overrides: Partial<WorkflowGoogleCalendarEventCreatedAutomationSummary> = {},
-): WorkflowGoogleCalendarEventCreatedAutomationSummary {
-  return {
-    id: GOOGLE_CALENDAR_AUTOMATION_ID,
-    kind: "event",
-    eventType: "google-calendar-event-created",
-    eventConfig: {
-      provider: "google-calendar",
-      event: "event_created",
-      calendarId: "primary",
-    },
-    schedule: null,
-    scheduleSummary: null,
-    ownerUserId: CURRENT_USER_ID,
-    enabled: true,
-    chatThreadId: "thread_google_calendar_event_created",
-    nextRunAt: null,
-    lastRunAt: null,
-    ...overrides,
-    official: null,
-  };
-}
-
-function googleCalendarUpdatedWorkflowAutomation(
-  overrides: Partial<WorkflowGoogleCalendarEventUpdatedAutomationSummary> = {},
-): WorkflowGoogleCalendarEventUpdatedAutomationSummary {
-  return {
-    id: "workflow-automation-google-calendar-updated",
-    kind: "event",
-    eventType: "google-calendar-event-updated",
-    eventConfig: {
-      provider: "google-calendar",
-      event: "event_updated",
-      calendarId: "primary",
-    },
-    schedule: null,
-    scheduleSummary: null,
-    ownerUserId: CURRENT_USER_ID,
-    enabled: true,
-    chatThreadId: "thread_google_calendar_event_updated",
-    nextRunAt: null,
-    lastRunAt: null,
-    ...overrides,
-    official: null,
-  };
-}
-
-function googleCalendarCancelledWorkflowAutomation(
-  overrides: Partial<WorkflowGoogleCalendarEventCancelledAutomationSummary> = {},
-): WorkflowGoogleCalendarEventCancelledAutomationSummary {
-  return {
-    id: "workflow-automation-google-calendar-cancelled",
-    kind: "event",
-    eventType: "google-calendar-event-cancelled",
-    eventConfig: {
-      provider: "google-calendar",
-      event: "event_cancelled",
-      calendarId: "primary",
-    },
-    schedule: null,
-    scheduleSummary: null,
-    ownerUserId: CURRENT_USER_ID,
-    enabled: true,
-    chatThreadId: "thread_google_calendar_event_cancelled",
-    nextRunAt: null,
-    lastRunAt: null,
-    ...overrides,
-    official: null,
-  };
-}
-
-function googleMeetTranscriptGeneratedWorkflowAutomation(): WorkflowGoogleMeetTranscriptGeneratedAutomationSummary {
-  return {
-    id: GOOGLE_MEET_AUTOMATION_ID,
-    kind: "event",
-    eventType: "google-meet-transcript-generated",
-    eventConfig: {
-      provider: "google-meet",
-      event: "transcript_generated",
-      scope: { type: "organizer_user" },
-    },
-    schedule: null,
-    scheduleSummary: null,
-    ownerUserId: CURRENT_USER_ID,
-    enabled: true,
-    chatThreadId: "thread_google_meet_transcript_generated",
-    nextRunAt: null,
-    lastRunAt: null,
-    official: null,
-  };
-}
-
-function googleFormsResponseSubmittedWorkflowAutomation(
-  warning?: string,
-): WorkflowGoogleFormsResponseSubmittedAutomationSummary {
-  return {
-    id: "workflow-automation-google-forms-response-submitted",
-    kind: "event",
-    eventType: "google-forms-response-submitted",
-    eventConfig: {
-      provider: "google-forms",
-      event: "response_submitted",
-      connectorId: "00000000-0000-4000-a000-000000000412",
-      form: {
-        id: "1FAIpQLScGoogleFormsAutomationTest",
-        title: "Customer feedback",
-        url: "https://docs.google.com/forms/d/1FAIpQLScGoogleFormsAutomationTest/edit",
-      },
-    },
-    schedule: null,
-    scheduleSummary: null,
-    ownerUserId: CURRENT_USER_ID,
-    enabled: true,
-    chatThreadId: "thread_google_forms_response_submitted",
-    nextRunAt: null,
-    lastRunAt: null,
-    official: null,
-    ...(warning ? { warning } : {}),
-  };
-}
-
-function notionChildPageWorkflowAutomation(): WorkflowNotionChildPageCreatedAutomationSummary {
-  return {
-    id: "workflow-automation-notion-child-page",
-    kind: "event",
-    eventType: "notion-child-page-created",
-    eventConfig: {
-      provider: "notion",
-      event: "child_page_created",
-      connectorId: "00000000-0000-4000-a000-000000000410",
-      parentPage: {
-        id: "11111111-1111-4111-8111-111111111111",
-        url: "https://www.notion.so/Roadmap-11111111111141118111111111111111",
-        title: "Roadmap",
-      },
-    },
-    schedule: null,
-    scheduleSummary: null,
-    ownerUserId: CURRENT_USER_ID,
-    enabled: true,
-    chatThreadId: "thread_notion_child_page",
-    nextRunAt: null,
-    lastRunAt: null,
-    official: null,
-  };
-}
-
-function notionDatabaseItemWorkflowAutomation(): WorkflowNotionDatabaseItemCreatedAutomationSummary {
-  return {
-    id: "workflow-automation-notion-database-item",
-    kind: "event",
-    eventType: "notion-database-item-created",
-    eventConfig: {
-      provider: "notion",
-      event: "database_item_created",
-      connectorId: "00000000-0000-4000-a000-000000000410",
-      dataSource: {
-        id: "22222222-2222-4222-8222-222222222222",
-        url: "https://www.notion.so/Bug-Bash-22222222222242228222222222222222",
-        title: "Bug Bash",
-      },
-    },
-    schedule: null,
-    scheduleSummary: null,
-    ownerUserId: CURRENT_USER_ID,
-    enabled: true,
-    chatThreadId: "thread_notion_database_item",
-    nextRunAt: null,
-    lastRunAt: null,
-    official: null,
-  };
-}
-
-function notionPageContentUpdatedWorkflowAutomation(): WorkflowNotionPageContentUpdatedAutomationSummary {
-  return {
-    id: "workflow-automation-notion-page-content-updated",
-    kind: "event",
-    eventType: "notion-page-content-updated",
-    eventConfig: {
-      provider: "notion",
-      event: "page_content_updated",
-      connectorId: "00000000-0000-4000-a000-000000000410",
-      scope: {
-        type: "page",
-        page: {
-          id: "33333333-3333-4333-8333-333333333333",
-          url: "https://www.notion.so/Release-plan-33333333333343338333333333333333",
-          title: "Release plan",
-        },
-      },
-    },
-    schedule: null,
-    scheduleSummary: null,
-    ownerUserId: CURRENT_USER_ID,
-    enabled: true,
-    chatThreadId: "thread_notion_page_content_updated",
-    nextRunAt: null,
-    lastRunAt: null,
-    official: null,
-  };
-}
-
-function webhookWorkflowAutomation(): WorkflowWebhookAutomationSummary {
-  return {
-    id: "workflow-automation-webhook",
-    kind: "event",
-    eventType: "webhook-received",
-    eventConfig: {
-      provider: "webhook",
-      event: "received",
-      auth: { mode: "hmac-sha256" },
-    },
-    schedule: null,
-    scheduleSummary: null,
-    ownerUserId: CURRENT_USER_ID,
-    enabled: true,
-    chatThreadId: "thread_webhook",
-    nextRunAt: null,
-    lastRunAt: null,
-    official: null,
-    webhookUrl:
-      "https://api.okou.test/api/webhooks/workflow-automations/whk_test",
-    secretLastFour: "abcd",
-    lastReceivedAt: null,
-  };
-}
-
-function publicWorkflowAutomation(
-  automation: WorkflowAutomationSummary,
-): WorkflowAutomationSummary {
-  if (
-    automation.kind !== "event" ||
-    automation.eventType !== "webhook-received"
-  ) {
-    return automation;
-  }
-  const {
-    webhookUrl: _webhookUrl,
-    webhookSecret: _webhookSecret,
-    ...rest
-  } = automation;
-  return rest;
-}
-
-function publicWorkflowDetail(
-  detail: WorkflowDetailResponse,
-): WorkflowDetailResponse {
-  return {
-    ...detail,
-    automations: detail.automations.map(publicWorkflowAutomation),
-  };
-}
-
-function salesResearch(): WorkflowDetailResponse {
-  return {
-    id: SALES_WORKFLOW_ID,
-    agentId: AGENT_ID,
-    agentName: "research-bot",
-    agentDisplayName: "Research Bot",
-    name: "sales-research",
-    displayName: "Sales Research",
-    description: "Collects account context before outreach.",
-    visibility: "public",
-    official: null,
-    ownerUserId: CURRENT_USER_ID,
-    canManage: true,
-    canPublish: false,
-    importSource: null,
-    createdByUserId: CURRENT_USER_ID,
-    updatedByUserId: UPDATED_USER_ID,
-    createdAt: "2026-06-17T13:52:00.000Z",
-    updatedAt: "2026-06-20T14:16:00.000Z",
-    instruction: "Gather CRM context before outreach.",
-    files: [
-      { path: "examples/prompt.md", size: 1536 },
-      { path: "config/settings.json", size: 32 },
-    ],
-    fileContents: [
-      {
-        path: "examples/prompt.md",
-        content: "# Prompt example\n\nAsk for market segment and urgency.\n",
-      },
-      {
-        path: "config/settings.json",
-        content: '{ "risk": "low", "tone": "direct" }',
-      },
-    ],
-    automations: workflowAutomations(),
-  };
-}
-
-function officialSalesResearch(
-  lifecycle: "active" | "retired" | "unavailable" = "active",
-  reconciliationStatus:
-    "current" | "reconciling" | "needs_reconfiguration" | "failed" = "current",
-): WorkflowDetailResponse {
-  const ordinary = salesResearch();
-  const [automation] = ordinary.automations;
-  if (!automation) {
-    throw new Error("Expected the Official Workflow automation fixture");
-  }
-  return {
-    ...ordinary,
-    visibility: "private",
-    canManage: false,
-    canPublish: false,
-    importSource: null,
-    instruction: "Use the accepted Official instructions.",
-    files: [{ path: "references/playbook.md", size: 17 }],
-    fileContents: [
-      { path: "references/playbook.md", content: "Official playbook" },
-    ],
-    official: {
-      definitionName: "sales-research",
-      installationState: "installed",
-      definitionLifecycle: lifecycle,
-      readOnly: true,
-    },
-    automations: [
-      {
-        ...automation,
-        enabled: false,
-        official: {
-          blueprintKey: "daily",
-          appliedFingerprint: OFFICIAL_BLUEPRINT_FINGERPRINT,
-          reconciliationStatus,
-          intendedEnabled: true,
-          parameterBindings: [
-            { key: "time-zone", value: "UTC" },
-            { key: "interval-seconds", value: 3600 },
-            { key: "include-weekends", value: false },
-          ],
-        },
-      },
-    ],
-  };
-}
-
-function morningBriefWorkflow(): WorkflowDetailResponse {
-  const workflow = officialSalesResearch();
-  if (!workflow.official) {
-    throw new Error("Expected an Official Workflow fixture");
-  }
-  return {
-    ...workflow,
-    id: MORNING_BRIEF_WORKFLOW_ID,
-    name: "morning-brief",
-    displayName: "Morning Brief",
-    official: {
-      ...workflow.official,
-      definitionName: "morning-brief",
-    },
-  };
-}
-
-function opsPlaybook(): WorkflowDetailResponse {
-  return {
-    id: OPS_WORKFLOW_ID,
-    agentId: AGENT_ID,
-    agentName: "research-bot",
-    agentDisplayName: "Research Bot",
-    name: "ops-playbook",
-    displayName: "Ops Playbook",
-    description: null,
-    visibility: "private",
-    official: null,
-    ownerUserId: CURRENT_USER_ID,
-    canManage: true,
-    canPublish: true,
-    importSource: null,
-    createdByUserId: CURRENT_USER_ID,
-    updatedByUserId: CURRENT_USER_ID,
-    createdAt: "2026-06-15T12:00:00.000Z",
-    updatedAt: "2026-06-15T12:00:00.000Z",
-    instruction: null,
-    files: [],
-    fileContents: [],
-    automations: [],
-  };
-}
-
-function launchChecklistWorkflow(): WorkflowDetailResponse {
-  return {
-    id: CHECKLIST_WORKFLOW_ID,
-    agentId: AGENT_ID,
-    agentName: "research-bot",
-    agentDisplayName: "Research Bot",
-    name: "launch-checklist",
-    displayName: "Launch Checklist",
-    description: "Prepares release approvals.",
-    visibility: "private",
-    official: null,
-    ownerUserId: CURRENT_USER_ID,
-    canManage: true,
-    canPublish: true,
-    importSource: null,
-    createdByUserId: CURRENT_USER_ID,
-    updatedByUserId: CURRENT_USER_ID,
-    createdAt: "2026-06-18T12:00:00.000Z",
-    updatedAt: "2026-06-18T12:00:00.000Z",
-    instruction: null,
-    files: [],
-    fileContents: [],
-    automations: [],
-  };
-}
-
-function otherAgentWorkflow(): WorkflowDetailResponse {
-  return {
-    id: OTHER_WORKFLOW_ID,
-    agentId: OTHER_AGENT_ID,
-    agentName: "support-bot",
-    agentDisplayName: "Support Bot",
-    name: "support-intake",
-    displayName: "Support Intake",
-    description: "Sorts incoming support requests.",
-    visibility: "public",
-    official: null,
-    ownerUserId: CURRENT_USER_ID,
-    canManage: true,
-    canPublish: false,
-    importSource: null,
-    createdByUserId: CURRENT_USER_ID,
-    updatedByUserId: CURRENT_USER_ID,
-    createdAt: "2026-06-16T12:00:00.000Z",
-    updatedAt: "2026-06-16T12:00:00.000Z",
-    instruction: null,
-    files: [],
-    fileContents: [],
-    automations: [],
-  };
-}
-
-function agent(id: string, displayName: string): AgentResponse {
-  return {
-    isDefaultAgent: id === AGENT_ID,
-    agentId: id,
-    ownerId: CURRENT_USER_ID,
-    displayName,
-    description: "Finds and summarizes information",
-    sound: null,
-    avatarUrl: null,
-    visibility: "public",
-  };
-}
-
-function summary(workflow: WorkflowDetailResponse): WorkflowSummary {
-  return {
-    id: workflow.id,
-    agentId: workflow.agentId,
-    agentName: workflow.agentName,
-    agentDisplayName: workflow.agentDisplayName,
-    name: workflow.name,
-    displayName: workflow.displayName,
-    description: workflow.description,
-    visibility: workflow.visibility,
-    ownerUserId: workflow.ownerUserId,
-    createdAt: workflow.createdAt,
-    canManage: workflow.canManage,
-    canPublish: workflow.canPublish,
-    shadowedBy: workflow.shadowedBy,
-    official: workflow.official,
-    importSource: workflow.importSource,
-  };
-}
-
-function mockAgentPageApis(): void {
-  context.mocks.data.agents([
-    agent(AGENT_ID, "Research Bot"),
-    agent(OTHER_AGENT_ID, "Support Bot"),
-  ]);
-  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-    const displayName =
-      params.id === OTHER_AGENT_ID ? "Support Bot" : "Research Bot";
-    return respond(200, {
-      isDefaultAgent: params.id === AGENT_ID,
-      agentId: params.id,
-      ownerId: CURRENT_USER_ID,
-      description: "Finds and summarizes information",
-      displayName,
-      sound: null,
-      avatarUrl: null,
-      visibility: "public",
-    });
-  });
-}
-
-function applyWorkflowUpdate(
-  workflow: WorkflowDetailResponse,
-  body: WorkflowUpdateRequest,
-): WorkflowDetailResponse {
-  return {
-    ...workflow,
-    ...(body.name !== undefined ? { name: body.name } : {}),
-    ...(body.instruction !== undefined
-      ? { instruction: body.instruction }
-      : {}),
-    ...(body.displayName !== undefined
-      ? { displayName: body.displayName }
-      : {}),
-    ...(body.description !== undefined
-      ? { description: body.description }
-      : {}),
-    ...(body.files !== undefined
-      ? {
-          files: body.files.map((file) => {
-            return { path: file.path, size: file.content.length };
-          }),
-          fileContents: body.files,
-        }
-      : {}),
-    updatedByUserId: CURRENT_USER_ID,
-    updatedAt: "2026-06-21T12:00:00.000Z",
-  };
-}
-
-function mockWorkflowApis(
-  workflows: WorkflowDetailResponse[],
-  onUpdate?: (body: WorkflowUpdateRequest) => void,
-): void {
-  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
-  const setAutomationEnabled = (
-    automationId: string,
-    enabled: boolean,
-  ): WorkflowAutomationSummary | null => {
-    for (const workflow of workflows) {
-      const automationIndex = workflow.automations.findIndex((automation) => {
-        return automation.id === automationId;
-      });
-      if (automationIndex === -1) {
-        continue;
-      }
-      const currentAutomation = workflow.automations[automationIndex];
-      if (!currentAutomation) {
-        continue;
-      }
-      const updatedAutomation = { ...currentAutomation, enabled };
-      workflow.automations[automationIndex] = updatedAutomation;
-      return updatedAutomation;
-    }
-    return null;
-  };
-
-  context.mocks.api(workflowsDetailContract.ownerProfile, ({ respond }) => {
-    return respond(200, { displayName: "Test User", imageUrl: null });
-  });
-  context.mocks.api(workflowsCollectionContract.list, ({ query, respond }) => {
-    const visible = query.agentId
-      ? workflows.filter((workflow) => {
-          return workflow.agentId === query.agentId;
-        })
-      : workflows;
-    return respond(200, visible.map(summary));
-  });
-  context.mocks.api(workflowsDetailContract.get, ({ params, respond }) => {
-    const detail = workflows.find((workflow) => {
-      return workflow.id === params.workflowId;
-    });
-    if (!detail) {
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "missing" },
-      });
-    }
-    const publicDetail = publicWorkflowDetail(detail);
-    return respond(200, publicDetail);
-  });
-  context.mocks.api(
-    workflowAutomationsContract.listWorkspace,
-    ({ respond }) => {
-      return respond(
-        200,
-        workflows.flatMap((workflow) => {
-          return workflow.automations.map((automation) => {
-            return {
-              workflow: summary(workflow),
-              automation: publicWorkflowAutomation(automation),
-            };
-          });
-        }) as never,
-      );
-    },
-  );
-  context.mocks.api(
-    workflowAutomationsContract.revealWebhookSecret,
-    ({ params, respond }) => {
-      const automation = workflows
-        .flatMap((workflow) => {
-          return workflow.automations;
-        })
-        .find((item) => {
-          return item.id === params.id;
-        });
-      if (
-        automation &&
-        automation.kind === "event" &&
-        automation.eventType === "webhook-received"
-      ) {
-        return respond(200, {
-          webhookUrl:
-            automation.webhookUrl ??
-            "https://api.okou.test/api/webhooks/workflow-automations/whk_test",
-          webhookSecret: automation.webhookSecret ?? "webhook-secret",
-        });
-      }
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "missing" },
-      });
-    },
-  );
-  context.mocks.api(
-    workflowAutomationsContract.enable,
-    ({ params, respond }) => {
-      const automation = setAutomationEnabled(params.id, true);
-      if (!automation) {
-        return respond(404, {
-          error: { code: "NOT_FOUND", message: "missing" },
-        });
-      }
-      return respond(200, automation);
-    },
-  );
-  context.mocks.api(
-    workflowAutomationsContract.disable,
-    ({ params, respond }) => {
-      const automation = setAutomationEnabled(params.id, false);
-      if (!automation) {
-        return respond(404, {
-          error: { code: "NOT_FOUND", message: "missing" },
-        });
-      }
-      return respond(200, automation);
-    },
-  );
-  context.mocks.api(
-    workflowsDetailContract.update,
-    ({ params, body, respond }) => {
-      const index = workflows.findIndex((workflow) => {
-        return workflow.id === params.workflowId;
-      });
-      if (index === -1) {
-        return respond(404, {
-          error: { code: "NOT_FOUND", message: "missing" },
-        });
-      }
-      onUpdate?.(body);
-      const workflow = workflows[index];
-      workflows[index] = applyWorkflowUpdate(workflow, body);
-      return respond(200, workflows[index]);
-    },
-  );
-}
-
-function mockConfiguredEventAutomation(
-  body: Extract<WorkflowAutomationCreateRequest, { readonly kind: "event" }>,
-): WorkflowAutomationSummary {
-  return {
-    ...gmailWorkflowAutomation(),
-    eventType: body.eventType,
-    eventConfig: body.eventConfig,
-  } as WorkflowAutomationSummary;
-}
-
-function mockGoogleCalendarEventAutomation(
-  body: Extract<WorkflowAutomationCreateRequest, { readonly kind: "event" }>,
-): WorkflowAutomationSummary {
-  switch (body.eventType) {
-    case "google-calendar-event-created": {
-      return {
-        ...googleCalendarWorkflowAutomation(),
-        eventConfig: body.eventConfig,
-      };
-    }
-    case "google-calendar-event-updated": {
-      return {
-        ...googleCalendarUpdatedWorkflowAutomation(),
-        eventConfig: body.eventConfig,
-      };
-    }
-    case "google-calendar-event-cancelled": {
-      return {
-        ...googleCalendarCancelledWorkflowAutomation(),
-        eventConfig: body.eventConfig,
-      };
-    }
-    default: {
-      throw new Error("Expected a Google Calendar event automation");
-    }
-  }
-}
-
-function mockCreateWorkflowAutomation(
-  onCreate: (body: WorkflowAutomationCreateRequest) => void,
-): void {
-  context.mocks.api(workflowAutomationsContract.create, ({ body, respond }) => {
-    onCreate(body);
-    if (body.kind !== "event") {
-      return respond(201, weekdayWorkflowAutomation());
-    }
-    if (body.eventType === "webhook-received") {
-      return respond(201, {
-        ...webhookWorkflowAutomation(),
-        eventConfig:
-          body.eventConfig ?? webhookWorkflowAutomation().eventConfig,
-        webhookSecret: "webhook-secret",
-      });
-    }
-    if (body.eventType === "gmail-label-applied") {
-      return respond(201, {
-        ...gmailLabelWorkflowAutomation(),
-        eventConfig: body.eventConfig,
-      });
-    }
-    if (body.eventType === "github-pull-request") {
-      return respond(201, {
-        ...githubPullRequestWorkflowAutomation(),
-        eventConfig: body.eventConfig,
-      });
-    }
-    if (body.eventType === "github-workflow-run-completed") {
-      return respond(201, {
-        ...githubPullRequestWorkflowAutomation(),
-        eventType: "github-workflow-run-completed",
-        eventConfig: body.eventConfig,
-      });
-    }
-    if (body.eventConfig.provider === "google-calendar") {
-      return respond(201, mockGoogleCalendarEventAutomation(body));
-    }
-    if (body.eventType === "google-meet-transcript-generated") {
-      return respond(201, {
-        ...googleMeetTranscriptGeneratedWorkflowAutomation(),
-        eventConfig: body.eventConfig,
-      });
-    }
-    if (body.eventType === "notion-child-page-created") {
-      return respond(201, {
-        ...notionChildPageWorkflowAutomation(),
-        eventConfig: {
-          provider: "notion",
-          event: "child_page_created",
-          connectorId: "00000000-0000-4000-a000-000000000410",
-          parentPage: {
-            id: "11111111-1111-4111-8111-111111111111",
-            url: body.eventConfig.parentPageUrl,
-            title: "Roadmap",
-            rawUrl: body.eventConfig.parentPageUrl,
-          },
-        },
-      });
-    }
-    if (body.eventType === "notion-database-item-created") {
-      return respond(201, {
-        ...notionDatabaseItemWorkflowAutomation(),
-        eventConfig: {
-          provider: "notion",
-          event: "database_item_created",
-          connectorId: "00000000-0000-4000-a000-000000000410",
-          dataSource: {
-            id: "22222222-2222-4222-8222-222222222222",
-            url: body.eventConfig.databaseUrl,
-            title: "Bug Bash",
-            rawUrl: body.eventConfig.databaseUrl,
-          },
-        },
-      });
-    }
-    if (body.eventType === "notion-page-content-updated") {
-      return respond(201, {
-        ...notionPageContentUpdatedWorkflowAutomation(),
-        eventConfig: {
-          provider: "notion",
-          event: "page_content_updated",
-          connectorId: "00000000-0000-4000-a000-000000000410",
-          scope: body.eventConfig.pageUrl
-            ? {
-                type: "page",
-                page: {
-                  id: "33333333-3333-4333-8333-333333333333",
-                  url: body.eventConfig.pageUrl,
-                  title: "Release plan",
-                  rawUrl: body.eventConfig.pageUrl,
-                },
-              }
-            : {
-                type: "data_source",
-                dataSource: {
-                  id: "22222222-2222-4222-8222-222222222222",
-                  url: body.eventConfig.databaseUrl ?? "",
-                  title: "Bug Bash",
-                  rawUrl: body.eventConfig.databaseUrl,
-                },
-              },
-        },
-      });
-    }
-    if (
-      body.eventConfig.provider === "github" ||
-      body.eventConfig.provider === "google-forms" ||
-      body.eventConfig.provider === "chat"
-    ) {
-      return respond(201, mockConfiguredEventAutomation(body));
-    }
-    return respond(201, {
-      ...gmailWorkflowAutomation(),
-      eventConfig: body.eventConfig,
-    });
-  });
-}
-
-function mockUpdateWorkflowAutomation(
-  onUpdate: (
-    automationId: string,
-    body: WorkflowAutomationUpdateRequest,
-  ) => void,
-): void {
-  context.mocks.api(
-    workflowAutomationsContract.update,
-    ({ params, body, respond }) => {
-      onUpdate(params.id, body);
-      if ("eventConfig" in body) {
-        if (body.eventConfig.provider === "github") {
-          if (body.eventConfig.event === "workflow_run_completed") {
-            return respond(200, {
-              ...githubPullRequestWorkflowAutomation(),
-              id: params.id,
-              eventType: "github-workflow-run-completed",
-              eventConfig: body.eventConfig,
-            });
-          }
-          if (body.eventConfig.event !== "pull_request") {
-            return respond(200, {
-              ...githubPullRequestWorkflowAutomation(),
-              id: params.id,
-              eventType:
-                body.eventConfig.event === "workflow_job_completed"
-                  ? "github-workflow-job-completed"
-                  : body.eventConfig.event === "pull_request_review_submitted"
-                    ? "github-pull-request-review-submitted"
-                    : body.eventConfig.event === "deployment_status_created"
-                      ? "github-deployment-status-created"
-                      : "github-issue-comment-created",
-              eventConfig: body.eventConfig,
-            } as WorkflowAutomationSummary);
-          }
-          return respond(200, {
-            ...githubPullRequestWorkflowAutomation(),
-            id: params.id,
-            eventConfig: body.eventConfig,
-          });
-        }
-        if (body.eventConfig.provider === "google-calendar") {
-          const automation =
-            body.eventConfig.event === "event_created"
-              ? googleCalendarWorkflowAutomation()
-              : body.eventConfig.event === "event_updated"
-                ? googleCalendarUpdatedWorkflowAutomation()
-                : googleCalendarCancelledWorkflowAutomation();
-          return respond(200, {
-            ...automation,
-            id: params.id,
-            eventConfig: body.eventConfig,
-          } as WorkflowAutomationSummary);
-        }
-        if (body.eventConfig.event === "label_applied") {
-          return respond(200, {
-            ...gmailLabelWorkflowAutomation(),
-            id: params.id,
-            eventConfig: body.eventConfig,
-          });
-        }
-        return respond(200, {
-          ...gmailWorkflowAutomation(),
-          id: params.id,
-          eventConfig: body.eventConfig,
-        });
-      }
-      return respond(200, {
-        ...weekdayWorkflowAutomation(),
-        id: params.id,
-        schedule: body.schedule,
-      });
-    },
-  );
-}
-
-function applyGoogleCalendarAutomationUpdate(
-  automation: WorkflowAutomationSummary,
-  eventConfig: GoogleCalendarAutomationEventConfig,
-): WorkflowGoogleCalendarAutomationSummary {
-  switch (eventConfig.event) {
-    case "event_created": {
-      if (
-        automation.kind !== "event" ||
-        automation.eventType !== "google-calendar-event-created"
-      ) {
-        throw new Error("Expected a Google Calendar event-created automation");
-      }
-      const { warning: _warning, ...rest } = automation;
-      return { ...rest, eventConfig };
-    }
-    case "event_updated": {
-      if (
-        automation.kind !== "event" ||
-        automation.eventType !== "google-calendar-event-updated"
-      ) {
-        throw new Error("Expected a Google Calendar event-updated automation");
-      }
-      const { warning: _warning, ...rest } = automation;
-      return { ...rest, eventConfig };
-    }
-    case "event_cancelled": {
-      if (
-        automation.kind !== "event" ||
-        automation.eventType !== "google-calendar-event-cancelled"
-      ) {
-        throw new Error(
-          "Expected a Google Calendar event-cancelled automation",
-        );
-      }
-      const { warning: _warning, ...rest } = automation;
-      return { ...rest, eventConfig };
-    }
-  }
-}
-
-function googleCalendarAccount(args: {
-  readonly id: string;
-  readonly displayName: string;
-  readonly isDefault: boolean;
-  readonly externalUsername: string;
-  readonly status?: ConnectorAccountConnection["connectionStatus"];
-}): ConnectorAccountConnection {
-  return {
-    id: args.id,
-    target: { kind: "builtin", connectorSlug: "google-calendar" },
-    authMethod: "oauth",
-    displayName: args.displayName,
-    isDefault: args.isDefault,
-    externalId: null,
-    externalUsername: args.externalUsername,
-    externalEmail: `${args.externalUsername}@example.com`,
-    oauthScopes: [],
-    scopeMismatch: false,
-    connectionStatus: args.status ?? "connected",
-    missingRequiredFields: [],
-    configuredFieldKeys: [],
-    reconnectReason:
-      args.status === "reconnect-required"
-        ? "authorization_expired_or_revoked"
-        : null,
-    tokenExpiresAt: null,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-  };
-}
-
-function mockRunWorkflowAutomation(
-  onRun: (automationId: string) => void,
-): void {
-  context.mocks.api(workflowAutomationsContract.run, ({ params, respond }) => {
-    onRun(params.id);
-    return respond(201, {
-      runId: null,
-      chatThreadId: AUTOMATION_RUN_THREAD_ID,
-    });
-  });
-}
-
-function mockOpenWorkflowChat(onOpen: (workflowId: string) => void): void {
-  context.mocks.api(
-    workflowsDetailContract.chatThread,
-    ({ params, respond }) => {
-      onOpen(params.workflowId);
-      return respond(200, {
-        chatThreadId: WORKFLOW_CHAT_THREAD_ID,
-        prompt: "help me refine the workflow /sales-research",
-      });
-    },
-  );
-}
-
-type RoleTextMatch = RegExp | string;
-
-function textFor(element: Element): string {
-  return element.textContent?.replace(/\s+/g, " ").trim() ?? "";
-}
-
-function valueMatchesText(value: string, text: RoleTextMatch): boolean {
-  return typeof text === "string" ? value === text : text.test(value);
-}
-
-function matchesText(element: Element, text: RoleTextMatch): boolean {
-  const label = element.getAttribute("aria-label") ?? "";
-  return [textFor(element), label].some((value) => {
-    return value.length > 0 && valueMatchesText(value, text);
-  });
-}
-
-function matchLabel(text: RoleTextMatch): string {
-  return typeof text === "string" ? text : text.toString();
-}
-
-function buttonByText(
-  text: RoleTextMatch,
-  container: ParentNode = document.body,
-): HTMLElement {
-  const button = queryButtonByText(text, container);
-  if (!button) {
-    throw new Error(`${matchLabel(text)} button not found`);
-  }
-  return button;
-}
-
-function queryButtonByText(
-  text: RoleTextMatch,
-  container: ParentNode = document.body,
-): HTMLElement | null {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
-    return matchesText(candidate, text);
-  });
-  return button ?? null;
-}
-
-function linkByText(
-  text: RoleTextMatch,
-  container: ParentNode = document.body,
-): HTMLElement {
-  const links = queryAllByRoleFast("link", container);
-  const link = links.find((candidate) => {
-    return matchesText(candidate, text);
-  });
-  if (!link) {
-    throw new Error(`${matchLabel(text)} link not found`);
-  }
-  return link;
-}
-
-function menuItemByText(text: RoleTextMatch): HTMLElement {
-  const menuItems = queryAllByRoleFast("menuitem");
-  const item = menuItems.find((candidate) => {
-    return matchesText(candidate, text);
-  });
-  if (!item) {
-    throw new Error(`${matchLabel(text)} menu item not found`);
-  }
-  return item;
-}
-
-function workflowFileItemByText(text: RoleTextMatch): HTMLElement {
-  const item = queryAllByRoleFast("menuitemradio").find((candidate) => {
-    return matchesText(candidate, text);
-  });
-  if (!item) {
-    throw new Error(`${matchLabel(text)} workflow file item not found`);
-  }
-  return item;
-}
-
-// The "Add automation" automation picker is a dialog split into category tabs on
-// the left and automation cards on the right; a card only mounts once its category
-// is active. Select the category, then the card (matched by its leading title,
-// since cards also render a description line).
-function pickAutomation(category: string, title: RoleTextMatch): void {
-  const dialog = screen.getByRole("dialog");
-  const tab = queryAllByRoleFast("button", dialog).find((candidate) => {
-    return textFor(candidate) === category;
-  });
-  if (!tab) {
-    throw new Error(`${category} automation category not found`);
-  }
-  click(tab);
-  const card = queryAllByRoleFast("button", dialog).find((candidate) => {
-    const text = textFor(candidate);
-    return typeof title === "string"
-      ? text.startsWith(title)
-      : title.test(text);
-  });
-  if (!card) {
-    throw new Error(`${matchLabel(title)} automation card not found`);
-  }
-  click(card);
-}
-
-function articleByText(text: string): HTMLElement {
-  const article = screen
-    .getAllByText(text)
-    .map((element) => {
-      return element.closest("article");
-    })
-    .find((candidate): candidate is HTMLElement => {
-      return candidate instanceof HTMLElement;
-    });
-  if (!article) {
-    throw new Error(`${text} card not found`);
-  }
-  return article;
-}
-
-function linkByAriaLabel(
-  label: string,
-  candidates = queryAllByRoleFast("link"),
-): HTMLAnchorElement {
-  const link = candidates.find((candidate): candidate is HTMLAnchorElement => {
-    return (
-      candidate instanceof HTMLAnchorElement &&
-      candidate.getAttribute("aria-label") === label
-    );
-  });
-  if (!link) {
-    throw new Error(`${label} link not found`);
-  }
-  return link;
-}
-
-function selectOptionByLabel(
-  label: string,
-  option: string | RegExp,
-  container: HTMLElement,
-): void {
-  const control =
-    within(container)
-      .getAllByLabelText(label)
-      .find((element) => {
-        return element.getAttribute("role") === "combobox";
-      }) ?? within(container).getByLabelText(label);
-  click(control);
-  click(screen.getByRole("option", { name: option }));
-}
-
-test("Return to Workflows with a toast when a workflow no longer exists", async () => {
-  mockWorkflowApis([opsPlaybook()]);
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-  await expect(
-    screen.findByText("Workflow not found."),
-  ).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    expect(pathname()).toBe("/workflows");
-    expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
-  });
-});
-
-test("Return to Workflows with a toast when a legacy detail link is inaccessible", async () => {
-  mockWorkflowApis([opsPlaybook()]);
+test("workflows-page-004 a forbidden legacy detail returns to the accessible directory", async () => {
+  const { base, entries } = directory();
+  entries.shift();
   context.mocks.api(workflowsDetailContract.get, ({ respond }) => {
-    return respond(403, {
-      error: { code: "FORBIDDEN", message: "Workflow access denied" },
-    });
+    return respond(403, { error: { code: "FORBIDDEN", message: "Private" } });
   });
-
-  await setupWorkflowDetailPage(`/workflows/${SALES_WORKFLOW_ID}`);
-
-  await expect(
-    screen.findByText("Workflow not found."),
-  ).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    expect(pathname()).toBe("/workflows");
-    expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
-  });
+  await setupPage({ context, path: base });
+  await screen.findByText("Workflow not found.");
+  await expect(screen.findByText("Ops Playbook")).resolves.toBeVisible();
+  expect(location.pathname).toBe("/workflows");
 });
 
-test("Preserve workflow detail request failures instead of treating them as missing", async () => {
-  mockWorkflowApis([opsPlaybook()]);
-  context.mocks.api(workflowsDetailContract.get, ({ respond }) => {
-    return respond(500, {
-      error: {
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Workflow service unavailable",
-      },
-    });
-  });
-
-  await expect(
-    setupWorkflowDetailPage(workflowDetailPath("automations")),
-  ).rejects.toThrow("Workflow service unavailable");
-  expect(pathname()).toBe(workflowDetailPath("automations"));
-});
-
-test("Redirect a cold Morning Brief detail to its preference", async () => {
-  mockWorkflowApis([morningBriefWorkflow()]);
-  context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
-    return respond(200, {
-      enabled: true,
-      status: "enabled",
-      unavailableReason: null,
-    });
-  });
-
-  mockAgentPageApis();
-  await setupWorkflowDetailPage(
-    `/workflows/${MORNING_BRIEF_WORKFLOW_ID}/automations`,
-  );
-
-  await waitFor(() => {
-    expect(pathname()).toBe("/");
-    expect(search()).toBe("?settings=preference&focus=morning-brief");
-  });
-  await expect(
-    screen.findByTestId("morning-brief-preference"),
-  ).resolves.toBeVisible();
-  expect(screen.queryByText("Instructions")).not.toBeInTheDocument();
-});
-
-test("Redirect a hidden Official Workflow and exclude Official Workflows from the list", async () => {
-  const morningBrief = morningBriefWorkflow();
-  if (!morningBrief.official) {
-    throw new Error("Expected an Official Workflow fixture");
-  }
-  mockWorkflowApis([
-    officialSalesResearch(),
-    {
-      ...morningBrief,
-      name: "internal-test-morning-brief",
-      official: {
-        ...morningBrief.official,
-        definitionName: "internal-test-morning-brief",
-      },
-    },
-    opsPlaybook(),
-  ]);
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-  await waitFor(() => {
-    expect(pathname()).toBe("/workflows");
-    expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
-  });
-  const listed = queryAllByRoleFast("link").map((link) => {
-    return link.getAttribute("aria-label");
-  });
-  expect(listed).not.toContain("Open Sales Research");
-  expect(listed).not.toContain("Open Morning Brief");
-});
-
-test("Filter workflows by automation and visibility", async () => {
-  const user = userEvent.setup();
-  context.mocks.data.userPreferences({ timezone: "UTC" });
-  mockAgentPageApis();
-  mockChatLifecycle(context);
-  mockWorkflowApis([
-    salesResearch(),
-    opsPlaybook(),
-    launchChecklistWorkflow(),
-    otherAgentWorkflow(),
-  ]);
-
-  await setupPage({
-    context,
-    path: "/workflows",
-  });
-
-  await waitFor(() => {
-    expect(linkByAriaLabel("Open Sales Research")).toBeInTheDocument();
-  });
-  expect(search()).toBe("");
-  const filterGroup = screen.getByRole("group", { name: "Workflows" });
-  const expectSelectedFilter = (selected: string) => {
-    for (const name of ["All", "Automated", "Manual", "Private", "Public"]) {
-      expect(buttonByText(name, filterGroup)).toHaveAttribute(
-        "aria-pressed",
-        String(name === selected),
-      );
-    }
-  };
-  expectSelectedFilter("All");
-
-  // The default "All" view lists every workspace workflow.
-  expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
-  expect(linkByAriaLabel("Open Launch Checklist")).toBeInTheDocument();
-  expect(screen.queryByText("Support Intake")).not.toBeInTheDocument();
-
-  // The automated workflow surfaces its connector pill on the row.
-  const salesCard = articleByText("Sales Research");
-  expect(within(salesCard).getByText("Schedule")).toBeInTheDocument();
-
-  // "Automated" keeps only workflows that have at least one automation.
-  await user.click(buttonByText("Automated", filterGroup));
-  await waitFor(() => {
-    expect(search()).toBe("?filter=automated");
-  });
-  expectSelectedFilter("Automated");
-  expect(linkByAriaLabel("Open Sales Research")).toBeInTheDocument();
-  expect(screen.queryByText("Ops Playbook")).not.toBeInTheDocument();
-  expect(screen.queryByText("Launch Checklist")).not.toBeInTheDocument();
-  expect(screen.queryByText("Support Intake")).not.toBeInTheDocument();
-
-  // Space selects "Manual" using the native button contract.
-  buttonByText("Manual", filterGroup).focus();
-  await user.keyboard(" ");
-  await waitFor(() => {
-    expect(search()).toBe("?filter=without");
-  });
-  expectSelectedFilter("Manual");
-  expect(screen.queryByText("Sales Research")).not.toBeInTheDocument();
-  expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
-  expect(linkByAriaLabel("Open Launch Checklist")).toBeInTheDocument();
-
-  // The pills are a single mutually-exclusive group: selecting "Private"
-  // replaces the automation selection rather than combining with it.
-  buttonByText("Private", filterGroup).focus();
-  await user.keyboard("{Enter}");
-  await waitFor(() => {
-    expect(search()).toBe("?filter=private");
-  });
-  expectSelectedFilter("Private");
-  expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
-  expect(linkByAriaLabel("Open Launch Checklist")).toBeInTheDocument();
-  expect(screen.queryByText("Sales Research")).not.toBeInTheDocument();
-  expect(screen.queryByText("Support Intake")).not.toBeInTheDocument();
-
-  // "Public" keeps only the public workflows.
-  click(buttonByText("Public", filterGroup));
-  await waitFor(() => {
-    expect(search()).toBe("?filter=public");
-  });
-  expectSelectedFilter("Public");
-  expect(linkByAriaLabel("Open Sales Research")).toBeInTheDocument();
-  expect(screen.queryByText("Support Intake")).not.toBeInTheDocument();
-  expect(screen.queryByText("Ops Playbook")).not.toBeInTheDocument();
-  expect(screen.queryByText("Launch Checklist")).not.toBeInTheDocument();
-
-  // Re-selecting a filter keeps it selected; only "All" clears filtering.
-  click(buttonByText("Public", filterGroup));
-  expect(search()).toBe("?filter=public");
-  expectSelectedFilter("Public");
-
-  // Clearing the filter returns to the full list.
-  click(buttonByText("All", filterGroup));
-  await waitFor(() => {
-    expect(search()).toBe("");
-  });
-  expectSelectedFilter("All");
-  expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
-});
-
-test("Open and manage a deep-linked automation", async () => {
-  context.mocks.data.userPreferences({ timezone: "UTC" });
-  const workflow = {
-    ...salesResearch(),
-    automations: [weekdayWorkflowAutomation(), gmailWorkflowAutomation()],
-  };
-  const scrollIntoView = installScrollIntoViewMock();
-  mockWorkflowApis([workflow]);
-
-  await setupWorkflowDetailPage(
-    `${workflowDetailPath("automations")}?automationId=${GMAIL_AUTOMATION_ID}`,
-  );
-
-  const gmailSwitch = await screen.findByRole("switch", {
-    name: "Disable Gmail new message",
-  });
-  const gmailRow = document.querySelector<HTMLElement>(
-    `[data-automation-id="${GMAIL_AUTOMATION_ID}"]`,
-  );
-  const weekdayRow = document.querySelector<HTMLElement>(
-    '[data-automation-id="workflow-automation-weekday-brief"]',
-  );
-  if (!gmailRow || !weekdayRow) {
-    throw new Error("Expected both automation cards");
-  }
-  expect(
-    within(gmailRow).getByText(/from contains "@acme.com"/),
-  ).toBeInTheDocument();
-  expect(
-    within(gmailRow).getByText(/subject does not contain "newsletter"/),
-  ).toBeInTheDocument();
-  expect(within(gmailRow).queryByText("Next")).not.toBeInTheDocument();
-  expect(within(weekdayRow).getByText("Next")).toBeInTheDocument();
-  expect(gmailRow).toHaveAttribute("aria-current", "true");
-  expect(weekdayRow).not.toHaveAttribute("aria-current");
-  expect(scrollIntoView).toHaveBeenCalledWith({ block: "center" });
-  expect(search()).toBe(`?automationId=${GMAIL_AUTOMATION_ID}`);
-
-  click(gmailSwitch);
-
-  await screen.findByRole("switch", { name: "Enable Gmail new message" });
-  expect(
-    screen.getByRole("switch", {
-      name: "Disable Every weekday at 9:00 AM",
-    }),
-  ).toBeChecked();
-  expect(workflow.automations[0]?.enabled).toBeTruthy();
-  expect(workflow.automations[1]?.enabled).toBeFalsy();
-});
-
-test("Block workflow publishing without permission on the owning agent", async () => {
-  const workflow = {
-    ...opsPlaybook(),
-    canManage: true,
-    canPublish: false,
-    importSource: null,
-  };
-  mockWorkflowApis([workflow]);
-
-  await setupPage({
-    context,
-    path: `/workflows/${OPS_WORKFLOW_ID}/info`,
-  });
-
-  const publishSwitch = await screen.findByRole("switch", {
+test("workflows-page-013 a manager without publication permission sees the private workspace policy", async () => {
+  const { sales, base } = directory();
+  sales.canPublish = false;
+  await setupPage({ context, path: base + "/info" });
+  const toggle = await screen.findByRole("switch", {
     name: "Make workflow public",
   });
-  // The shared `Switch` renders a `<span role="switch">`, so the disabled
-  // contract is `aria-disabled` rather than the `disabled` attribute.
-  expect(publishSwitch).toHaveAttribute("aria-disabled", "true");
-  fireEvent.click(publishSwitch);
-  expect(publishSwitch).toHaveAttribute("aria-checked", "false");
+  expect(toggle).toHaveAttribute("aria-disabled", "true");
+  click(toggle);
+  expect(toggle).not.toBeChecked();
+  expect(screen.getByText("Private", { exact: true })).toBeVisible();
   expect(
     screen.getByText(
       "You don’t have permission to publish workflows in this workspace.",
     ),
-  ).toBeInTheDocument();
+  ).toBeVisible();
 });
 
-test("Refine a workflow in a My Okou Chat", async () => {
-  const openedWorkflowIds: string[] = [];
-  mockChatLifecycle(context, { threadId: WORKFLOW_CHAT_THREAD_ID });
-  mockWorkflowApis([salesResearch()]);
-  mockOpenWorkflowChat((workflowId) => {
-    openedWorkflowIds.push(workflowId);
-  });
-
-  await setupWorkflowDetailPage(workflowDetailPath("instructions"));
-
-  await waitFor(() => {
-    expect(
-      screen.getByText("Gather CRM context before outreach."),
-    ).toBeInTheDocument();
-  });
-
-  click(buttonByText("Refine with Okou"));
-
-  await waitFor(() => {
-    expect(openedWorkflowIds).toStrictEqual([SALES_WORKFLOW_ID]);
-  });
-  expect(pathname()).toBe(`/chats/${WORKFLOW_CHAT_THREAD_ID}`);
-  expect(search()).toBe("");
-  await expectComposerText("help me refine the workflow /sales-research");
-});
-
-test("Confirm before making a public workflow private", async () => {
-  const demotedIds: string[] = [];
-  mockWorkflowApis([salesResearch()]);
+test("workflows-page-014 refining Sales Research opens its own My Okou chat with the prepared prompt", async () => {
+  createChatRunFixtures(context).installRunChat();
+  const { base, sales } = directory();
+  const prompt = "help me refine the workflow /sales-research";
   context.mocks.api(
-    workflowVisibilityContract.demote,
+    workflowsDetailContract.chatThread,
     ({ params, respond }) => {
-      demotedIds.push(params.workflowId);
-      return respond(
-        200,
-        summary({ ...salesResearch(), visibility: "private" }),
-      );
+      expect(params.workflowId).toBe(sales.id);
+      return respond(200, { chatThreadId: RUN_THREAD_ID, prompt });
     },
   );
-
-  await setupWorkflowDetailPage(workflowDetailPath("info"));
-
-  const toggle = await screen.findByRole("switch", {
-    name: "Make workflow public",
-  });
-  expect(toggle).toBeEnabled();
-  fireEvent.click(toggle);
-
-  // Demoting a public workflow now requires an explicit confirmation.
-  const dialog = await screen.findByRole("dialog");
-  expect(
-    within(dialog).getByText("Make this workflow private?"),
-  ).toBeInTheDocument();
-  expect(demotedIds).toStrictEqual([]);
-
-  // Cancelling leaves the workflow public and fires no request.
-  click(buttonByText("Cancel", dialog));
+  await setupPage({ context, path: base + "/instructions" });
+  click(await findAction("button", "Refine with Okou"));
   await waitFor(() => {
-    expect(
-      screen.queryByText("Make this workflow private?"),
-    ).not.toBeInTheDocument();
+    return expect(screen.getByLabelText("Message")).toHaveTextContent(prompt);
   });
-  expect(demotedIds).toStrictEqual([]);
-
-  // Reopening and confirming demotes the workflow.
-  fireEvent.click(
-    await screen.findByRole("switch", { name: "Make workflow public" }),
-  );
-  const confirmDialog = await screen.findByRole("dialog");
-  click(buttonByText("Make private", confirmDialog));
-  await waitFor(() => {
-    expect(demotedIds).toStrictEqual([SALES_WORKFLOW_ID]);
-  });
+  expect(location.pathname).toBe("/chats/" + RUN_THREAD_ID);
 });
 
-test("Delete a workflow only navigates after success and keeps the dialog available on failure", async () => {
-  const workflows = [salesResearch(), opsPlaybook()];
-  let rejectDelete = true;
-  mockWorkflowApis(workflows);
+test("workflows-page-020 failed deletion leaves the confirmation available for a successful retry", async () => {
+  const { sales, entries, base } = directory();
+  let inUse = true;
   context.mocks.api(workflowsDetailContract.delete, ({ params, respond }) => {
-    if (rejectDelete) {
+    if (inUse) {
       return respond(409, {
-        error: { code: "CONFLICT", message: "Workflow is still in use" },
+        error: { code: "CONFLICT", message: "Sales Research is still in use" },
       });
     }
-    const index = workflows.findIndex((workflow) => {
-      return workflow.id === params.workflowId;
-    });
-    workflows.splice(index, 1);
+    entries.splice(
+      entries.findIndex((w) => {
+        return w.id === params.workflowId;
+      }),
+      1,
+    );
     return respond(204);
   });
-  await setupWorkflowDetailPage(workflowDetailPath("info"));
-  click(buttonByText("Delete workflow"));
-  const dialog = await screen.findByRole("dialog", { name: "Delete workflow" });
-  click(buttonByText("Delete", dialog));
-
-  await expect(
-    screen.findByText("Workflow is still in use"),
-  ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe(workflowDetailPath("info"));
-  expect(screen.getByRole("dialog")).toBeInTheDocument();
-  expect(buttonByText("Delete", dialog)).toBeEnabled();
-
-  rejectDelete = false;
-  click(buttonByText("Delete", dialog));
-  await expect(screen.findByText("Ops Playbook")).resolves.toBeInTheDocument();
-  expect(pathname()).toBe("/workflows");
-  expect(screen.queryByText("Sales Research")).not.toBeInTheDocument();
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  await setupPage({ context, path: base + "/info" });
+  click(await findAction("button", "Delete workflow"));
+  const dialog = await screen.findByRole("dialog");
+  click(await findAction("button", "Delete", dialog));
+  await screen.findByText("Sales Research is still in use");
+  expect(dialog).toBeVisible();
+  expect(location.pathname).toBe(base + "/info");
+  inUse = false;
+  click(await findAction("button", "Delete", dialog));
+  await screen.findByText("Ops Playbook");
+  expect(location.pathname).toBe("/workflows");
+  expect(screen.queryByText(sales.displayName!)).toBeNull();
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
 
-test("Edit workflow metadata", async () => {
-  const updateBodies: WorkflowUpdateRequest[] = [];
-  mockWorkflowApis([salesResearch()], (body) => {
-    updateBodies.push(body);
+test("workflows-page-021 the settings form sends the revised title, slug and description together", async () => {
+  const { sales, base } = directory();
+  const next = {
+    displayName: "Account Brief",
+    name: "account-brief",
+    description: "Prepare account context",
+  };
+  context.mocks.api(workflowsDetailContract.update, ({ body, respond }) => {
+    expect(body).toMatchObject(next);
+    Object.assign(sales, body);
+    return respond(200, sales);
   });
-
-  await setupWorkflowDetailPage(workflowDetailPath("info"));
-
-  const form = await screen.findByRole("form", {
-    name: "Workflow metadata",
-  });
-  expect(within(form).getByLabelText("Name")).toHaveValue("Sales Research");
-  expect(within(form).getByLabelText("Slug")).toHaveValue("sales-research");
-  expect(within(form).getByLabelText("Description")).toHaveValue(
-    "Collects account context before outreach.",
-  );
+  await setupPage({ context, path: base + "/info" });
+  const name = await screen.findByLabelText("Name"),
+    slug = screen.getByLabelText("Slug"),
+    desc = screen.getByLabelText("Description");
+  expect(name).toHaveValue("Sales Research");
+  expect(slug).toHaveValue("sales-research");
+  expect(desc).toHaveValue("Collect leads");
+  expect(screen.getByText(/Lowercase letters, numbers/)).toBeVisible();
   expect(
-    within(form).getByText(/Lowercase letters, numbers, and - only/),
-  ).toBeInTheDocument();
-  expect(
-    within(form).getByText(/Tell Okou when to use this workflow/),
-  ).toBeInTheDocument();
-
-  await fill(within(form).getByLabelText("Name"), "Account Brief");
-  await fill(within(form).getByLabelText("Slug"), "account-brief");
-  await fill(
-    within(form).getByLabelText("Description"),
-    "Use when an account needs a fresh research brief.",
-  );
-  await waitFor(() => {
-    expect(screen.getByTestId("unsaved-bar")).toBeInTheDocument();
-  });
-  click(screen.getByTestId("save-button"));
-
-  await waitFor(() => {
-    expect(updateBodies.at(-1)).toStrictEqual({
-      name: "account-brief",
-      displayName: "Account Brief",
-      description: "Use when an account needs a fresh research brief.",
-    });
-  });
+    screen.getByText("Tell Okou when to use this workflow."),
+  ).toBeVisible();
+  for (const [el, value] of [
+    [name, next.displayName],
+    [slug, next.name],
+    [desc, next.description],
+  ] as const) {
+    fireEvent.change(el, { target: { value } });
+  }
+  await screen.findByText("You have unsaved changes");
+  click(await findAction("button", "Save"));
+  await screen.findByText("Workflow saved");
+  expect(screen.getByLabelText("Slug")).toHaveValue(next.name);
 });
 
-test("Navigate between workflow detail tabs", async () => {
-  context.mocks.data.userPreferences({ timezone: "UTC" });
-  mockWorkflowApis([salesResearch()]);
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-  await waitFor(() => {
-    expect(screen.getByText("Every weekday at 9:00 AM")).toBeInTheDocument();
-  });
-  click(buttonByText("Settings"));
-
-  await waitFor(() => {
-    expect(screen.getAllByText("Visibility").length).toBeGreaterThan(0);
-  });
-  expect(pathname()).toBe(`/workflows/${SALES_WORKFLOW_ID}/info`);
-  expect(search()).toBe("");
-  click(buttonByText("Instructions"));
-  await waitFor(() => {
-    expect(
-      screen.getByText("Gather CRM context before outreach."),
-    ).toBeInTheDocument();
-  });
-  expect(pathname()).toBe(`/workflows/${SALES_WORKFLOW_ID}/instructions`);
-  expect(search()).toBe("");
+test("workflows-page-022 settings and instructions tabs navigate within the same workflow", async () => {
+  const { base } = directory();
+  await setupPage({ context, path: base + "/automations" });
+  click(await findAction("tab", "Settings"));
+  await screen.findByLabelText("Name");
+  expect(location.pathname).toBe(base + "/info");
+  click(await findAction("tab", "Instructions"));
+  await screen.findByText("Review the pipeline");
+  expect(location.pathname).toBe(base + "/instructions");
 });
 
-test("Recover when a stale Run now action receives the automatic-only policy rejection", async () => {
-  const message =
-    "Official Workflows can only run through their automatic triggers";
-  mockWorkflowApis([salesResearch()]);
-  context.mocks.api(workflowAutomationsContract.run, ({ respond }) => {
+test("workflows-page-024 an automatic-only rejection leaves the schedule runnable on its detail page", async () => {
+  const { base, sales } = directory();
+  const schedule = weekday();
+  sales.automations = [schedule];
+  const message = "Official Workflows can only run through automatic triggers";
+  context.mocks.api(workflowAutomationsContract.run, ({ params, respond }) => {
+    expect(params.id).toBe(schedule.id);
     return respond(409, { error: { code: "CONFLICT", message } });
   });
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-  click(buttonByText("Run now"));
-
+  await setupPage({ context, path: base + "/automations" });
+  click(await findAction("button", "Run now"));
   await screen.findByText(message);
-  expect(buttonByText("Run now")).toBeEnabled();
-  expect(pathname()).toBe(workflowDetailPath("automations"));
+  await expect(findAction("button", "Run now")).resolves.toBeEnabled();
+  expect(location.pathname).toBe(base + "/automations");
 });
 
-test("Run a workflow automation now and promote it in the next composer overview", async () => {
-  const runAutomationIds: string[] = [];
-  mockWorkflowApis([salesResearch()]);
-  mockChatLifecycle(context, { threadId: AUTOMATION_RUN_THREAD_ID });
-  mockRunWorkflowAutomation((automationId) => {
-    runAutomationIds.push(automationId);
+test("workflows-page-012 a deep link centers the Gmail automation and only its switch changes", async () => {
+  const { base, sales } = directory();
+  const schedule = weekday();
+  const mail: WorkflowAutomationSummary = {
+    ...schedule,
+    kind: "event",
+    id: crypto.randomUUID(),
+    eventType: "gmail-new-message",
+    eventConfig: { provider: "gmail", event: "new_message" },
+    schedule: null,
+    scheduleSummary: null,
+  };
+  sales.automations = [schedule, mail];
+  const scroll = vi.spyOn(HTMLElement.prototype, "scrollIntoView");
+  context.mocks.api(
+    workflowAutomationsContract.disable,
+    ({ params, respond }) => {
+      expect(params.id).toBe(mail.id);
+      mail.enabled = false;
+      return respond(200, mail);
+    },
+  );
+  await setupPage({
+    context,
+    path: base + "/automations?automationId=" + mail.id,
   });
+  const selected = await screen.findByRole("group", {
+    name: "Gmail new message",
+  });
+  expect(selected).toHaveAttribute("aria-current", "true");
+  expect(selected).toHaveFocus();
+  expect(
+    scroll.mock.calls.some(([options], i) => {
+      return (
+        scroll.mock.contexts[i] === selected &&
+        typeof options === "object" &&
+        options.block === "center"
+      );
+    }),
+  ).toBeTruthy();
+  const other = document.querySelector(
+    '[data-automation-id="' + schedule.id + '"]',
+  );
+  if (!other) {
+    throw new Error("Missing weekday schedule");
+  }
+  expect(other).not.toHaveAttribute("aria-current");
+  click(within(selected).getByRole("switch"));
+  await screen.findByRole("switch", { name: "Enable Gmail new message" });
+  expect(other.querySelector('[role="switch"]')).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+});
+
+test("workflows-page-025 running the weekday schedule opens its chat and promotes Sales Research in the composer", async () => {
+  createChatRunFixtures(context).installRunChat();
+  const { base, sales } = directory();
+  const schedule = weekday();
+  sales.automations = [schedule];
   context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
     return respond(200, [
       {
-        id: OPS_WORKFLOW_ID,
+        id: crypto.randomUUID(),
         name: "alpha",
         displayName: null,
         description: null,
       },
-      {
-        id: SALES_WORKFLOW_ID,
-        name: "sales-research",
-        displayName: null,
-        description: null,
-      },
+      sales,
     ]);
   });
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-  await waitFor(() => {
-    expect(buttonByText("Run now")).toBeInTheDocument();
-  });
-  click(buttonByText("Run now"));
-
-  await waitFor(() => {
-    expect(runAutomationIds).toStrictEqual([
-      "workflow-automation-weekday-brief",
-    ]);
-  });
-  await waitFor(() => {
-    expect(pathname()).toBe(`/chats/${AUTOMATION_RUN_THREAD_ID}`);
-  });
-  expect(search()).toBe("");
-  await fill(await findComposerEditor(), "Draft /");
-  await waitFor(() => {
-    const menu = screen.getByTestId("slash-workflow-menu");
-    const names = queryAllByRoleFast("button", menu)
-      .map((button) => {
-        return button.textContent ?? "";
-      })
-      .filter((name) => {
-        return name.startsWith("/");
-      });
-    // The highest priority is nearest the composer in the anchored menu.
-    expect(names).toStrictEqual(["/sales-research", "/alpha"]);
-  });
-});
-
-test("Create a Gmail new-message automation with match rules", async () => {
-  const createBodies: WorkflowAutomationCreateRequest[] = [];
-  mockWorkflowApis([salesResearch()]);
-  mockCreateWorkflowAutomation((body) => {
-    createBodies.push(body);
-  });
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-  await waitFor(() => {
-    expect(buttonByText("Add automation")).toBeInTheDocument();
-  });
-  click(buttonByText("Add automation"));
-
-  await waitFor(() => {
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-  });
-  pickAutomation("Email", /^Gmail new message/);
-
-  const createAutomationForm = await screen.findByRole("form", {
-    name: "Add Gmail automation",
-  });
-  expect(within(createAutomationForm).getAllByRole("textbox")).toHaveLength(1);
-  expect(
-    buttonByText("Remove condition 1", createAutomationForm),
-  ).toBeDisabled();
-  await fill(
-    within(createAutomationForm).getByLabelText("From contains"),
-    "@acme.com",
-  );
-  click(buttonByText("Add condition", createAutomationForm));
-  expect(within(createAutomationForm).getAllByRole("textbox")).toHaveLength(2);
-  selectOptionByLabel("Condition 2 field", "Subject", createAutomationForm);
-  selectOptionByLabel(
-    "Condition 2 operator",
-    "Does not contain",
-    createAutomationForm,
-  );
-  await fill(
-    within(createAutomationForm).getByLabelText("Subject does not contain"),
-    "newsletter",
-  );
-  fireEvent.submit(createAutomationForm);
-
-  await waitFor(() => {
-    expect(createBodies.at(-1)).toStrictEqual({
-      kind: "event",
-      eventType: "gmail-new-message",
-      eventConfig: {
-        provider: "gmail",
-        event: "new_message",
-        match: {
-          from: { contains: "@acme.com" },
-          subject: { doesNotContain: "newsletter" },
-        },
-      },
+  context.mocks.api(workflowAutomationsContract.run, ({ params, respond }) => {
+    expect(params.id).toBe(schedule.id);
+    return respond(201, {
+      runId: crypto.randomUUID(),
+      chatThreadId: RUN_THREAD_ID,
     });
   });
+  await setupPage({ context, path: base + "/automations" });
+  click(await findAction("button", "Run now"));
+  const editor = await screen.findByLabelText("Message");
+  expect(location.pathname).toBe("/chats/" + RUN_THREAD_ID);
+  await fill(editor, "Draft /");
+  await slashChoice("sales-research");
+  expect(
+    slashRows().map((row) => {
+      return row.textContent;
+    }),
+  ).toStrictEqual(["/sales-research", "/alpha"]);
 });
 
-test("Correct an unavailable Gmail label and create the automation", async () => {
-  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
-  const workflows: WorkflowDetailResponse[] = [
-    { ...salesResearch(), automations: [] },
-  ];
-  mockWorkflowApis(workflows);
+async function chooseAutomation(category: string, choice: string) {
+  click(await findAction("button", "Add automation"));
+  const picker = await screen.findByRole("dialog");
+  click(await findAction("button", category, picker));
+  click(await within(picker).findByText(choice, { exact: true }));
+}
+
+test("workflows-page-026 a Gmail message rule combines sender inclusion with subject exclusion", async () => {
+  const { sales, base } = directory();
   context.mocks.api(workflowAutomationsContract.create, ({ body, respond }) => {
-    if (body.kind !== "event" || body.eventType !== "gmail-label-applied") {
-      throw new Error("Expected a Gmail label automation");
+    if (!("eventType" in body) || body.eventType !== "gmail-new-message") {
+      throw new Error("Expected Gmail trigger");
+    }
+    expect(body.eventConfig.match).toStrictEqual({
+      from: { contains: "@acme.com" },
+      subject: { doesNotContain: "newsletter" },
+    });
+    const created = {
+      ...weekday(),
+      kind: "event" as const,
+      eventType: body.eventType,
+      eventConfig: body.eventConfig,
+      schedule: null,
+      scheduleSummary: null,
+    };
+    sales.automations = [created];
+    return respond(201, created);
+  });
+  await setupPage({ context, path: base + "/automations" });
+  await chooseAutomation("Email", "Gmail new message");
+  await fill(await screen.findByLabelText("From contains"), "@acme.com");
+  click(await findAction("button", "Add condition"));
+  click(await screen.findByLabelText("Condition 2 operator"));
+  click(await screen.findByRole("option", { name: "Does not contain" }));
+  await fill(
+    await screen.findByLabelText("Subject does not contain"),
+    "newsletter",
+  );
+  click(await findAction("button", "Add Gmail automation"));
+  await expect(
+    screen.findByRole("group", { name: "Gmail new message" }),
+  ).resolves.toBeVisible();
+});
+
+test("workflows-page-027 an unknown Gmail label keeps its editable value and the corrected label creates the automation", async () => {
+  const { sales, base } = directory();
+  const logged = vi.spyOn(console, "error");
+  context.mocks.api(workflowAutomationsContract.create, ({ body, respond }) => {
+    if (!("eventType" in body) || body.eventType !== "gmail-label-applied") {
+      throw new Error("Expected Gmail label");
     }
     if (body.eventConfig.labelName === "Missing") {
       return respond(400, {
         error: {
           code: "GMAIL_LABEL_NOT_FOUND",
-          message: "Label is unavailable",
+          message: "Label Missing was not found",
         },
       });
     }
-    const automation = {
-      ...gmailLabelWorkflowAutomation(),
-      eventConfig: { ...body.eventConfig, resolvedLabelId: "Label_support" },
+    const saved = {
+      ...weekday(),
+      kind: "event" as const,
+      eventType: body.eventType,
+      eventConfig: body.eventConfig,
+      schedule: null,
+      scheduleSummary: null,
     };
-    workflows[0].automations.push(automation);
-    return respond(201, automation);
+    sales.automations = [saved];
+    return respond(201, saved);
   });
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-  await waitFor(() => {
-    expect(buttonByText("Add automation")).toBeInTheDocument();
-  });
-  click(buttonByText("Add automation"));
-  await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();
-  pickAutomation("Email", /^Gmail label applied/);
-
-  const form = await screen.findByRole("form", {
-    name: "Add Gmail label automation",
-  });
-  const input = within(form).getByLabelText("Label name");
-  await fill(input, "Missing");
-  click(buttonByText("Add label automation", form));
-
-  await expect(within(form).findByRole("alert")).resolves.toHaveTextContent(
-    "Label not found in the connected Gmail account. Check the label name and connected account.",
+  await setupPage({ context, path: base + "/automations" });
+  await chooseAutomation("Email", "Gmail label applied");
+  const label = await screen.findByLabelText("Label name");
+  await fill(label, "Missing");
+  const add = await findAction("button", "Add label automation");
+  click(add);
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent(
+    "Label not found in the connected Gmail account",
   );
-  expect(screen.queryByText("Label is unavailable")).not.toBeInTheDocument();
-  expect(input).toHaveValue("Missing");
-  expect(input).toHaveAttribute("aria-invalid", "true");
-  expect(buttonByText("Add label automation", form)).toBeEnabled();
-
-  await fill(input, "Support");
-  click(buttonByText("Add label automation", form));
-  await expect(
-    screen.findByText('Label "Support"'),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.queryByRole("form", { name: "Add Gmail label automation" }),
-  ).not.toBeInTheDocument();
-  expect(consoleError.mock.calls.flat()).not.toContainEqual(
-    expect.objectContaining({
-      name: "ApiError",
-      code: "GMAIL_LABEL_NOT_FOUND",
-    }),
+  expect(label).toHaveAttribute("aria-invalid", "true");
+  expect(label).toHaveValue("Missing");
+  expect(add).toBeEnabled();
+  await fill(label, "Support");
+  click(add);
+  await screen.findByText(/Label [“"]?Support/);
+  expect(logged.mock.calls.flat().map(String).join(" ")).not.toMatch(
+    /GMAIL_LABEL_NOT_FOUND|Label Missing was not found/,
   );
 });
 
-test("Keep Gmail provider failures visible while preserving the form", async () => {
-  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
-  mockWorkflowApis([salesResearch()]);
+test("workflows-page-028 an unexpected Gmail service error keeps the entered label and reports the specific API failure", async () => {
+  const { base } = directory();
+  const logged = vi.spyOn(console, "error");
+  const message = "Failed to read Gmail labels.";
   context.mocks.api(workflowAutomationsContract.create, ({ respond }) => {
-    return respond(400, {
-      error: { code: "BAD_REQUEST", message: "Failed to read Gmail labels" },
-    });
+    return respond(400, { error: { code: "BAD_REQUEST", message } });
   });
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
+  await setupPage({ context, path: base + "/automations" });
+  await chooseAutomation("Email", "Gmail label applied");
+  const label = await screen.findByLabelText("Label name");
+  await fill(label, "Support");
+  const add = await findAction("button", "Add label automation");
+  click(add);
+  await screen.findByText(message);
+  expect(label).toHaveValue("Support");
+  expect(add).toBeEnabled();
+  expect(
+    within(await screen.findByRole("dialog")).queryByRole("alert"),
+  ).toBeNull();
   await waitFor(() => {
-    expect(buttonByText("Add automation")).toBeInTheDocument();
-  });
-  click(buttonByText("Add automation"));
-  await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();
-  pickAutomation("Email", /^Gmail label applied/);
-  const form = await screen.findByRole("form", {
-    name: "Add Gmail label automation",
-  });
-  const input = within(form).getByLabelText("Label name");
-  await fill(input, "Support");
-  fireEvent.submit(form);
-
-  await expect(
-    screen.findByText("Failed to read Gmail labels"),
-  ).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    expect(consoleError.mock.calls.flat()).toContainEqual(
-      expect.objectContaining({
-        name: "ApiError",
-        code: "BAD_REQUEST",
-        status: 400,
-        expected: false,
-      }),
+    return expect(logged.mock.calls.flat()).toContainEqual(
+      expect.objectContaining({ status: 400, code: "BAD_REQUEST", message }),
     );
   });
-  expect(input).toHaveValue("Support");
-  expect(within(form).queryByRole("alert")).not.toBeInTheDocument();
-  expect(buttonByText("Add label automation", form)).toBeEnabled();
 });
 
-test("Create a filtered GitHub workflow-run automation", async () => {
-  const createBodies: WorkflowAutomationCreateRequest[] = [];
-  mockWorkflowApis([salesResearch()]);
-  mockCreateWorkflowAutomation((body) => {
-    createBodies.push(body);
-  });
-  setMockGithubIntegration(createDefaultMockGithubIntegration());
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-  await waitFor(() => {
-    expect(buttonByText("Add automation")).toBeInTheDocument();
-  });
-  click(buttonByText("Add automation"));
-  await waitFor(() => {
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-  });
-  pickAutomation("GitHub", /^GitHub workflow completed/);
-
-  const form = await screen.findByRole("form", {
-    name: "Add GitHub workflow automation",
-  });
-  await fill(within(form).getByLabelText("Repositories"), "okou-ai/okou");
-  await fill(
-    within(form).getByLabelText("GitHub workflows"),
-    "Turbo, .github/workflows/turbo.yml",
+test("workflows-page-030 a GitHub run automation carries the repository, workflows and selected failure conclusions", async () => {
+  const { sales, base } = directory();
+  context.mocks.api(
+    integrationsGithubContract.getInstallation,
+    ({ respond }) => {
+      return respond(200, createDefaultMockGithubIntegration());
+    },
   );
-  await fill(within(form).getByLabelText("Branches"), "main");
-  await fill(within(form).getByLabelText("Triggering events"), "push");
-  await fill(within(form).getByLabelText("Actors"), "lancy");
-  click(within(form).getByLabelText("Failure"));
-  click(within(form).getByLabelText("Startup failure"));
-  fireEvent.submit(form);
-
-  await waitFor(() => {
-    expect(createBodies.at(-1)).toStrictEqual({
-      kind: "event",
-      eventType: "github-workflow-run-completed",
-      eventConfig: {
-        provider: "github",
-        event: "workflow_run_completed",
-        filters: {
-          repositories: ["okou-ai/okou"],
-          workflows: ["Turbo", ".github/workflows/turbo.yml"],
-          conclusions: ["failure", "startup_failure"],
-          branches: ["main"],
-          events: ["push"],
-          actors: ["lancy"],
-        },
-      },
+  context.mocks.api(workflowAutomationsContract.create, ({ body, respond }) => {
+    if (
+      !("eventType" in body) ||
+      body.eventType !== "github-workflow-run-completed"
+    ) {
+      throw new Error("Expected workflow run trigger");
+    }
+    expect(body.eventConfig.filters).toStrictEqual({
+      repositories: ["okou-ai/okou"],
+      workflows: ["Turbo", ".github/workflows/turbo.yml"],
+      branches: ["main"],
+      events: ["push"],
+      actors: ["lancy"],
+      conclusions: ["failure", "startup_failure"],
     });
+    const saved = {
+      ...weekday(),
+      kind: "event" as const,
+      eventType: body.eventType,
+      eventConfig: body.eventConfig,
+      schedule: null,
+      scheduleSummary: null,
+    };
+    sales.automations = [saved];
+    return respond(201, saved);
   });
+  await setupPage({ context, path: base + "/automations" });
+  await chooseAutomation("GitHub", "GitHub workflow completed");
+  const dialog = await screen.findByRole("dialog");
+  for (const [field, value] of Object.entries({
+    repositories: "okou-ai/okou",
+    workflows: "Turbo, .github/workflows/turbo.yml",
+    branches: "main",
+    events: "push",
+    actors: "lancy",
+  })) {
+    const input = dialog.querySelector('[name="' + field + '"]');
+    if (!input) {
+      throw new Error("Missing field " + field);
+    }
+    await fill(input as HTMLElement, value);
+  }
+  for (const name of ["Failure", "Startup failure"]) {
+    click(await within(dialog).findByLabelText(name));
+  }
+  click(await findAction("button", "Add workflow automation", dialog));
+  await expect(
+    screen.findByRole("group", { name: "GitHub workflow completed" }),
+  ).resolves.toBeVisible();
 });
 
-test("Offer GitHub App installation when GitHub is unavailable", async () => {
-  mockWorkflowApis([salesResearch()]);
-  setMockGithubIntegration(null);
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-  await waitFor(() => {
-    expect(buttonByText("Add automation")).toBeInTheDocument();
-  });
-  click(buttonByText("Add automation"));
-  await waitFor(() => {
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-  });
-  pickAutomation("GitHub", /^GitHub workflow completed/);
-
-  const form = await screen.findByRole("form", {
-    name: "Add GitHub workflow automation",
-  });
-  await waitFor(() => {
-    expect(linkByText("Install GitHub App", form)).toHaveAttribute(
-      "href",
-      "https://github.com/apps/okou-test/installations/new?state=abc",
+function matchingMenuItems(role: "menuitem" | "menuitemradio", name: string) {
+  return queryAllByRoleFast(role).filter((item) => {
+    return (
+      item.getAttribute("aria-label") === name ||
+      !!item.textContent?.trim().startsWith(name)
     );
   });
+}
+
+function findMenuItem(role: "menuitem" | "menuitemradio", name: string) {
+  return waitFor(() => {
+    const item = matchingMenuItems(role, name)[0];
+    if (!item) {
+      throw new Error("Menu item unavailable: " + name);
+    }
+    return item;
+  });
+}
+
+function editableFiles() {
+  const { sales, base } = directory();
+  const documents = [
+    { path: "config/settings.json", content: '{"region":"West"}' },
+    { path: "examples/prompt.md", content: "Draft the field report" },
+  ];
+  function persist(files: typeof documents) {
+    sales.fileContents = files;
+    sales.files = files.map((f) => {
+      return { path: f.path, size: f.content.length };
+    });
+  }
+  persist(documents);
+  context.mocks.api(workflowsDetailContract.update, ({ body, respond }) => {
+    if (body.files) {
+      persist(body.files);
+    }
+    return respond(200, sales);
+  });
+  return { sales, path: base + "/instructions", documents };
+}
+
+test("workflows-page-058 the file picker commits Enter and Space selections and cancels an uncommitted choice", async () => {
+  const { path, documents } = editableFiles();
+  await setupPage({ context, path: path + "?file=config/settings.json" });
+  await screen.findByText(documents[0].content);
+  const picker = await screen.findByLabelText("Workflow files");
+  const user = userEvent.setup({ delay: null });
+  await user.click(picker);
+  const instructions = await findMenuItem("menuitemradio", "instructions");
+  for (
+    let step = 0;
+    step < 5 && document.activeElement !== instructions;
+    step++
+  ) {
+    await user.keyboard("{ArrowDown}");
+  }
+  expect(instructions).toHaveFocus();
+  await user.keyboard("{Enter}");
+  await screen.findByText("Review the pipeline");
+  expect(location.search).toBe("");
+  expect(picker).toHaveFocus();
+  expect(screen.queryByRole("menu")).toBeNull();
+  await user.click(picker);
+  const example = await findMenuItem("menuitemradio", "examples/prompt.md");
+  for (let step = 0; step < 5 && document.activeElement !== example; step++) {
+    await user.keyboard("{ArrowDown}");
+  }
+  expect(example).toHaveFocus();
+  await user.keyboard("[Space]");
+  await screen.findByText(documents[1].content);
+  expect(new URLSearchParams(location.search).get("file")).toBe(
+    documents[1].path,
+  );
+  await user.click(picker);
+  await user.keyboard("{Home}{Escape}");
+  expect(picker).toHaveFocus();
+  expect(picker).toHaveTextContent(documents[1].path);
+  expect(screen.queryByRole("menu")).toBeNull();
 });
 
-test("Ask an administrator to install GitHub when self-service is unavailable", async () => {
-  mockWorkflowApis([salesResearch()]);
-  setMockGithubIntegration(null);
+test("workflows-page-060 keyboard file actions delete the chosen JSON and retain its sibling", async () => {
+  const { path, documents, sales } = editableFiles();
+  await setupPage({ context, path });
+  await screen.findByText("Review the pipeline");
+  const picker = screen.getByLabelText("Workflow files");
+  const user = userEvent.setup({ delay: null });
+  await user.click(picker);
+  await user.keyboard("{Home}{ArrowDown}");
+  const config = await findMenuItem("menuitemradio", "config/settings.json");
+  await user.keyboard("config");
+  await waitFor(() => {
+    return expect(config).toHaveFocus();
+  });
+  await user.keyboard("{Enter}");
+  await screen.findByText(documents[0].content);
+  await user.click(picker);
+  await user.keyboard("del");
+  await waitFor(() => {
+    return expect(document.activeElement).toHaveAccessibleName(/Delete config/);
+  });
+  await user.keyboard("{Enter}");
+  await screen.findByText("Review the pipeline");
+  expect(picker).toHaveTextContent("instructions");
+  expect(sales.fileContents).toStrictEqual([documents[1]]);
+});
+
+test("workflows-page-061 a failed upload leaves the selected JSON open and allows another upload", async () => {
+  const { path, documents } = editableFiles();
+  context.mocks.api(workflowsDetailContract.update, ({ respond }) => {
+    return respond(409, {
+      error: { code: "CONFLICT", message: "File revision changed" },
+    });
+  });
+  await setupPage({ context, path: path + "?file=config/settings.json" });
+  await screen.findByText(documents[0].content);
+  const input = screen.getByLabelText("Upload workflow files");
+  await userEvent.upload(
+    input,
+    new File(["brief"], "notes.md", { type: "text/markdown" }),
+  );
+  await screen.findByText("File revision changed");
+  expect(screen.getByLabelText("Workflow files")).toHaveTextContent(
+    documents[0].path,
+  );
+  expect(screen.getByLabelText("Workflow file content")).toHaveTextContent(
+    documents[0].content,
+  );
+  expect(new URLSearchParams(location.search).get("file")).toBe(
+    documents[0].path,
+  );
+  click(screen.getByLabelText("Workflow files"));
+  const upload = await findMenuItem("menuitem", "Upload text files");
+  expect(upload).toBeVisible();
+  expect(upload).not.toHaveAttribute("aria-disabled", "true");
+});
+
+test("workflows-page-063 cancelling the file chooser and uploading revised notes preserve the selection and existing files", async () => {
+  const { path, sales, documents } = editableFiles();
+  await setupPage({ context, path });
+  const picker = await screen.findByLabelText("Workflow files");
+  const user = userEvent.setup({ delay: null });
+  await user.click(picker);
+  await user.keyboard("{Escape}");
+  const input = screen.getByLabelText("Upload workflow files");
+  await user.upload(input, new File(["First edition"], "notes.md"));
+  await screen.findByText("First edition");
+  expect(sales.fileContents).toContainEqual(documents[0]);
+  fireEvent.change(input, { target: { files: [] } });
+  expect(picker).toHaveTextContent("notes.md");
+  await user.click(picker);
+  click(await findMenuItem("menuitemradio", "instructions"));
+  await screen.findByText("Review the pipeline");
+  await user.upload(input, new File(["Second edition"], "notes.md"));
+  await screen.findByText("Second edition");
+  expect(picker).toHaveTextContent("notes.md");
+  expect(new URLSearchParams(location.search).get("file")).toBe("notes.md");
+});
+
+test("workflows-page-064 a nested upload replaces one path and leaves the other file readable", async () => {
+  const { path, documents, sales } = editableFiles();
+  await setupPage({ context, path });
+  const input = await screen.findByLabelText("Upload workflow files");
+  const file = new File(["Updated outline"], "prompt.md");
+  Object.defineProperty(file, "webkitRelativePath", {
+    value: documents[1].path,
+  });
+  await userEvent.upload(input, file);
+  await screen.findByText("Updated outline");
+  expect(new URLSearchParams(location.search).get("file")).toBe(
+    documents[1].path,
+  );
+  expect(sales.fileContents).toStrictEqual([
+    documents[0],
+    { path: documents[1].path, content: "Updated outline" },
+  ]);
+  click(screen.getByLabelText("Workflow files"));
+  expect(matchingMenuItems("menuitemradio", "examples/prompt.md")).toHaveLength(
+    1,
+  );
+});
+
+test("workflows-page-031 the GitHub form links to the installation supplied for this workspace", async () => {
+  const { base } = directory();
+  const installUrl =
+    "https://github.com/apps/research-workspace/installations/new";
   context.mocks.api(
     integrationsGithubContract.getInstallation,
     ({ respond }) => {
       return respond(404, {
-        error: {
-          message: "GitHub installation not found",
-          code: "NOT_FOUND",
-        },
-        installUrl: null,
+        error: { code: "NOT_FOUND", message: "Installation unavailable" },
+        installUrl,
       });
     },
   );
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-  await waitFor(() => {
-    expect(buttonByText("Add automation")).toBeInTheDocument();
-  });
-  click(buttonByText("Add automation"));
-  await waitFor(() => {
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-  });
-  pickAutomation("GitHub", /^GitHub workflow completed/);
-
-  const form = await screen.findByRole("form", {
-    name: "Add GitHub workflow automation",
-  });
-  await waitFor(() => {
-    expect(
-      within(form).getByText("Ask an organization admin to install it."),
-    ).toBeInTheDocument();
-  });
-  expect(queryAllByRoleFast("link", form)).toHaveLength(0);
+  await setupPage({ context, path: base + "/automations" });
+  await chooseAutomation("GitHub", "GitHub workflow completed");
+  await expect(
+    findAction("link", "Install GitHub App"),
+  ).resolves.toHaveAttribute("href", installUrl);
 });
 
-test("Create a filtered GitHub issue-comment automation", async () => {
-  const createBodies: WorkflowAutomationCreateRequest[] = [];
-  mockWorkflowApis([salesResearch()]);
-  mockCreateWorkflowAutomation((body) => {
-    createBodies.push(body);
-  });
-  setMockGithubIntegration(createDefaultMockGithubIntegration());
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-  await waitFor(() => {
-    expect(buttonByText("Add automation")).toBeInTheDocument();
-  });
-  click(buttonByText("Add automation"));
-  await waitFor(() => {
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-  });
-  pickAutomation("GitHub", /^GitHub issue comment created/);
-
-  const form = await screen.findByRole("form", {
-    name: "Add GitHub issue comment created automation",
-  });
-  await waitFor(() => {
-    expect(within(form).getByLabelText("Trusted authors")).toBeEnabled();
-  });
-  await fill(within(form).getByLabelText("Repositories"), "okou-ai/okou");
-  selectOptionByLabel("Subject", "Pull requests only", form);
-  fireEvent.change(within(form).getByLabelText("Trusted authors"), {
-    target: { value: "e7h4n, lancy" },
-  });
-  fireEvent.change(within(form).getByLabelText("Comment prefixes"), {
-    target: { value: "/verify, /deploy" },
-  });
-  fireEvent.submit(form);
-
-  await waitFor(() => {
-    expect(createBodies.at(-1)).toStrictEqual({
-      kind: "event",
-      eventType: "github-issue-comment-created",
-      eventConfig: {
-        provider: "github",
-        event: "issue_comment_created",
-        filters: {
-          repositories: ["okou-ai/okou"],
-          subject: "pull_requests",
-          trustedAuthors: ["e7h4n", "lancy"],
-          commentPrefixes: ["/verify", "/deploy"],
-        },
-      },
-    });
-  });
-});
-
-test("Create a Google Calendar event-updated automation", async () => {
-  const createBodies: WorkflowAutomationCreateRequest[] = [];
-  mockWorkflowApis([salesResearch()]);
-  mockCreateWorkflowAutomation((body) => {
-    createBodies.push(body);
-  });
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"), {});
-
-  await waitFor(() => {
-    expect(buttonByText("Add automation")).toBeInTheDocument();
-  });
-  click(buttonByText("Add automation"));
-
-  await waitFor(() => {
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-  });
-  pickAutomation("Calendar", /^Google Calendar event updated/);
-
-  const createAutomationForm = await screen.findByRole("form", {
-    name: "Add Google Calendar automation",
-  });
-  await fill(
-    within(createAutomationForm).getByLabelText("Calendar ID"),
-    "team@example.com",
-  );
-  fireEvent.submit(createAutomationForm);
-
-  await waitFor(() => {
-    expect(createBodies.at(-1)).toStrictEqual({
-      kind: "event",
-      eventType: "google-calendar-event-updated",
-      eventConfig: {
-        provider: "google-calendar",
-        event: "event_updated",
-        calendarId: "team@example.com",
-      },
-    });
-  });
-});
-
-test.each([
-  {
-    label: "created",
-    automation: googleCalendarWorkflowAutomation({
-      eventConfig: {
-        provider: "google-calendar",
-        event: "event_created",
-        calendarId: "missing-created@example.com",
-      },
-      warning: "calendar_not_found",
-    }),
-    expectedEventConfig: {
-      provider: "google-calendar",
-      event: "event_created",
-      calendarId: "replacement@example.com",
-    },
-  },
-] satisfies readonly {
-  readonly label: string;
-  readonly automation: WorkflowGoogleCalendarAutomationSummary;
-  readonly expectedEventConfig: GoogleCalendarAutomationEventConfig;
-}[])(
-  "Recover a missing Calendar for an event-$label automation without changing its event contract",
-  async ({ automation, expectedEventConfig }) => {
-    const updates: {
-      readonly automationId: string;
-      readonly body: WorkflowAutomationUpdateRequest;
-    }[] = [];
-    const automations: WorkflowGoogleCalendarAutomationSummary[] = [automation];
-    const workflow = { ...salesResearch(), automations };
-    mockWorkflowApis([workflow]);
-    mockUpdateWorkflowAutomation((automationId, body) => {
-      updates.push({ automationId, body });
-      if (
-        !("eventConfig" in body) ||
-        body.eventConfig.provider !== "google-calendar"
-      ) {
-        throw new Error("Expected a Google Calendar event-config update");
-      }
-      const current = workflow.automations[0];
-      if (!current) {
-        throw new Error("Expected a Google Calendar automation");
-      }
-      workflow.automations[0] = applyGoogleCalendarAutomationUpdate(
-        current,
-        body.eventConfig,
-      );
-    });
-
-    await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(
-      "Enabled · Action required — delivery paused",
-    );
-    expect(alert).toHaveTextContent(
-      "This calendar is no longer available. Choose another calendar to resume this automation.",
-    );
-    const row = alert.closest("[data-automation-id]");
-    if (!(row instanceof HTMLElement)) {
-      throw new Error("Expected the Calendar automation row");
-    }
-    expect(row).not.toHaveClass("opacity-75");
-    expect(within(row).getByRole("switch")).toBeChecked();
-    expect(buttonByText("Edit automation", row)).toBeInTheDocument();
-
-    click(buttonByText("Change calendar", alert));
-    const form = await screen.findByRole("form", {
-      name: "Change Google Calendar automation",
-    });
-    expect(within(form).getByLabelText("Calendar ID")).toHaveValue(
-      automation.eventConfig.calendarId,
-    );
-    await fill(
-      within(form).getByLabelText("Calendar ID"),
-      expectedEventConfig.calendarId,
-    );
-    fireEvent.submit(form);
-
-    await waitFor(() => {
-      expect(updates).toStrictEqual([
-        {
-          automationId: automation.id,
-          body: { eventConfig: expectedEventConfig },
-        },
-      ]);
-    });
-    await waitFor(() => {
-      expect(
-        screen.queryByRole("form", {
-          name: "Change Google Calendar automation",
-        }),
-      ).not.toBeInTheDocument();
-      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    });
-  },
-);
-
-test("Show a Calendar warning without recovery mutations for another user's automation", async () => {
-  const automation = googleCalendarWorkflowAutomation({
-    ownerUserId: UPDATED_USER_ID,
-    warning: "reconnect_required",
-  });
-  const workflow = {
-    ...salesResearch(),
-    canManage: false,
-    automations: [automation],
-  };
-  mockWorkflowApis([workflow]);
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-  const alert = await screen.findByRole("alert");
-  expect(alert).toHaveTextContent(
-    "Enabled · Action required — delivery paused",
-  );
-  const row = alert.closest("[data-automation-id]");
-  if (!(row instanceof HTMLElement)) {
-    throw new Error("Expected the Calendar automation row");
-  }
-  expect(within(row).getByRole("switch")).toBeChecked();
-  expect(within(row).getByRole("switch")).toHaveAttribute(
-    "aria-disabled",
-    "true",
-  );
-  expect(queryButtonByText("Change calendar", alert)).toBeNull();
-  expect(queryButtonByText("Reconnect Google Calendar", alert)).toBeNull();
-});
-
-test("Open a Calendar action-required workflow at the exact automation from the workflow list", async () => {
-  const automation = googleCalendarWorkflowAutomation({
-    warning: "calendar_not_found",
-  });
-  const workflow = { ...salesResearch(), automations: [automation] };
-  const scrollIntoView = installScrollIntoViewMock();
-  mockWorkflowApis([workflow]);
-
-  await setupPage({ context, path: "/workflows" });
-
-  click(
-    await waitFor(() => {
-      return buttonByText("Action required");
-    }),
-  );
-  const recoveryLink = await waitFor(() => {
-    return linkByText("Open Sales Research recovery");
-  });
-  expect(recoveryLink).toHaveAttribute(
-    "href",
-    `/workflows/${SALES_WORKFLOW_ID}/automations?automationId=${GOOGLE_CALENDAR_AUTOMATION_ID}`,
-  );
-  const popover = recoveryLink.closest('[data-slot="popover-content"]');
-  if (!(popover instanceof HTMLElement)) {
-    throw new Error("Expected the automation popover");
-  }
-  expect(within(popover).getByRole("switch")).toBeChecked();
-  click(recoveryLink);
-
-  await waitFor(() => {
-    expect(pathname()).toBe(`/workflows/${SALES_WORKFLOW_ID}/automations`);
-    expect(search()).toBe(`?automationId=${GOOGLE_CALENDAR_AUTOMATION_ID}`);
-  });
-  const row = document.querySelector(
-    `[data-automation-id="${GOOGLE_CALENDAR_AUTOMATION_ID}"]`,
-  );
-  expect(row).toHaveAttribute("aria-current", "true");
-  expect(scrollIntoView).toHaveBeenCalledWith({ block: "center" });
-  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
-    "Action required — delivery paused",
-  );
-});
-
-function mockCalendarReconnect(workflow: WorkflowDetailResponse) {
-  const completedAttempts = mockOAuthCompletions(context);
-  const oauthAttemptId = crypto.randomUUID();
-  const healthyAccount = googleCalendarAccount({
-    id: "10000000-0000-4000-a000-000000000020",
-    displayName: "Work Calendar",
-    isDefault: true,
-    externalUsername: "work",
-  });
-  let reconnectAccount = googleCalendarAccount({
-    id: "10000000-0000-4000-a000-000000000021",
-    displayName: "Personal Calendar",
-    isDefault: false,
-    externalUsername: "personal",
-    status: "reconnect-required",
-  });
-  mockWorkflowApis([workflow]);
-  context.mocks.data.connectors([
-    {
-      id: healthyAccount.id,
-      slug: "google-calendar",
-      authMethod: "oauth",
-      externalId: "google-calendar-work",
-      externalUsername: "work",
-      externalEmail: "work@example.com",
-      oauthScopes: [],
-      connectionStatus: "connected",
-      reconnectReason: null,
-      tokenExpiresAt: null,
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
-    },
-  ]);
-  context.mocks.api(
-    connectorAccountsContract.connection,
-    ({ params, respond }) => {
-      if (params.connectionId === healthyAccount.id) {
-        return respond(200, healthyAccount);
-      }
-      if (params.connectionId !== reconnectAccount.id) {
-        return respond(404, {
-          error: { code: "NOT_FOUND", message: "Account not found" },
-        });
-      }
-      return respond(200, reconnectAccount);
-    },
-  );
-  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
-    return respond(200, {
-      connections: [healthyAccount, reconnectAccount],
-      nextCursor: null,
-      defaultConnection: healthyAccount,
-    });
-  });
-  const submittedAccounts: unknown[] = [];
-  context.mocks.api(
-    builtinConnectorOauthStartContract.start,
-    ({ body, respond }) => {
-      submittedAccounts.push(body.account);
-      return respond(200, {
-        authorizationUrl: "https://oauth.test/google-calendar/authorize",
-        oauthAttemptId,
-      });
-    },
-  );
-  const authWindow = createAuthWindow();
-  context.mocks.browser.open(authWindow);
-
+function calendarIssue(
+  warning: "calendar_not_found" | "reconnect_required" = "calendar_not_found",
+) {
   return {
-    submittedAccounts,
-    open: async () => {
-      mockBillingTier("team");
-      await setupPage({
-        context,
-        path: workflowDetailPath("automations"),
-        sharedWorkerTestTransport: "message-port",
-      });
-
-      const warning = await screen.findByRole("alert");
-      expect(warning).toHaveTextContent(
-        "Google Calendar needs to be reconnected before this automation can resume.",
-      );
-      const reconnectEntry = buttonByText("Reconnect Google Calendar", warning);
-      await waitFor(() => {
-        expect(reconnectEntry).toBeEnabled();
-      });
-      click(reconnectEntry);
-
-      const manager = await screen.findByRole("dialog", {
-        name: "Manage Google Calendar accounts",
-      });
-      const healthyRow = await within(manager).findByRole("group", {
-        name: "Work Calendar",
-      });
-      const reconnectRow = within(manager).getByRole("group", {
-        name: "Personal Calendar",
-      });
-      expect(healthyRow).toHaveTextContent("Connected");
-      expect(reconnectRow).toHaveTextContent("Reconnect required");
-      expect(submittedAccounts).toStrictEqual([]);
-      expect(queryButtonByText("Reconnect", healthyRow)).toBeNull();
-      click(buttonByText("Reconnect", reconnectRow));
-
-      const connectDialog = await waitFor(() => {
-        const dialog = screen
-          .getAllByRole("dialog", { name: "Google Calendar" })
-          .find((candidate) => {
-            return queryButtonByText("Reconnect", candidate);
-          });
-        if (!dialog) {
-          throw new Error("Expected Google Calendar reconnect dialog");
-        }
-        return dialog;
-      });
-      click(buttonByText("Reconnect", connectDialog));
-      await waitFor(() => {
-        expect(authWindow.location.href).toBe(
-          "https://oauth.test/google-calendar/authorize",
-        );
-      });
-      expect(submittedAccounts).toStrictEqual([
-        {
-          intent: "reconnect",
-          connectionId: reconnectAccount.id,
-        },
-      ]);
+    ...weekday(),
+    kind: "event" as const,
+    eventType: "google-calendar-event-created" as const,
+    eventConfig: {
+      provider: "google-calendar" as const,
+      event: "event_created" as const,
+      calendarId: "missing-created@example.com",
     },
-    complete: () => {
-      completedAttempts.set(oauthAttemptId, reconnectAccount.id);
-      reconnectAccount = {
-        ...reconnectAccount,
-        connectionStatus: "connected",
-        reconnectReason: null,
-        updatedAt: "2026-01-01T00:00:01.000Z",
-      };
-      context.mocks.ably.trigger("connector:changed", {
-        connectorSlug: "google-calendar",
-      });
-    },
+    schedule: null,
+    scheduleSummary: null,
+    warning,
   };
 }
 
-test("Reconnect the selected Calendar account and reload the warning state", async () => {
-  const workflow = {
-    ...salesResearch(),
-    automations: [
-      googleCalendarWorkflowAutomation({ warning: "reconnect_required" }),
-    ],
-  };
-  const reconnect = mockCalendarReconnect(workflow);
-  await reconnect.open();
-  workflow.automations[0] = googleCalendarWorkflowAutomation();
-  reconnect.complete();
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Google Calendar" }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
+test("workflows-page-035 replacing a missing calendar restores delivery without changing its trigger", async () => {
+  const { base, sales } = directory();
+  const calendar = calendarIssue();
+  sales.automations = [calendar];
+  const replacement = "replacement@example.com";
+  context.mocks.api(
+    workflowAutomationsContract.update,
+    ({ body, params, respond }) => {
+      expect(params.id).toBe(calendar.id);
+      expect(body).toStrictEqual({
+        eventConfig: { ...calendar.eventConfig, calendarId: replacement },
+      });
+      const restored = {
+        ...calendar,
+        warning: undefined,
+        eventConfig: { ...calendar.eventConfig, calendarId: replacement },
+      };
+      sales.automations = [restored];
+      return respond(200, restored);
+    },
+  );
+  await setupPage({ context, path: base + "/automations" });
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("This calendar is no longer available");
+  const row = alert.closest("[data-automation-id]")!;
+  expect(row).not.toHaveClass("opacity-75");
+  expect(within(row as HTMLElement).getByRole("switch")).toBeChecked();
+  click(await findAction("button", "Change calendar", alert));
+  const field = await screen.findByLabelText("Calendar ID");
+  expect(field).toHaveValue(calendar.eventConfig.calendarId);
+  await fill(field, replacement);
+  click(await findAction("button", "Save calendar"));
+  await screen.findByText(new RegExp(replacement));
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.queryByLabelText("Calendar ID")).toBeNull();
   expect(screen.getByRole("switch")).toBeChecked();
 });
 
-test("Create a Google Forms automation and surface its warning", async () => {
-  const createBodies: WorkflowAutomationCreateRequest[] = [];
-  const warning = "This Google Form is not accepting responses yet.";
-  mockWorkflowApis([salesResearch()]);
-  context.mocks.api(workflowAutomationsContract.create, ({ body, respond }) => {
-    createBodies.push(body);
-    return respond(
-      201,
-      googleFormsResponseSubmittedWorkflowAutomation(warning),
-    );
-  });
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"), {});
-
-  click(await screen.findByText("Add automation"));
-  await screen.findByRole("dialog");
-  pickAutomation("Google Forms", /^Google Forms response submitted/);
-
-  const createAutomationForm = await screen.findByRole("form", {
-    name: "Add Google Forms response automation",
-  });
-  await fill(
-    within(createAutomationForm).getByLabelText("Form link"),
-    "https://docs.google.com/forms/d/1FAIpQLScGoogleFormsAutomationTest/edit",
-  );
-  fireEvent.submit(createAutomationForm);
-
-  await waitFor(() => {
-    expect(createBodies.at(-1)).toStrictEqual({
-      kind: "event",
-      eventType: "google-forms-response-submitted",
-      eventConfig: {
-        provider: "google-forms",
-        event: "response_submitted",
-        formUrl:
-          "https://docs.google.com/forms/d/1FAIpQLScGoogleFormsAutomationTest/edit",
-      },
-    });
-  });
-  await expect(screen.findByText(warning)).resolves.toBeInTheDocument();
+test("workflows-page-036 a different owner's paused Calendar rule stays enabled and read-only", async () => {
+  const { base, sales } = directory();
+  sales.canManage = false;
+  const rule = calendarIssue("reconnect_required");
+  rule.ownerUserId = "calendar-owner";
+  sales.automations = [rule];
+  await setupPage({ context, path: base + "/automations" });
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("Action required — delivery paused");
+  const toggle = screen.getByRole("switch");
+  expect(toggle).toBeChecked();
+  expect(toggle).toHaveAttribute("aria-disabled", "true");
+  expect(queryAction("button", "Change calendar")).toBeNull();
+  expect(queryAction("button", "Reconnect Google Calendar")).toBeNull();
 });
 
-test("Create a Google Meet transcript-ready automation", async () => {
-  const createBodies: WorkflowAutomationCreateRequest[] = [];
-  mockWorkflowApis([salesResearch()]);
-  mockCreateWorkflowAutomation((body) => {
-    createBodies.push(body);
-  });
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"), {});
-
-  await waitFor(() => {
-    expect(buttonByText("Add automation")).toBeInTheDocument();
-  });
-  click(buttonByText("Add automation"));
-
-  await waitFor(() => {
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-  });
-  pickAutomation("Calendar", /^Google Meet transcript ready/);
-
-  const createAutomationForm = await screen.findByRole("form", {
-    name: "Add Google Meet transcript automation",
-  });
-  fireEvent.submit(createAutomationForm);
-
-  await waitFor(() => {
-    expect(createBodies.at(-1)).toStrictEqual({
-      kind: "event",
-      eventType: "google-meet-transcript-generated",
-      eventConfig: {
-        provider: "google-meet",
-        event: "transcript_generated",
-        scope: { type: "organizer_user" },
-      },
-    });
-  });
-});
-
-test("Create a Notion database-item automation", async () => {
-  const createBodies: WorkflowAutomationCreateRequest[] = [];
-  mockWorkflowApis([salesResearch()]);
-  mockCreateWorkflowAutomation((body) => {
-    createBodies.push(body);
-  });
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"), {});
-
-  await waitFor(() => {
-    expect(buttonByText("Add automation")).toBeInTheDocument();
-  });
-  click(buttonByText("Add automation"));
-
-  await waitFor(() => {
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-  });
-  pickAutomation("Notion", /^New Notion database item/);
-
-  const createAutomationForm = await screen.findByRole("form", {
-    name: "Add Notion database item automation",
-  });
-  await fill(
-    within(createAutomationForm).getByLabelText("Database URL"),
-    "https://www.notion.so/22222222222242228222222222222222?v=aaaaaaaaaaaa4aaa8aaaaaaaaaaaaaaa",
-  );
-  fireEvent.submit(createAutomationForm);
-
-  await waitFor(() => {
-    expect(createBodies.at(-1)).toStrictEqual({
-      kind: "event",
-      eventType: "notion-database-item-created",
-      eventConfig: {
-        provider: "notion",
-        event: "database_item_created",
-        databaseUrl:
-          "https://www.notion.so/22222222222242228222222222222222?v=aaaaaaaaaaaa4aaa8aaaaaaaaaaaaaaa",
-      },
-    });
-  });
-});
-
-test("Offer a Team upgrade to a Pro workspace administrator", async () => {
-  context.mocks.data.org({
-    id: "org_1",
-    name: "Test Org",
-    role: "admin",
-  });
-  mockWorkflowApis([salesResearch()]);
-  await setupWorkflowDetailPage(workflowDetailPath("automations"), {}, "pro");
-
-  click(await screen.findByText("Add automation"));
-  const picker = await screen.findByRole("dialog");
-  click(buttonByText("Integrations", picker));
-  const webhookCard = buttonByText(/^Webhook/u, picker);
-  expect(within(webhookCard).getByText("Team")).toBeInTheDocument();
-  click(webhookCard);
-
-  const upgradeTitle = await screen.findByText(
-    "Upgrade for webhook automations",
-  );
-  expect(upgradeTitle).toBeInTheDocument();
-  expect(
-    screen.getByText("Webhook automations require a Team workspace."),
-  ).toBeInTheDocument();
-  expect(buttonByText("Upgrade to Team")).toBeInTheDocument();
-});
-
-async function verifyWebhookFieldInteractions(
-  dialog: HTMLElement,
-  user: ReturnType<typeof userEvent.setup>,
-  clipboardWrites: readonly string[],
-) {
-  const fields = [
-    { label: "Webhook URL", value: webhookWorkflowAutomation().webhookUrl },
-    { label: "Signing secret", value: "webhook-secret" },
-  ];
-  const copyButtons = queryAllByRoleFast("button", dialog).filter((button) => {
-    return textFor(button) === "Copy";
-  });
-  expect(copyButtons).toHaveLength(3);
-  const expectedWrites: string[] = [];
-
-  for (const [index, { label, value }] of fields.entries()) {
-    const input = within(dialog).getByLabelText<HTMLInputElement>(label, {
-      exact: true,
-    });
-    expect(within(dialog).getByRole("textbox", { name: label })).toBe(input);
-    expect(input).toHaveValue(value);
-    expect(input).toHaveAttribute("readonly");
-
-    await user.click(within(dialog).getByText(label, { exact: true }));
-    expect(input).toHaveFocus();
-    expect(clipboardWrites).toStrictEqual(expectedWrites);
-
-    await user.keyboard("{Control>}a{/Control}");
-    expect(input.selectionStart).toBe(0);
-    expect(input.selectionEnd).toBe(input.value.length);
-    await user.keyboard("x");
-    expect(input).toHaveValue(value);
-
-    await user.keyboard("{Tab}");
-    const copyButton = copyButtons[index];
-    expect(copyButton).toHaveFocus();
-    expect(copyButton).toHaveAttribute("type", "button");
-    await user.keyboard("{Enter}");
-    expectedWrites.push(input.value);
-    expect(clipboardWrites).toStrictEqual(expectedWrites);
-    await user.keyboard(" ");
-    expectedWrites.push(input.value);
-    expect(clipboardWrites).toStrictEqual(expectedWrites);
-    await user.click(copyButton);
-    expectedWrites.push(input.value);
-    expect(clipboardWrites).toStrictEqual(expectedWrites);
-    await user.keyboard("{Tab}");
-    expect(
-      index === 0
-        ? within(dialog).getByLabelText("Signing secret", { exact: true })
-        : copyButtons[2],
-    ).toHaveFocus();
-  }
-
-  await user.keyboard("{Enter}");
-  expect(clipboardWrites).toHaveLength(7);
-  expect(clipboardWrites[6]).toContain(fields[0].value);
-  expect(clipboardWrites[6]).toContain(fields[1].value);
-}
-
-test("Allow webhook creation when the plan grants the capability", async () => {
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  context.mocks.data.org({
-    id: "org_1",
-    name: "Test Org",
-    role: "admin",
-  });
-  mockWorkflowApis([salesResearch()]);
-  mockCreateWorkflowAutomation(() => {});
-  await setupWorkflowDetailPage(workflowDetailPath("automations"), {}, "pro", {
-    workflowWebhookAutomationAllowed: true,
-  });
-
-  click(await screen.findByText("Add automation"));
-  const picker = await screen.findByRole("dialog");
-  click(buttonByText("Integrations", picker));
-  const webhookCard = buttonByText(/^Webhook/u, picker);
-  expect(within(webhookCard).queryByText("Team")).not.toBeInTheDocument();
-  click(webhookCard);
-
-  await expect(
-    screen.findByText("Create webhook"),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.queryByText("Upgrade for webhook automations"),
-  ).not.toBeInTheDocument();
-
-  click(buttonByText("Create webhook"));
-  const dialog = screen.getByRole("dialog", { name: "Add webhook automation" });
-  const webhookUrl = webhookWorkflowAutomation().webhookUrl;
-  await expect(
-    within(dialog).findByLabelText("Webhook URL"),
-  ).resolves.toHaveValue(webhookUrl);
-  expect(within(dialog).getByLabelText("Signing secret")).toHaveValue(
-    "webhook-secret",
-  );
-
-  const copyButtons = queryAllByRoleFast("button", dialog).filter((button) => {
-    return textFor(button) === "Copy";
-  });
-  expect(copyButtons).toHaveLength(3);
-  for (const button of copyButtons) {
-    click(button);
-  }
-  expect(clipboard.writes.slice(0, 2)).toStrictEqual([
-    webhookUrl,
-    "webhook-secret",
+test("workflows-page-037 a directory warning opens and centers its precise Calendar rule", async () => {
+  const { base, sales } = directory();
+  const rule = calendarIssue();
+  sales.automations = [weekday(), rule];
+  context.mocks.data.onboardingStatus({ defaultAgentId: sales.agentId });
+  context.mocks.data.agents([
+    { agentId: sales.agentId, displayName: "Research Bot" },
   ]);
-  expect(clipboard.writes).toHaveLength(3);
-  expect(clipboard.writes[2]).toContain(webhookUrl);
-  expect(clipboard.writes[2]).toContain("webhook-secret");
-
-  click(buttonByText("Done", dialog));
-  await waitFor(() => {
-    expect(dialog).not.toBeInTheDocument();
-  });
-});
-
-test("Handle a plan restriction discovered while creating a webhook", async () => {
-  context.mocks.data.org({
-    id: "org_1",
-    name: "Test Org",
-    role: "admin",
-  });
-  mockWorkflowApis([salesResearch()]);
-  context.mocks.api(workflowAutomationsContract.create, ({ respond }) => {
-    return respond(402, {
-      error: {
-        code: "TEAM_REQUIRED",
-        message: "Webhook automations require a Team workspace",
-      },
-    });
-  });
-  await setupWorkflowDetailPage(workflowDetailPath("automations"), {}, "pro", {
-    workflowWebhookAutomationAllowed: true,
-  });
-
-  click(await screen.findByText("Add automation"));
-  const picker = await screen.findByRole("dialog");
-  click(buttonByText("Integrations", picker));
-  click(buttonByText(/^Webhook/u, picker));
-  await waitFor(() => {
-    expect(buttonByText("Create webhook")).toBeInTheDocument();
-  });
-  const createButton = buttonByText("Create webhook");
-  click(createButton);
-
-  await expect(
-    screen.findByText("Upgrade for webhook automations"),
-  ).resolves.toBeInTheDocument();
-  expect(createButton).toBeDisabled();
-});
-
-test("Direct a non-admin to request webhook access", async () => {
-  context.mocks.data.org({
-    id: "org_1",
-    name: "Test Org",
-    role: "member",
-  });
-  mockWorkflowApis([salesResearch()]);
-  await setupWorkflowDetailPage(workflowDetailPath("automations"), {}, "pro");
-
-  click(await screen.findByText("Add automation"));
-  const picker = await screen.findByRole("dialog");
-  click(buttonByText("Integrations", picker));
-  click(buttonByText(/^Webhook/u, picker));
-
-  const askAdmin = await screen.findByText("Ask a workspace admin to upgrade.");
-  expect(askAdmin).toBeInTheDocument();
-  expect(screen.queryByText("Upgrade to Team")).not.toBeInTheDocument();
-});
-
-test("Explain a plan restriction when enabling an existing webhook", async () => {
-  context.mocks.data.org({
-    id: "org_1",
-    name: "Test Org",
-    role: "admin",
-  });
-  context.mocks.data.userPreferences({ timezone: "UTC" });
-  const workflow = {
-    ...salesResearch(),
-    automations: [
-      weekdayWorkflowAutomation(),
-      {
-        ...webhookWorkflowAutomation(),
-        enabled: false,
-        disabledReason: "paid_plan_required" as const,
-      },
-    ],
-  };
-  mockWorkflowApis([workflow]);
-  context.mocks.api(workflowAutomationsContract.enable, ({ respond }) => {
-    return respond(402, {
-      error: {
-        code: "TEAM_REQUIRED",
-        message: "Webhook automations require a Team workspace",
-      },
-    });
-  });
-  await setupWorkflowDetailPage(workflowDetailPath("automations"), {}, "pro");
-
-  const enableSwitch = await screen.findByRole("switch", {
-    name: "Enable Webhook",
-  });
-  const unrelatedSwitch = screen.getByRole("switch", {
-    name: "Disable Every weekday at 9:00 AM",
-  });
-  click(enableSwitch);
-  const upgradeTitle = await screen.findByText(
-    "Upgrade for webhook automations",
+  context.mocks.api(
+    workflowAutomationsContract.listWorkspace,
+    ({ respond }) => {
+      return respond(200, [{ workflow: sales, automation: rule }]);
+    },
   );
-  expect(upgradeTitle).toBeInTheDocument();
-  expect(enableSwitch).toHaveAttribute("aria-disabled", "true");
-  expect(unrelatedSwitch).not.toHaveAttribute("aria-disabled", "true");
-  expect(screen.getByText("Disabled — paid plan required")).toBeInTheDocument();
-});
-
-test("Reveal an existing webhook secret on demand", async () => {
-  const user = userEvent.setup();
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  const workflow = {
-    ...salesResearch(),
-    automations: [webhookWorkflowAutomation()],
-  };
-  mockWorkflowApis([workflow]);
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-  await waitFor(() => {
-    expect(screen.getByText("Webhook URL hidden")).toBeInTheDocument();
-  });
+  const scroll = vi.spyOn(HTMLElement.prototype, "scrollIntoView");
+  await setupPage({ context, path: "/workflows" });
+  const badge = await screen.findByText("Action required", { exact: true });
+  click(badge);
+  click(await findAction("link", "Open Sales Research recovery"));
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("Action required — delivery paused");
+  const row = alert.closest("[data-automation-id]");
+  expect(row).toHaveAttribute("data-automation-id", rule.id);
+  expect(row).toHaveAttribute("aria-current", "true");
   expect(
-    screen.queryByDisplayValue(webhookWorkflowAutomation().webhookUrl ?? ""),
-  ).not.toBeInTheDocument();
-  click(buttonByText("More actions"));
-  click(menuItemByText("View webhook secret"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "View webhook secret",
-  });
-  expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
-  click(buttonByText("Reveal secret", dialog));
-
-  await expect(
-    within(dialog).findByLabelText("Webhook URL"),
-  ).resolves.toHaveValue(webhookWorkflowAutomation().webhookUrl);
-  await verifyWebhookFieldInteractions(dialog, user, clipboard.writes);
-  click(buttonByText("Done", dialog));
-  await waitFor(() => {
-    expect(dialog).not.toBeInTheDocument();
-  });
-
-  click(buttonByText("More actions"));
-  click(menuItemByText("View webhook secret"));
-  const reopened = await screen.findByRole("dialog", {
-    name: "View webhook secret",
-  });
-  expect(within(reopened).queryByRole("textbox")).not.toBeInTheDocument();
-  expect(buttonByText("Reveal secret", reopened)).toBeEnabled();
-  expect(clipboard.writes).toHaveLength(7);
+    scroll.mock.calls.some(([o], i) => {
+      return (
+        scroll.mock.contexts[i] === row &&
+        typeof o === "object" &&
+        o.block === "center"
+      );
+    }),
+  ).toBeTruthy();
+  expect(location.pathname).toBe(base + "/automations");
 });
 
-test("Create a daily schedule in the user's preferred time zone", async () => {
-  const createBodies: WorkflowAutomationCreateRequest[] = [];
-  context.mocks.data.userPreferences({ timezone: "Asia/Shanghai" });
-  mockWorkflowApis([salesResearch()]);
-  mockCreateWorkflowAutomation((body) => {
-    createBodies.push(body);
-  });
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-  await waitFor(() => {
-    expect(buttonByText("Add automation")).toBeInTheDocument();
-  });
-  click(buttonByText("Add automation"));
-  await waitFor(() => {
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-  });
-  pickAutomation("Schedule", /^Scheduled time/u);
-
-  const createAutomationForm = await screen.findByRole("form", {
-    name: "Add schedule automation",
-  });
-  expect(
-    within(createAutomationForm).getByText("Time (Asia/Shanghai)"),
-  ).toBeInTheDocument();
-  click(buttonByText("Add schedule", createAutomationForm));
-
-  await waitFor(() => {
-    expect(createBodies.at(-1)).toStrictEqual({
-      schedule: {
-        type: "cron",
-        cronExpression: "0 1 * * *",
-        timezone: "UTC",
-      },
+test("workflows-page-039 a submitted Google Forms link creates a visibly paused form rule", async () => {
+  const { base, sales } = directory();
+  const formUrl = "https://docs.google.com/forms/d/field-research/edit";
+  const warning = "The form is not accepting responses.";
+  context.mocks.api(workflowAutomationsContract.create, ({ body, respond }) => {
+    expect(body).toMatchObject({
+      eventType: "google-forms-response-submitted",
+      eventConfig: { formUrl },
     });
-  });
-});
-
-test("Create an interval automation", async () => {
-  const createBodies: WorkflowAutomationCreateRequest[] = [];
-  mockWorkflowApis([salesResearch()]);
-  mockCreateWorkflowAutomation((body) => {
-    createBodies.push(body);
-  });
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-  await waitFor(() => {
-    expect(buttonByText("Add automation")).toBeInTheDocument();
-  });
-  click(buttonByText("Add automation"));
-  await waitFor(() => {
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-  });
-  pickAutomation("Schedule", /^Interval/u);
-
-  const createAutomationForm = await screen.findByRole("form", {
-    name: "Add interval automation",
-  });
-  selectOptionByLabel("Every", "30 minutes", createAutomationForm);
-  click(buttonByText("Add interval", createAutomationForm));
-
-  await waitFor(() => {
-    expect(createBodies.at(-1)).toStrictEqual({
-      schedule: {
-        type: "loop",
-        intervalSeconds: 1800,
+    const rule = {
+      ...weekday(),
+      kind: "event" as const,
+      eventType: "google-forms-response-submitted" as const,
+      eventConfig: {
+        provider: "google-forms" as const,
+        event: "response_submitted" as const,
+        connectorId: crypto.randomUUID(),
+        form: { id: "field-research", title: "Field research", url: formUrl },
       },
-    });
+      warning,
+      schedule: null,
+      scheduleSummary: null,
+    };
+    sales.automations = [rule];
+    return respond(201, rule);
   });
+  await setupPage({ context, path: base + "/automations" });
+  await chooseAutomation("Google Forms", "Google Forms response submitted");
+  await fill(await screen.findByLabelText("Form link"), formUrl);
+  click(await findAction("button", "Add Google Forms automation"));
+  await screen.findByText(warning);
 });
 
-test("Create a one-time automation", async () => {
-  const createBodies: WorkflowAutomationCreateRequest[] = [];
-  mockWorkflowApis([salesResearch()]);
-  mockCreateWorkflowAutomation((body) => {
-    createBodies.push(body);
-  });
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-  await waitFor(() => {
-    expect(buttonByText("Add automation")).toBeInTheDocument();
-  });
-  click(buttonByText("Add automation"));
-  await waitFor(() => {
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-  });
-  pickAutomation("Schedule", /^One-time run/u);
-
-  const createAutomationForm = await screen.findByRole("form", {
-    name: "Add one-time automation",
-  });
-  fireEvent.change(within(createAutomationForm).getByLabelText("Run at"), {
-    target: { value: "2026-07-01T10:30" },
-  });
-  click(buttonByText("Add one-time run", createAutomationForm));
-
-  await waitFor(() => {
-    expect(createBodies.at(-1)).toStrictEqual({
+test("workflows-page-050 a one-time schedule submits the chosen July time in UTC", async () => {
+  const { base, sales } = directory();
+  context.mocks.api(workflowAutomationsContract.create, ({ body, respond }) => {
+    expect(body).toMatchObject({
       schedule: {
         type: "once",
-        atTime: new Date("2026-07-01T10:30").toISOString(),
+        atTime: new Date(2026, 6, 1, 10, 30).toISOString(),
         timezone: "UTC",
       },
     });
-  });
-});
-
-test("A completed automation update preserves a reopened editor draft", async () => {
-  const automation: WorkflowScheduleAutomationSummary = {
-    ...weekdayWorkflowAutomation(),
-    schedule: { type: "loop", intervalSeconds: 3600 },
-    scheduleSummary: "Every 1 hour",
-  };
-  const workflow = { ...salesResearch(), automations: [automation] };
-  mockWorkflowApis([workflow]);
-  const started = context.mocks.deferred<void>();
-  const response = context.mocks.deferred<void>();
-  context.mocks.api(workflowAutomationsContract.update, async ({ respond }) => {
-    started.resolve();
-    await response.promise;
-    const saved: WorkflowScheduleAutomationSummary = {
-      ...automation,
-      schedule: { type: "loop", intervalSeconds: 18_000 },
-      scheduleSummary: "Every 5 hours",
+    const saved = {
+      ...weekday(),
+      schedule: {
+        type: "once" as const,
+        atTime: new Date(2026, 6, 1, 10, 30).toISOString(),
+        timezone: "UTC",
+      },
+      scheduleSummary: "July review",
     };
-    workflow.automations = [saved];
-    return respond(200, saved);
+    sales.automations = [saved];
+    return respond(201, saved);
   });
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-  click(
-    await waitFor(() => {
-      return buttonByText("Edit automation");
-    }),
-  );
-  const first = screen.getByRole("form", {
-    name: "Update schedule automation",
+  await setupPage({ context, path: base + "/automations" });
+  await chooseAutomation("Schedule", "One-time run");
+  fireEvent.change(await screen.findByLabelText("Run at"), {
+    target: { value: "2026-07-01T10:30" },
   });
-  fireEvent.submit(first);
-  await started.promise;
-  click(buttonByText("Close", screen.getByRole("dialog")));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-  click(buttonByText("Edit automation"));
-  const draft = screen.getByRole("form", {
-    name: "Update schedule automation",
-  });
-  selectOptionByLabel("Every", "30 minutes", draft);
-  response.resolve();
-  await screen.findByText("Every 5 hours");
-  await expect(
-    screen.findByRole("form", { name: "Update schedule automation" }),
-  ).resolves.toBeInTheDocument();
-  expect(
-    within(draft).getByRole("combobox", { name: "Every" }),
-  ).toHaveTextContent("30 minutes");
+  click(await findAction("button", "Add one-time run"));
+  await screen.findByRole("switch");
 });
 
-test("Edit a schedule in the user's preferred time zone", async () => {
-  const updateBodies: {
-    readonly automationId: string;
-    readonly body: WorkflowAutomationUpdateRequest;
-  }[] = [];
-  context.mocks.data.userPreferences({ timezone: "Asia/Shanghai" });
-  const workflow = {
-    ...salesResearch(),
-    automations: [
-      {
-        ...weekdayWorkflowAutomation(),
-        schedule: {
-          type: "cron",
-          cronExpression: "0 1 * * 1-5",
-          timezone: "UTC",
-        },
-      } satisfies WorkflowScheduleAutomationSummary,
-    ],
-  };
-  mockWorkflowApis([workflow]);
-  mockUpdateWorkflowAutomation((automationId, body) => {
-    updateBodies.push({ automationId, body });
-  });
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-  await waitFor(() => {
-    expect(screen.getByText("Every weekday at 9:00 AM")).toBeInTheDocument();
-  });
-
-  click(buttonByText("Edit automation"));
-
-  const updateAutomationForm = screen.getByRole("form", {
-    name: "Update schedule automation",
-  });
-  selectOptionByLabel("Hour", "16", updateAutomationForm);
-  selectOptionByLabel("Minute", "45", updateAutomationForm);
-  click(buttonByText("Save schedule", updateAutomationForm));
-
-  await waitFor(() => {
-    expect(updateBodies.at(-1)).toStrictEqual({
-      automationId: "workflow-automation-weekday-brief",
-      body: {
-        schedule: {
-          type: "cron",
-          cronExpression: "45 8 * * 1-5",
-          timezone: "UTC",
-        },
-      },
-    });
-  });
-});
-
-test("Edit an interval automation", async () => {
-  const updateBodies: {
-    readonly automationId: string;
-    readonly body: WorkflowAutomationUpdateRequest;
-  }[] = [];
-  const workflow = {
-    ...salesResearch(),
-    automations: [
-      {
-        ...weekdayWorkflowAutomation(),
-        schedule: {
-          type: "loop",
-          intervalSeconds: 3600,
-        },
-        scheduleSummary: "Every 3600s",
-      } satisfies WorkflowScheduleAutomationSummary,
-    ],
-  };
-  mockWorkflowApis([workflow]);
-  mockUpdateWorkflowAutomation((automationId, body) => {
-    updateBodies.push({ automationId, body });
-  });
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-  await waitFor(() => {
-    expect(screen.getByText("Every 1 hour")).toBeInTheDocument();
-  });
-
-  click(buttonByText("Edit automation"));
-
-  const updateAutomationForm = screen.getByRole("form", {
-    name: "Update schedule automation",
-  });
-  selectOptionByLabel("Every", "30 minutes", updateAutomationForm);
-  fireEvent.submit(updateAutomationForm);
-
-  await waitFor(() => {
-    expect(updateBodies.at(-1)).toStrictEqual({
-      automationId: "workflow-automation-weekday-brief",
-      body: {
-        schedule: {
-          type: "loop",
-          intervalSeconds: 1800,
-        },
-      },
-    });
-  });
-});
-
-test("Keep a custom interval when saving without opening its selector", async () => {
-  const updateBodies: {
-    readonly automationId: string;
-    readonly body: WorkflowAutomationUpdateRequest;
-  }[] = [];
-  const workflow = {
-    ...salesResearch(),
-    automations: [
-      {
-        ...weekdayWorkflowAutomation(),
-        schedule: { type: "loop", intervalSeconds: 2220 },
-        scheduleSummary: "Every 2220s",
-      } satisfies WorkflowScheduleAutomationSummary,
-    ],
-  };
-  mockWorkflowApis([workflow]);
-  mockUpdateWorkflowAutomation((automationId, body) => {
-    updateBodies.push({ automationId, body });
-  });
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-  await screen.findByText("Every 37 minutes");
-  click(buttonByText("Edit automation"));
-
-  const form = await screen.findByRole("form", {
-    name: "Update schedule automation",
-  });
-  const interval = within(form).getByRole("combobox", { name: "Every" });
-  expect(interval).toHaveTextContent("37 minutes");
-  expect(interval).toHaveAttribute("aria-expanded", "false");
-  click(buttonByText("Save schedule", form));
-
-  await waitFor(() => {
-    expect(updateBodies.at(-1)).toStrictEqual({
-      automationId: "workflow-automation-weekday-brief",
-      body: {
-        schedule: { type: "loop", intervalSeconds: 2220 },
-      },
-    });
-  });
-});
-
-test("Edit Gmail new-message match rules", async () => {
-  const updateBodies: {
-    readonly automationId: string;
-    readonly body: WorkflowAutomationUpdateRequest;
-  }[] = [];
-  const workflow = {
-    ...salesResearch(),
-    automations: [
-      {
-        ...gmailWorkflowAutomation(),
-        eventConfig: {
-          provider: "gmail",
-          event: "new_message",
-          threadId: "gmail-thread-1",
-          match: {
-            from: { containsAny: ["@vip.example"] },
-            subject: { doesNotContain: "newsletter" },
-          },
-        },
-      } satisfies WorkflowGmailNewMessageAutomationSummary,
-    ],
-  };
-  mockWorkflowApis([workflow]);
-  mockUpdateWorkflowAutomation((automationId, body) => {
-    updateBodies.push({ automationId, body });
-  });
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-  await waitFor(() => {
-    expect(screen.getAllByText("Gmail new message").length).toBeGreaterThan(0);
-  });
-
-  click(buttonByText("Edit automation"));
-
-  const updateAutomationForm = screen.getByRole("form", {
-    name: "Update Gmail new message automation",
-  });
-  expect(
-    within(updateAutomationForm).getByLabelText("Subject does not contain"),
-  ).toHaveValue("newsletter");
-  expect(
-    within(updateAutomationForm).getByLabelText("From contains any"),
-  ).toHaveValue("@vip.example");
-  await fill(
-    within(updateAutomationForm).getByLabelText("From contains any"),
-    "@vip.example, @priority.example",
-  );
-  expect(
-    within(updateAutomationForm).getByLabelText("Thread ID is"),
-  ).toHaveValue("gmail-thread-1");
-  expect(
-    within(updateAutomationForm).getByLabelText("Condition 3 field"),
-  ).toHaveTextContent("Thread ID");
-  expect(
-    within(updateAutomationForm).getByLabelText("Condition 3 operator"),
-  ).toHaveTextContent("Is");
-  await fill(
-    within(updateAutomationForm).getByLabelText("Thread ID is"),
-    "gmail-thread-2",
-  );
-  click(buttonByText("Add condition", updateAutomationForm));
-  await fill(
-    within(updateAutomationForm).getByLabelText("From contains"),
-    "@acme.com",
-  );
-  click(buttonByText("Add condition", updateAutomationForm));
-  selectOptionByLabel("Condition 5 field", "Body", updateAutomationForm);
-  await fill(
-    within(updateAutomationForm).getByLabelText("Body contains"),
-    "invoice",
-  );
-  fireEvent.submit(updateAutomationForm);
-
-  await waitFor(() => {
-    expect(updateBodies.at(-1)).toStrictEqual({
-      automationId: GMAIL_AUTOMATION_ID,
-      body: {
-        eventConfig: {
-          provider: "gmail",
-          event: "new_message",
-          threadId: "gmail-thread-2",
-          match: {
-            from: {
-              contains: "@acme.com",
-              containsAny: ["@vip.example", "@priority.example"],
-            },
-            subject: { doesNotContain: "newsletter" },
-            body: { contains: "invoice" },
-          },
-        },
-      },
-    });
-  });
-});
-
-test("Correct an unavailable Gmail label while preserving the saved automation", async () => {
-  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
-  const workflows = [
-    { ...salesResearch(), automations: [gmailLabelWorkflowAutomation()] },
-  ];
-  mockWorkflowApis(workflows);
-  context.mocks.api(workflowAutomationsContract.update, ({ body, respond }) => {
-    if (
-      !("eventConfig" in body) ||
-      body.eventConfig.provider !== "gmail" ||
-      body.eventConfig.event !== "label_applied"
-    ) {
-      throw new Error("Expected a Gmail label update");
-    }
-    if (body.eventConfig.labelName === "Missing") {
-      return respond(400, {
-        error: {
-          code: "GMAIL_LABEL_NOT_FOUND",
-          message: "Label is unavailable",
-        },
-      });
-    }
-    const automation = {
-      ...gmailLabelWorkflowAutomation(),
-      eventConfig: { ...body.eventConfig, resolvedLabelId: "Label_escalated" },
-    };
-    workflows[0].automations = [automation];
-    return respond(200, automation);
-  });
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-  await expect(
-    screen.findByText('Label "Support"'),
-  ).resolves.toBeInTheDocument();
-  click(buttonByText("Edit automation"));
-  const form = await screen.findByRole("form", {
-    name: "Update Gmail label automation",
-  });
-  const input = within(form).getByLabelText("Label name");
-  await fill(input, "Missing");
-  click(buttonByText("Save label", form));
-
-  await expect(within(form).findByRole("alert")).resolves.toHaveTextContent(
-    "Label not found in the connected Gmail account. Check the label name and connected account.",
-  );
-  expect(screen.queryByText("Label is unavailable")).not.toBeInTheDocument();
-  expect(input).toHaveValue("Missing");
-  expect(input).toHaveAttribute("aria-invalid", "true");
-  expect(screen.getByText('Label "Support"')).toBeInTheDocument();
-  expect(buttonByText("Save label", form)).toBeEnabled();
-
-  await fill(input, "Escalated");
-  click(buttonByText("Save label", form));
-  await expect(
-    screen.findByText('Label "Escalated"'),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.queryByRole("form", { name: "Update Gmail label automation" }),
-  ).not.toBeInTheDocument();
-  expect(consoleError.mock.calls.flat()).not.toContainEqual(
-    expect.objectContaining({
-      name: "ApiError",
-      code: "GMAIL_LABEL_NOT_FOUND",
-    }),
-  );
-});
-
-test("Warn when a workflow slash command resolves to another workflow", async () => {
-  const workflow = {
-    ...salesResearch(),
+function copies() {
+  const { sales, entries } = directory();
+  const shared = salesWorkflow(context, {
+    id: crypto.randomUUID(),
+    visibility: "public",
+    instruction: "Shared handbook",
     shadowedBy: {
-      id: OPS_WORKFLOW_ID,
-      name: "sales-research",
-      displayName: "Private Sales Research",
+      id: sales.id,
+      name: sales.name,
+      displayName: sales.displayName,
+    },
+  });
+  sales.instruction = "Keep the regional handbook";
+  entries.push(shared);
+  return { shared, sales, entries };
+}
+
+test("workflows-page-072 a stale agent filter leaves both Sales Research definitions accessible", async () => {
+  const { shared, sales, entries } = copies();
+  entries[1].agentId = crypto.randomUUID();
+  await setupPage({ context, path: "/workflows?agent=" + entries[1].agentId });
+  const badge = await screen.findByText("Overridden for you");
+  expect(badge.closest("a")).toHaveAttribute(
+    "href",
+    "/workflows/" + shared.id + "/automations",
+  );
+  const own = await screen.findByText("Used for /sales-research");
+  expect(own.closest("a")).toHaveAttribute(
+    "href",
+    "/workflows/" + sales.id + "/automations",
+  );
+  await expect(
+    screen.findAllByText("Sales Research", { exact: true }),
+  ).resolves.toHaveLength(2);
+});
+
+test("workflows-page-073 an existing private copy opens with its retained instructions", async () => {
+  const { shared, sales } = copies();
+  await setupPage({ context, path: "/workflows/" + shared.id + "/info" });
+  click(await findAction("button", "Make private copy"));
+  const dialog = await screen.findByRole("dialog");
+  const link = await findAction("link", "Open private copy", dialog);
+  click(link);
+  await screen.findByText("Keep the regional handbook");
+  expect(location.pathname).toBe("/workflows/" + sales.id + "/instructions");
+  expect(sales.instruction).toBe("Keep the regional handbook");
+});
+
+test("workflows-page-075 create in chat opens the default Okou composer", async () => {
+  directory();
+  createChatRunFixtures(context).installRunChat();
+  await setupPage({ context, path: "/workflows" });
+  click(await findAction("button", "Create in chat"));
+  const dialog = await screen.findByRole("dialog");
+  expect(within(dialog).queryByRole("combobox")).toBeNull();
+  click(await findAction("button", "Create workflow", dialog));
+  await screen.findByLabelText("Message");
+  expect(location.pathname).toBe("/");
+});
+
+test("workflows-page-056 a label edit can recover without replacing the saved label on rejection", async () => {
+  const { base, sales } = directory();
+  const original = {
+    ...weekday(),
+    kind: "event" as const,
+    eventType: "gmail-label-applied" as const,
+    schedule: null,
+    scheduleSummary: null,
+    eventConfig: {
+      provider: "gmail" as const,
+      event: "label_applied" as const,
+      labelName: "Support",
     },
   };
-  mockWorkflowApis([workflow]);
-
-  await setupWorkflowDetailPage(workflowDetailPath("instructions"));
-
-  await expect(
-    screen.findByText(
-      "/sales-research uses your private copy. You are viewing the shared definition.",
-    ),
-  ).resolves.toBeVisible();
-  expect(linkByText("Open private copy")).toHaveAttribute(
-    "href",
-    "/workflows/" + OPS_WORKFLOW_ID + "/instructions",
-  );
-});
-
-test("Select workflow files with Enter and Space and preserve accessible current state", async () => {
-  const user = userEvent.setup();
-  mockWorkflowApis([salesResearch()]);
-
-  await setupWorkflowDetailPage(
-    `${workflowDetailPath("instructions")}?file=config%2Fsettings.json`,
-  );
-  await expect(
-    screen.findByDisplayValue('{ "risk": "low", "tone": "direct" }'),
-  ).resolves.toBeInTheDocument();
-
-  const picker = screen.getByLabelText("Workflow files");
-  expect(picker).toHaveTextContent("config/settings.json");
-  click(picker);
-  expect(workflowFileItemByText(/config\/settings\.json/)).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
-  const instructions = workflowFileItemByText("instructions");
-  expect(instructions).toHaveAttribute("aria-checked", "false");
-  expect(workflowFileItemByText(/examples\/prompt\.md/)).toHaveAttribute(
-    "aria-checked",
-    "false",
-  );
-
-  await user.keyboard("{Home}");
-  expect(instructions).toHaveFocus();
-  expect(search()).toBe("?file=config%2Fsettings.json");
-  await user.keyboard("{Enter}");
-  await expect(
-    screen.findByText("Gather CRM context before outreach."),
-  ).resolves.toBeInTheDocument();
-  expect(search()).toBe("");
-  await waitFor(() => {
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-    expect(picker).toHaveFocus();
-  });
-
-  click(picker);
-  expect(workflowFileItemByText("instructions")).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
-  workflowFileItemByText(/examples\/prompt\.md/).focus();
-  await user.keyboard(" ");
-  await expect(
-    screen.findByText("Ask for market segment and urgency."),
-  ).resolves.toBeInTheDocument();
-  expect(search()).toBe("?file=examples%2Fprompt.md");
-  expect(picker).toHaveTextContent("examples/prompt.md");
-  await waitFor(() => {
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-    expect(picker).toHaveFocus();
-  });
-
-  click(picker);
-  expect(workflowFileItemByText(/examples\/prompt\.md/)).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
-  expect(workflowFileItemByText("instructions")).toHaveAttribute(
-    "aria-checked",
-    "false",
-  );
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-    expect(picker).toHaveFocus();
-  });
-  expect(search()).toBe("?file=examples%2Fprompt.md");
-});
-
-test("Reach workflow file actions with arrows and typeahead, then delete with Enter", async () => {
-  const user = userEvent.setup();
-  const updateBodies: WorkflowUpdateRequest[] = [];
-  mockWorkflowApis([salesResearch()], (body) => {
-    updateBodies.push(body);
-  });
-
-  await setupWorkflowDetailPage(workflowDetailPath("instructions"));
-
-  await waitFor(() => {
-    expect(
-      screen.getByText("Gather CRM context before outreach."),
-    ).toBeInTheDocument();
-  });
-  click(screen.getByLabelText("Workflow files"));
-  click(workflowFileItemByText(/config\/settings\.json/));
-  await user.click(screen.getByLabelText("Workflow files"));
-  await user.keyboard("{End}");
-  expect(menuItemByText("Delete selected file")).toHaveFocus();
-  await user.keyboard("{ArrowUp}");
-  expect(menuItemByText("Upload text files")).toHaveFocus();
-  await user.keyboard("{Home}u");
-  expect(menuItemByText("Upload text files")).toHaveFocus();
-  await user.keyboard("{Escape}{ArrowDown}d");
-  expect(menuItemByText("Delete selected file")).toHaveFocus();
-  await user.keyboard("{Enter}");
-
-  await waitFor(() => {
-    expect(updateBodies.at(-1)?.files).toStrictEqual([
-      {
-        path: "examples/prompt.md",
-        content: "# Prompt example\n\nAsk for market segment and urgency.\n",
-      },
-    ]);
-  });
-  await waitFor(() => {
-    expect(screen.getByLabelText("Workflow files")).toHaveTextContent(
-      "instructions",
-    );
-  });
-});
-
-test.each(["upload", "delete"])(
-  "Keep the selected workflow file and its content when %s fails",
-  async (operation) => {
-    const user = userEvent.setup({ delay: null });
-    mockWorkflowApis([salesResearch()]);
-    context.mocks.api(workflowsDetailContract.update, ({ respond }) => {
-      return respond(409, {
-        error: {
-          code: "CONFLICT",
-          message: "Workflow files could not be saved",
-        },
-      });
-    });
-    await setupWorkflowDetailPage(
-      `${workflowDetailPath("instructions")}?file=config%2Fsettings.json`,
-    );
-    await expect(
-      screen.findByDisplayValue('{ "risk": "low", "tone": "direct" }'),
-    ).resolves.toBeInTheDocument();
-
-    if (operation === "upload") {
-      await user.upload(
-        screen.getByLabelText("Upload workflow files"),
-        new File(["new notes"], "notes.md", { type: "text/markdown" }),
-      );
-    } else {
-      click(screen.getByLabelText("Workflow files"));
-      click(menuItemByText("Delete selected file"));
-    }
-
-    await expect(
-      screen.findByText("Workflow files could not be saved"),
-    ).resolves.toBeInTheDocument();
-    expect(screen.getByLabelText("Workflow files")).toHaveTextContent(
-      "config/settings.json",
-    );
-    expect(screen.getByLabelText("Workflow file content")).toHaveValue(
-      '{ "risk": "low", "tone": "direct" }',
-    );
-    expect(search()).toBe("?file=config%2Fsettings.json");
-    expect(screen.getByLabelText("Upload workflow files")).toBeEnabled();
-  },
-);
-
-test("Upload after the file menu closes and reselect the same file after an empty selection", async () => {
-  const user = userEvent.setup();
-  const updateBodies: WorkflowUpdateRequest[] = [];
-  mockWorkflowApis([salesResearch()], (body) => {
-    updateBodies.push(body);
-  });
-
-  await setupWorkflowDetailPage(workflowDetailPath("instructions"));
-
-  await waitFor(() => {
-    expect(
-      screen.getByText("Gather CRM context before outreach."),
-    ).toBeInTheDocument();
-  });
-
-  await user.click(screen.getByLabelText("Workflow files"));
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-  });
-  const file = new File(["new notes"], "notes.md", {
-    type: "text/markdown",
-  });
-  await user.upload(screen.getByLabelText("Upload workflow files"), file);
-
-  await waitFor(() => {
-    expect(updateBodies.at(-1)?.files).toContainEqual({
-      path: "notes.md",
-      content: "new notes",
-    });
-  });
-  expect(updateBodies.at(-1)?.files).toContainEqual({
-    path: "config/settings.json",
-    content: '{ "risk": "low", "tone": "direct" }',
-  });
-  await waitFor(() => {
-    expect(screen.getByLabelText("Workflow files")).toHaveTextContent(
-      "notes.md",
-    );
-  });
-
-  await user.upload(screen.getByLabelText("Upload workflow files"), []);
-  expect(screen.getByLabelText("Workflow files")).toHaveTextContent("notes.md");
-
-  click(screen.getByLabelText("Workflow files"));
-  click(workflowFileItemByText("instructions"));
-  await user.upload(screen.getByLabelText("Upload workflow files"), file);
-  await waitFor(() => {
-    expect(screen.getByLabelText("Workflow files")).toHaveTextContent(
-      "notes.md",
-    );
-  });
-});
-
-test("Replace an uploaded workflow file by path without dropping its siblings", async () => {
-  const user = userEvent.setup({ delay: null });
-  const workflow = salesResearch();
-  mockWorkflowApis([workflow]);
-  await setupWorkflowDetailPage(workflowDetailPath("instructions"));
-  await screen.findByLabelText("Workflow instruction");
-
-  const file = new File(["Updated prompt instructions"], "prompt.md", {
-    type: "text/markdown",
-  });
-  Object.defineProperty(file, "webkitRelativePath", {
-    value: "./examples/prompt.md",
-  });
-  await user.upload(screen.getByLabelText("Upload workflow files"), file);
-
-  await expect(
-    screen.findByText("Updated prompt instructions"),
-  ).resolves.toBeInTheDocument();
-  expect(search()).toBe("?file=examples%2Fprompt.md");
-  click(screen.getByLabelText("Workflow files"));
-  expect(
-    queryAllByRoleFast("menuitemradio").filter((item) => {
-      return item.textContent?.includes("examples/prompt.md");
-    }),
-  ).toHaveLength(1);
-  click(workflowFileItemByText(/config\/settings\.json/));
-  await expect(
-    screen.findByDisplayValue('{ "risk": "low", "tone": "direct" }'),
-  ).resolves.toBeInTheDocument();
-});
-
-test("Load workflow authors only after a title tooltip opens and reuse on reopen", async () => {
-  const user = userEvent.setup();
-  vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(true);
-  vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(
-    24,
-  );
-  mockWorkflowApis([salesResearch()]);
-  const response = context.mocks.deferred<void>();
-  let requests = 0;
+  sales.automations = [original];
   context.mocks.api(
-    workflowsDetailContract.ownerProfile,
-    async ({ respond }) => {
-      requests += 1;
-      await response.promise;
-      return respond(200, {
-        displayName: "Lazy Author",
-        imageUrl: "https://example.com/lazy-author.png",
-      });
-    },
-  );
-  await setupPage({ context, path: "/workflows" });
-  await screen.findByText("Sales Research");
-  expect(screen.getByText("Sales Research")).toBeInTheDocument();
-  expect(requests).toBe(0);
-  const title = linkByAriaLabel("Open Sales Research");
-  await user.hover(title);
-  const tooltip = await screen.findByRole("tooltip");
-  expect(within(tooltip).getByText("Created by")).toBeInTheDocument();
-  expect(within(tooltip).getByText("Sales Research")).toBeInTheDocument();
-  expect(
-    within(tooltip).getByText("Collects account context before outreach."),
-  ).toBeInTheDocument();
-  response.resolve();
-  await expect(
-    within(tooltip).findByText("Lazy Author"),
-  ).resolves.toBeInTheDocument();
-  expect(
-    within(tooltip).getByRole("img", { name: "Lazy Author" }),
-  ).toHaveAttribute("src", "https://example.com/lazy-author.png");
-  await user.unhover(title);
-  await waitFor(() => {
-    return expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-  });
-  await user.hover(title);
-  await expect(
-    within(await screen.findByRole("tooltip")).findByText("Lazy Author"),
-  ).resolves.toBeInTheDocument();
-  expect(requests).toBe(1);
-});
-
-test("Discard cached author data on account change and abort the old account's pending request", async () => {
-  const user = userEvent.setup();
-  const clerk = context.mocks.clerk();
-  const firstResponse = context.mocks.deferred<void>();
-  const started = context.mocks.deferred<AbortSignal>();
-  mockWorkflowApis([salesResearch()]);
-  let changed = false;
-  context.mocks.api(
-    workflowsDetailContract.ownerProfile,
-    async ({ request, respond }) => {
-      if (!changed) {
-        started.resolve(request.signal);
-        await firstResponse.promise;
-        return respond(200, {
-          displayName: "Previous Account Author",
-          imageUrl: null,
+    workflowAutomationsContract.update,
+    ({ params, body, respond }) => {
+      expect(params.id).toBe(original.id);
+      if (
+        !("eventConfig" in body) ||
+        !body.eventConfig ||
+        !("labelName" in body.eventConfig)
+      ) {
+        throw new Error("Missing Gmail label");
+      }
+      if (body.eventConfig.labelName === "Missing") {
+        return respond(400, {
+          error: {
+            code: "GMAIL_LABEL_NOT_FOUND",
+            message: "Transport label detail",
+          },
         });
       }
+      const saved = {
+        ...original,
+        eventConfig: {
+          ...original.eventConfig,
+          labelName: body.eventConfig.labelName,
+        },
+      };
+      sales.automations = [saved];
+      return respond(200, saved);
+    },
+  );
+  await setupPage({ context, path: base + "/automations" });
+  await screen.findByText(/Label .*Support/);
+  click(await findAction("button", "Edit automation"));
+  const label = await screen.findByLabelText("Label name");
+  await fill(label, "Missing");
+  click(await findAction("button", "Save label"));
+  await screen.findByRole("alert");
+  expect(screen.getByRole("alert")).toHaveTextContent("Label not found");
+  expect(label).toHaveAttribute("aria-invalid", "true");
+  expect(screen.getByText(/Label .*Support/)).toBeVisible();
+  expect(screen.queryByText("Transport label detail")).toBeNull();
+  await fill(label, "Escalated");
+  click(await findAction("button", "Save label"));
+  await screen.findByText(/Label .*Escalated/);
+  expect(screen.queryByLabelText("Label name")).toBeNull();
+});
+
+test("workflows-page-047 revealed webhook fields copy their own values and are hidden on the next opening", async () => {
+  const { base, sales } = directory();
+  const rule = {
+    ...weekday(),
+    kind: "event" as const,
+    eventType: "webhook-received" as const,
+    eventConfig: {
+      provider: "webhook" as const,
+      event: "received" as const,
+      auth: { mode: "hmac-sha256" as const },
+    },
+    schedule: null,
+    scheduleSummary: null,
+    secretLastFour: "8f01",
+    lastReceivedAt: null,
+  };
+  sales.automations = [rule];
+  const url = "https://hooks.example.org/field/weekly",
+    secret = "test-signature-8f01";
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  context.mocks.api(
+    workflowAutomationsContract.revealWebhookSecret,
+    ({ params, respond }) => {
+      expect(params.id).toBe(rule.id);
+      return respond(200, { webhookUrl: url, webhookSecret: secret });
+    },
+  );
+  await setupPage({ context, path: base + "/automations" });
+  for (let opening = 0; opening < 2; opening++) {
+    click(await findAction("button", "More actions"));
+    click(await findMenuItem("menuitem", "View webhook secret"));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByDisplayValue(url)).toBeNull();
+    click(await findAction("button", "Reveal secret", dialog));
+    const address = await within(dialog).findByDisplayValue(url);
+    const key = within(dialog).getByDisplayValue(secret);
+    expect(address).toHaveAttribute("readonly");
+    expect(key).toHaveAttribute("readonly");
+    for (const field of [address, key]) {
+      await userEvent.click(field);
+      await userEvent.keyboard("{Control>}a{/Control}x");
+      expect(field).toHaveValue(field === address ? url : secret);
+      await userEvent.keyboard("{Tab}");
+      const copy = await findAction("button", "Copy", field.parentElement!);
+      expect(copy).toHaveFocus();
+      await userEvent.keyboard("{Enter}");
+    }
+    const command = dialog.querySelector("pre")?.textContent;
+    expect(command).toContain(url);
+    expect(command).toContain(secret);
+    const buttons = queryAllByRoleFast("button", dialog).filter((button) => {
+      return button.textContent?.trim() === "Copy";
+    });
+    click(buttons[buttons.length - 1]);
+    expect(clipboard.writes).toStrictEqual(
+      expect.arrayContaining([url, secret, command]),
+    );
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => {
+      return expect(screen.queryByRole("dialog")).toBeNull();
+    });
+  }
+});
+
+function intervalRule(seconds: number) {
+  return {
+    ...weekday(),
+    schedule: { type: "loop" as const, intervalSeconds: seconds },
+    scheduleSummary: seconds === 3600 ? "Every hour" : "Every five hours",
+  };
+}
+
+test("workflows-page-051 an older update changes the saved interval without dismissing the reopened draft", async () => {
+  const { base, sales } = directory();
+  const rule = intervalRule(3600);
+  sales.automations = [rule];
+  const gate = context.mocks.deferred<void>(),
+    started = context.mocks.deferred<void>();
+  context.mocks.api(
+    workflowAutomationsContract.update,
+    async ({ body, respond }) => {
+      expect(body).toMatchObject({
+        schedule: { type: "loop", intervalSeconds: 900 },
+      });
+      started.resolve();
+      await gate.promise;
+      const saved = {
+        ...rule,
+        schedule: { type: "loop" as const, intervalSeconds: 18_000 },
+        scheduleSummary: "Every five hours",
+      };
+      sales.automations = [saved];
+      return respond(200, saved);
+    },
+  );
+  await setupPage({ context, path: base + "/automations" });
+  click(await findAction("button", "Edit automation"));
+  click(await screen.findByRole("combobox", { name: "Every" }));
+  click(await screen.findByRole("option", { name: /15 min/i }));
+  click(await findAction("button", "Save schedule"));
+  try {
+    await started.promise;
+    await userEvent.keyboard("{Escape}");
+    click(await findAction("button", "Edit automation"));
+    const field = await screen.findByRole("combobox", { name: "Every" });
+    click(field);
+    click(await screen.findByRole("option", { name: /30 min/i }));
+    gate.resolve();
+    await screen.findByText(/Every (five|5) hours/i);
+    expect(field).toHaveTextContent(/30 min/i);
+    expect(screen.getByRole("dialog")).toBeVisible();
+  } finally {
+    if (!gate.settled()) {
+      gate.resolve();
+    }
+  }
+});
+
+test("workflows-page-070 a delayed interval creation leaves the new scheduled-time editor on hour 16", async () => {
+  const { base, sales } = directory();
+  const gate = context.mocks.deferred<void>(),
+    started = context.mocks.deferred<void>();
+  context.mocks.api(
+    workflowAutomationsContract.create,
+    async ({ body, respond }) => {
+      expect(body).toMatchObject({
+        schedule: { type: "loop", intervalSeconds: 900 },
+      });
+      started.resolve();
+      await gate.promise;
+      const saved = intervalRule(18_000);
+      sales.automations = [saved];
+      return respond(201, saved);
+    },
+  );
+  await setupPage({ context, path: base + "/automations" });
+  await chooseAutomation("Schedule", "Interval");
+  click(await screen.findByRole("combobox", { name: "Every" }));
+  click(await screen.findByRole("option", { name: /15 min/i }));
+  click(await findAction("button", "Add interval"));
+  try {
+    await started.promise;
+    await userEvent.keyboard("{Escape}");
+    await chooseAutomation("Schedule", "Scheduled time");
+    const hour = await screen.findByLabelText("Hour");
+    click(hour);
+    click(await screen.findByRole("option", { name: "16" }));
+    gate.resolve();
+    await screen.findByText(/Every (five|5) hours/i);
+    expect(hour).toHaveTextContent("16");
+    expect(screen.getByRole("dialog")).toBeVisible();
+  } finally {
+    if (!gate.settled()) {
+      gate.resolve();
+    }
+  }
+});
+
+test("workflows-page-038 a completed reconnection clears the selected Calendar rule's warning", async () => {
+  const { base, sales } = directory();
+  const rule = calendarIssue("reconnect_required");
+  sales.automations = [rule];
+  const account = connectorAccountFixture(
+    { kind: "builtin", connectorSlug: "google-calendar" },
+    {
+      displayName: "Events account",
+      authMethod: "oauth",
+      connectionStatus: "reconnect-required",
+      reconnectReason: "authorization_expired_or_revoked",
+    },
+  );
+  mockSavedConnectorAccounts(context, () => {
+    return [account];
+  });
+  context.mocks.api(
+    connectorAccountsContract.connection,
+    ({ params, query, respond }) => {
+      expect(params.connectionId).toBe(account.id);
+      expect(query).toStrictEqual(account.target);
+      return respond(200, account);
+    },
+  );
+  mockPublicConnectorStatus(context, [
+    catalogConnector({
+      slug: "google-calendar",
+      label: "Google Calendar",
+      method: browserAuthMethod(),
+      hasAccount: true,
+      reconnectRequired: true,
+      connectionId: account.id,
+    }),
+  ]);
+  const popup = context.mocks.browser.authWindow();
+  Object.defineProperty(popup, "location", { value: { href: "about:blank" } });
+  context.mocks.browser.open(popup);
+  const attempt = crypto.randomUUID();
+  const receipt = context.mocks.deferred<string>();
+  context.mocks.api(
+    builtinConnectorOauthStartContract.start,
+    ({ body, respond }) => {
+      expect(body.account).toStrictEqual({
+        intent: "reconnect",
+        connectionId: account.id,
+      });
       return respond(200, {
-        displayName: "Current Account Author",
-        imageUrl: null,
+        authorizationUrl: "https://calendar.example.org/sign-in",
+        oauthAttemptId: attempt,
       });
     },
   );
-  await setupPage({ context, path: "/workflows" });
-  await screen.findByText("Sales Research");
-  await user.hover(linkByAriaLabel("Open Sales Research"));
-  await expect(
-    screen.findByText("Loading author…"),
-  ).resolves.toBeInTheDocument();
-  const previousRequest = await started.promise;
-  changed = true;
-  act(() => {
-    clerk.user(
-      { id: UPDATED_USER_ID, fullName: "New Account" },
-      { token: "new-session" },
-    );
-    clerk.stateChanged();
-  });
-  await waitFor(() => {
-    return expect(previousRequest.aborted).toBeTruthy();
-  });
-  firstResponse.resolve();
-  await user.unhover(linkByAriaLabel("Open Sales Research"));
-  await waitFor(() => {
-    return expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-  });
-  await user.hover(linkByAriaLabel("Open Sales Research"));
-  const tooltip = await screen.findByRole("tooltip");
-  await expect(
-    within(tooltip).findByText("Current Account Author"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByText("Previous Account Author")).not.toBeInTheDocument();
-});
-
-test("Clear the author cache when the active organization changes", async () => {
-  const user = userEvent.setup();
-  const clerk = context.mocks.clerk();
-  mockWorkflowApis([salesResearch()]);
-  let organizationChanged = false;
-  context.mocks.api(workflowsDetailContract.ownerProfile, ({ respond }) => {
-    return respond(200, {
-      displayName: organizationChanged
-        ? "New Organization Author"
-        : "Old Organization Author",
-      imageUrl: null,
-    });
-  });
-  await setupPage({ context, path: "/workflows" });
-  await screen.findByText("Sales Research");
-  await user.hover(linkByAriaLabel("Open Sales Research"));
-  await expect(
-    screen.findByText("Old Organization Author"),
-  ).resolves.toBeInTheDocument();
-  organizationChanged = true;
-  act(() => {
-    clerk.organization({
-      activeOrg: { id: "org_profile_other", name: "Other Organization" },
-      memberships: [{ id: "org_profile_other" }],
-    });
-    clerk.stateChanged();
-  });
-  await waitFor(() => {
-    return expect(
-      screen.queryByText("Old Organization Author"),
-    ).not.toBeInTheDocument();
-  });
-  await user.unhover(linkByAriaLabel("Open Sales Research"));
-  await waitFor(() => {
-    return expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-  });
-  await user.hover(linkByAriaLabel("Open Sales Research"));
-  await expect(
-    screen.findByText("New Organization Author"),
-  ).resolves.toBeInTheDocument();
-});
-
-test("A completed automation creation preserves a reopened creation draft", async () => {
-  const workflow = {
-    ...salesResearch(),
-    automations: [] as WorkflowAutomationSummary[],
-  };
-  mockWorkflowApis([workflow]);
-  const started = context.mocks.deferred<void>();
-  const response = context.mocks.deferred<void>();
-  context.mocks.api(workflowAutomationsContract.create, async ({ respond }) => {
-    started.resolve();
-    await response.promise;
-    const automation: WorkflowScheduleAutomationSummary = {
-      ...weekdayWorkflowAutomation(),
-      schedule: { type: "loop", intervalSeconds: 18_000 },
-      scheduleSummary: "Every 5 hours",
-    };
-    workflow.automations.push(automation);
-    return respond(201, automation);
-  });
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-  click(
-    await waitFor(() => {
-      return buttonByText("Add automation");
-    }),
-  );
-  pickAutomation("Schedule", /^Interval/u);
-  const first = await screen.findByRole("form", {
-    name: "Add interval automation",
-  });
-  click(buttonByText("Add interval", first));
-  await started.promise;
-  click(buttonByText("Close", screen.getByRole("dialog")));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-  click(buttonByText("Add automation"));
-  pickAutomation("Schedule", /^Scheduled time/u);
-  const draft = await screen.findByRole("form", {
-    name: "Add schedule automation",
-  });
-  selectOptionByLabel("Hour", "16", draft);
-  response.resolve();
-  await screen.findByText("Every 5 hours");
-  await expect(
-    screen.findByRole("form", { name: "Add schedule automation" }),
-  ).resolves.toBeInTheDocument();
-  expect(
-    within(draft).getByRole("combobox", { name: "Hour" }),
-  ).toHaveTextContent("16");
-});
-
-test("An earlier webhook response preserves a reopened creation form", async () => {
-  mockWorkflowApis([salesResearch()]);
-  const started = context.mocks.deferred<void>();
-  const response = context.mocks.deferred<void>();
-  context.mocks.api(workflowAutomationsContract.create, async ({ respond }) => {
-    started.resolve();
-    await response.promise;
-    return respond(201, {
-      ...webhookWorkflowAutomation(),
-      webhookSecret: "first-webhook-secret",
-    });
-  });
-  await setupWorkflowDetailPage(workflowDetailPath("automations"), {}, "pro", {
-    workflowWebhookAutomationAllowed: true,
-  });
-  click(
-    await waitFor(() => {
-      return buttonByText("Add automation");
-    }),
-  );
-  pickAutomation("Integrations", /^Webhook/u);
-  click(buttonByText("Create webhook"));
-  await started.promise;
-  click(buttonByText("Close", screen.getByRole("dialog")));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-  click(buttonByText("Add automation"));
-  pickAutomation("Integrations", /^Webhook/u);
-  await screen.findByRole("dialog", { name: "Add webhook automation" });
-  await act(() => {
-    response.resolve();
-    return response.promise;
-  });
-  await waitFor(() => {
-    expect(buttonByText("Create webhook")).toBeEnabled();
-  });
-});
-
-test("Workspace Workflows ignore stale Agent filters and identify the caller's private override", async () => {
-  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
-  mockAgentPageApis();
-  mockChatLifecycle(context);
-  const shared = salesResearch();
-  const personal: WorkflowDetailResponse = {
-    ...shared,
-    id: COPIED_WORKFLOW_ID,
-    visibility: "private",
-    displayName: "My sales research",
-    instruction: "My private steps",
-    shadowedBy: null,
-  };
-  const visibleShared = {
-    ...shared,
-    shadowedBy: {
-      id: personal.id,
-      name: personal.name,
-      displayName: personal.displayName,
-    },
-  };
-  mockWorkflowApis([visibleShared, personal, otherAgentWorkflow()]);
-  await setupPage({
-    context,
-    path: `/workflows?agent=${OTHER_AGENT_ID}`,
-  });
-  await expect(
-    screen.findByText("Overridden for you"),
-  ).resolves.toBeInTheDocument();
-  expect(linkByAriaLabel("Open Sales Research")).toBeInTheDocument();
-  expect(linkByAriaLabel("Open My sales research")).toBeInTheDocument();
-  expect(screen.getByText("Used for /sales-research")).toBeInTheDocument();
-  const sharedLink = linkByAriaLabel("Open Sales Research");
-  expect(sharedLink).toHaveAttribute(
-    "href",
-    `/workflows/${SALES_WORKFLOW_ID}/automations`,
-  );
-});
-
-test("Make private copy opens the existing private definition without overwriting it", async () => {
-  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
-  mockAgentPageApis();
-  mockChatLifecycle(context);
-  const shared = salesResearch();
-  const personal: WorkflowDetailResponse = {
-    ...shared,
-    id: COPIED_WORKFLOW_ID,
-    visibility: "private",
-    displayName: "My saved copy",
-    instruction: "Retained private instructions",
-    shadowedBy: null,
-  };
-  const visibleShared = {
-    ...shared,
-    shadowedBy: {
-      id: personal.id,
-      name: personal.name,
-      displayName: personal.displayName,
-    },
-  };
-  mockWorkflowApis([visibleShared, personal]);
-  await setupWorkflowDetailPage(workflowDetailPath("info"), {});
-  await waitFor(() => {
-    expect(buttonByText("Make private copy")).toBeEnabled();
-  });
-  const metadata = screen.getByLabelText("Workflow metadata");
-  expect(
-    within(metadata).getByText(
-      "/sales-research uses your private copy. You are viewing the shared definition.",
-    ),
-  ).toBeInTheDocument();
-  const privateLink = linkByText("Open private copy");
-  expect(privateLink).toHaveAttribute(
-    "href",
-    `/workflows/${COPIED_WORKFLOW_ID}/instructions`,
-  );
-  click(buttonByText("Make private copy"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Make private copy",
-  });
-  const link = linkByText("Open private copy", dialog);
-  expect(link).toHaveAttribute(
-    "href",
-    `/workflows/${COPIED_WORKFLOW_ID}/instructions`,
-  );
-  click(link);
-  await waitFor(() => {
-    return expect(pathname()).toBe(
-      `/workflows/${COPIED_WORKFLOW_ID}/instructions`,
-    );
-  });
-  await expect(
-    screen.findByText("Retained private instructions"),
-  ).resolves.toBeInTheDocument();
-});
-
-test("Make private copy uses the workspace default without a destination or removal step", async () => {
-  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
-  mockAgentPageApis();
-  mockChatLifecycle(context);
-  const shared = { ...salesResearch(), canManage: false };
-  const workflows = [shared];
-  mockWorkflowApis(workflows);
   context.mocks.api(
-    workflowsDetailContract.copy,
-    ({ body, params, respond }) => {
-      expect(params.workflowId).toBe(SALES_WORKFLOW_ID);
-      expect(body.toAgentId).toBe(AGENT_ID);
-      const personal: WorkflowDetailResponse = {
-        ...shared,
-        id: COPIED_WORKFLOW_ID,
-        visibility: "private",
-        canManage: true,
-        instruction: "Copied workspace instructions",
-        shadowedBy: null,
-      };
-      workflows.push(personal);
-      return respond(201, summary(personal));
+    connectorAccountsContract.oauthCompletion,
+    ({ params, respond }) => {
+      expect(params.attemptId).toBe(attempt);
+      account.connectionStatus = "connected";
+      account.reconnectReason = null;
+      receipt.resolve(account.id);
+      sales.automations = [{ ...rule, warning: undefined }];
+      return respond(200, { connectionId: account.id });
     },
   );
-  await setupWorkflowDetailPage(workflowDetailPath("info"), {});
+  await setupPage({ context, path: base + "/automations" });
+  await screen.findByRole("alert");
+  click(await findAction("button", "Reconnect Google Calendar"));
+  const row = await screen.findByRole("group", { name: "Events account" });
+  click(await findAction("button", "Reconnect", row));
+  const dialog = await screen.findByRole("dialog");
+  click(await findAction("button", "Reconnect", dialog));
+  await expect(receipt.promise).resolves.toBe(account.id);
   await waitFor(() => {
-    expect(buttonByText("Make private copy")).toBeEnabled();
+    return expect(screen.queryByRole("dialog")).toBeNull();
   });
-  click(buttonByText("Make private copy"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Make private copy",
-  });
-  click(buttonByText("Make private copy", dialog));
-  await waitFor(() => {
-    return expect(pathname()).toBe(
-      `/workflows/${COPIED_WORKFLOW_ID}/instructions`,
-    );
-  });
-  await expect(
-    screen.findByText("Copied workspace instructions"),
-  ).resolves.toBeInTheDocument();
-});
-
-test("creates a workspace Workflow with the default Okou without choosing an Agent", async () => {
-  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
-  mockAgentPageApis();
-  mockChatLifecycle(context);
-  mockWorkflowApis([salesResearch()]);
-  await setupPage({
-    context,
-    path: "/workflows",
+  expect(screen.getByRole("alert")).toHaveTextContent("Action required");
+  context.mocks.ably.trigger("connector:changed", {
+    connectorSlug: "google-calendar",
   });
   await waitFor(() => {
-    expect(buttonByText("Create in chat")).toBeEnabled();
+    return expect(screen.queryByRole("alert")).toBeNull();
   });
-  click(buttonByText("Create in chat"));
-  const dialog = await screen.findByRole("dialog", { name: "Create workflow" });
-  expect(
-    within(dialog).getByText(
-      "Create a workflow with your personal Okou in this workspace.",
-    ),
-  ).toBeInTheDocument();
-  click(buttonByText("Create workflow", dialog));
-  await waitFor(() => {
-    expect(pathname()).toBe("/");
-  });
+  expect(screen.getByRole("switch")).toBeChecked();
 });

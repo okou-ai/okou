@@ -1,9 +1,10 @@
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 import path from "path";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), ...tailwindcss()],
   resolve: {
     alias: {
       // Keep full response validators in tests without loading them in production.
@@ -56,6 +57,11 @@ export default defineConfig({
     __OKOU_APP_VERSION__: JSON.stringify("0.540.0"),
   },
   test: {
+    css: {
+      include: [
+        /(?:browser-session-card|chat-relation-title)-fixture\.css(?:\?.*)?$/u,
+      ],
+    },
     coverage: {
       exclude: [
         "src/**/__tests__/**",

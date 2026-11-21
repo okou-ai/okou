@@ -130,7 +130,7 @@ function visibleSelectionRange(
   return range;
 }
 
-function setPassageSelection(
+export function setPassageSelection(
   passage: string,
   occurrence = 0,
   interaction: "mouse" | "native" = "mouse",
@@ -246,12 +246,6 @@ export async function quoteSelectedPassage(): Promise<HTMLElement> {
       throw new Error("Quoted passage was not added to the composer");
     }
     return addedNote;
-  });
-}
-
-export function feedbackNotes(): HTMLElement[] {
-  return screen.getAllByRole("textbox", {
-    name: "Ask or comment on this quote",
   });
 }
 

@@ -1,1279 +1,333 @@
-import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import { connectorAccountFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
-  builtinConnectorOauthStartContract,
-  builtinConnectorOpenIdStartContract,
-  builtinConnectorsMainContract,
-  builtinConnectorAutomaticContract,
-  builtinConnectorExternalCodeSessionContract,
+  connectorCatalogContract,
+  type PublicConnectorCatalogAuthMethodDetail,
+} from "@okouai/api-contracts/contracts/connector-catalog";
+import {
   builtinConnectorManualGrantContract,
-  builtinConnectorNoAuthGrantContract,
+  builtinConnectorOauthStartContract,
   builtinConnectorOauthDeviceAuthSessionContract,
 } from "@okouai/api-contracts/contracts/connectors";
-import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { connectedConnectorsContract } from "@okouai/api-contracts/contracts/connected-connectors";
-
-import { screen, waitFor, within } from "@testing-library/react";
-import { HttpResponse } from "msw";
+import { screen, within, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
-
-import {
-  click,
-  fill,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import {
-  getConnectorAction,
-  getConnectorCard,
-  getConnectorIcon,
-  listAgent,
-  mockConnectors,
-  mockOAuthCompletions,
-  mockPublicConnectorStatus,
+  findButton,
+  findEnabledButton,
+  queryButton,
+} from "./chat-run-test-fixtures.ts";
+import { findNamedLink } from "./chat-attachment-test-helpers.ts";
+import {
   publicStatusItem,
+  mockPublicConnectorStatus,
+  mockSavedConnectorAccounts,
 } from "./connector-page-test-helpers.ts";
-
 const context = testContext();
 
-function createAuthWindow(onNavigate?: (href: string) => void): Window {
-  const authWindow = context.mocks.browser.authWindow();
-  let href = "";
-  Object.defineProperty(authWindow, "location", {
-    configurable: true,
-    value: {
-      get href() {
-        return href;
-      },
-      set href(value: string) {
-        href = value;
-        onNavigate?.(value);
-      },
-    },
-  });
-  return authWindow;
-}
-
-function storeConnectedConnector(
-  slug: ConnectorSlug,
-  authMethod: string,
-  externalUsername: string | null = null,
-): BuiltinConnectorResponse {
-  const connector = {
-    id: crypto.randomUUID(),
-    slug,
-    authMethod,
-    externalId: null,
-    externalUsername,
-    externalEmail: null,
-    oauthScopes: null,
-    connectionStatus: "connected",
-    reconnectReason: null,
-    tokenExpiresAt: null,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-  } satisfies BuiltinConnectorResponse;
-  context.mocks.data.connectors([connector]);
-  context.mocks.ably.trigger("connector:changed", { connectorSlug: slug });
-  return connector;
-}
-
-function mockConnectedCatalogTarget(
-  connector: ReturnType<typeof publicStatusItem>,
-  hasSavedAccount: () => boolean,
+function catalog(
+  slug: string,
+  label: string,
+  method: PublicConnectorCatalogAuthMethodDetail,
 ) {
-  context.mocks.api(connectedConnectorsContract.list, ({ respond }) => {
-    return respond(200, {
-      builtinConnectors: hasSavedAccount()
-        ? [
-            {
-              slug: connector.slug,
-              label: connector.label,
-              icon: connector.icon,
-              hasPermissions: connector.permissionSummary.hasPermissions,
-            },
-          ]
-        : [],
-      customConnectors: [],
-    });
-  });
-}
-
-function oauthMethod(label = "OAuth") {
-  return {
-    id: "oauth",
-    label,
-    description: null,
-    grantKind: "auth-code" as const,
-    supportsRefresh: true,
-    manualFields: [],
-    startOptions: [],
-  };
-}
-
-test.each(["none", "oauth"] as const)(
-  "Connect a builtin Automatic method resolving to %s",
-  async (resolution) => {
-    const slug = "server-authored-tools";
-    const methodId = "smart-connect";
-    const authorizationUrl = "https://oauth.test/tools/authorize";
-    const oauthAttemptId = crypto.randomUUID();
-    mockConnectors(context, []);
-    context.mocks.data.agents([
-      listAgent("c0000000-0000-4000-a000-000000000001", "Default"),
-    ]);
-    const catalogItem = publicStatusItem({
-      connectorSlug: slug,
-      label: "Partner Tools",
-      authMethods: [
-        {
-          id: methodId,
-          label: "Connect",
-          description: null,
-          grantKind: "automatic",
-          supportsRefresh: true,
-          manualFields: [],
-          startOptions: [],
-        },
-      ],
-    });
-    mockPublicConnectorStatus(context, [catalogItem]);
-    let savedAccount: BuiltinConnectorResponse | undefined;
-    mockConnectedCatalogTarget(catalogItem, () => {
-      return savedAccount !== undefined;
-    });
-    const completedAttempts = mockOAuthCompletions(context);
-    if (resolution !== "oauth") {
-      context.mocks.api(connectorAccountsContract.oauthCompletion, () => {
-        throw new Error("No-auth completion must not request an OAuth receipt");
-      });
-    }
-    const authWindow = createAuthWindow((href) => {
-      if (href !== authorizationUrl) {
-        return;
-      }
-      savedAccount = storeConnectedConnector(slug, methodId);
-      completedAttempts.set(oauthAttemptId, savedAccount.id);
-      context.mocks.ably.trigger("connector:changed", { connectorSlug: slug });
-    });
-    context.mocks.browser.open(authWindow);
-    context.mocks.api(
-      builtinConnectorAutomaticContract.start,
-      ({ body, respond }) => {
-        expect(body).toMatchObject({
-          authMethod: methodId,
-          account: { intent: "add" },
-        });
-        if (resolution !== "oauth") {
-          savedAccount = storeConnectedConnector(slug, methodId);
-          return respond(200, {
-            result: "connected",
-            connectionId: savedAccount.id,
-          });
-        }
-        return respond(200, {
-          result: "authorization",
-          authorizationUrl,
-          oauthAttemptId,
-        });
-      },
-    );
-    await setupPage({ context, path: "/connectors?keywords=partner+tools" });
-    await expect(
-      screen.findByText("Partner Tools"),
-    ).resolves.toBeInTheDocument();
-    click(getConnectorAction("button", "Connect Partner Tools"));
-    const naming = await screen.findByRole("dialog", {
-      name: "Name your Partner Tools account",
-    });
-    expect(authWindow).toMatchObject(
-      resolution !== "oauth"
-        ? { closed: true }
-        : { location: { href: authorizationUrl } },
-    );
-    click(getConnectorAction("button", "Skip", naming));
-    await expect(
-      within(getConnectorCard("Partner Tools")).findByText("Connected"),
-    ).resolves.toBeInTheDocument();
-  },
-);
-
-function noAuthMethod() {
-  return {
-    id: "api",
-    label: "Public catalog",
-    description: "Enable public catalog data.",
-    grantKind: "none" as const,
-    supportsRefresh: true,
-    manualFields: [],
-    startOptions: [],
-  };
-}
-
-function manualMethod(args: {
-  readonly id: string;
-  readonly label: string;
-  readonly fieldId: string;
-  readonly fieldLabel: string;
-  readonly placeholder: string;
-}) {
-  return {
-    id: args.id,
-    label: args.label,
-    description: null,
-    grantKind: "manual" as const,
-    supportsRefresh: true,
-    manualFields: [
-      {
-        id: args.fieldId,
-        label: args.fieldLabel,
-        required: true,
-        placeholder: args.placeholder,
-        inputType: "password" as const,
-      },
-    ],
-    startOptions: [],
-  };
-}
-
-test("Show Mercury disclosures before connecting an account", async () => {
-  mockConnectors(context, []);
-  mockPublicConnectorStatus(context, [
-    publicStatusItem({
-      connectorSlug: "mercury",
-      label: "Mercury",
-      authMethods: [
-        oauthMethod(),
-        manualMethod({
-          id: "api-token",
-          label: "API token",
-          fieldId: "token",
-          fieldLabel: "API token",
-          placeholder: "Enter your Mercury API token",
-        }),
-      ],
-    }),
-  ]);
-  await setupPage({
-    context,
-    path: "/connectors?keywords=mercury",
-  });
-
-  const card = await waitFor(() => {
-    return getConnectorCard("Mercury");
-  });
-  expect(
-    getConnectorAction("link", "Powered by Mercury", card),
-  ).toHaveAttribute("href", "https://mercury.com");
-  expect(card).toHaveTextContent(
-    "Mercury is a fintech company, not an FDIC-insured bank. Banking services provided through Choice Financial Group and Column N.A., Members FDIC.",
-  );
-
-  click(getConnectorAction("button", "Connect Mercury", card));
-  const dialog = await screen.findByRole("dialog", { name: "Mercury" });
-  expect(
-    getConnectorAction("link", "Powered by Mercury", dialog),
-  ).toHaveAttribute("href", "https://mercury.com");
-  expect(dialog).toHaveTextContent(
-    "Mercury is a fintech company, not an FDIC-insured bank. Banking services provided through Choice Financial Group and Column N.A., Members FDIC.",
-  );
-});
-
-test("Add an AWS account through external-code authorization", async () => {
-  mockConnectors(context, []);
-  context.mocks.data.agents([
-    listAgent("c0000000-0000-4000-a000-000000000002", "Research Agent"),
-  ]);
-  const authWindow = createAuthWindow();
-  const browserOpen = context.mocks.browser.open(authWindow);
-  context.mocks.api(
-    builtinConnectorExternalCodeSessionContract.complete,
-    ({ respond }) => {
-      const connector = storeConnectedConnector("aws", "cli");
-      return respond(200, {
-        status: "complete",
-        connectionId: connector.id,
-      });
-    },
-  );
-  context.mocks.api(
-    builtinConnectorExternalCodeSessionContract.create,
-    ({ body, params, respond }) => {
-      expect(params.connectorSlug).toBe("aws");
-      expect(body.account).toStrictEqual({ intent: "add" });
-      return respond(200, {
-        sessionId: "00000000-0000-4000-8000-000000000002",
-        sessionToken: "mock-aws-external-code-session-token",
-        connectorSlug: "aws",
-        status: "pending",
-        authorizationUrl: "https://oauth.test/aws/external-code",
-        expiresIn: 600,
-      });
-    },
-  );
-  await setupPage({
-    context,
-    path: "/connectors?keywords=aws",
-  });
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "Connect AWS");
-    }),
-  );
-  const dialog = await screen.findByRole("dialog", { name: "AWS" });
-  expect(dialog).toHaveTextContent(
-    /temporary AWS connector expires after up to 12 hours/u,
-  );
-
-  click(getConnectorAction("button", "Start AWS sign-in", dialog));
-  await expect(
-    waitFor(() => {
-      return getConnectorAction("button", "Open AWS sign-in", dialog);
-    }),
-  ).resolves.toBeInTheDocument();
-  click(getConnectorAction("button", "Open AWS sign-in", dialog));
-  expect(
-    browserOpen.calls.some((call) => {
-      return call.url === "https://oauth.test/aws/external-code";
-    }),
-  ).toBeTruthy();
-  await fill(
-    within(dialog).getByTestId("connector-external-code-input"),
-    "AWS-CODE",
-  );
-  click(within(dialog).getByTestId("connector-external-code-complete"));
-
-  const naming = await screen.findByRole("dialog", {
-    name: "Name your AWS account",
-  });
-  await waitFor(() => {
-    expect(dialog).not.toBeInTheDocument();
-  });
-  click(getConnectorAction("button", "Skip", naming));
-
-  const awsCard = getConnectorCard("AWS");
-  await expect(
-    within(awsCard).findByText("Connected"),
-  ).resolves.toBeInTheDocument();
-});
-
-test("Add an account through OpenID", async () => {
-  const completedAttempts = mockOAuthCompletions(context);
-  const oauthAttemptId = crypto.randomUUID();
-  const slug = "server-authored-steam";
-  mockConnectors(context, []);
-  context.mocks.data.agents([
-    listAgent("c0000000-0000-4000-a000-000000000001", "Default"),
-    listAgent("c0000000-0000-4000-a000-000000000002", "Research"),
-  ]);
-  const catalogItem = publicStatusItem({
+  const item = publicStatusItem({
     connectorSlug: slug,
-    label: "Partner Steam",
-    icon: {
-      url: "https://icons.example.test/partner-steam.svg",
-      invertInDarkMode: false,
+    label,
+    authMethods: [method],
+  });
+  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
+    return respond(200, { connector: item });
+  });
+  mockPublicConnectorStatus(context, [item]);
+}
+const manual = {
+  id: "api-token",
+  label: "Provider token",
+  description: null,
+  grantKind: "manual",
+  supportsRefresh: false,
+  startOptions: [],
+  manualFields: [
+    {
+      id: "token",
+      label: "Token",
+      required: true,
+      placeholder: null,
+      inputType: "password",
     },
-    authMethods: [
+  ],
+} as const;
+test("connectors-auth-methods-003 Mercury identifies its banking partners on the card and inside the connect dialog", async () => {
+  catalog("mercury", "Mercury", {
+    ...manual,
+    startOptions: [],
+    manualFields: [...manual.manualFields],
+  });
+  await setupPage({ context, path: "/connectors" });
+  const disclosure =
+    "Mercury is a fintech company, not an FDIC-insured bank. Banking services provided through Choice Financial Group and Column N.A., Members FDIC.";
+  const region = { name: "Mercury banking disclosure" };
+  const card = await screen.findByRole("region", region);
+  expect(card).toHaveTextContent(disclosure);
+  await expect(
+    findNamedLink("Powered by Mercury", card),
+  ).resolves.toHaveAttribute("href", "https://mercury.com");
+  click(await findButton("Connect Mercury"));
+  const form = await screen.findByRole("dialog", { name: "Mercury" });
+  const inside = within(form).getByRole("region", region);
+  expect(inside).toHaveTextContent(disclosure);
+  await expect(
+    findNamedLink("Powered by Mercury", inside),
+  ).resolves.toHaveAttribute("href", "https://mercury.com");
+});
+
+test("connectors-auth-methods-012 PlayStation presents the provider's instructions alongside code entry", async () => {
+  const url = "https://playstation.example.test/authorize";
+  catalog("playstation", "PlayStation", {
+    id: "cli",
+    grantKind: "external-code",
+    label: "Console sign-in",
+    description: `Follow [PlayStation instructions](${url}) to retrieve a code.`,
+    supportsRefresh: true,
+    startOptions: [],
+    manualFields: [],
+  });
+  await setupPage({ context, path: "/connectors" });
+  click(await findButton("Connect PlayStation"));
+  click(await findButton("Start PlayStation sign-in"));
+  const dialog = screen.getByRole("dialog", { name: "PlayStation" });
+  await findEnabledButton("Open PlayStation sign-in", dialog);
+  await expect(
+    findNamedLink("PlayStation instructions", dialog),
+  ).resolves.toHaveAttribute("href", url);
+  expect(
+    within(dialog).getByRole("textbox", { name: "Code" }),
+  ).toBeInTheDocument();
+});
+
+test("connectors-auth-methods-017 Live mode submits the chosen Stripe device option and reports an unavailable poll", async () => {
+  catalog("stripe", "Stripe", {
+    id: "cli",
+    grantKind: "device-auth",
+    label: "Device",
+    description: null,
+    supportsRefresh: false,
+    manualFields: [],
+    startOptions: [
       {
-        id: "partner-openid",
-        label: "Partner OpenID",
-        description: null,
-        grantKind: "openid-auth",
-        supportsRefresh: true,
-        manualFields: [],
-        startOptions: [],
+        id: "mode",
+        kind: "select",
+        label: "Mode",
+        required: true,
+        defaultValue: null,
+        options: [
+          { label: "Test", value: "test" },
+          { label: "Live", value: "live" },
+        ],
       },
     ],
   });
-  mockPublicConnectorStatus(context, [catalogItem]);
-  let savedAccount: BuiltinConnectorResponse | undefined;
-  mockConnectedCatalogTarget(catalogItem, () => {
-    return savedAccount !== undefined;
-  });
-  const authorizationUrl = "https://openid.test/partner-steam/authorize";
-  const authWindow = createAuthWindow((href) => {
-    if (href !== authorizationUrl) {
-      return;
-    }
-    savedAccount = storeConnectedConnector(slug, "partner-openid");
-    completedAttempts.set(oauthAttemptId, savedAccount.id);
-    context.mocks.ably.trigger("connector:changed", { connectorSlug: slug });
-  });
-  context.mocks.browser.open(authWindow);
-  context.mocks.api(
-    builtinConnectorOpenIdStartContract.start,
-    ({ body, respond }) => {
-      expect(body).toMatchObject({
-        account: { intent: "add" },
-        authMethod: "partner-openid",
-      });
-      return respond(200, {
-        authorizationUrl,
-        oauthAttemptId,
-      });
-    },
-  );
-  await setupPage({
-    context,
-    path: "/connectors?keywords=partner+steam",
-  });
-
-  await expect(screen.findByText("Partner Steam")).resolves.toBeInTheDocument();
-  expect(getConnectorIcon("Partner Steam")).toHaveAttribute(
-    "src",
-    "https://icons.example.test/partner-steam.svg",
-  );
-  click(getConnectorAction("button", "Connect Partner Steam"));
-
-  await waitFor(() => {
-    expect(authWindow.location.href).toBe(authorizationUrl);
-  });
-  const naming = await screen.findByRole("dialog", {
-    name: "Name your Partner Steam account",
-  });
-  click(getConnectorAction("button", "Skip", naming));
-  await expect(
-    within(getConnectorCard("Partner Steam")).findByText("Connected"),
-  ).resolves.toBeInTheDocument();
-});
-
-test("Choose a credential-free method", async () => {
-  mockConnectors(context, []);
-  mockPublicConnectorStatus(context, [
-    publicStatusItem({
-      connectorSlug: "stripe",
-      label: "Public Stripe",
-      authMethods: [oauthMethod("Public OAuth"), noAuthMethod()],
-    }),
-  ]);
-  let selectedMethod: string | null = null;
-  context.mocks.api(
-    builtinConnectorNoAuthGrantContract.connect,
-    ({ body, respond }) => {
-      selectedMethod = body.authMethod;
-      const connector = storeConnectedConnector("stripe", body.authMethod);
-      return respond(200, { connectionId: connector.id });
-    },
-  );
-  await setupPage({
-    context,
-    path: "/connectors?keywords=public+stripe",
-  });
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "Connect Public Stripe");
-    }),
-  );
-  const dialog = await screen.findByRole("dialog", { name: "Public Stripe" });
-  expect(within(dialog).getByText("Public OAuth")).toBeInTheDocument();
-  expect(within(dialog).getByText("Public catalog")).toBeInTheDocument();
-  expect(
-    within(dialog).getByText("Enable public catalog data."),
-  ).toBeInTheDocument();
-
-  click(getConnectorAction("button", "Enable Public Stripe", dialog));
-
-  await waitFor(() => {
-    expect(selectedMethod).toBe("api");
-    expect(
-      within(getConnectorCard("Public Stripe")).getByText("Connected"),
-    ).toBeInTheDocument();
-  });
-});
-
-test("Connect through device authorization", async () => {
-  const approval = context.mocks.deferred<void>();
-  mockConnectors(context, []);
-  context.mocks.data.agents([
-    listAgent("c0000000-0000-4000-a000-000000000001", "Default"),
-    listAgent("c0000000-0000-4000-a000-000000000002", "Research"),
-  ]);
-  mockPublicConnectorStatus(context, [
-    publicStatusItem({
-      connectorSlug: "base44",
-      label: "Base44",
-      authMethods: [
-        {
-          id: "oauth",
-          label: "OAuth",
-          description: "Sign in with Base44 to grant access.",
-          grantKind: "device-auth",
-          supportsRefresh: true,
-          manualFields: [],
-          startOptions: [],
-        },
-      ],
-    }),
-  ]);
-  const browserOpen = context.mocks.browser.open(createAuthWindow());
-  context.mocks.api(
-    builtinConnectorOauthDeviceAuthSessionContract.poll,
-    async ({ respond }) => {
-      await approval.promise;
-      const connector = storeConnectedConnector(
-        "base44",
-        "oauth",
-        "mock-base44",
-      );
-      return respond(200, {
-        status: "complete",
-        connectionId: connector.id,
-      });
-    },
-  );
-  await setupPage({
-    context,
-    path: "/connectors",
-  });
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "Connect Base44");
-    }),
-  );
-  const dialog = await screen.findByRole("dialog", { name: "Base44" });
-
-  click(getConnectorAction("button", "Connect Base44", dialog));
-
-  await expect(
-    screen.findByTestId("connector-oauth-device-code"),
-  ).resolves.toHaveTextContent("OKOU-DEVICE");
-  const approvalDialog = await screen.findByRole("dialog", {
-    name: "Base44",
-  });
-  expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-  click(within(approvalDialog).getByTestId("connector-oauth-device-open"));
-  expect(
-    browserOpen.calls.some((call) => {
-      return call.url?.includes("oauth.test/base44/device") ?? false;
-    }),
-  ).toBeTruthy();
-  approval.resolve();
-  const naming = await screen.findByRole("dialog", {
-    name: "Name your Base44 account",
-  });
-  await waitFor(() => {
-    expect(approvalDialog).not.toBeInTheDocument();
-  });
-  click(getConnectorAction("button", "Skip", naming));
-  await waitFor(() => {
-    expect(
-      within(getConnectorCard("Base44")).getByText("Connected"),
-    ).toBeInTheDocument();
-  });
-});
-
-test.each([
-  ["device-auth", "configuration_invalid"],
-  ["external-code", "configuration_invalid"],
-] as const)(
-  "Reject %s completion when account setup is %s",
-  async (grantKind, reconnectReason) => {
-    const slug = grantKind === "device-auth" ? "base44" : "aws";
-    const label = grantKind === "device-auth" ? "Base44" : "AWS";
-    let saved: BuiltinConnectorResponse | null = null;
-    mockConnectors(context, []);
-    context.mocks.data.agents([
-      listAgent("c0000000-0000-4000-a000-000000000002", "Research"),
-    ]);
-    context.mocks.browser.open(createAuthWindow());
-    mockPublicConnectorStatus(context, [
-      publicStatusItem({
-        connectorSlug: slug,
-        label,
-        authMethods: [
-          {
-            supportsRefresh: true,
-            id: "oauth",
-            label: "OAuth",
-            description: null,
-            grantKind,
-            manualFields: [],
-            startOptions: [],
-          },
-        ],
-      }),
-    ]);
-    context.mocks.api(
-      connectorAccountsContract.connection,
-      ({ params, query, respond }) => {
-        if (
-          !saved ||
-          params.connectionId !== saved.id ||
-          query.kind !== "builtin" ||
-          query.connectorSlug !== slug
-        ) {
-          return respond(404, {
-            error: { code: "NOT_FOUND", message: "Account not found" },
-          });
-        }
-        const { slug: connectorSlug, ...account } = saved;
-        return respond(200, {
-          ...account,
-          target: { kind: "builtin", connectorSlug },
-          isDefault: true,
-          displayName: null,
-          connectionStatus: "reconnect-required",
-          reconnectReason,
-          missingRequiredFields: [],
-          configuredFieldKeys: [],
-        });
-      },
-    );
-    if (grantKind === "device-auth") {
-      context.mocks.api(
-        builtinConnectorOauthDeviceAuthSessionContract.poll,
-        ({ respond }) => {
-          saved = storeConnectedConnector(slug, "oauth");
-          return respond(200, { status: "complete", connectionId: saved.id });
-        },
-      );
-    } else {
-      context.mocks.api(
-        builtinConnectorExternalCodeSessionContract.complete,
-        ({ respond }) => {
-          saved = storeConnectedConnector(slug, "oauth");
-          return respond(200, { status: "complete", connectionId: saved.id });
-        },
-      );
-    }
-    await setupPage({ context, path: `/connectors?keywords=${slug}` });
-    click(
-      await waitFor(() => {
-        return getConnectorAction("button", `Connect ${label}`);
-      }),
-    );
-    const dialog = await screen.findByRole("dialog", { name: label });
-    click(
-      getConnectorAction(
-        "button",
-        grantKind === "device-auth"
-          ? `Connect ${label}`
-          : `Start ${label} sign-in`,
-        dialog,
-      ),
-    );
-    if (grantKind === "external-code") {
-      await fill(
-        await within(dialog).findByTestId("connector-external-code-input"),
-        "AWS-CODE",
-      );
-      click(within(dialog).getByTestId("connector-external-code-complete"));
-    }
-    await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
-      "This account needs additional setup. Review its connector settings and try again.",
-    );
-    expect(
-      screen.queryByRole("dialog", { name: `Name your ${label} account` }),
-    ).not.toBeInTheDocument();
-    click(within(dialog).getByLabelText("Close"));
-    await expect(
-      findFastControl("button", `Manage ${label} accounts`),
-    ).resolves.toBeVisible();
-  },
-);
-
-test("Enable a connector that needs no credentials", async () => {
-  const researchId = "c0000000-0000-4000-a000-000000000002";
-  mockConnectors(context, []);
-  context.mocks.data.agents([
-    listAgent("c0000000-0000-4000-a000-000000000001", "Nova"),
-    listAgent(researchId, "Research Agent"),
-  ]);
-  mockPublicConnectorStatus(context, [
-    publicStatusItem({
-      connectorSlug: "stripe",
-      label: "Public Stripe",
-      authMethods: [noAuthMethod()],
-    }),
-  ]);
-  const browserOpen = context.mocks.browser.open(createAuthWindow());
-  context.mocks.api(
-    builtinConnectorNoAuthGrantContract.connect,
-    ({ body, respond }) => {
-      return respond(200, {
-        connectionId: storeConnectedConnector("stripe", body.authMethod).id,
-      });
-    },
-  );
-  await setupPage({
-    context,
-    path: "/connectors",
-  });
-
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "Connect Public Stripe");
-    }),
-  );
-
-  await expect(
-    screen.findByText("Public Stripe enabled successfully"),
-  ).resolves.toBeInTheDocument();
-  const naming = await screen.findByRole("dialog", {
-    name: "Name your Public Stripe account",
-  });
-  click(getConnectorAction("button", "Skip", naming));
-  await waitFor(() => {
-    expect(
-      within(getConnectorCard("Public Stripe")).getByText("Connected"),
-    ).toBeInTheDocument();
-  });
-  expect(browserOpen.calls).toHaveLength(0);
-});
-
-test("Follow provider-authored external-code instructions", async () => {
-  mockConnectors(context, []);
-  mockPublicConnectorStatus(context, [
-    publicStatusItem({
-      connectorSlug: "playstation",
-      label: "PlayStation",
-      authMethods: [
-        {
-          id: "api",
-          label: "PlayStation sign-in",
-          description:
-            "First make sure you are signed in to PlayStation at [https://www.playstation.com/](https://www.playstation.com/).\nClick the button below, then copy the `npsso` value.",
-          grantKind: "external-code",
-          supportsRefresh: true,
-          manualFields: [],
-          startOptions: [],
-        },
-      ],
-    }),
-  ]);
-  context.mocks.browser.open(createAuthWindow());
-  await setupPage({ context, path: "/connectors?keywords=playstation" });
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "Connect PlayStation");
-    }),
-  );
-  const dialog = await screen.findByRole("dialog", { name: "PlayStation" });
-
-  click(getConnectorAction("button", "Start PlayStation sign-in", dialog));
-
-  await expect(
-    waitFor(() => {
-      return getConnectorAction("button", "Open PlayStation sign-in", dialog);
-    }),
-  ).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    expect(
-      queryAllByRoleFast("link", dialog).map((link) => {
-        return link.textContent;
-      }),
-    ).toStrictEqual(["https://www.playstation.com/"]);
-  });
-  expect(
-    getConnectorAction("button", "Open PlayStation sign-in", dialog),
-  ).toBeInTheDocument();
-  expect(within(dialog).getByPlaceholderText("Code")).toBeInTheDocument();
-});
-
-test("Complete OAuth only after the current attempt succeeds", async () => {
-  const completedAttempts = mockOAuthCompletions(context);
-  let oauthAttemptId = crypto.randomUUID();
-  const researchId = "c0000000-0000-4000-a000-000000000002";
-  let listed = mockConnectors(context, []);
-  context.mocks.data.agents([
-    listAgent("c0000000-0000-4000-a000-000000000001", "Nova"),
-    listAgent(researchId, "Research Agent"),
-  ]);
-  mockPublicConnectorStatus(context, [
-    publicStatusItem({
-      connectorSlug: "stripe",
-      label: "Public Stripe",
-      authMethods: [
-        {
-          ...oauthMethod("Public OAuth"),
-          description: "Public OAuth description",
-        },
-        {
-          id: "cli",
-          label: "Public CLI",
-          description: "Public CLI description",
-          grantKind: "device-auth",
-          supportsRefresh: true,
-          manualFields: [],
-          startOptions: [],
-        },
-      ],
-    }),
-  ]);
-  let authWindow = createAuthWindow();
-  context.mocks.browser.open(authWindow);
-  context.mocks.api(builtinConnectorOauthStartContract.start, ({ respond }) => {
-    oauthAttemptId = crypto.randomUUID();
-    return respond(200, {
-      oauthAttemptId,
-      authorizationUrl: "https://oauth.test/stripe/authorize",
-    });
-  });
-  context.mocks.api(builtinConnectorsMainContract.list, ({ respond }) => {
-    return respond(200, { connectors: listed });
-  });
-  await setupPage({
-    context,
-    path: "/connectors?keywords=public+stripe",
-  });
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "Connect Public Stripe");
-    }),
-  );
-  const dialog = await screen.findByRole("dialog", { name: "Public Stripe" });
-  click(getConnectorAction("button", "Connect", dialog));
-  await waitFor(() => {
-    expect(authWindow.location.href).toBe(
-      "https://oauth.test/stripe/authorize",
-    );
-  });
-
-  context.mocks.ably.trigger("connector:changed", {
-    connectorSlug: "stripe",
-  });
-  authWindow.close();
-
-  await waitFor(() => {
-    expect(getConnectorAction("button", "Connect", dialog)).toBeEnabled();
-  });
-  await waitFor(() => {
-    const stripeCard = getConnectorCard("Public Stripe");
-    expect(
-      within(stripeCard).getByLabelText("Connect Public Stripe"),
-    ).toBeInTheDocument();
-    expect(within(stripeCard).queryByText("Connected")).toBeNull();
-    expect(within(stripeCard).queryByText("Research Agent")).toBeNull();
-  });
-
-  authWindow = createAuthWindow();
-  context.mocks.browser.open(authWindow);
-  click(getConnectorAction("button", "Connect", dialog));
-  await waitFor(() => {
-    expect(authWindow.location.href).toBe(
-      "https://oauth.test/stripe/authorize",
-    );
-  });
-  listed = mockConnectors(context, [
-    { connectorSlug: "stripe", authMethod: "oauth" },
-  ]);
-  const connected = listed[0];
-  if (!connected) {
-    throw new Error("Expected completed Stripe account");
-  }
-  completedAttempts.set(oauthAttemptId, connected.id);
-  context.mocks.ably.trigger("connector:changed", { connectorSlug: "stripe" });
-
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: "Public Stripe" })).toBeNull();
-    expect(
-      within(getConnectorCard("Public Stripe")).getByText("Connected"),
-    ).toBeInTheDocument();
-  });
-  const naming = await screen.findByRole("dialog", {
-    name: "Name your Public Stripe account",
-  });
-  click(getConnectorAction("button", "Skip", naming));
-  await expect(
-    within(getConnectorCard("Public Stripe")).findByText("Connected"),
-  ).resolves.toBeInTheDocument();
-});
-
-async function addManualAccountForNaming({
-  failFirstRename = false,
-  renamePending,
-}: {
-  failFirstRename?: boolean;
-  renamePending?: Promise<void>;
-} = {}) {
-  mockConnectors(context, []);
-  const connectionId = crypto.randomUUID();
-  const accounts: BuiltinConnectorResponse[] = [];
-  let renamed: { readonly id: string; readonly name: string | null } | null =
-    null;
-  context.mocks.api(
-    builtinConnectorManualGrantContract.connect,
-    ({ body, respond }) => {
-      const connector = {
-        ...storeConnectedConnector("ahrefs", body.authMethod),
-        id: accounts.length === 0 ? connectionId : crypto.randomUUID(),
-        externalEmail: "owner@example.com",
-      };
-      accounts.push(connector);
-      context.mocks.data.connectors(accounts);
-      return respond(200, { connectionId: connector.id });
-    },
-  );
-  context.mocks.api(
-    connectorAccountsContract.rename,
-    async ({ params, body, respond }) => {
-      await renamePending;
-      if (failFirstRename) {
-        failFirstRename = false;
-        return respond(500, {
-          error: { message: "Rename failed", code: "INTERNAL_SERVER_ERROR" },
-        });
-      }
-      renamed = { id: params.connectionId, name: body.displayName };
-      return respond(200, {
-        missingRequiredFields: [],
-        configuredFieldKeys: [],
-        id: params.connectionId,
-        target: { kind: "builtin", connectorSlug: "ahrefs" },
-        authMethod: "api-token",
-        displayName: body.displayName,
-        isDefault: params.connectionId === connectionId,
-        externalId: null,
-        externalUsername: null,
-        externalEmail: "owner@example.com",
-        oauthScopes: [],
-        connectionStatus: "connected",
-        reconnectReason: null,
-        tokenExpiresAt: null,
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:01.000Z",
-      });
-    },
-  );
-  await setupPage({
-    context,
-    path: "/connectors?keywords=ahrefs",
-  });
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "Connect Ahrefs");
-    }),
-  );
-  const dialog = await screen.findByRole("dialog", { name: "Ahrefs" });
-  await fill(
-    within(dialog).getByPlaceholderText("your-ahrefs-api-token"),
-    "secret-token",
-  );
-  click(getConnectorAction("button", "Save", dialog));
-  const naming = await screen.findByRole("dialog", {
-    name: "Name your Ahrefs account",
-  });
-  const input = within(naming).getByLabelText("Account name");
-  return {
-    input,
-    naming,
-    connectionId,
-    getRenamed: () => {
-      return renamed;
-    },
-  };
-}
-
-test("Save a name for the exact newly added manual account", async () => {
-  const { input, naming, connectionId, getRenamed } =
-    await addManualAccountForNaming();
-  await fill(input, "Work");
-  click(getConnectorAction("button", "Save", naming));
-
-  await waitFor(() => {
-    expect(getRenamed()).toStrictEqual({ id: connectionId, name: "Work" });
-    expect(
-      screen.queryByRole("dialog", { name: "Name your Ahrefs account" }),
-    ).not.toBeInTheDocument();
-  });
-});
-
-test("Keep the new account name after a failed save and close on retry", async () => {
-  const renameResponse = context.mocks.deferred<void>();
-  const { input, naming, connectionId, getRenamed } =
-    await addManualAccountForNaming({
-      failFirstRename: true,
-      renamePending: renameResponse.promise,
-    });
-  await fill(input, " Work ");
-  click(getConnectorAction("button", "Save", naming));
-  await waitFor(() => {
-    expect(getConnectorAction("button", "Save", naming)).toBeDisabled();
-  });
-  renameResponse.resolve();
-  await expect(screen.findByText("Rename failed")).resolves.toBeInTheDocument();
-  expect(input).toHaveValue(" Work ");
-  expect(naming).toBeInTheDocument();
-  click(
-    await waitFor(() => {
-      const save = getConnectorAction("button", "Save", naming);
-      expect(save).toBeEnabled();
-      return save;
-    }),
-  );
-  await waitFor(() => {
-    expect(getRenamed()).toStrictEqual({ id: connectionId, name: "Work" });
-    expect(
-      screen.queryByRole("dialog", { name: "Name your Ahrefs account" }),
-    ).not.toBeInTheDocument();
-  });
-});
-
-test("Keep a replacement account name prompt when an earlier save completes", async () => {
-  const renameResponse = context.mocks.deferred<void>();
-  const { input, naming, connectionId, getRenamed } =
-    await addManualAccountForNaming({
-      renamePending: renameResponse.promise,
-    });
-  await fill(input, "First account");
-  click(getConnectorAction("button", "Save", naming));
-  await waitFor(() => {
-    expect(getConnectorAction("button", "Save", naming)).toBeDisabled();
-  });
-  click(getConnectorAction("button", "Skip", naming));
-
-  const manageAccounts = await waitFor(() => {
-    return getConnectorAction("button", "Manage Ahrefs accounts");
-  });
-  click(manageAccounts);
-  const manager = await screen.findByRole("dialog", {
-    name: "Manage Ahrefs accounts",
-  });
-  click(getConnectorAction("button", "Add account", manager));
-  const addition = await screen.findByRole("dialog", { name: "Ahrefs" });
-  await fill(
-    within(addition).getByPlaceholderText("your-ahrefs-api-token"),
-    "second-token",
-  );
-  click(getConnectorAction("button", "Save", addition));
-  const secondNaming = await screen.findByRole("dialog", {
-    name: "Name your Ahrefs account",
-  });
-  await fill(
-    within(secondNaming).getByLabelText("Account name"),
-    "Second account draft",
-  );
-  expect(getConnectorAction("button", "Save", secondNaming)).toBeDisabled();
-
-  renameResponse.resolve();
-
-  await waitFor(() => {
-    const currentNaming = screen.getByRole("dialog", {
-      name: "Name your Ahrefs account",
-    });
-    expect(getConnectorAction("button", "Save", currentNaming)).toBeEnabled();
-  });
-  expect(getRenamed()).toStrictEqual({
-    id: connectionId,
-    name: "First account",
-  });
-  expect(
-    within(
-      screen.getByRole("dialog", { name: "Name your Ahrefs account" }),
-    ).getByLabelText("Account name"),
-  ).toHaveValue("Second account draft");
-});
-
-test("Submit a chosen device-authorization start option", async () => {
-  mockConnectors(context, []);
-  mockPublicConnectorStatus(context, [
-    publicStatusItem({
-      connectorSlug: "stripe",
-      label: "Stripe",
-      authMethods: [
-        {
-          id: "cli",
-          label: "Stripe CLI",
-          description: "Approve access with Stripe CLI.",
-          grantKind: "device-auth",
-          supportsRefresh: true,
-          manualFields: [],
-          startOptions: [
-            {
-              id: "mode",
-              kind: "select",
-              label: "Mode",
-              required: true,
-              defaultValue: null,
-              options: [
-                { value: "test", label: "Test" },
-                { value: "live", label: "Live" },
-              ],
-            },
-          ],
-        },
-      ],
-    }),
-  ]);
-  context.mocks.browser.open(createAuthWindow());
-  const startOptions: Record<string, string>[] = [];
+  let selected: string | undefined;
   context.mocks.api(
     builtinConnectorOauthDeviceAuthSessionContract.create,
-    ({ body, params, respond }) => {
-      startOptions.push(body.options ?? {});
+    ({ body, respond }) => {
+      selected = body.options?.mode;
       return respond(200, {
+        connectorSlug: "stripe",
         sessionId: crypto.randomUUID(),
-        sessionToken: "stripe-device-token",
-        connectorSlug: params.connectorSlug,
+        sessionToken: "fixture-session",
         status: "pending",
-        userCode: "STRIPE-DEVICE",
-        verificationUri: "https://oauth.test/stripe/device",
-        verificationUriComplete:
-          "https://oauth.test/stripe/device?user_code=STRIPE-DEVICE",
-        expiresIn: 300,
+        userCode: "VERIFY",
+        verificationUri: "https://stripe.example.test/device",
+        expiresIn: 60,
         interval: 1,
       });
     },
   );
-  context.mocks.http.post(
-    "*/api/connectors/stripe/oauth/device/sessions/:sessionId/poll",
-    () => {
-      return HttpResponse.json(
-        {
-          error: {
-            message: "Stripe device authorization is unavailable",
-            code: "UNAVAILABLE",
-          },
+  context.mocks.api(
+    builtinConnectorOauthDeviceAuthSessionContract.poll,
+    ({ respond }) => {
+      return respond(500, {
+        error: {
+          code: "UNAVAILABLE",
+          message: "Stripe device authorization is unavailable",
         },
-        { status: 500 },
-      );
+      });
     },
   );
-  await setupPage({
-    context,
-    path: "/connectors",
-  });
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "Connect Stripe");
-    }),
-  );
-  const dialog = await screen.findByRole("dialog", { name: "Stripe" });
-  const mode = within(dialog).getByRole("combobox", { name: "Mode" });
-  expect(mode).toHaveTextContent("Select Mode");
-  expect(getConnectorAction("button", "Connect Stripe", dialog)).toBeDisabled();
-  click(mode);
+  await setupPage({ context, path: "/connectors" });
+  click(await findButton("Connect Stripe"));
+  const form = await screen.findByRole("dialog", { name: "Stripe" });
+  const action = queryButton("Connect Stripe", form);
+  expect(action).toBeDisabled();
+  click(within(form).getByRole("combobox"));
   click(await screen.findByRole("option", { name: "Live" }));
-  expect(mode).toHaveTextContent("Live");
-  expect(getConnectorAction("button", "Connect Stripe", dialog)).toBeEnabled();
-  click(getConnectorAction("button", "Connect Stripe", dialog));
-
-  await expect(
-    screen.findByText("Stripe device authorization is unavailable"),
-  ).resolves.toBeInTheDocument();
-  expect(startOptions[0]).toStrictEqual({ mode: "live" });
+  expect(action).toBeEnabled();
+  click(action!);
+  await screen.findByText(/Stripe device authorization is unavailable/);
+  expect(selected).toBe("live");
 });
 
-test("Start provider sign-in from catalog metadata", async () => {
-  const slug = "notion";
-  const label = "Notion";
-  mockConnectors(context, []);
-  mockPublicConnectorStatus(context, [
-    publicStatusItem({
-      connectorSlug: slug,
-      label,
-      authMethods: [oauthMethod()],
-      singleAuthCodeAuthMethodId: "oauth",
-    }),
-  ]);
-  const authWindow = createAuthWindow();
-  const browserOpen = context.mocks.browser.open(authWindow);
-  const starts: {
-    readonly slug: string;
-    readonly callbackTarget: string | undefined;
-  }[] = [];
-  mockOAuthCompletions(context);
+test("connectors-auth-methods-018 Notion launches the catalog OAuth method for the app callback", async () => {
+  const popup = context.mocks.browser.authWindow();
+  Object.defineProperty(popup, "location", { value: { href: "about:blank" } });
+  const launch = context.mocks.browser.open(popup);
+  const url = "https://notion.example.test/grant";
   context.mocks.api(
     builtinConnectorOauthStartContract.start,
-    ({ body, params, respond }) => {
-      starts.push({
-        slug: params.connectorSlug,
-        callbackTarget: body.callbackTarget,
-      });
-      authWindow.close();
+    ({ params, body, respond }) => {
       return respond(200, {
-        authorizationUrl: `https://oauth.test/${params.connectorSlug}/authorize`,
+        authorizationUrl:
+          params.connectorSlug === "notion" && body.callbackTarget === "app"
+            ? url
+            : "https://invalid.example.test/",
         oauthAttemptId: crypto.randomUUID(),
       });
     },
   );
   await setupPage({ context, path: "/connectors" });
-  const connect = await waitFor(() => {
-    return getConnectorAction("button", `Connect ${label}`);
-  });
+  click(await findButton("Connect Notion"));
   await waitFor(() => {
-    expect(connect).toBeEnabled();
+    return expect(popup.location.href).toBe(url);
   });
-  click(connect);
-  await waitFor(() => {
-    expect(authWindow.location.href).toBe(
-      `https://oauth.test/${slug}/authorize`,
-    );
-  });
-  expect(screen.queryByRole("dialog", { name: label })).toBeNull();
-
-  expect(starts).toStrictEqual([{ slug, callbackTarget: "app" }]);
-  expect(browserOpen.calls).toHaveLength(1);
+  expect(launch.calls).toHaveLength(1);
+  expect(
+    screen.queryByRole("dialog", { name: "Notion" }),
+  ).not.toBeInTheDocument();
+  popup.close();
 });
 
-test("Submit credentials only for the chosen manual method", async () => {
-  mockConnectors(context, []);
-  mockPublicConnectorStatus(context, [
-    publicStatusItem({
-      connectorSlug: "axiom",
-      label: "Public Axiom",
-      authMethods: [
-        manualMethod({
-          id: "api-token",
-          label: "Public API Token",
-          fieldId: "apiToken",
-          fieldLabel: "Public API token",
-          placeholder: "public-xaat",
-        }),
-        manualMethod({
-          id: "api",
-          label: "Public API Key",
-          fieldId: "apiKey",
-          fieldLabel: "Public API key",
-          placeholder: "public-api-key",
-        }),
-      ],
-    }),
-  ]);
-  let submittedMethod: string | null = null;
-  let submittedValues: Record<string, string> | null = null;
+function ahrefsAccounts() {
+  const saved: ReturnType<typeof connectorAccountFixture>[] = [];
+  mockSavedConnectorAccounts(context, () => {
+    return saved;
+  });
   context.mocks.api(
     builtinConnectorManualGrantContract.connect,
-    ({ body, respond }) => {
-      submittedMethod = body.authMethod;
-      submittedValues = body.values;
-      return respond(200, {
-        connectionId: storeConnectedConnector("axiom", body.authMethod).id,
+    ({ params, body, respond }) => {
+      const account = connectorAccountFixture(
+        { kind: "builtin", connectorSlug: params.connectorSlug },
+        { authMethod: body.authMethod, isDefault: saved.length === 0 },
+      );
+      saved.push(account);
+      context.mocks.ably.trigger("connector:changed", {
+        connectorSlug: params.connectorSlug,
       });
+      return respond(200, { connectionId: account.id });
     },
   );
-  await setupPage({
-    context,
-    path: "/connectors",
-  });
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "Connect Public Axiom");
-    }),
+  context.mocks.api(
+    connectorAccountsContract.connection,
+    ({ params, respond }) => {
+      const account = saved.find((item) => {
+        return item.id === params.connectionId;
+      });
+      return account
+        ? respond(200, account)
+        : respond(404, {
+            error: { code: "NOT_FOUND", message: "Unknown account" },
+          });
+    },
   );
-  const dialog = await screen.findByRole("dialog", { name: "Public Axiom" });
-  await fill(within(dialog).getByPlaceholderText("public-xaat"), "xaat-test");
+  return saved;
+}
+
+test("connectors-auth-methods-015 retrying saves the same Ahrefs account with its trimmed name", async () => {
+  const saved = ahrefsAccounts();
+  let accountId: string | undefined;
+  context.mocks.api(
+    connectorAccountsContract.rename,
+    ({ params, body, respond }) => {
+      if (!accountId) {
+        accountId = params.connectionId;
+        return respond(400, {
+          error: { code: "INVALID", message: "Rename failed" },
+        });
+      }
+      if (accountId !== params.connectionId) {
+        return respond(404, {
+          error: { code: "NOT_FOUND", message: "Another account" },
+        });
+      }
+      const account = saved.find((item) => {
+        return item.id === params.connectionId;
+      })!;
+      account.displayName = body.displayName;
+      return respond(200, account);
+    },
+  );
+  await setupPage({ context, path: "/connectors" });
+  click(await findButton("Connect Ahrefs"));
   await fill(
-    within(dialog).getByPlaceholderText("public-api-key"),
-    "api-key-test",
+    await screen.findByPlaceholderText("your-ahrefs-api-token"),
+    "fixture-key-only",
   );
-  const saveButtons = queryAllByRoleFast("button", dialog).filter((button) => {
-    return button.textContent?.trim() === "Save";
+  click(await findButton("Save"));
+  const naming = await screen.findByRole("dialog", {
+    name: "Name your Ahrefs account",
   });
-  const secondSave = saveButtons[1];
-  if (!secondSave) {
-    throw new Error("Expected second Save action");
-  }
-
-  click(secondSave);
-
+  const field = within(naming).getByRole("textbox", { name: "Account name" });
+  await fill(field, " Work ");
+  click(await findEnabledButton("Save", naming));
+  await screen.findByText("Rename failed");
+  expect(field).toHaveValue(" Work ");
+  click(await findEnabledButton("Save", naming));
   await waitFor(() => {
-    expect(submittedMethod).toBe("api");
-    expect(submittedValues).toStrictEqual({ apiKey: "api-key-test" });
-    expect(
-      within(getConnectorCard("Public Axiom")).getByText("Connected"),
-    ).toBeInTheDocument();
+    return expect(naming).not.toBeInTheDocument();
   });
+  expect(saved[0]?.displayName).toBe("Work");
+  click(await findButton("Manage Ahrefs accounts"));
+  await screen.findByRole("group", { name: "Work" });
+});
+
+test("connectors-auth-methods-016 a pending save for the first Ahrefs account leaves the replacement naming prompt intact", async () => {
+  const resume = context.mocks.deferred<void>();
+  const started = context.mocks.deferred<void>();
+  const saved = ahrefsAccounts();
+  context.mocks.api(
+    connectorAccountsContract.rename,
+    async ({ params, body, respond }) => {
+      started.resolve();
+      await resume.promise;
+      const account = saved.find((item) => {
+        return item.id === params.connectionId;
+      })!;
+      account.displayName = body.displayName;
+      return respond(200, account);
+    },
+  );
+  async function submitCredentials(value: string) {
+    await fill(
+      await screen.findByPlaceholderText("your-ahrefs-api-token"),
+      value,
+    );
+    click(await findButton("Save"));
+    return screen.findByRole("dialog", { name: "Name your Ahrefs account" });
+  }
+  await setupPage({ context, path: "/connectors" });
+  click(await findButton("Connect Ahrefs"));
+  const first = await submitCredentials("first-fixture");
+  await fill(within(first).getByLabelText("Account name"), "First account");
+  click(await findEnabledButton("Save", first));
+  await started.promise;
+  click(await findButton("Skip"));
+  click(await findButton("Manage Ahrefs accounts"));
+  click(await findButton("Add account"));
+  const second = await submitCredentials("second-fixture");
+  const draft = within(second).getByLabelText("Account name");
+  await fill(draft, "Second account draft");
+  expect(queryButton("Save", second)).toBeDisabled();
+  resume.resolve();
+
+  await findEnabledButton("Save", second);
+  expect(draft).toHaveValue("Second account draft");
+  click(await findButton("Skip"));
+  click(await findButton("Manage Ahrefs accounts"));
+  await screen.findByRole("group", { name: "First account" });
+  expect(
+    saved.map((item) => {
+      return item.displayName;
+    }),
+  ).toStrictEqual(["First account", null]);
 });

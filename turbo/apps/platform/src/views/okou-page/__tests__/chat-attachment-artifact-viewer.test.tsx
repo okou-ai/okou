@@ -1,1181 +1,475 @@
 import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
 import {
-  artifactReferencePath,
-  artifactReferencesContract,
-  artifactShareReferencePath,
-} from "@okouai/api-contracts/contracts/artifact-references";
-import {
-  hostContract,
-  type HostedSiteFilesResponse,
-} from "@okouai/api-contracts/contracts/host";
-import {
-  chatThreadArtifactsContract,
-  type UserMessageDocument,
-} from "@okouai/api-contracts/contracts/chat-threads";
-import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { strFromU8, unzipSync } from "fflate";
+  findNamedMenuItem,
+  ATTACHMENT_THREAD_ID,
+  SECOND_ATTACHMENT_THREAD_ID,
+  mockAttachmentChat,
+  mockSplitAttachmentChats,
+  artifactFile,
+} from "./chat-attachment-test-helpers.ts";
+import { createHash } from "node:crypto";
+import { test, expect, vi } from "vitest";
+import { screen, within, waitFor, fireEvent } from "@testing-library/react";
 import { HttpResponse } from "msw";
-import { expect, test } from "vitest";
-
+import { unzipSync, strFromU8 } from "fflate";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
+import { chatThreadArtifactsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  ATTACHMENT_RUN_ID,
-  ATTACHMENT_THREAD_ID,
-  SECOND_ATTACHMENT_THREAD_ID,
-  artifactFile,
-  findNamedButton,
-  findNamedLink,
-  findNamedMenuItem,
-  getNamedButton,
-  getNamedLink,
-  mockAttachmentChat,
-  mockPrivateUrlSequence,
-  mockSplitAttachmentChats,
-  privateAttachmentUrl,
-  publicArtifactUrl,
-  queryNamedButton,
-  queryNamedLink,
-  type AttachmentChatEvent,
-} from "./chat-attachment-test-helpers.ts";
-
+  findAction,
+  queryAction,
+} from "./connector-integrations-test-helpers.ts";
+import {
+  attachment,
+  assistantRow,
+  userRow,
+  fileParts,
+  conversation,
+  serveReference,
+  serveUploaded,
+} from "./attachment-preview-boundaries.ts";
 const context = testContext();
-const CREATED_AT = "2026-03-10T00:00:01Z";
-const R2_ORIGIN = `https://${"a".repeat(32)}.r2.cloudflarestorage.com`;
-const THUMBNAIL_PREFIX =
-  "https://cdn.vm7.io/cdn-cgi/image/width=800,height=720,fit=scale-down,format=auto,quality=85,metadata=none/";
-
-function assistantMessage(
-  content: string,
-  overrides: Partial<AttachmentChatEvent> = {},
-): AttachmentChatEvent {
-  return {
-    id: "artifact-viewer-assistant-message",
-    role: "assistant",
-    content,
-    runId: ATTACHMENT_RUN_ID,
-    runEventId: "artifact-viewer-event-1",
-    sequenceNumber: 1,
-    createdAt: CREATED_AT,
-    ...overrides,
-  };
-}
-
-function userImageMessage(
-  id: string,
-  parts: UserMessageDocument["parts"],
-): AttachmentChatEvent {
-  return {
-    id,
-    role: "user",
-    content: null,
-    runId: ATTACHMENT_RUN_ID,
-    createdAt: CREATED_AT,
-    userMessage: { version: 1, parts },
-  };
-}
-
-async function closeFocusedPreview(): Promise<void> {
-  click(getNamedButton("Close"));
-  await waitFor(() => {
-    expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
+const site = "https://launch-site.okou.app/";
+function publicSite() {
+  context.mocks.api(hostContract.sitePreview, ({ respond }) => {
+    return respond(200, { url: site, expiresAt: null });
+  });
+  return artifactFile("launch-site.html", {
+    url: site,
+    title: "Expedition brief",
+    aliasUrl: site,
+    artifactKind: "hosted-site",
+    contentType: "text/html",
   });
 }
-
-function getPreviewFrame(testId: string): HTMLIFrameElement {
-  const element = screen.getByTestId(testId);
-  const frame =
-    element instanceof HTMLIFrameElement
-      ? element
-      : element.querySelector("iframe");
-  if (!frame) {
-    throw new Error(`Expected ${testId} to contain a preview frame`);
-  }
-  return frame;
-}
-
-async function expectPrivateTextPreview(
-  root: HTMLElement,
-  filename: string,
-): Promise<void> {
-  await expect(
-    within(root).findByText(`private preview for ${filename}`),
-  ).resolves.toBeInTheDocument();
-}
-
-test("A private attachment reuses one URL across reopen and split view", async () => {
-  const filename = "private-notes.txt";
-  const contentType = "text/plain";
-  const fileId = "private-private-notes-txt";
-  const canonicalUrl = privateAttachmentUrl(fileId);
-  const firstUrl = `https://private-files.example/${filename}?signature=first`;
-  const nextUrl = `https://private-files.example/${filename}?signature=next`;
-  mockAttachmentChat(context, {
-    chatEvents: [
-      userImageMessage(`user-${fileId}`, [
-        {
-          type: "file",
-          fileId,
-          filenameSnapshot: filename,
-          contentType,
-        },
-      ]),
-    ],
-    artifacts: [
-      artifactFile(filename, {
-        id: fileId,
-        contentType,
-        url: canonicalUrl,
-      }),
-    ],
+async function openSite() {
+  const artifact = publicSite();
+  await conversation(context, {
+    chatEvents: [assistantRow("[Open expedition](" + site + ")")],
+    artifacts: [artifact],
   });
-  let resolveCount = 0;
-  context.mocks.api(webFilesContract.fileUrl, ({ query, respond }) => {
-    expect(query.file_id).toBe(fileId);
-    const url = resolveCount === 0 ? firstUrl : nextUrl;
-    resolveCount += 1;
+  click(await findAction("link", "Open expedition"));
+  return screen.findByTestId("attachment-lightbox");
+}
+test("chat-attachment-artifact-viewer-001 reopening the private text uses the original grant in both destinations", async () => {
+  const f = attachment("notes.txt", "text/plain");
+  const renewal = "https://cdn.okou.io/artifacts/review/session/renewed.txt";
+  let next = f.url;
+  context.mocks.api(webFilesContract.fileUrl, ({ respond }) => {
     return respond(200, {
-      downloadUrl: new URL("?download=1", url).href,
-      url,
-      expiresAt: "2099-01-01T00:00:00.000Z",
+      url: next,
+      downloadUrl: next,
       publicUrl: null,
+      expiresAt: "2099-01-01T00:00:00.000Z",
     });
   });
-  context.mocks.http.get(
-    `https://private-files.example/${filename}`,
-    ({ request }) => {
-      const renewed = new URL(request.url).searchParams.get("signature");
-      return HttpResponse.text(
-        `${renewed === "first" ? "private" : "unexpected renewed"} preview for ${filename}`,
-      );
-    },
-  );
-
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-  const filenameNode = await screen.findByText(filename);
-  const trigger = filenameNode.closest("button");
-  if (!trigger) {
-    throw new Error(`Expected a preview trigger for ${filename}`);
-  }
-
-  click(trigger);
-  await expectPrivateTextPreview(
-    await screen.findByTestId("attachment-lightbox"),
-    filename,
-  );
-  await closeFocusedPreview();
-
-  click(trigger);
-  await expectPrivateTextPreview(
-    await screen.findByTestId("attachment-lightbox"),
-    filename,
-  );
-
-  click(await findNamedButton("Open in split view"));
-  await expectPrivateTextPreview(
-    await screen.findByTestId("artifact-sidebar"),
-    filename,
-  );
-});
-
-test("An open artifact sidebar reuses one pane", async () => {
-  const siteUrl = "https://reference-site.sites.vm7.io";
-  const audioUrl = publicArtifactUrl("walkthrough.mp3");
-  mockAttachmentChat(context, {
-    chatEvents: [
-      assistantMessage(
-        `[Reference site](${siteUrl})\n\n[Walkthrough](${audioUrl})`,
-      ),
-    ],
-    artifacts: [
-      artifactFile("reference-site.html", {
-        id: "reference-site",
-        contentType: "text/html",
-        url: publicArtifactUrl("reference-site.html"),
-        aliasUrl: siteUrl,
-        artifactKind: "hosted-site",
-      }),
-      artifactFile("walkthrough.mp3", {
-        id: "walkthrough-audio",
-        contentType: "audio/mpeg",
-        url: audioUrl,
-      }),
-    ],
+  context.mocks.http.get(f.url.split("?")[0], () => {
+    return HttpResponse.text("Original field notes");
   });
-
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-
-  const sitePreview = await findNamedLink("Reference site");
-  click(sitePreview);
-  click(await findNamedButton("Open in split view"));
-  const sidebar = await screen.findByTestId("artifact-sidebar");
-  expect(
-    within(sidebar).getByTestId("artifact-sidebar-body-html"),
-  ).toBeVisible();
-
-  click(sitePreview);
-  expect(screen.getAllByTestId("artifact-sidebar")).toHaveLength(1);
-  expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
-  expect(
-    within(sidebar).getByTestId("artifact-sidebar-body-html"),
-  ).toBeVisible();
-
-  click(getNamedLink("Walkthrough"));
-  await waitFor(() => {
-    expect(
-      within(sidebar).getByTestId("artifact-sidebar-body-audio"),
-    ).toHaveAttribute("src", audioUrl);
+  context.mocks.http.get(renewal, () => {
+    return HttpResponse.text("Renewed content");
   });
-  expect(screen.getAllByTestId("artifact-sidebar")).toHaveLength(1);
-  expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
-});
-
-test("A public hosted site header displays its title and links to its address", async () => {
-  const siteUrl = "https://reference-site.sites.vm7.io";
-  mockAttachmentChat(context, {
-    chatEvents: [assistantMessage(`[Reference site](${siteUrl})`)],
-    artifacts: [
-      artifactFile("reference-site.html", {
-        title: "Reference site title",
-        id: "reference-site",
-        contentType: "text/html",
-        url: publicArtifactUrl("reference-site.html"),
-        aliasUrl: siteUrl,
-        artifactKind: "hosted-site",
-      }),
-    ],
-  });
-
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-
-  const expectSiteLink = (surface: HTMLElement) => {
-    const link = getNamedLink("Reference site title", surface);
-    expect(link).toHaveAttribute("href", `${siteUrl}/`);
-    expect(link).toHaveAttribute("target", "_blank");
-    expect(link).toHaveAttribute("rel", "noopener noreferrer");
-    expect(within(surface).getByText(/^Updated at /)).toBeInTheDocument();
-    expect(within(surface).queryByText("reference-site.html")).toBeNull();
-    expect(within(surface).queryByText(/Hosted site/)).toBeNull();
-    expect(within(surface).queryByText(/1 kB/)).toBeNull();
-  };
-
-  click(await findNamedLink("Reference site"));
-  expectSiteLink(await screen.findByTestId("attachment-lightbox"));
-
-  click(await findNamedButton("Open in split view"));
-  expectSiteLink(await screen.findByTestId("artifact-sidebar"));
-});
-
-test("A private hosted site header keeps its filename", async () => {
-  const siteUrl = publicArtifactUrl("private-site.html");
-  mockAttachmentChat(context, {
-    chatEvents: [assistantMessage(`[Private site](${siteUrl})`)],
-    artifacts: [
-      artifactFile("private-site.html", {
-        id: "private-site",
-        contentType: "text/html",
-        url: siteUrl,
-        artifactKind: "hosted-site",
-      }),
-    ],
-  });
-
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-
-  click(await findNamedLink("Private site"));
+  await conversation(context, { chatEvents: [userRow(fileParts([f]))] });
+  const open = await findAction("button", "Open text preview for notes.txt");
+  click(open);
   const dialog = await screen.findByTestId("attachment-lightbox");
-  expect(within(dialog).getByText("private-site.html")).toBeInTheDocument();
-  expect(
-    within(dialog).getByText(/^Hosted site · Updated at /),
-  ).toBeInTheDocument();
-  expect(
-    within(dialog).queryByText("private-site.html")?.closest("a"),
-  ).toBeNull();
-});
-
-test("Private attachment access stays scoped to the chat that owns it", async () => {
-  const leftFileId = "left-shared-private-image";
-  const rightFileId = "right-shared-private-image";
-  const leftCanonicalUrl = privateAttachmentUrl(leftFileId);
-  const rightCanonicalUrl = privateAttachmentUrl(rightFileId);
-  mockSplitAttachmentChats(
-    context,
-    {
-      threadId: ATTACHMENT_THREAD_ID,
-      title: "Left private chat",
-      events: [
-        userImageMessage("left-private-message", [
-          {
-            type: "file",
-            fileId: leftFileId,
-            filenameSnapshot: "shared.png",
-            contentType: "image/png",
-          },
-          { type: "text", text: "Left private image" },
-        ]),
-      ],
-      artifacts: [
-        artifactFile("shared.png", {
-          id: leftFileId,
-          contentType: "image/png",
-          url: leftCanonicalUrl,
-        }),
-      ],
-    },
-    {
-      threadId: SECOND_ATTACHMENT_THREAD_ID,
-      title: "Right private chat",
-      events: [
-        userImageMessage("right-private-message", [
-          {
-            type: "file",
-            fileId: rightFileId,
-            filenameSnapshot: "shared.png",
-            contentType: "image/png",
-          },
-          { type: "text", text: "Right private image" },
-        ]),
-      ],
-      artifacts: [
-        artifactFile("shared.png", {
-          id: rightFileId,
-          contentType: "image/png",
-          url: rightCanonicalUrl,
-        }),
-      ],
-    },
-  );
-  mockPrivateUrlSequence(context, {
-    [leftFileId]: ["https://private-files.example/left-shared.png"],
-    [rightFileId]: ["https://private-files.example/right-shared.png"],
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${ATTACHMENT_THREAD_ID}?sidebar=${SECOND_ATTACHMENT_THREAD_ID}`,
-  });
-
-  const leftPane = await waitFor(() => {
-    const pane = document.querySelector<HTMLElement>(
-      `[data-chat-thread-container-id="${ATTACHMENT_THREAD_ID}"]`,
-    );
-    if (!pane) {
-      throw new Error("Left chat pane is not ready");
-    }
-    return pane;
-  });
-  const rightPane = await waitFor(() => {
-    const pane = document.querySelector<HTMLElement>(
-      `[data-chat-thread-container-id="${SECOND_ATTACHMENT_THREAD_ID}"]`,
-    );
-    if (!pane) {
-      throw new Error("Right chat pane is not ready");
-    }
-    return pane;
-  });
-
-  click(await findNamedLink("Preview shared.png", leftPane));
-  await expect(
-    screen.findByTestId("attachment-lightbox-image"),
-  ).resolves.toHaveAttribute(
-    "src",
-    "https://private-files.example/left-shared.png",
-  );
-  await closeFocusedPreview();
-  click(await findNamedLink("Preview shared.png", rightPane));
-  await expect(
-    screen.findByTestId("attachment-lightbox-image"),
-  ).resolves.toHaveAttribute(
-    "src",
-    "https://private-files.example/right-shared.png",
-  );
-  await closeFocusedPreview();
-});
-
-test("Image navigation remains inside its split-view chat", async () => {
-  const leftFirst = "left-navigation-first";
-  const leftSecond = "left-navigation-second";
-  const rightFirst = "right-navigation-first";
-  const rightSecond = "right-navigation-second";
-  mockSplitAttachmentChats(
-    context,
-    {
-      threadId: ATTACHMENT_THREAD_ID,
-      title: "Left gallery",
-      events: [
-        userImageMessage("left-gallery-message", [
-          {
-            type: "file",
-            fileId: leftFirst,
-            filenameSnapshot: "shared.png",
-            contentType: "image/png",
-          },
-          {
-            type: "file",
-            fileId: leftSecond,
-            filenameSnapshot: "left-second.png",
-            contentType: "image/png",
-          },
-          { type: "text", text: "Left gallery images" },
-        ]),
-      ],
-      artifacts: [
-        artifactFile("shared.png", {
-          id: leftFirst,
-          contentType: "image/png",
-          url: privateAttachmentUrl(leftFirst),
-        }),
-        artifactFile("left-second.png", {
-          id: leftSecond,
-          contentType: "image/png",
-          url: privateAttachmentUrl(leftSecond),
-        }),
-      ],
-    },
-    {
-      threadId: SECOND_ATTACHMENT_THREAD_ID,
-      title: "Right gallery",
-      events: [
-        userImageMessage("right-gallery-message", [
-          {
-            type: "file",
-            fileId: rightFirst,
-            filenameSnapshot: "shared.png",
-            contentType: "image/png",
-          },
-          {
-            type: "file",
-            fileId: rightSecond,
-            filenameSnapshot: "right-second.png",
-            contentType: "image/png",
-          },
-          { type: "text", text: "Right gallery images" },
-        ]),
-      ],
-      artifacts: [
-        artifactFile("shared.png", {
-          id: rightFirst,
-          contentType: "image/png",
-          url: privateAttachmentUrl(rightFirst),
-        }),
-        artifactFile("right-second.png", {
-          id: rightSecond,
-          contentType: "image/png",
-          url: privateAttachmentUrl(rightSecond),
-        }),
-      ],
-    },
-  );
-  mockPrivateUrlSequence(context, {
-    [leftFirst]: [
-      "https://private-files.example/left-shared.png?signature=first",
-      "https://private-files.example/left-shared.png?signature=next",
-    ],
-    [leftSecond]: [
-      "https://private-files.example/left-second.png?signature=first",
-      "https://private-files.example/left-second.png?signature=next",
-    ],
-    [rightFirst]: [
-      "https://private-files.example/right-shared.png?signature=first",
-      "https://private-files.example/right-shared.png?signature=next",
-    ],
-    [rightSecond]: [
-      "https://private-files.example/right-second.png?signature=first",
-      "https://private-files.example/right-second.png?signature=next",
-    ],
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${ATTACHMENT_THREAD_ID}?sidebar=${SECOND_ATTACHMENT_THREAD_ID}`,
-  });
-
-  const leftPane = await waitFor(() => {
-    const pane = document.querySelector<HTMLElement>(
-      `[data-chat-thread-container-id="${ATTACHMENT_THREAD_ID}"]`,
-    );
-    if (!pane) {
-      throw new Error("Left chat pane is not ready");
-    }
-    return pane;
-  });
-  const rightPane = await waitFor(() => {
-    const pane = document.querySelector<HTMLElement>(
-      `[data-chat-thread-container-id="${SECOND_ATTACHMENT_THREAD_ID}"]`,
-    );
-    if (!pane) {
-      throw new Error("Right chat pane is not ready");
-    }
-    return pane;
-  });
-  click(await findNamedLink("Preview shared.png", rightPane));
-  click(await findNamedButton("Next image artifact"));
-
+  await within(dialog).findByText("Original field notes");
+  next = renewal;
+  click(await findAction("button", "Close", dialog));
   await waitFor(() => {
-    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
-      "alt",
-      "right-second.png",
-    );
+    return expect(dialog).not.toBeInTheDocument();
   });
-  expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
-    "src",
-    "https://private-files.example/right-second.png?signature=first",
-  );
-
-  await closeFocusedPreview();
-
-  click(await findNamedLink("Preview shared.png", leftPane));
-  click(await findNamedButton("Next image artifact"));
-  await waitFor(() => {
-    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
-      "src",
-      "https://private-files.example/left-second.png?signature=first",
-    );
-  });
-  click(await findNamedButton("Open in split view"));
-  const sidebar = await screen.findByTestId("artifact-sidebar");
+  click(open);
+  const again = await screen.findByTestId("attachment-lightbox");
+  await within(again).findByText("Original field notes");
+  click(await findAction("button", "Open in split view", again));
+  const side = await screen.findByTestId("artifact-sidebar");
   await expect(
-    within(sidebar).findByTestId("artifact-sidebar-body-image"),
-  ).resolves.toHaveAttribute(
-    "src",
-    "https://private-files.example/left-second.png?signature=first",
-  );
-  click(await findNamedButton("Previous image artifact", sidebar));
-  await waitFor(() => {
-    expect(
-      within(sidebar).getByTestId("artifact-sidebar-body-image"),
-    ).toHaveAttribute(
-      "src",
-      "https://private-files.example/left-shared.png?signature=first",
-    );
-  });
+    within(side).findByText("Original field notes"),
+  ).resolves.toBeVisible();
 });
-
-test("A user's attachment preview withholds the sharing an agent artifact offers", async () => {
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  const firstAttachment = "share-gate-attachment-first";
-  const secondAttachment = "share-gate-attachment-second";
-  const agentImageUrl = publicArtifactUrl("agent-chart.png");
-  mockAttachmentChat(context, {
+test("chat-attachment-artifact-viewer-002 reselecting the hosted site and then audio reuses the sidebar", async () => {
+  const f = attachment("debrief.mp3", "audio/mpeg");
+  serveUploaded(context, [f]);
+  const hosted = publicSite();
+  await conversation(context, {
     chatEvents: [
-      userImageMessage("share-gate-user-message", [
-        {
-          type: "file",
-          fileId: firstAttachment,
-          filenameSnapshot: "brief.png",
-          contentType: "image/png",
-        },
-        {
-          type: "file",
-          fileId: secondAttachment,
-          filenameSnapshot: "sketch.png",
-          contentType: "image/png",
-        },
-        { type: "text", text: "Reference images" },
-      ]),
-      assistantMessage(`![agent-chart.png](${agentImageUrl})`),
+      userRow(fileParts([f])),
+      assistantRow("[Expedition](" + site + ")"),
+    ],
+    artifacts: [hosted],
+  });
+  const link = await findAction("link", "Expedition");
+  click(link);
+  const panel = await screen.findByTestId("attachment-lightbox");
+  click(await findAction("button", "Open in split view", panel));
+  const side = await screen.findByTestId("artifact-sidebar");
+  await waitFor(() => {
+    return expect(side.querySelector("iframe")?.src).toContain(site);
+  });
+  click(link);
+  expect(screen.getAllByTestId("artifact-sidebar")).toHaveLength(1);
+  expect(
+    screen.getByTestId("artifact-sidebar").querySelector("iframe")?.src,
+  ).toContain(site);
+  expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
+  click(await findAction("button", "Open audio preview for debrief.mp3"));
+  await waitFor(() => {
+    return expect(side.querySelector("audio")).toHaveAttribute("src", f.url);
+  });
+  expect(side.querySelector("iframe")).toBeNull();
+  expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
+});
+test("chat-attachment-artifact-viewer-003 the public site's title and publication date follow it into split view", async () => {
+  const dialog = await openSite();
+  async function header(surface: HTMLElement) {
+    const title = await findAction("link", "Expedition brief", surface);
+    expect(title).toHaveAttribute("href", site);
+    expect(title).toHaveAttribute("target", "_blank");
+    await expect(
+      within(surface).findByText(/Updated at/),
+    ).resolves.toBeVisible();
+    expect(surface).not.toHaveTextContent(
+      /launch-site\.html|Hosted site|[\d.]+\s*(?:KB|KiB|bytes)/,
+    );
+  }
+  await header(dialog);
+  click(await findAction("button", "Open in split view", dialog));
+  const side = await screen.findByTestId("artifact-sidebar");
+  await header(side);
+  expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
+});
+test("chat-attachment-artifact-viewer-004 private site metadata shows an unlinked filename and update time", async () => {
+  const f = attachment("private-site.html", "text/html");
+  serveReference(context, f);
+  await conversation(context, {
+    chatEvents: [assistantRow("[Private publication](" + f.path + ")")],
+    artifacts: [
+      artifactFile(f.filename, {
+        url: f.path,
+        artifactKind: "hosted-site",
+        contentType: f.contentType,
+      }),
+    ],
+  });
+  click(await findAction("link", "Private publication"));
+  const dialog = await screen.findByTestId("attachment-lightbox");
+  const name = await within(dialog).findByText(f.filename);
+  expect(name.closest("a")).toBeNull();
+  await expect(
+    within(dialog).findByText(/Hosted site.*Updated at/),
+  ).resolves.toBeVisible();
+});
+test("chat-attachment-artifact-viewer-006 each open chat navigates only its own private image sequence", async () => {
+  const left = [
+    attachment("shared.png", "image/png"),
+    attachment("left-second.png", "image/png"),
+  ];
+  const right = [
+    attachment("shared.png", "image/png"),
+    attachment("right-second.png", "image/png"),
+  ];
+  left[0].url += "&pane=left";
+  right[0].url += "&pane=right";
+  serveUploaded(context, [...left, ...right]);
+  mockSplitAttachmentChats(
+    context,
+    {
+      threadId: ATTACHMENT_THREAD_ID,
+      title: "Summit left",
+      events: [
+        userRow([...fileParts(left), { type: "text", text: "West route" }]),
+      ],
+    },
+    {
+      threadId: SECOND_ATTACHMENT_THREAD_ID,
+      title: "Summit right",
+      events: [
+        userRow([...fileParts(right), { type: "text", text: "East route" }]),
+      ],
+    },
+  );
+  await setupPage({
+    context,
+    path:
+      "/chats/" +
+      ATTACHMENT_THREAD_ID +
+      "?sidebar=" +
+      SECOND_ATTACHMENT_THREAD_ID,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: false },
+  });
+  async function next(text: string, files: typeof left) {
+    const row = (await screen.findByText(text)).closest('[data-role="user"]')!;
+    click(await findAction("link", "Preview shared.png", row));
+    const dialog = await screen.findByTestId("attachment-lightbox");
+    await waitFor(() => {
+      return expect(dialog.querySelector("img")).toHaveAttribute(
+        "src",
+        files[0].url,
+      );
+    });
+    click(await findAction("button", "Next image artifact", dialog));
+    await waitFor(() => {
+      return expect(dialog.querySelector("img")).toHaveAttribute(
+        "src",
+        files[1].url,
+      );
+    });
+    return dialog;
+  }
+  const east = await next("East route", right);
+  click(await findAction("button", "Close", east));
+  await waitFor(() => {
+    return expect(east).not.toBeInTheDocument();
+  });
+  const west = await next("West route", left);
+  click(await findAction("button", "Open in split view", west));
+  const side = await screen.findByTestId("artifact-sidebar");
+  await waitFor(() => {
+    return expect(
+      within(side).getByTestId("artifact-sidebar-body-image"),
+    ).toHaveAttribute("src", left[1].url);
+  });
+  click(await findAction("button", "Previous image artifact", side));
+  await waitFor(() => {
+    return expect(
+      within(side).getByTestId("artifact-sidebar-body-image"),
+    ).toHaveAttribute("src", left[0].url);
+  });
+});
+test("chat-attachment-artifact-viewer-007 only the agent image offers a share action that copies its URL", async () => {
+  const files = [
+    attachment("camp.png", "image/png"),
+    attachment("crew.png", "image/png"),
+  ];
+  serveUploaded(context, files);
+  const url = "https://cdn.okou.io/artifacts/field/run/overview.png";
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  await conversation(context, {
+    chatEvents: [
+      userRow(fileParts(files)),
+      assistantRow("![Overview](" + url + ")"),
     ],
     artifacts: [
-      artifactFile("brief.png", {
-        id: firstAttachment,
-        contentType: "image/png",
-        url: privateAttachmentUrl(firstAttachment),
-      }),
-      artifactFile("sketch.png", {
-        id: secondAttachment,
-        contentType: "image/png",
-        url: privateAttachmentUrl(secondAttachment),
-      }),
-      artifactFile("agent-chart.png", {
-        id: "share-gate-agent-image",
-        contentType: "image/png",
-        url: agentImageUrl,
-      }),
+      artifactFile("overview.png", { url, contentType: "image/png" }),
     ],
   });
-  mockPrivateUrlSequence(context, {
-    [firstAttachment]: ["https://private-files.example/brief.png"],
-    [secondAttachment]: ["https://private-files.example/sketch.png"],
-  });
-
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-
-  click(await findNamedLink("Preview brief.png"));
-  const briefDialog = await screen.findByRole("dialog", {
-    name: "brief.png preview",
-  });
-  // The resolved private address proves the token the share action reads has
-  // already settled, so a missing control is a decision, not a pending state.
-  await waitFor(() => {
-    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
-      "src",
-      "https://private-files.example/brief.png",
-    );
-  });
-  expect(getNamedButton("Download options", briefDialog)).toBeInTheDocument();
-  expect(queryNamedLink("Share", briefDialog)).toBeNull();
-  expect(queryNamedButton("Share", briefDialog)).toBeNull();
-
-  click(await findNamedButton("Next image artifact", briefDialog));
-  const sketchDialog = await screen.findByRole("dialog", {
-    name: "sketch.png preview",
-  });
-  await waitFor(() => {
-    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
-      "src",
-      "https://private-files.example/sketch.png",
-    );
-  });
-  expect(queryNamedLink("Share", sketchDialog)).toBeNull();
-  expect(queryNamedButton("Share", sketchDialog)).toBeNull();
-
-  await closeFocusedPreview();
-
-  const agentImage = await screen.findByAltText("agent-chart.png");
-  const agentPreview = agentImage.closest<HTMLElement>("a, button");
-  if (!agentPreview) {
-    throw new Error("Expected the agent image to open a preview");
+  for (const f of files) {
+    click(await findAction("link", "Preview " + f.filename));
+    const dialog = await screen.findByTestId("attachment-lightbox");
+    await waitFor(() => {
+      return expect(dialog.querySelector("img")).toHaveAttribute("src", f.url);
+    });
+    await expect(
+      findAction("button", "Download options", dialog),
+    ).resolves.toBeEnabled();
+    expect(queryAction("button", "Share", dialog)).toBeNull();
+    click(await findAction("button", "Close", dialog));
+    await waitFor(() => {
+      return expect(dialog).not.toBeInTheDocument();
+    });
   }
-  click(agentPreview);
-  const agentDialog = await screen.findByRole("dialog", {
-    name: "agent-chart.png preview",
-  });
-  click(await findNamedButton("Share", agentDialog));
+  click(await screen.findByAltText("Overview"));
+  const agent = await screen.findByTestId("attachment-lightbox");
+  click(await findAction("button", "Share", agent));
   await waitFor(() => {
-    expect(clipboard.writes).toStrictEqual([agentImageUrl]);
+    return expect(clipboard.writes).toContain(url);
   });
 });
-
-test("A private site card uses its resolved screenshot even when the thread artifact list is unavailable", async () => {
-  const deploymentId = "00000000-0000-4000-8000-000000000019";
-  const screenshotId = "00000000-0000-4000-8000-000000000020";
-  const site = artifactReferencePath(deploymentId, "index.html");
-  const screenshot = artifactReferencePath(screenshotId, "preview.webp");
-  const screenshotUrl = `${R2_ORIGIN}/private/screenshot%20%2B.bin?X-Amz-Signature=owner&X-Amz-Security-Token=token%2B%2F%3D`;
-  const previewUrl = `https://pv-${"a".repeat(48)}.sites.vm7.io/`;
+test("chat-attachment-artifact-viewer-008 the private site card uses its resolved screenshot when the thread inventory fails", async () => {
+  const f = attachment("basecamp.html", "text/html");
+  f.url = "https://pv-field.okou.app/";
+  const cover = "https://cdn.okou.io/artifacts/field/run/basecamp.png";
+  serveReference(context, f, cover);
   mockAttachmentChat(context, {
-    chatEvents: [assistantMessage(`![Private report](${site})`)],
+    chatEvents: [assistantRow("![Basecamp](" + f.path + ")")],
   });
   context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
     return respond(500, {
       error: {
         code: "INTERNAL_SERVER_ERROR",
-        message: "Artifact list unavailable",
+        message: "Inventory unavailable",
       },
     });
   });
-  context.mocks.api(
-    artifactReferencesContract.resolve,
-    ({ params, respond }) => {
-      const isScreenshot =
-        params.reference === screenshot.slice("/artifacts/".length);
-      return respond(200, {
-        downloadUrl: new URL(
-          "?download=1",
-          isScreenshot ? screenshotUrl : previewUrl,
-        ).href,
-        url: isScreenshot ? screenshotUrl : previewUrl,
-        filename: isScreenshot ? "preview.webp" : "index.html",
-        contentType: isScreenshot ? "image/webp" : "text/html",
-        target: isScreenshot
-          ? { kind: "file", id: screenshotId }
-          : { kind: "html", id: deploymentId },
-        ...(isScreenshot ? {} : { previewImageUrl: screenshot }),
-        expiresAt: "2099-01-01T00:00:00.000Z",
-      });
-    },
-  );
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-  const card = await screen.findByTestId("attachment-preview-html");
-  const thumbnail = await within(card).findByTestId(
-    "attachment-preview-thumbnail",
-  );
-  expect(thumbnail).toHaveAttribute(
-    "src",
-    `${THUMBNAIL_PREFIX}${screenshotUrl}`,
-  );
-  fireEvent.load(thumbnail);
-  expect(
-    within(card).queryByTestId("attachment-preview-html-viewport"),
-  ).toBeNull();
+  await setupPage({
+    context,
+    path: "/chats/" + ATTACHMENT_THREAD_ID,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: false },
+  });
+  const photo = await waitFor(() => {
+    const img = Array.from(document.querySelectorAll("img")).find((i) => {
+      return i.src.includes("basecamp.png");
+    });
+    if (!img) {
+      throw new Error("Missing site cover");
+    }
+    return img;
+  });
+  fireEvent.load(photo);
+  const card = photo.closest("a,button")!;
+  expect(card.querySelector("iframe")).toBeNull();
   click(card);
+  const dialog = await screen.findByTestId("attachment-lightbox");
   await waitFor(() => {
-    expect(getPreviewFrame("artifact-dialog-site-frame")).toHaveAttribute(
-      "src",
-      previewUrl,
-    );
+    return expect(dialog.querySelector("iframe")?.src).toContain(f.url);
   });
 });
-
-test.each(["public", "private"] as const)(
-  "a hosted website uses its existing cover with %s visibility",
-  async (visibility) => {
-    const restricted = visibility === "private";
-    const site = "https://report.okou.app/";
-    const previewUrl = `https://pv-${"c".repeat(48)}.okou.app/`;
-    const cover = `${R2_ORIGIN}/private/cover.png?X-Amz-Signature=site-cover`;
-    mockAttachmentChat(context, {
-      chatEvents: [assistantMessage(`![Website report](${site})`)],
-    });
-    context.mocks.api(hostContract.sitePreview, ({ respond }) => {
-      return respond(200, {
-        url: restricted ? previewUrl : site,
-        expiresAt: restricted ? "2099-01-01T00:00:00.000Z" : null,
-        previewImageUrl: cover,
-      });
-    });
-    await setupPage({
-      context,
-      host: "app.okou.ai",
-      path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    });
-    const card = await screen.findByTestId("attachment-preview-html");
-    const image = await within(card).findByTestId(
-      "attachment-preview-thumbnail",
-    );
-    expect(image).toHaveAttribute(
-      "src",
-      `${THUMBNAIL_PREFIX.replace("https://cdn.vm7.io/", "https://a.okou.io/")}${cover}`,
-    );
-    fireEvent.load(image);
-    expect(card.querySelector("iframe")).toBeNull();
-    fireEvent.error(image);
-    await within(card).findByTestId("attachment-preview-html-viewport");
-    const frame = card.querySelector("iframe");
-    expect(frame).toHaveAttribute("src", restricted ? previewUrl : site);
-    expect(frame).toHaveAttribute("sandbox", "allow-same-origin allow-scripts");
-    expect(frame).toHaveAttribute("tabindex", "-1");
-    click(card);
-    await waitFor(() => {
-      expect(getPreviewFrame("artifact-dialog-site-frame")).toHaveAttribute(
-        "src",
-        restricted ? previewUrl : site,
-      );
-    });
-  },
-);
-
-test.each(["public", "private"] as const)(
-  "a hosted website without a cover uses its resolved iframe with %s visibility",
-  async (visibility) => {
-    const restricted = visibility === "private";
-    const path = "/report?period=quarterly#summary";
-    const site = `https://report.okou.app${path}`;
-    const previewUrl = `https://pv-${"d".repeat(48)}.okou.app/`;
-    mockAttachmentChat(context, {
-      chatEvents: [assistantMessage(`![Website report](${site})`)],
-    });
-    context.mocks.api(hostContract.sitePreview, ({ respond }) => {
-      return respond(200, {
-        url: restricted ? previewUrl : site,
-        expiresAt: restricted ? "2099-01-01T00:00:00.000Z" : null,
-      });
-    });
-    await setupPage({
-      context,
-      host: "app.okou.ai",
-      path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    });
-
-    const card = await screen.findByTestId("attachment-preview-html");
-    await within(card).findByTestId("attachment-preview-html-viewport");
-    expect(card.querySelector("iframe")).toHaveAttribute(
-      "src",
-      restricted ? new URL(path, previewUrl).href : site,
-    );
-  },
-);
-
 test.each([
-  { filename: "restricted.png", status: 404, code: "NOT_FOUND" },
-  { filename: "restricted.pdf", status: 403, code: "FORBIDDEN" },
-  {
-    filename: "restricted.txt",
-    status: 401,
-    code: "UNAUTHORIZED",
-  },
+  ["chat-attachment-artifact-viewer-013", "restricted.png", 404],
+  ["chat-attachment-artifact-viewer-014", "restricted.pdf", 403],
+  ["chat-attachment-artifact-viewer-015", "restricted.txt", 401],
 ] as const)(
-  "an inaccessible $filename ($status) shows an access card in the lightbox",
-  async ({ filename, status, code }) => {
-    const reference = artifactShareReferencePath("restricted", filename);
-    const url = new URL(reference, "http://localhost").href;
-    mockAttachmentChat(context, {
-      chatEvents: [assistantMessage(`[Restricted artifact](${url})`)],
-    });
+  "%s explains a denied reference inside its lightbox",
+  async (_id, name, status) => {
+    const f = attachment(name, "application/octet-stream");
     context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
       return respond(status, {
-        error: { code, message: "Artifact unavailable" },
+        error: { code: "DENIED", message: "Access refused" },
       });
     });
-
-    await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-    click(await findNamedLink("Restricted artifact"));
-
+    await conversation(context, {
+      chatEvents: [assistantRow("[" + name + "](" + f.path + ")")],
+    });
+    click(await findAction("link", name));
     const dialog = await screen.findByTestId("attachment-lightbox");
     await expect(
-      within(dialog).findByRole("heading", {
-        name: "You can’t view this artifact",
-      }),
-    ).resolves.toBeInTheDocument();
-    expect(
-      within(dialog).getByText(
-        /It may not exist, or it may be shared with a different account or organization\./,
+      within(dialog).findByText(
+        /may not exist.*different account or organization/,
       ),
-    ).toBeInTheDocument();
-    expect(
-      within(dialog).getByText(
-        /Ask the person who shared this link to check access\./,
-      ),
-    ).toBeInTheDocument();
-    expect(getNamedButton("Switch account", dialog)).toBeEnabled();
-    await closeFocusedPreview();
-  },
-);
-
-test("an artifact service failure ends loading with a preview error", async () => {
-  const reference = artifactShareReferencePath("failed0001", "unavailable.png");
-  const url = new URL(reference, "http://localhost").href;
-  mockAttachmentChat(context, {
-    chatEvents: [assistantMessage(`[Unavailable artifact](${url})`)],
-  });
-  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
-    return respond(500, {
-      error: { code: "INTERNAL_SERVER_ERROR", message: "Temporary failure" },
-    });
-  });
-
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-  click(await findNamedLink("Unavailable artifact"));
-
-  const dialog = await screen.findByTestId("attachment-lightbox");
-  await expect(within(dialog).findByRole("status")).resolves.toHaveTextContent(
-    "Preview unavailable.",
-  );
-});
-
-test.each([
-  { status: 404, sidebar: false },
-  { status: 500, sidebar: false },
-  { status: 404, sidebar: true },
-] as const)(
-  "a website preview failure ($status, sidebar=$sidebar) shows its error inline without a toast",
-  async ({ status, sidebar }) => {
-    const site = "https://unavailable-report.okou.app/";
-    mockAttachmentChat(context, {
-      chatEvents: [assistantMessage(`![Website report](${site})`)],
-    });
-    context.mocks.api(hostContract.sitePreview, ({ respond }) => {
-      return respond(status, {
-        error: {
-          code: status === 404 ? "NOT_FOUND" : "INTERNAL_SERVER_ERROR",
-          message: "Website preview is unavailable",
-        },
-      });
-    });
-    await setupPage({
-      context,
-      host: "app.okou.ai",
-      path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    });
-    click(await screen.findByTestId("attachment-preview-html"));
-    if (sidebar) {
-      click(await findNamedButton("Open in split view"));
-    }
-    const viewer = await screen.findByTestId(
-      sidebar ? "artifact-sidebar" : "attachment-lightbox",
-    );
+    ).resolves.toBeVisible();
     await expect(
-      within(viewer).findByRole("heading", {
-        name:
-          status === 404
-            ? "You can’t view this website"
-            : "This website is temporarily unavailable",
-      }),
-    ).resolves.toBeInTheDocument();
-    expect(screen.queryByText("Website preview is unavailable")).toBeNull();
-    expect(
-      screen.getByTestId("attachment-preview-html").querySelector("iframe"),
-    ).toBeNull();
+      within(dialog).findByText(
+        /Ask the person who shared this link to check access/,
+      ),
+    ).resolves.toBeVisible();
+    await expect(
+      findAction("button", "Switch account", dialog),
+    ).resolves.toBeEnabled();
   },
 );
-
-test.each([
-  { role: "user", referenceForm: "absolute" },
-  { role: "assistant", referenceForm: "relative" },
-] as const)(
-  "A private video in a $role message uses its $referenceForm resolved poster without a thread artifact list and opens the original",
-  async ({ role, referenceForm }) => {
-    const videoId = "00000000-0000-4000-8000-000000000021";
-    const posterId = "00000000-0000-4000-8000-000000000022";
-    const video = new URL(
-      artifactReferencePath(videoId, "generated.mp4"),
-      "http://localhost",
-    ).href;
-    const poster = new URL(
-      artifactReferencePath(posterId, "poster-v2.jpg"),
-      "http://localhost",
-    ).href;
-    const resolvedPoster =
-      referenceForm === "relative" ? new URL(poster).pathname : poster;
-    const videoUrl = `${R2_ORIGIN}/private/generated.mp4?X-Amz-Signature=owner`;
-    const posterUrl = `${R2_ORIGIN}/private/poster%20%2B.bin?X-Amz-Signature=owner&X-Amz-Security-Token=token%2B%2F%3D`;
-    mockAttachmentChat(context, {
-      chatEvents: [
-        role === "assistant"
-          ? assistantMessage(`![Generated video](${video})`)
-          : userImageMessage("user-video-message", [
-              {
-                type: "file",
-                fileId: videoId,
-                filenameSnapshot: "generated.mp4",
-                contentType: "video/mp4",
-              },
-            ]),
-      ],
-    });
-    context.mocks.api(
-      artifactReferencesContract.resolve,
-      ({ params, respond }) => {
-        const isPoster =
-          params.reference ===
-          new URL(resolvedPoster, "http://localhost").pathname.slice(
-            "/artifacts/".length,
-          );
-        return respond(200, {
-          downloadUrl: new URL("?download=1", isPoster ? posterUrl : videoUrl)
-            .href,
-          url: isPoster ? posterUrl : videoUrl,
-          filename: isPoster ? "poster-v2.jpg" : "generated.mp4",
-          contentType: isPoster ? "image/jpeg" : "video/mp4",
-          target: { kind: "file", id: isPoster ? posterId : videoId },
-          ...(isPoster ? {} : { previewImageUrl: resolvedPoster }),
-          expiresAt: "2099-01-01T00:00:00.000Z",
-        });
-      },
-    );
-    context.mocks.api(webFilesContract.fileUrl, ({ query, respond }) => {
-      expect(query.file_id).toBe(videoId);
-      return respond(200, {
-        downloadUrl: new URL("?download=1", videoUrl).href,
-        url: videoUrl,
-        expiresAt: "2099-01-01T00:00:00.000Z",
-        publicUrl: null,
-        previewImageUrl: resolvedPoster,
-      });
-    });
-    await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-    const thumbnail = await screen.findByTestId("chat-video-preview-thumbnail");
-    expect(thumbnail).toHaveAttribute("src", `${THUMBNAIL_PREFIX}${posterUrl}`);
-    fireEvent.load(thumbnail);
-    expect(screen.queryByTestId("chat-video-preview-fallback")).toBeNull();
-    const card = thumbnail.closest("button");
-    if (!card) {
-      throw new Error("Expected a video preview button");
-    }
-    click(card);
-    const stage = await screen.findByTestId("artifact-dialog-video-stage");
-    await waitFor(() => {
-      expect(stage.querySelector("video")).toHaveAttribute("src", videoUrl);
-    });
-  },
-);
-test("A private video without a poster keeps an openable video fallback", async () => {
-  const videoId = "00000000-0000-4000-8000-000000000023";
-  const canonicalUrl = artifactReferencePath(videoId, "no-poster.mp4");
-  const videoUrl = `${R2_ORIGIN}/private/no-poster.mp4?X-Amz-Signature=owner`;
-  mockAttachmentChat(context, {
-    chatEvents: [
-      assistantMessage(`![Video without a poster](${canonicalUrl})`),
-    ],
+async function downloadSite() {
+  const dialog = await openSite();
+  click(await findAction("button", "Download options", dialog));
+  click(await findNamedMenuItem("Download"));
+}
+function publication(
+  contents: Record<string, string>,
+  deploymentId: string = crypto.randomUUID(),
+) {
+  const members = Object.entries(contents).map(([path, body]) => {
+    return {
+      path,
+      size: new TextEncoder().encode(body).length,
+      sha256: createHash("sha256").update(body).digest("hex"),
+      contentType: path.endsWith(".css") ? "text/css" : "text/html",
+      downloadUrl: new URL(path, site).href,
+    };
   });
-  context.mocks.api(
-    artifactReferencesContract.resolve,
-    ({ params, respond }) => {
-      expect(params.reference).toBe(canonicalUrl.slice("/artifacts/".length));
-      return respond(200, {
-        downloadUrl: new URL("?download=1", videoUrl).href,
-        url: videoUrl,
-        filename: "no-poster.mp4",
-        contentType: "video/mp4",
-        target: { kind: "file", id: videoId },
-        expiresAt: "2099-01-01T00:00:00.000Z",
-      });
-    },
-  );
-
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-  const fallback = await screen.findByTestId("chat-video-preview-fallback");
-  const card = fallback.closest("button");
-  if (!card) {
-    throw new Error("Expected an openable video card");
+  for (const [path, body] of Object.entries(contents)) {
+    context.mocks.http.get(new URL(path, site).href, () => {
+      return HttpResponse.text(body);
+    });
   }
-  await waitFor(() => {
-    expect(fallback).toHaveAttribute("src", `${videoUrl}#t=0.001`);
-  });
-  expect(within(card).queryByTestId("chat-video-preview-thumbnail")).toBeNull();
-  expect(card).toBeEnabled();
-
-  click(card);
-  const stage = await screen.findByTestId("artifact-dialog-video-stage");
-  await waitFor(() => {
-    expect(stage.querySelector("video")).toHaveAttribute("src", videoUrl);
-  });
-});
-
-const PUBLICATION_DEPLOYMENT_ID = "00000000-0000-4000-8000-000000000021";
-const PUBLICATION_SITE_ID = "00000000-0000-4000-8000-000000000022";
-const PUBLICATION_HOST = "https://launch-site.sites.vm7.io/";
-const PUBLICATION_PAGE = "<!doctype html><h1>Launch</h1>";
-const PUBLICATION_STYLE = "h1 { color: teal }";
-
-function hostedFile(
-  path: string,
-  content: string,
-  contentType: string,
-): HostedSiteFilesResponse["files"][number] {
   return {
-    path,
-    size: content.length,
-    sha256: "a".repeat(64),
-    contentType,
-    downloadUrl: `https://storage.example.test/signed${path}`,
+    siteId: crypto.randomUUID(),
+    deploymentId,
+    publicSlug: "launch-site",
+    url: site,
+    fileCount: members.length,
+    size: members.reduce((sum, file) => {
+      return sum + file.size;
+    }, 0),
+    files: members,
   };
 }
-
-/**
- * Publish one hosted artifact and serve its publication from the delivery host
- * the viewer already reads, so a download exercises the real member requests.
- */
-function mockHostedPublication(
-  files: readonly HostedSiteFilesResponse["files"][number][],
-): { readonly members: readonly string[] } {
-  const canonicalUrl = artifactReferencePath(
-    PUBLICATION_DEPLOYMENT_ID,
-    "index.html",
+test("chat-attachment-artifact-viewer-023 the ZIP preserves both published paths and their content", async () => {
+  const files = {
+    "/index.html": '<link rel="stylesheet" href="/assets/field.css">',
+    "/assets/field.css": "body { color: teal; }",
+  };
+  const manifest = publication(files);
+  context.mocks.api(hostContract.files, ({ respond }) => {
+    return respond(200, manifest);
+  });
+  const browser = context.mocks.browser.blobDownload();
+  await downloadSite();
+  await waitFor(() => {
+    return expect(
+      browser.downloads.map((d) => {
+        return d.filename;
+      }),
+    ).toStrictEqual(["launch-site.zip"]);
+  });
+  const archive = unzipSync(
+    new Uint8Array(await browser.downloads[0].blob!.arrayBuffer()),
   );
-  mockAttachmentChat(context, {
-    chatEvents: [assistantMessage(`[Launch site](${canonicalUrl})`)],
+  expect(
+    Object.fromEntries(
+      Object.entries(archive).map(([path, bytes]) => {
+        return ["/" + path, strFromU8(bytes)];
+      }),
+    ),
+  ).toStrictEqual(files);
+});
+test("chat-attachment-artifact-viewer-024 a failed publication listing reports failure before producing any file", async () => {
+  context.mocks.api(hostContract.files, ({ respond }) => {
+    return respond(500, {
+      error: { code: "INTERNAL_SERVER_ERROR", message: "Listing unavailable" },
+    });
+  });
+  const browser = context.mocks.browser.blobDownload();
+  await downloadSite();
+  await expect(screen.findByText("Download failed")).resolves.toBeVisible();
+  expect(browser.downloads).toStrictEqual([]);
+});
+test("chat-attachment-artifact-viewer-025 a single-page publication downloads the original page directly", async () => {
+  const listed = context.mocks.deferred<void>();
+  const page = attachment("launch-site.html", "text/html");
+  page.url = site;
+  serveReference(context, page);
+  const manifest = publication(
+    { "/index.html": "<!doctype html><h1>Launch overview</h1>" },
+    page.id,
+  );
+  context.mocks.api(artifactDownloadsContract.files, ({ params, respond }) => {
+    if ("/artifacts/" + params.reference !== page.path) {
+      return respond(404, {
+        error: { code: "NOT_FOUND", message: "Unknown publication" },
+      });
+    }
+    listed.resolve();
+    return respond(200, manifest);
+  });
+  const browser = context.mocks.browser.blobDownload();
+  await conversation(context, {
+    chatEvents: [assistantRow("[Launch publication](" + page.path + ")")],
     artifacts: [
-      artifactFile("launch-site.html", {
-        id: "hosted-publication",
-        contentType: "text/html",
-        url: canonicalUrl,
+      artifactFile(page.filename, {
+        id: page.id,
+        url: page.path,
+        contentType: page.contentType,
         artifactKind: "hosted-site",
       }),
     ],
   });
-  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
-    return respond(200, {
-      downloadUrl: new URL("?download=1", PUBLICATION_HOST).href,
-      url: PUBLICATION_HOST,
-      filename: "index.html",
-      contentType: "text/html",
-      target: { kind: "html", id: PUBLICATION_DEPLOYMENT_ID },
-      expiresAt: "2099-01-01T00:00:00.000Z",
-    });
-  });
-  context.mocks.api(artifactDownloadsContract.files, ({ params, respond }) => {
-    expect(params.reference).toBe(canonicalUrl.slice("/artifacts/".length));
-    return respond(200, {
-      siteId: PUBLICATION_SITE_ID,
-      deploymentId: PUBLICATION_DEPLOYMENT_ID,
-      publicSlug: "launch-site",
-      url: PUBLICATION_HOST,
-      fileCount: files.length,
-      size: files.reduce((total, file) => {
-        return total + file.size;
-      }, 0),
-      files: [...files],
-    });
-  });
-  const members: string[] = [];
-  const bodies: Record<string, string> = {
-    "/index.html": PUBLICATION_PAGE,
-    "/assets/site.css": PUBLICATION_STYLE,
-  };
-  for (const [path, body] of Object.entries(bodies)) {
-    context.mocks.http.get(`${PUBLICATION_HOST.slice(0, -1)}${path}`, () => {
-      members.push(path);
-      return HttpResponse.text(body);
-    });
-  }
-  return { members };
-}
-
-test("a multi-file hosted publication downloads as a zip of every member", async () => {
-  const { members } = mockHostedPublication([
-    hostedFile("/index.html", PUBLICATION_PAGE, "text/html; charset=utf-8"),
-    hostedFile("/assets/site.css", PUBLICATION_STYLE, "text/css"),
-  ]);
-  const downloads = context.mocks.browser.blobDownload();
-
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-  click(await findNamedLink("Launch site"));
-  const dialog = await screen.findByRole("dialog");
-  click(await findNamedButton("Download options", dialog));
+  click(await findAction("link", "Launch publication"));
+  const dialog = await screen.findByTestId("attachment-lightbox");
+  await within(dialog).findByText(/Hosted site.*Updated at/);
+  const createObjectUrl = vi.spyOn(URL, "createObjectURL");
+  click(await findAction("button", "Download options", dialog));
   click(await findNamedMenuItem("Download"));
-
+  await listed.promise;
   await waitFor(() => {
-    expect(downloads.downloads).toHaveLength(1);
+    return expect(browser.downloads).toStrictEqual([
+      { url: site, filename: "launch-site.html", blob: null },
+    ]);
   });
-  expect(members).toStrictEqual(["/index.html", "/assets/site.css"]);
-  const [download] = downloads.downloads;
-  expect(download?.filename).toBe("launch-site.zip");
-  expect(download?.blob?.type).toBe("application/zip");
-  const archive = await download?.blob?.arrayBuffer();
-  const unpacked = unzipSync(new Uint8Array(archive!));
-  expect(Object.keys(unpacked).sort()).toStrictEqual([
-    "assets/site.css",
-    "index.html",
-  ]);
-  expect(strFromU8(unpacked["index.html"]!)).toBe(PUBLICATION_PAGE);
-  expect(strFromU8(unpacked["assets/site.css"]!)).toBe(PUBLICATION_STYLE);
-});
-
-test("a publication that cannot be listed reports the failure instead of its entry page", async () => {
-  mockHostedPublication([
-    hostedFile("/index.html", PUBLICATION_PAGE, "text/html; charset=utf-8"),
-    hostedFile("/assets/site.css", PUBLICATION_STYLE, "text/css"),
-  ]);
-  const downloads = context.mocks.browser.blobDownload();
-  context.mocks.api(artifactDownloadsContract.files, ({ respond }) => {
-    return respond(500, {
-      error: { code: "INTERNAL", message: "Listing unavailable" },
-    });
-  });
-
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-  click(await findNamedLink("Launch site"));
-  const dialog = await screen.findByRole("dialog");
-  click(await findNamedButton("Download options", dialog));
-  click(await findNamedMenuItem("Download"));
-
-  await expect(
-    screen.findByText("Download failed"),
-  ).resolves.toBeInTheDocument();
-  expect(downloads.downloads).toStrictEqual([]);
-});
-
-test("a self-contained hosted page downloads as the page itself", async () => {
-  mockHostedPublication([
-    hostedFile("/index.html", PUBLICATION_PAGE, "text/html; charset=utf-8"),
-  ]);
-  const downloads = context.mocks.browser.blobDownload();
-
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-  click(await findNamedLink("Launch site"));
-  const dialog = await screen.findByRole("dialog");
-  click(await findNamedButton("Download options", dialog));
-  click(await findNamedMenuItem("Download"));
-
-  await waitFor(() => {
-    expect(downloads.downloads).toHaveLength(1);
-  });
-  const [download] = downloads.downloads;
-  expect(download).toMatchObject({
-    filename: "launch-site.html",
-    url: new URL("?download=1", PUBLICATION_HOST).href,
-    blob: null,
-  });
+  expect(createObjectUrl).not.toHaveBeenCalled();
 });

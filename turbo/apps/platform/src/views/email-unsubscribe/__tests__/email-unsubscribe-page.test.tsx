@@ -1,87 +1,60 @@
 import { emailUnsubscribeContract } from "@okouai/api-contracts/contracts/email-unsubscribe";
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-
 import {
   click,
-  queryAllByRoleFast,
   setupPage,
+  queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 
-function getButton(name: string): HTMLButtonElement {
-  const button = queryAllByRoleFast("button").find((candidate) => {
-    return candidate.textContent?.trim() === name;
-  });
-  if (!(button instanceof HTMLButtonElement)) {
-    throw new Error(`Button not found: ${name}`);
+async function visit(token?: string) {
+  const address = new URL("/email/unsubscribe", "https://app.okou.ai");
+  if (token) {
+    address.searchParams.set("token", token);
   }
-  return button;
+  await setupPage({
+    context,
+    host: address.hostname,
+    path: address.pathname + address.search,
+    auth: null,
+  });
 }
-
-test("An invalid unsubscribe token shows an error", async () => {
-  context.mocks.api(emailUnsubscribeContract.unsubscribe, ({ respond }) => {
-    return respond(400, { error: "Invalid unsubscribe token" });
-  });
-
-  await setupPage({
-    context,
-    path: "/email/unsubscribe?token=invalid-token",
-    auth: null,
-  });
-
-  await expect(
-    screen.findByRole("heading", {
-      name: "Unsubscribe from email notifications?",
-    }),
-  ).resolves.toBeVisible();
-  click(getButton("Unsubscribe"));
-
-  await expect(
-    screen.findByRole("heading", { name: "Something went wrong" }),
-  ).resolves.toBeVisible();
-});
-
-test("A missing unsubscribe token cannot submit an unsubscribe request", async () => {
-  await setupPage({
-    context,
-    path: "/email/unsubscribe",
-    auth: null,
-  });
-
-  const alert = screen.getByRole("alert");
-  expect(alert).toHaveTextContent("Something went wrong");
+test("email-unsubscribe-page-002 displays the branded error immediately for a signed-out visitor without a token", async () => {
+  await visit();
+  const problem = await screen.findByRole("alert");
+  expect(problem).toHaveTextContent("Something went wrong");
   expect(screen.getByRole("img", { name: "Okou" })).toBeInTheDocument();
   expect(queryAllByRoleFast("button")).toHaveLength(0);
 });
-
-test("A user can confirm email unsubscribe", async () => {
-  context.mocks.api(emailUnsubscribeContract.unsubscribe, ({ respond }) => {
-    return respond(200, { unsubscribed: true });
+async function confirmLink(token: string) {
+  context.mocks.api(
+    emailUnsubscribeContract.unsubscribe,
+    ({ query, respond }) => {
+      if (query.token === "current-notification-link") {
+        return respond(200, { unsubscribed: true });
+      }
+      return respond(400, { error: "Invalid subscription token" });
+    },
+  );
+  await visit(token);
+  const confirm = await screen.findByText("Unsubscribe", {
+    selector: "button",
   });
-
-  await setupPage({
-    context,
-    path: "/email/unsubscribe?token=valid-token",
-    auth: null,
-  });
-
-  await expect(
-    screen.findByRole("heading", {
-      name: "Unsubscribe from email notifications?",
-    }),
-  ).resolves.toBeVisible();
-  expect(getButton("Unsubscribe")).toBeEnabled();
-  click(getButton("Unsubscribe"));
-
-  await expect(
-    screen.findByRole("heading", { name: "Unsubscribed" }),
-  ).resolves.toBeVisible();
-  expect(
-    screen.getByText(
-      "You will no longer receive system-initiated email notifications from Okou.",
-    ),
-  ).toBeVisible();
+  expect(confirm).toBeEnabled();
+  click(confirm);
+}
+test("email-unsubscribe-page-001 reports an invalid notification token after confirmation", async () => {
+  await confirmLink("expired-notification-link");
+  const problem = await screen.findByRole("alert");
+  expect(within(problem).getByText("Something went wrong")).toBeVisible();
+});
+test("email-unsubscribe-page-003 confirms that system notifications are unsubscribed", async () => {
+  await confirmLink("current-notification-link");
+  const receipt = await screen.findByRole("heading", { name: "Unsubscribed" });
+  expect(receipt.parentElement).toHaveTextContent(
+    "You will no longer receive system-initiated email notifications from Okou.",
+  );
 });

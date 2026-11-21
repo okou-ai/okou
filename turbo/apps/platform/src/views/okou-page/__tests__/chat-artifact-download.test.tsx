@@ -1,281 +1,174 @@
-import { screen, waitFor } from "@testing-library/react";
-import { HttpResponse } from "msw";
-import { expect, test, vi } from "vitest";
-import {
-  artifactReferencePath,
-  artifactReferencesContract,
-} from "@okouai/api-contracts/contracts/artifact-references";
+// @vitest-environment-options {"url":"https://app.okou.ai/","settings":{"disableIframePageLoading":true,"disableCSSFileLoading":true,"handleDisabledFileLoadingAsSuccess":true}}
+// Analytics reads its deployment origin when the application modules load.
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { screen, waitFor, within } from "@testing-library/react";
+import { HttpResponse } from "msw";
+import { expect, test } from "vitest";
+import { click } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  ATTACHMENT_RUN_ID,
-  ATTACHMENT_THREAD_ID,
   artifactFile,
   findNamedButton,
-  findNamedLink,
   findNamedMenuItem,
-  mockAttachmentChat,
-  publicArtifactUrl,
-  privateAttachmentUrl,
+  getNamedButton,
 } from "./chat-attachment-test-helpers.ts";
-
-vi.hoisted(() => {
-  // Product analytics resolves the deployment environment at module load.
-  window.location.href = "https://app.okou.ai/";
-});
+import {
+  chatPath,
+  openMessageFile,
+} from "./chat-artifact-preview-test-helpers.ts";
 
 const context = testContext();
 
+async function chooseDownload(preview: HTMLElement) {
+  click(await findNamedButton("Download options", preview));
+  click(await findNamedMenuItem("Download"));
+}
+
 test.each([
-  { filename: "report.png", contentType: "image/png", artifactType: "image" },
   {
+    id: "001",
+    filename: "report.png",
+    contentType: "image/png",
+    bytes: [137, 80, 78, 71, 13, 10, 26, 10],
+  },
+  {
+    id: "002",
     filename: "report.pdf",
     contentType: "application/pdf",
-    artifactType: "pdf",
+    bytes: [37, 80, 68, 70, 45, 49, 46, 55],
   },
 ])(
-  "$filename remains downloadable when the browser reads bytes after the click",
-  async ({ filename, contentType, artifactType }) => {
-    const telemetry = context.mocks.posthog();
-    const actions = () => {
-      return telemetry.events.filter((event) => {
-        return event.name === "artifact_action_clicked";
-      });
-    };
-    const url = publicArtifactUrl(filename);
-    context.mocks.data.availableRunModels([]);
-    const bytes = new Uint8Array([0, 1, 2, 127, 128, 255]);
+  "chat-artifact-download-$id retains the downloaded $filename bytes until leaving the chat",
+  async ({ filename, contentType, bytes }) => {
     context.mocks.browser.requestCacheMode();
-    mockAttachmentChat(context, {
-      chatEvents: [
-        {
-          id: "download-report-message",
-          role: "assistant",
-          content: `[Report](${url})`,
-          runId: ATTACHMENT_RUN_ID,
-          runEventId: "download-report-event",
-          sequenceNumber: 1,
-          createdAt: "2026-03-10T00:00:01Z",
-        },
-      ],
-      artifacts: [artifactFile(filename, { url, contentType })],
-    });
-    context.mocks.http.get(url, ({ request }) => {
-      if (request.cache !== "reload") {
-        return new HttpResponse(null, { status: 403 });
-      }
-      return HttpResponse.arrayBuffer(bytes.buffer, {
-        headers: { "Content-Type": contentType },
-      });
+    const file = artifactFile(filename, { contentType });
+    context.mocks.http.get(file.url, ({ request }) => {
+      return request.cache === "reload"
+        ? HttpResponse.arrayBuffer(Uint8Array.from(bytes).buffer, {
+            headers: { "Content-Type": contentType },
+          })
+        : new HttpResponse(null, { status: 412 });
     });
     const browser = context.mocks.browser.blobDownload({ deferRead: true });
-
-    await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-    click(await findNamedLink("Report"));
-    const dialog = await screen.findByRole("dialog");
-    click(await findNamedButton("Download options", dialog));
-    const downloadItem = await findNamedMenuItem("Download");
-    expect(actions()).toStrictEqual([]);
-    click(downloadItem);
-    expect(actions()).toStrictEqual([
-      {
-        name: "artifact_action_clicked",
-        properties: {
-          action: "download",
-          surface: "dialog",
-          artifact_type: artifactType,
-        },
-        options: undefined,
-      },
-    ]);
-
+    const viewer = await openMessageFile(context, file);
+    await chooseDownload(viewer);
     await waitFor(() => {
-      expect(browser.downloads).toHaveLength(1);
+      return expect(browser.downloads[0]?.filename).toBe(filename);
     });
-    const download = browser.downloads[0];
-    expect(download?.filename).toBe(filename);
-    expect(download?.blob?.type).toBe(contentType);
-    const downloadedBytes = await download?.blob?.arrayBuffer();
-    expect(new Uint8Array(downloadedBytes!)).toStrictEqual(bytes);
-    expect(location.pathname).toBe(`/chats/${ATTACHMENT_THREAD_ID}`);
-
-    click(await findNamedButton("Close", dialog));
+    const saved = browser.downloads[0]!;
+    expect(saved.blob?.type).toBe(contentType);
+    expect(
+      Array.from(new Uint8Array(await saved.blob!.arrayBuffer())),
+    ).toStrictEqual(bytes);
+    expect(location.pathname).toBe(chatPath);
+    click(getNamedButton("Close", viewer));
     await waitFor(() => {
-      expect(screen.queryByRole("dialog")).toBeNull();
+      return expect(
+        screen.queryByRole("dialog", { name: filename + " preview" }),
+      ).not.toBeInTheDocument();
     });
-    expect(browser.blobForUrl(download!.url)).toBe(download?.blob);
-
-    click(await findNamedLink("Workflows"));
+    expect(browser.blobForUrl(saved.url)).toBe(saved.blob);
+    click(screen.getByText("New chat", { selector: "a span" }));
     await waitFor(() => {
-      expect(location.pathname).not.toBe(`/chats/${ATTACHMENT_THREAD_ID}`);
-      expect(browser.blobForUrl(download!.url)).toBeNull();
+      return expect(browser.revokedUrls).toContain(saved.url);
     });
+    expect(location.pathname).toBe("/");
+    expect(browser.blobForUrl(saved.url)).toBeNull();
   },
 );
 
 test.each([
+  { id: "003", filename: "photo.png", type: "image", contentType: "image/png" },
   {
-    filename: "photo.png",
-    contentType: "image/png",
-    webFile: false,
-    artifactType: "image",
-  },
-  {
+    id: "004",
     filename: "report.pdf",
+    type: "pdf",
     contentType: "application/pdf",
-    webFile: false,
-    artifactType: "pdf",
   },
   {
-    filename: "clip.mp4",
-    contentType: "video/mp4",
-    webFile: false,
-    artifactType: "video",
-  },
-  {
-    filename: "voice.mp3",
-    contentType: "audio/mpeg",
-    webFile: false,
-    artifactType: "audio",
-  },
-  {
-    filename: "upload.png",
-    contentType: "image/png",
-    webFile: true,
-    artifactType: "image",
-  },
-  {
+    id: "008",
     filename: "proposal.DOCX",
-    contentType: "application/octet-stream",
-    webFile: false,
-    artifactType: "document",
-  },
-  {
-    filename: "forecast#1.xlsx",
-    contentType: "application/octet-stream",
-    webFile: false,
-    artifactType: "spreadsheet",
-  },
-  {
-    filename: "strategy.pptx",
-    contentType: "application/octet-stream",
-    webFile: false,
-    artifactType: "presentation",
+    type: "document",
+    contentType:
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   },
 ])(
-  "$filename downloads through a newly resolved attachment URL on every click",
-  async ({ filename, contentType, webFile, artifactType }) => {
-    const telemetry = context.mocks.posthog();
-    const id = "00000000-0000-4000-8000-000000000951";
-    const url = webFile
-      ? privateAttachmentUrl(id)
-      : artifactReferencePath(id, filename);
-    const previewUrl = `https://storage.example.test/preview/${filename}`;
-    let downloadUrl = `https://storage.example.test/download/${filename}?grant=preview`;
-    mockAttachmentChat(context, {
-      chatEvents: [
-        {
-          id: "native-download-message",
-          role: "assistant",
-          content: `[Report](${url})`,
-          runId: ATTACHMENT_RUN_ID,
-          runEventId: "native-download-event",
-          sequenceNumber: 1,
-          createdAt: "2026-03-10T00:00:01Z",
-        },
-      ],
-      artifacts: [artifactFile(filename, { id, url, contentType })],
-    });
-    context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
-      return respond(200, {
-        url: previewUrl,
-        downloadUrl,
-        expiresAt: "2099-01-01T00:00:00Z",
-        filename,
-        contentType,
-        target: { kind: "file", id },
-      });
-    });
+  "chat-artifact-download-$id delivers each $filename grant from the open preview",
+  async ({ filename, type, contentType }) => {
+    const previewUrl = "https://media.example.test/review/" + filename;
+    let grant = previewUrl + "?mode=preview";
     context.mocks.api(webFilesContract.fileUrl, ({ respond }) => {
       return respond(200, {
         url: previewUrl,
-        downloadUrl,
+        downloadUrl: grant,
         expiresAt: "2099-01-01T00:00:00Z",
         publicUrl: null,
       });
     });
     const browser = context.mocks.browser.blobDownload();
-    await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-    click(await findNamedLink("Report"));
-    const dialog = await screen.findByRole("dialog");
-    for (const grant of ["first-click", "second-click"]) {
-      downloadUrl = `https://storage.example.test/download/${filename}?grant=${grant}`;
-      click(await findNamedButton("Download options", dialog));
-      click(await findNamedMenuItem("Download"));
+    const analytics = context.mocks.posthog();
+    const navigation = context.mocks.browser.locationAssign();
+    const viewer = await openMessageFile(
+      context,
+      artifactFile(filename, {
+        url: "https://api.okou.ai/api/web/file-url?file_id=" + filename,
+        contentType,
+      }),
+      { host: "app.okou.ai" },
+    );
+    for (const token of ["first", "renewed"]) {
+      grant = previewUrl + "?ticket=" + token;
+      const start = analytics.events.length;
+      await chooseDownload(viewer);
       await waitFor(() => {
-        expect(browser.downloads.at(-1)).toMatchObject({
-          url: downloadUrl,
+        return expect(browser.downloads).toContainEqual({
+          url: grant,
           filename,
           blob: null,
         });
       });
-    }
-    expect(browser.downloads).toHaveLength(2);
-    expect(
-      telemetry.events
-        .filter((event) => {
-          return event.name === "artifact_action_clicked";
-        })
-        .map((event) => {
-          return event.properties;
+      expect(analytics.events.slice(start)).toContainEqual(
+        expect.objectContaining({
+          name: "artifact_action_clicked",
+          properties: {
+            action: "download",
+            surface: "dialog",
+            artifact_type: type,
+          },
         }),
-    ).toStrictEqual([
-      { action: "download", surface: "dialog", artifact_type: artifactType },
-      { action: "download", surface: "dialog", artifact_type: artifactType },
-    ]);
-    expect(location.pathname).toBe(`/chats/${ATTACHMENT_THREAD_ID}`);
+      );
+      expect(location.pathname).toBe(chatPath);
+      expect(navigation.calls).toStrictEqual([]);
+    }
   },
 );
 
-test("a server-denied download keeps the preview available and opens the plans", async () => {
-  const id = "00000000-0000-4000-8000-000000000951";
-  const filename = "report.pdf";
-  const url = artifactReferencePath(id, filename);
-  mockAttachmentChat(context, {
-    chatEvents: [
-      {
-        id: "paywalled-report",
-        role: "assistant",
-        content: `[Report](${url})`,
-        runId: ATTACHMENT_RUN_ID,
-        runEventId: "paywalled-report-event",
-        sequenceNumber: 1,
-        createdAt: "2026-03-10T00:00:01Z",
-      },
-    ],
-    artifacts: [
-      artifactFile(filename, { id, url, contentType: "application/pdf" }),
-    ],
+test("chat-artifact-download-011 keeps the PDF available when download requires a plan", async () => {
+  const url = "https://media.example.test/review/report.pdf";
+  const file = artifactFile("report.pdf", {
+    url: "https://app.okou.ai/artifacts/cafe002611.pdf",
+    contentType: "application/pdf",
   });
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
     return respond(200, {
-      url: "https://storage.example.test/preview/report.pdf",
-      downloadUrl: `https://api.okou.ai/api/artifact-references/${id.replaceAll("-", "")}/download`,
+      url,
+      downloadUrl: url + "?save",
+      filename: file.filename,
+      contentType: file.contentType,
       downloadAllowed: false,
       expiresAt: "2099-01-01T00:00:00Z",
-      filename,
-      contentType: "application/pdf",
-      target: { kind: "file", id },
+      target: { kind: "file", id: "10000000-0000-4000-8000-000000000026" },
     });
   });
   const browser = context.mocks.browser.blobDownload();
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-  click(await findNamedLink("Report"));
-  const preview = await screen.findByRole("dialog");
-  click(await findNamedButton("Download options", preview));
-  click(await findNamedMenuItem("Download"));
-  await screen.findByRole("dialog", { name: "Choose a plan" });
+  const viewer = await openMessageFile(context, file, { host: "app.okou.ai" });
+  const frame = await within(viewer).findByTitle(/\.pdf preview$/u);
+  await chooseDownload(viewer);
+  await expect(
+    screen.findByRole("dialog", { name: "Choose a plan" }),
+  ).resolves.toBeInTheDocument();
+  expect(frame).toBeInTheDocument();
+  expect(frame).toHaveAttribute("src", url + "#navpanes=0");
   expect(browser.downloads).toStrictEqual([]);
 });

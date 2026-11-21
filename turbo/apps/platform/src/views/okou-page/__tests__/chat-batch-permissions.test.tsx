@@ -1,26 +1,25 @@
-import {
-  connectorPermissionsResponse,
-  type ConnectorPermissionFixture,
-} from "../../../__tests__/connector-permissions.ts";
+import { getAction } from "./connector-integrations-test-helpers.ts";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   connectorPermissionsContract,
   type ApplyConnectorPermissions,
 } from "@okouai/api-contracts/contracts/connector-permissions";
-import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
-import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
-import type { UserPermissionGrantBatchItem } from "@okouai/api-contracts/validators/user-permission-grants";
-
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
+  connectorPermissionsResponse,
+  type ConnectorPermissionFixture,
+} from "../../../__tests__/connector-permissions.ts";
+import {
   click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { mockNow } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { permissionMetadata } from "./chat-capability-connector-test-helpers.ts";
 import {
@@ -29,535 +28,341 @@ import {
   createChatCapabilityHelpers,
   readyChat,
   RUN_PATH,
-  RUN_THREAD_ID,
 } from "./chat-capability-test-helpers.ts";
 
 const context = testContext();
 const { installCapabilityChat } = createChatCapabilityHelpers(context);
-const featureSwitches = Object.freeze({
-  [FeatureSwitchKey.BatchConnectorPermissions]: true,
-});
-const items: readonly UserPermissionGrantBatchItem[] = [
-  {
-    connectorSlug: "calendar-service",
-    permission: "meeting:read:list_meetings",
-  },
-  {
-    connectorSlug: "calendar-service",
-    permission: "meeting:write:create_meeting",
-  },
-  {
-    connectorSlug: "reports-service",
-    permission: "reports:read:download_report",
-  },
-];
+const NOW = "2026-11-20T08:00:00.000Z";
+const CALENDAR = "calendar-service";
+const REPORTS = "reports-service";
+const SERVICES: Readonly<Record<string, string>> = {
+  [CALENDAR]: "Calendar Service",
+  [REPORTS]: "Reports Service",
+};
+const SCOPES: Readonly<Record<string, readonly string[]>> = {
+  [CALENDAR]: ["events:read", "events:write"],
+  [REPORTS]: ["reports:read", "reports:export"],
+};
+const ASSISTANT_TEXT = "I need a few permissions to build the weekly report.";
 
-function batchUrl(
-  args: {
-    readonly rows?: readonly unknown[];
-    readonly callbackPrompt?: string;
-  } = {},
-): string {
+type GrantWrites = Record<string, ApplyConnectorPermissions["grants"]>;
+
+function batchLink(items: readonly unknown[], expiresIn?: string): string {
   const url = new URL(
     `/agents/${CAPABILITY_AGENT_ID}/permissions/batch`,
     "https://app.okou.ai",
   );
-  url.searchParams.set("items", JSON.stringify(args.rows ?? items));
+  url.searchParams.set("items", JSON.stringify(items));
   url.searchParams.set("action", "allow");
-  url.searchParams.set("expiresIn", "1h");
-  if (args.callbackPrompt !== undefined) {
-    url.searchParams.set("threadId", RUN_THREAD_ID);
-    url.searchParams.set("callbackPrompt", args.callbackPrompt);
+  if (expiresIn) {
+    url.searchParams.set("expiresIn", expiresIn);
   }
   return url.href;
 }
 
-function getButton(name: string, container: ParentNode): HTMLElement {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
-    return (
-      candidate.getAttribute("aria-label") === name ||
-      candidate.textContent?.replace(/\s+/gu, " ").trim() === name
-    );
-  });
-  if (!button) {
-    throw new Error(`Expected button named "${name}"`);
-  }
-  return button;
-}
-
-async function openPermissions(
-  card: HTMLElement,
-  name = "Review permissions",
-): Promise<HTMLElement> {
-  click(getButton(name, card));
-  return await screen.findByRole("dialog", {
-    name: "Allow the following permissions",
-  });
-}
-
-function activeGrant(
-  item: UserPermissionGrantBatchItem,
-): ConnectorPermissionFixture {
-  return {
-    ...item,
-    action: "allow",
-    expiresAt: "2099-08-01T09:00:00.000Z",
-  };
-}
-
-function installMetadata(): void {
-  context.mocks.api(
-    connectorCatalogContract.permissions,
-    ({ params, respond }) => {
-      return respond(200, {
-        permissions: permissionMetadata({
-          connectorSlug: params.connectorSlug,
-          label:
-            params.connectorSlug === "calendar-service"
-              ? "Calendar Service"
-              : "Reports Service",
-          permissions: items
-            .filter((item) => {
-              return item.connectorSlug === params.connectorSlug;
-            })
-            .map((item) => {
-              return item.permission;
-            }),
-        }),
-      });
-    },
-  );
-}
-
-function installConversation(url: string): void {
-  installCapabilityChat({ events: completedConversation(url) });
-  context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
-    return respond(200, {
-      id: params.id,
-      agentId: CAPABILITY_AGENT_ID,
-      title: "Capability conversation",
-      selectedModel: null,
-      modelSettings: {},
-      serviceTier: null,
-      pinnedAt: null,
-      archived: false,
-      muted: false,
-      computerUseHostId: null,
-      cloudBrowserEnabled: false,
-    });
-  });
-}
-
-function installGrants(
-  initial: readonly ConnectorPermissionFixture[] = [],
-  beforeRead?: () => Promise<void>,
-  afterSave?: () => void,
-) {
-  let grants = [...initial];
-  const applied: ApplyConnectorPermissions[] = [];
-  context.mocks.api(
-    connectorPermissionsContract.get,
-    async ({ query, respond }) => {
-      await beforeRead?.();
-      return respond(200, connectorPermissionsResponse(query, grants));
-    },
-  );
-  context.mocks.api(connectorPermissionsContract.apply, ({ body, respond }) => {
-    applied.push(body);
-    if (body.target.kind !== "builtin") {
-      throw new Error("Expected a builtin connector");
-    }
-    const { connectorSlug } = body.target;
-    const saved = body.grants.map((grant) => {
-      return activeGrant({ connectorSlug, permission: grant.permission });
-    });
-    grants = [...grants, ...saved];
-    afterSave?.();
-    context.mocks.ably.trigger("connectorPermissionUpdated");
-    return respond(200, connectorPermissionsResponse(body.target, grants));
-  });
-  return applied;
-}
-
-test("Review full scopes grouped by connector and apply the selected duration together", async () => {
-  const user = userEvent.setup();
-  installMetadata();
-  const applied = installGrants();
-  const originalUrl = batchUrl({
-    rows: [
-      ...items,
-      {
-        connectorSlug: "reports-service",
-        permission: UNKNOWN_PERMISSION_GRANT,
-      },
-    ],
-  });
-  installConversation(originalUrl);
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    host: "app.okou.ai",
-    featureSwitches,
-  });
-  await readyChat();
-  const card = await screen.findByTestId("permission-batch-action-card");
-  const dialog = await openPermissions(card);
-  const detailsLink = queryAllByRoleFast("link", dialog).find((link) => {
-    return link.textContent === "View permission details";
-  });
-  expect(detailsLink).toHaveAttribute("href", originalUrl);
-  await waitFor(() => {
-    expect(getButton("Allow all 4 permissions", dialog)).toBeEnabled();
-  });
-  for (const label of ["Calendar Service", "Reports Service"]) {
-    expect(
-      within(dialog).getByRole("heading", { name: label }),
-    ).toBeInTheDocument();
-  }
-  for (const item of items) {
-    const scope = within(dialog).getByText(item.permission, { exact: true });
-    const group = scope.closest("section");
-    expect(group).not.toBeNull();
-    expect(group).toHaveTextContent(
-      item.connectorSlug === "calendar-service"
-        ? "Calendar Service"
-        : "Reports Service",
-    );
-    expect(
-      within(dialog).getByText(`Use ${item.permission}.`),
-    ).toBeInTheDocument();
-  }
-  expect(within(dialog).getByText("other endpoints")).toBeInTheDocument();
-  expect(within(dialog).getByText("Other endpoints")).toBeInTheDocument();
-
-  click(within(dialog).getByRole("combobox", { name: "Permission duration" }));
-  click(await screen.findByRole("option", { name: "24 hours" }));
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(getButton("Review permissions", card)).toHaveFocus();
-  });
-
-  const reopened = await openPermissions(card);
-  expect(
-    within(reopened).getByRole("combobox", { name: "Permission duration" }),
-  ).toHaveTextContent("24 hours");
-  click(getButton("Allow all 4 permissions", reopened));
-
-  await expect(
-    within(card).findByText("Permissions allowed"),
-  ).resolves.toBeInTheDocument();
-  expect(within(reopened).getByText("Permissions allowed")).toBeInTheDocument();
-  expect(applied).toStrictEqual([
-    {
-      target: { kind: "builtin", connectorSlug: "calendar-service" },
-      mode: "patch",
-      grants: items.slice(0, 2).map(({ permission }) => {
-        return {
-          permission,
-          action: "allow",
-          expiresIn: "24h",
-        };
-      }),
-    },
-    {
-      target: { kind: "builtin", connectorSlug: "reports-service" },
-      mode: "patch",
-      grants: expect.arrayContaining(
-        [items[2]!.permission, UNKNOWN_PERMISSION_GRANT].map((permission) => {
-          return {
-            permission,
-            action: "allow",
-            expiresIn: "24h",
-          };
-        }),
-      ),
-    },
-  ]);
-  expect(applied[1]!.grants).toHaveLength(2);
-});
-
-test("Review every scope in a large batch as metadata and grants arrive separately", async () => {
-  const metadataResponse = context.mocks.deferred<void>();
-  const grantsResponse = context.mocks.deferred<void>();
-  const largeBatch = Array.from({ length: 20 }, (_, index) => {
-    return {
-      connectorSlug: index < 10 ? "calendar-service" : "reports-service",
-      permission: `records:read:download_record_${index + 1}`,
-    };
-  });
+function mockServiceMetadata(
+  respondFor: (connectorSlug: string) => Promise<"ok" | "forbidden"> = () => {
+    return Promise.resolve("ok");
+  },
+): void {
   context.mocks.api(
     connectorCatalogContract.permissions,
     async ({ params, respond }) => {
-      await metadataResponse.promise;
-      return respond(200, {
-        permissions: permissionMetadata({
-          connectorSlug: params.connectorSlug,
-          label:
-            params.connectorSlug === "calendar-service"
-              ? "Calendar Service"
-              : "Reports Service",
-          permissions: largeBatch
-            .filter((item) => {
-              return item.connectorSlug === params.connectorSlug;
-            })
-            .map((item) => {
-              return item.permission;
-            }),
-        }),
-      });
-    },
-  );
-  const applied = installGrants([], async () => {
-    await grantsResponse.promise;
-  });
-  installConversation(batchUrl({ rows: largeBatch }));
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    host: "app.okou.ai",
-    featureSwitches,
-  });
-  await readyChat();
-  const card = await screen.findByTestId("permission-batch-action-card");
-  const dialog = await openPermissions(card);
-  await expect(
-    within(dialog).findByLabelText("Loading permissions"),
-  ).resolves.toBeInTheDocument();
-  expect(getButton("Allow all 20 permissions", dialog)).toBeDisabled();
-
-  metadataResponse.resolve(undefined);
-  await expect(
-    within(dialog).findByText(largeBatch[19]!.permission, { exact: true }),
-  ).resolves.toBeInTheDocument();
-  for (const item of largeBatch) {
-    expect(
-      within(dialog).getByText(item.permission, { exact: true }),
-    ).toBeInTheDocument();
-    expect(
-      within(dialog).getByText(`Use ${item.permission}.`),
-    ).toBeInTheDocument();
-  }
-  expect(getButton("Allow all 20 permissions", dialog)).toBeDisabled();
-
-  grantsResponse.resolve(undefined);
-  await waitFor(() => {
-    expect(getButton("Allow all 20 permissions", dialog)).toBeEnabled();
-  });
-  const duration = within(dialog).getByRole("combobox", {
-    name: "Permission duration",
-  });
-  click(duration);
-  click(await screen.findByRole("option", { name: "Always" }));
-  await expect(
-    within(dialog).findByText(
-      "These permissions stay allowed until you change or revoke them.",
-    ),
-  ).resolves.toBeInTheDocument();
-  expect(duration).toHaveTextContent("Always");
-  click(getButton("Allow all 20 permissions", dialog));
-
-  await expect(
-    within(card).findByText("Permissions allowed"),
-  ).resolves.toBeInTheDocument();
-  expect(within(dialog).getByText("Permissions allowed")).toBeInTheDocument();
-  expect(applied).toStrictEqual(
-    ["calendar-service", "reports-service"].map((connectorSlug) => {
-      return {
-        target: { kind: "builtin", connectorSlug },
-        mode: "patch",
-        grants: expect.arrayContaining(
-          largeBatch
-            .filter((item) => {
-              return item.connectorSlug === connectorSlug;
-            })
-            .map(({ permission }) => {
-              return {
-                permission,
-                action: "allow",
-                expiresIn: "always",
-              };
-            }),
-        ),
-      };
-    }),
-  );
-  for (const request of applied) {
-    expect(request.grants).toHaveLength(10);
-  }
-});
-
-test("Approve only missing scopes without reapplying or extending active grants", async () => {
-  installMetadata();
-  const applied = installGrants(items.slice(0, 2).map(activeGrant));
-  installConversation(batchUrl());
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    host: "app.okou.ai",
-    featureSwitches,
-  });
-  await readyChat();
-  const card = await screen.findByTestId("permission-batch-action-card");
-  const dialog = await openPermissions(card);
-  await waitFor(() => {
-    expect(getButton("Allow all 3 permissions", dialog)).toBeEnabled();
-  });
-  click(getButton("Allow all 3 permissions", dialog));
-
-  await expect(
-    within(card).findByText("Permissions allowed"),
-  ).resolves.toBeInTheDocument();
-  expect(applied).toStrictEqual([
-    {
-      target: { kind: "builtin", connectorSlug: "reports-service" },
-      mode: "patch",
-      grants: [
-        { permission: items[2]!.permission, action: "allow", expiresIn: "1h" },
-      ],
-    },
-  ]);
-});
-
-test("Keep the whole batch unavailable when one connector's delayed authoritative metadata fails", async () => {
-  const metadataResponse = context.mocks.deferred<void>();
-  context.mocks.api(
-    connectorCatalogContract.permissions,
-    async ({ params, respond }) => {
-      await metadataResponse.promise;
-      if (params.connectorSlug === "reports-service") {
+      const label = SERVICES[params.connectorSlug];
+      if (!label) {
+        return respond(404, {
+          error: { code: "NOT_FOUND", message: "Connector not found" },
+        });
+      }
+      if ((await respondFor(params.connectorSlug)) === "forbidden") {
         return respond(403, {
-          error: {
-            code: "FORBIDDEN",
-            message: "Permission details unavailable",
-          },
+          error: { code: "FORBIDDEN", message: "Metadata unavailable" },
         });
       }
       return respond(200, {
         permissions: permissionMetadata({
           connectorSlug: params.connectorSlug,
-          label: "Calendar Service",
-          permissions: items.slice(0, 2).map((item) => {
-            return item.permission;
-          }),
+          label,
+          permissions: SCOPES[params.connectorSlug] ?? [],
         }),
       });
     },
   );
-  const applied = installGrants();
-  installConversation(batchUrl());
+}
 
+/**
+ * The member's saved grants. Each write is kept per connector, so a test can
+ * read exactly which grants the batch asked the server to change.
+ */
+function mockSavedGrants(
+  initial: readonly ConnectorPermissionFixture[] = [],
+): GrantWrites {
+  let grants = [...initial];
+  const writes: GrantWrites = {};
+  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
+    return respond(200, connectorPermissionsResponse(query, grants));
+  });
+  context.mocks.api(connectorPermissionsContract.apply, ({ body, respond }) => {
+    if (body.target.kind !== "builtin") {
+      throw new Error("Expected a built-in connector target");
+    }
+    const { connectorSlug } = body.target;
+    writes[connectorSlug] = body.grants;
+    grants = [
+      ...grants.filter((grant) => {
+        return !(
+          grant.connectorSlug === connectorSlug &&
+          body.grants.some((written) => {
+            return written.permission === grant.permission;
+          })
+        );
+      }),
+      ...body.grants.map((written) => {
+        return {
+          connectorSlug,
+          permission: written.permission,
+          action: written.action,
+          expiresAt:
+            written.expiresIn === "always" ? null : "2026-11-21T08:00:00.000Z",
+        };
+      }),
+    ];
+    return respond(200, connectorPermissionsResponse(body.target, grants));
+  });
+  return writes;
+}
+
+async function openChatWithAction(link: string): Promise<void> {
+  mockNow(new Date(NOW), context.signal);
+  installCapabilityChat({
+    events: completedConversation(`${ASSISTANT_TEXT}\n\n${link}`),
+  });
   await setupPage({
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches,
+    featureSwitches: { [FeatureSwitchKey.BatchConnectorPermissions]: true },
   });
   await readyChat();
-  const card = await screen.findByTestId("permission-batch-action-card");
-  const dialog = await openPermissions(card);
-  await expect(
-    within(dialog).findByLabelText("Loading permissions"),
-  ).resolves.toBeInTheDocument();
-  expect(getButton("Allow all 3 permissions", dialog)).toBeDisabled();
+  await expect(screen.findByText(ASSISTANT_TEXT)).resolves.toBeInTheDocument();
+}
 
-  metadataResponse.resolve(undefined);
-  await expect(within(dialog).findByRole("alert")).resolves.toBeInTheDocument();
+async function openBatchCard(link: string): Promise<HTMLElement> {
+  await openChatWithAction(link);
+  return await screen.findByTestId("permission-batch-action-card");
+}
+
+function buttonNamed(
+  name: string,
+  container: HTMLElement,
+): HTMLElement | undefined {
+  return queryAllByRoleFast("button", container).find((candidate) => {
+    return candidate.textContent?.replace(/\s+/gu, " ").trim() === name;
+  });
+}
+
+async function openReview(card: HTMLElement): Promise<HTMLElement> {
+  const review = await waitFor(() => {
+    const found = buttonNamed("Review permissions", card);
+    if (!found) {
+      throw new Error("Expected the Review permissions button");
+    }
+    return found;
+  });
+  click(review);
+  return await screen.findByRole("dialog", {
+    name: "Allow the following permissions",
+  });
+}
+
+async function serviceGroup(
+  review: HTMLElement,
+  name: string,
+): Promise<HTMLElement> {
+  const heading = await within(review).findByRole("heading", { name });
+  const group = heading.closest("section");
+  if (!group) {
+    throw new Error(`Expected the ${name} permission group`);
+  }
+  return group;
+}
+
+async function allow(review: HTMLElement, name: string): Promise<void> {
+  const button = await waitFor(() => {
+    const found = buttonNamed(name, review);
+    expect(found).toBeEnabled();
+    return found as HTMLElement;
+  });
+  click(button);
+  await expect(within(review).findByRole("status")).resolves.toHaveTextContent(
+    "Permissions allowed",
+  );
+}
+
+test("Review full scopes grouped by connector and apply the selected duration together", async () => {
+  const writes = mockSavedGrants();
+  mockServiceMetadata();
+  const requestedLink = batchLink([
+    { connectorSlug: CALENDAR, permission: "events:read" },
+    { connectorSlug: REPORTS, permission: "reports:read" },
+    { connectorSlug: CALENDAR, permission: "events:write" },
+    { connectorSlug: REPORTS, permission: UNKNOWN_PERMISSION_GRANT },
+  ]);
+  const card = await openBatchCard(requestedLink);
+  const review = await openReview(card);
+  expect(getAction("link", "View permission details", review)).toHaveAttribute(
+    "href",
+    requestedLink,
+  );
+
+  const calendar = await serviceGroup(review, "Calendar Service");
+  expect(within(calendar).getByText("events:read")).toBeInTheDocument();
+  expect(within(calendar).getByText("Use events:read.")).toBeInTheDocument();
+  expect(within(calendar).getByText("events:write")).toBeInTheDocument();
+  expect(within(calendar).getByText("Use events:write.")).toBeInTheDocument();
+  const reports = await serviceGroup(review, "Reports Service");
+  expect(within(reports).getByText("reports:read")).toBeInTheDocument();
+  expect(within(reports).getByText("Use reports:read.")).toBeInTheDocument();
+  expect(within(reports).getByText("other endpoints")).toBeInTheDocument();
+  expect(within(reports).getByText("Other endpoints")).toBeInTheDocument();
+
+  const user = userEvent.setup();
+  const duration = within(review).getByRole("combobox", {
+    name: "Permission duration",
+  });
+  await waitFor(() => {
+    expect(duration).toBeEnabled();
+  });
+  await user.click(duration);
+  const day = await waitFor(() => {
+    const option = queryAllByRoleFast("option").find((candidate) => {
+      return candidate.textContent?.trim() === "24 hours";
+    });
+    if (!option) {
+      throw new Error("Expected the 24 hours option");
+    }
+    return option;
+  });
+  await user.click(day);
+  await waitFor(() => {
+    expect(duration).toHaveTextContent("24 hours");
+  });
+
+  await allow(review, "Allow all 4 permissions");
+
+  expect(writes).toStrictEqual({
+    [CALENDAR]: [
+      { permission: "events:read", action: "allow", expiresIn: "24h" },
+      { permission: "events:write", action: "allow", expiresIn: "24h" },
+    ],
+    [REPORTS]: [
+      {
+        permission: UNKNOWN_PERMISSION_GRANT,
+        action: "allow",
+        expiresIn: "24h",
+      },
+      { permission: "reports:read", action: "allow", expiresIn: "24h" },
+    ],
+  });
+  expect(within(card).getByText("Permissions allowed")).toBeInTheDocument();
+});
+
+test("Approve only missing scopes without reapplying or extending active grants", async () => {
+  // Both active grants end in 30 minutes; a reapplied one would be extended.
+  const writes = mockSavedGrants([
+    {
+      connectorSlug: CALENDAR,
+      permission: "events:read",
+      action: "allow",
+      expiresAt: "2026-11-20T08:30:00.000Z",
+    },
+    {
+      connectorSlug: REPORTS,
+      permission: "reports:read",
+      action: "allow",
+      expiresAt: "2026-11-20T08:30:00.000Z",
+    },
+  ]);
+  mockServiceMetadata();
+  const card = await openBatchCard(
+    batchLink([
+      { connectorSlug: CALENDAR, permission: "events:read" },
+      { connectorSlug: REPORTS, permission: "reports:read" },
+      { connectorSlug: REPORTS, permission: "reports:export" },
+    ]),
+  );
+  await expect(
+    within(card).findByText("1 permission to allow"),
+  ).resolves.toBeInTheDocument();
+  const review = await openReview(card);
+  await serviceGroup(review, "Reports Service");
+  expect(within(review).getAllByText("Already allowed")).toHaveLength(2);
+
+  await allow(review, "Allow all 3 permissions");
+
+  expect(writes).toStrictEqual({
+    [REPORTS]: [
+      { permission: "reports:export", action: "allow", expiresIn: "1h" },
+    ],
+  });
+  expect(within(card).getByText("Permissions allowed")).toBeInTheDocument();
+});
+
+test("Keep the whole batch unavailable when one connector's delayed authoritative metadata fails", async () => {
+  // No grant write handler: any write would fail as an unhandled request.
+  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
+    return respond(200, connectorPermissionsResponse(query, []));
+  });
+  const release = context.mocks.deferred<void>();
+  mockServiceMetadata(async (connectorSlug) => {
+    await release.promise;
+    return connectorSlug === REPORTS ? "forbidden" : "ok";
+  });
+  const card = await openBatchCard(
+    batchLink([
+      { connectorSlug: CALENDAR, permission: "events:read" },
+      { connectorSlug: REPORTS, permission: "reports:read" },
+      { connectorSlug: REPORTS, permission: "reports:export" },
+    ]),
+  );
+  const review = await openReview(card);
+  expect(buttonNamed("Allow all 3 permissions", review)).toBeDisabled();
+
+  release.resolve();
+
+  await expect(within(review).findByRole("alert")).resolves.toHaveTextContent(
+    "Could not verify all requested permissions. No permissions can be changed.",
+  );
+  expect(buttonNamed("Allow all 3 permissions", review)).toBeDisabled();
+  const details = queryAllByRoleFast("link", review).find((link) => {
+    return link.textContent?.trim() === "View permission details";
+  });
   expect(
-    within(dialog).getByText("Allow the following permissions"),
-  ).toBeInTheDocument();
-  expect(
-    queryAllByRoleFast("link", dialog).find((link) => {
-      return link.textContent?.trim() === "View permission details";
-    }),
-  ).toBeInTheDocument();
-  expect(getButton("Allow all 3 permissions", dialog)).toBeDisabled();
-  expect(applied).toHaveLength(0);
+    new URL(details?.getAttribute("href") ?? "", "https://app.okou.ai")
+      .pathname,
+  ).toBe(`/agents/${CAPABILITY_AGENT_ID}/permissions/batch`);
+  expect(within(review).queryByRole("status")).not.toBeInTheDocument();
 });
 
 test("Reject the entire batch with an invalid original row", async () => {
-  const url = batchUrl({
-    rows: [items[0], { ...items[0], permission: 42 }],
-  });
-  installMetadata();
-  const applied = installGrants();
-  installConversation(url);
+  // No grant handlers: the unavailable batch neither reads nor writes grants.
+  await openChatWithAction(
+    batchLink([
+      { connectorSlug: CALENDAR, permission: "events:read" },
+      { connectorSlug: REPORTS, permission: 42 },
+    ]),
+  );
 
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    host: "app.okou.ai",
-    featureSwitches,
-  });
-  await readyChat();
   await expect(
-    screen.findByTestId("unavailable-action-card"),
+    screen.findByText("Action unavailable"),
   ).resolves.toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "This action does not belong to this chat or is no longer valid.",
+    ),
+  ).toBeInTheDocument();
   expect(
     screen.queryByTestId("permission-batch-action-card"),
   ).not.toBeInTheDocument();
-  expect(applied).toHaveLength(0);
-});
-
-test("A batch save does not empty sibling permission cards during a grants reload", async () => {
-  installMetadata();
-  const reloadStarted = context.mocks.deferred<void>();
-  const reloadResponse = context.mocks.deferred<void>();
-  let refreshing = false;
-  installGrants(
-    [],
-    async () => {
-      if (refreshing) {
-        if (!reloadStarted.settled()) {
-          reloadStarted.resolve(undefined);
-        }
-        await reloadResponse.promise;
-      }
-    },
-    () => {
-      refreshing = true;
-    },
-  );
-  const single = new URL(
-    `/agents/${CAPABILITY_AGENT_ID}/permissions`,
-    "https://app.okou.ai",
-  );
-  single.searchParams.set("connectorSlug", "reports-service");
-  single.searchParams.set("permission", items[2]!.permission);
-  single.searchParams.set("action", "allow");
-  installConversation(`${batchUrl()}\n\n${single.href}`);
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    host: "app.okou.ai",
-    featureSwitches,
-  });
-  await readyChat();
-  const batch = await screen.findByTestId("permission-batch-action-card");
-  const sibling = await screen.findByTestId("permission-action-card");
-  await waitFor(() => {
-    expect(getButton("Confirm", sibling)).toBeEnabled();
-  });
-  const dialog = await openPermissions(batch);
-  await waitFor(() => {
-    expect(getButton("Allow all 3 permissions", dialog)).toBeEnabled();
-  });
-  click(getButton("Allow all 3 permissions", dialog));
-  await reloadStarted.promise;
-  click(getButton("Close", dialog));
-  await waitFor(() => {
-    expect(getButton("Confirm", sibling)).toBeEnabled();
-  });
-  expect(
-    within(sibling).getByText(`Allow ${items[2]!.permission}`, { exact: true }),
-  ).toBeInTheDocument();
-  reloadResponse.resolve(undefined);
-  await expect(
-    within(batch).findByText("Permissions allowed"),
-  ).resolves.toBeInTheDocument();
-  await expect(
-    within(sibling).findByText("Already allowed"),
-  ).resolves.toBeInTheDocument();
+  expect(buttonNamed("Review permissions", document.body)).toBeUndefined();
 });

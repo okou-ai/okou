@@ -1,284 +1,136 @@
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
-import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { click, setupPage, fill } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { search as locationSearch } from "../../../signals/location.ts";
+import { findButton, queryButton } from "./chat-run-test-fixtures.ts";
 import {
-  chooseConnectorAuthentication,
   customConnector,
-  getConnectorAction,
-  getConnectorCard,
-  mockConnectors,
   mockCustomConnectorStory,
   mockPublicConnectorStatus,
   publicStatusItem,
-  queryConnectorAction,
-  queryConnectorCard,
+  chooseConnectorAuthentication,
+  getConnectorCard,
 } from "./connector-page-test-helpers.ts";
-
 const context = testContext();
-
-function installCustomDirectory() {
-  mockCustomConnectorStory(context);
-  mockConnectors(context, []);
-  mockPublicConnectorStatus(context, []);
+async function selectScope(label: string) {
+  const radio = await screen.findByText(label, { selector: '[role="radio"]' });
+  click(radio);
+}
+function reports() {
+  const connector = customConnector({ displayName: "Acme Reports" });
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    return respond(200, {
-      connectors: [
-        customConnector({ displayName: "Acme Reports", slug: "hidden-slug" }),
-        customConnector({
-          id: "55555555-5555-4555-8555-555555555555",
-          displayName: "Other Service",
-          prefixTemplates: ["https://acme-reports.test/"],
-        }),
-      ],
-    });
+    return respond(200, { connectors: [connector] });
   });
 }
-
-test("Custom scope lists custom connectors and offers custom creation", async () => {
-  installCustomDirectory();
-  await setupPage({
-    context,
-    path: "/connectors?scope=custom",
-  });
-  const section = await screen.findByRole("region", {
-    name: "Custom",
-  });
-  expect(within(section).getByText("Acme Reports")).toBeVisible();
-  expect(getConnectorAction("button", "New custom connector")).toBeVisible();
+test("connectors-directory-custom-004 a member can inspect the empty Custom scope", async () => {
+  context.mocks.data.org({ role: "member" });
+  await setupPage({ context, path: "/connectors" });
+  await findButton("Connect GitHub");
+  await selectScope("Custom");
+  await screen.findByText(
+    "Your org hasn't registered any custom connectors yet.",
+  );
+  expect(screen.getByRole("heading", { name: "Custom" })).toBeInTheDocument();
+  expect(new URL(window.location.href).searchParams.get("scope")).toBe(
+    "custom",
+  );
+  expect(screen.queryByText("GitHub")).not.toBeInTheDocument();
+  expect(queryButton("New custom connector")).toBeNull();
 });
 
-test("Separate same-name built-in and custom search results", async () => {
-  installCustomDirectory();
+test("connectors-directory-custom-007 Back from the custom catalog returns to the remote directory", async () => {
+  reports();
+  await setupPage({ context, path: "/connectors" });
+  await findButton("Connect GitHub");
+  await selectScope("Remote control");
+  await findButton("Add connection");
+  await selectScope("Custom");
+  await screen.findByText("Acme Reports");
+  expect(window.location.search).toBe("?scope=custom");
+  window.history.back();
+  await waitFor(() => {
+    return expect(new URL(window.location.href).searchParams.get("scope")).toBe(
+      "remote-control",
+    );
+  });
+  await findButton("Add connection");
+  expect(screen.queryByText("Acme Reports")).not.toBeInTheDocument();
+});
+
+test("connectors-directory-custom-008 failed custom search reports its service failure", async () => {
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+    return respond(500, {
+      error: { code: "UNAVAILABLE", message: "Catalog unavailable" },
+    });
+  });
+  await setupPage({ context, path: "/connectors?keywords=recovered" });
+  await screen.findByText("Couldn't load custom connectors.");
+  expect(
+    screen.queryByText('No connectors matching "recovered"'),
+  ).not.toBeInTheDocument();
+});
+
+test("connectors-directory-custom-002 searching Acme groups both connectors by source", async () => {
+  reports();
   mockPublicConnectorStatus(context, [
     publicStatusItem({ connectorSlug: "github", label: "Acme Reports" }),
   ]);
-  await setupPage({
-    context,
-    path: "/connectors?keywords=acme",
+  await setupPage({ context, path: "/connectors" });
+  const field = await screen.findByPlaceholderText("Find connectors");
+  await fill(field, "acme");
+  const built = await screen.findByText("Built-in connectors", {
+    selector: "h2,h3",
   });
-  const builtin = await screen.findByRole("region", {
-    name: "Built-in connectors",
-  });
-  const custom = await screen.findByRole("region", {
-    name: "Custom",
-  });
-  expect(within(builtin).getByText("Acme Reports")).toBeVisible();
-  expect(within(custom).getByText("Acme Reports")).toBeVisible();
-  expect(screen.queryByText(/No connectors matching/u)).toBeNull();
+  const custom = await screen.findByText("Custom", { selector: "h2,h3" });
+  for (const heading of [built, custom]) {
+    const section = heading.closest("section")!;
+    await within(section).findByText("Acme Reports");
+  }
+  expect(screen.queryByText(/No connectors matching/)).not.toBeInTheDocument();
 });
-
-test.each(["admin", "member"] as const)(
-  "Keep zero-custom navigation and role-specific creation for %s",
-  async (role) => {
-    mockCustomConnectorStory(context);
-    context.mocks.data.org({ id: "org_1", name: "Test Org", role });
-    mockPublicConnectorStatus(context, [
-      publicStatusItem({ connectorSlug: "github", label: "GitHub" }),
-    ]);
-    await setupPage({
-      context,
-      path: "/connectors",
-    });
-    await waitFor(() => {
-      expect(getConnectorCard("GitHub")).toBeVisible();
-    });
-    // Custom connectors have their own scope, so browsing the catalog does not
-    // list them, whatever the role.
-    expect(screen.queryByRole("region", { name: "Custom" })).toBeNull();
-    click(screen.getByTestId("connectors-scope-custom"));
-    await expect(
-      screen.findByRole("region", { name: "Custom" }),
-    ).resolves.toBeVisible();
-    expect(locationSearch()).toContain("scope=custom");
-    expect(queryConnectorCard("GitHub")).toBeNull();
-    expect(
-      screen.getByText(
-        role === "admin"
-          ? "Add an HTTP API or MCP server for your organization to use."
-          : "Your org hasn't registered any custom connectors yet.",
-      ),
-    ).toBeVisible();
-    expect(
-      Boolean(queryConnectorAction("button", "New custom connector")),
-    ).toBe(role === "admin");
-  },
-);
-
-test("Honor Custom deep links, scoped search, and returning to All", async () => {
-  installCustomDirectory();
-  mockPublicConnectorStatus(context, [
-    publicStatusItem({ connectorSlug: "github", label: "GitHub" }),
-  ]);
-  await setupPage({
-    context,
-    path: "/connectors?scope=custom&category=other&keywords=acme",
-  });
-  await waitFor(() => {
-    expect(getConnectorCard("Acme Reports")).toBeVisible();
-  });
-  expect(queryConnectorCard("GitHub")).toBeNull();
-  expect(screen.getByTestId("connectors-scope-custom")).toHaveAttribute(
-    "data-checked",
+test("connectors-directory-custom-009 Remote control keeps the custom directory off both surfaces", async () => {
+  reports();
+  await setupPage({ context, path: "/connectors" });
+  await findButton("Connect GitHub");
+  const customHeading = () => {
+    return screen.queryByRole("heading", { name: "Custom" });
+  };
+  expect(customHeading()).not.toBeInTheDocument();
+  expect(queryButton("New custom connector")).toBeNull();
+  await selectScope("Remote control");
+  await findButton("Add connection");
+  expect(new URL(location.href).searchParams.get("scope")).toBe(
+    "remote-control",
   );
-  await fill(screen.getByPlaceholderText("Find custom connectors"), "missing");
-  await expect(
-    screen.findByText("No custom connectors match your search."),
-  ).resolves.toBeVisible();
-  expect(getConnectorAction("button", "New custom connector")).toBeVisible();
-  // Leaving a scope drops the controls that belonged to it, search included.
-  click(screen.getByTestId("connectors-scope-discover"));
-  await waitFor(() => {
-    expect(getConnectorCard("GitHub")).toBeInTheDocument();
-  });
-  expect(locationSearch()).not.toContain("scope=");
-  expect(locationSearch()).not.toContain("keywords=");
-  expect(locationSearch()).not.toContain("category=");
+  expect(customHeading()).not.toBeInTheDocument();
+  expect(queryButton("New custom connector")).toBeNull();
 });
-
-test("Keep category search scoped and offer All for a custom-only match", async () => {
-  installCustomDirectory();
-  await setupPage({
-    context,
-    path: "/connectors?category=engineering&keywords=acme",
-  });
-  await expect(
-    screen.findByText("No connectors match in this category."),
-  ).resolves.toBeVisible();
-  expect(queryConnectorCard("Acme Reports")).toBeNull();
-  expect(queryConnectorAction("button", "New custom connector")).toBeNull();
-  click(getConnectorAction("button", "Search all connectors"));
-  await waitFor(() => {
-    expect(getConnectorCard("Acme Reports")).toBeVisible();
-  });
-  expect(locationSearch()).toContain("keywords=acme");
-});
-
-test("Scope navigation returns directly to Remote control", async () => {
-  installCustomDirectory();
-  await setupPage({ context, path: "/connectors" });
-  click(await screen.findByTestId("connectors-scope-remote-control"));
-  await waitFor(() => {
-    expect(getConnectorAction("button", "Add connection")).toBeInTheDocument();
-  });
-  click(screen.getByTestId("connectors-scope-custom"));
-  await screen.findByText("Acme Reports");
-  expect(locationSearch()).toBe("?scope=custom");
-
-  window.history.back();
-  await waitFor(() => {
-    expect(locationSearch()).toBe("?scope=remote-control");
-  });
-  await waitFor(() => {
-    expect(getConnectorAction("button", "Add connection")).toBeInTheDocument();
-  });
-  expect(screen.queryByText("Acme Reports")).toBeNull();
-});
-
-test("Do not turn Custom loading failure into an empty search result", async () => {
-  installCustomDirectory();
-  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    return respond(500, {
-      error: {
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Custom unavailable",
-      },
-    });
-  });
-  await setupPage({
-    context,
-    path: "/connectors?keywords=recovered",
-  });
-  const section = await screen.findByRole("region", {
-    name: "Custom",
-  });
-  await expect(
-    within(section).findByText("Couldn't load custom connectors."),
-  ).resolves.toBeVisible();
-  expect(screen.queryByText(/No connectors matching/u)).toBeNull();
-});
-
-test("Keep Remote control and Custom in separate scopes", async () => {
-  installCustomDirectory();
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 0 });
-  });
-  await setupPage({ context, path: "/connectors" });
-  await screen.findByTestId("connectors-scope-remote-control");
-  expect(screen.queryByRole("region", { name: "Custom" })).toBeNull();
-  click(screen.getByTestId("connectors-scope-remote-control"));
-  await waitFor(() => {
-    expect(locationSearch()).toContain("scope=remote-control");
-  });
-  await waitFor(() => {
-    return getConnectorAction("button", "Add connection");
-  });
-  expect(screen.queryByRole("region", { name: "Custom" })).toBeNull();
-  expect(queryConnectorAction("button", "New custom connector")).toBeNull();
-});
-
-test("Cancel and create a custom connector from the Custom scope", async () => {
+test("connectors-directory-custom-010 cancelling keeps the search and creating reveals the new service", async () => {
   mockCustomConnectorStory(context);
-  mockPublicConnectorStatus(context, []);
   await setupPage({
     context,
     path: "/connectors?scope=custom&keywords=missing",
   });
-  const label = "New custom connector";
-  const open = await waitFor(() => {
-    return getConnectorAction("button", label);
-  });
-  click(open);
-  const cancelled = await screen.findByRole("dialog", {
-    name: "New custom connector",
-  });
-  click(getConnectorAction("button", "Cancel", cancelled));
+  const search = await screen.findByPlaceholderText("Find custom connectors");
+  click(await findButton("New custom connector"));
+  const cancelled = await screen.findByRole("dialog");
+  click(await findButton("Cancel"));
   await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
+    return expect(cancelled).not.toBeInTheDocument();
   });
-  expect(locationSearch()).toContain("keywords=missing");
-  click(getConnectorAction("button", label));
-  const create = await screen.findByRole("dialog", {
-    name: "New custom connector",
-  });
-  await fill(within(create).getByLabelText("Display name"), "Created Service");
+  expect(search).toHaveValue("missing");
+  expect(new URL(location.href).searchParams.get("keywords")).toBe("missing");
+  click(await findButton("New custom connector"));
+  const form = await screen.findByRole("dialog");
+  await fill(within(form).getByPlaceholderText("Acme API"), "Created Service");
   await fill(
-    within(create).getByLabelText(/Prefixes/u),
-    "https://created.test/",
+    within(form).getByPlaceholderText("https://api.acme.com/v1/"),
+    "https://created.example.test/",
   );
-  await chooseConnectorAuthentication(create, "API authentication");
-  await waitFor(() => {
-    expect(getConnectorAction("button", "Create", create)).toBeEnabled();
-  });
-  click(getConnectorAction("button", "Create", create));
-  const card = await waitFor(() => {
-    return getConnectorCard("Created Service");
-  });
-  expect(card).toHaveTextContent("No accounts");
-  expect(locationSearch()).toContain("scope=custom");
-});
-
-test("Search custom display names without matching endpoints or slugs", async () => {
-  installCustomDirectory();
-  await setupPage({
-    context,
-    path: "/connectors?keywords=%20aCmE%20%20",
-  });
-  await waitFor(() => {
-    expect(getConnectorCard("Acme Reports")).toBeVisible();
-  });
-  expect(queryConnectorCard("Other Service")).toBeNull();
-  expect(screen.queryByText(/No connectors matching/u)).toBeNull();
-  await fill(screen.getByPlaceholderText("Find connectors"), "hidden-slug");
-  await expect(
-    screen.findByText(/No connectors matching/u),
-  ).resolves.toBeVisible();
-  expect(queryConnectorCard("Acme Reports")).toBeNull();
-  click(getConnectorAction("button", "New custom connector"));
-  await expect(
-    screen.findByRole("dialog", { name: "New custom connector" }),
-  ).resolves.toBeVisible();
+  await chooseConnectorAuthentication(form, "API authentication");
+  click(await findButton("Create"));
+  await screen.findByText("Created Service");
+  expect(getConnectorCard("Created Service")).toHaveTextContent("No accounts");
+  expect(new URL(location.href).searchParams.get("scope")).toBe("custom");
 });

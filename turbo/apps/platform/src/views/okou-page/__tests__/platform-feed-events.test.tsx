@@ -1,6 +1,3 @@
-import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   feedContract,
@@ -9,496 +6,282 @@ import {
 import {
   workflowAutomationsContract,
   workflowsDetailContract,
-  type WorkflowAutomationSummary,
   type WorkflowDetailResponse,
+  type WorkflowAutomationSummary,
 } from "@okouai/api-contracts/contracts/workflows";
+import { screen, within, waitFor } from "@testing-library/react";
+import { test, expect } from "vitest";
 import {
   click,
   queryAllByRoleFast,
   setupPage,
-  type SetupPageAuth,
 } from "../../../__tests__/page-helper.ts";
-import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { pathname, search } from "../../../signals/location.ts";
-import { createDeferredPromise } from "../../../signals/utils.ts";
-
+import {
+  findFastControl,
+  queryFastControl,
+} from "./chat-message-experience-test-helpers.ts";
 const context = testContext();
-const WORKSPACE_ID = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
-const OTHER_WORKSPACE_ID = "org_other_event_workspace";
-const WORKFLOW_ID = "d0000000-0000-4000-a000-000000000201";
-const AUTOMATION_ID = "e0000000-0000-4000-a000-000000000201";
-const OTHER_AUTOMATION_ID = "e0000000-0000-4000-a000-000000000202";
-const DISABLED_AT = "2026-11-05T03:00:00.000Z";
-const CREATED_AT = "2026-11-06T03:00:00.000Z";
-const AUTOMATION_DESCRIPTION =
-  "Send a short summary of open tasks each weekday.";
-
-function auth(workspaceId = WORKSPACE_ID): SetupPageAuth {
+function pausedEvent(): PlatformEvent {
+  const time = "2026-11-05T03:00:00Z";
   return {
-    user: { id: "test-user-123", fullName: "Feed tester" },
-    organization: {
-      activeOrg: { id: workspaceId, name: "Research workspace" },
-      memberships: [
-        {
-          id: "membership_research",
-          organization: { id: WORKSPACE_ID, name: "Research workspace" },
-        },
-        {
-          id: "membership_design",
-          organization: { id: OTHER_WORKSPACE_ID, name: "Design workspace" },
-        },
-      ],
-    },
-  };
-}
-
-function platformEvent(): PlatformEvent {
-  return {
-    id: "11111111-1111-4111-8111-111111111111",
+    id: crypto.randomUUID(),
     type: "event",
     sourceType: "platform-event",
-    priority: 0,
-    createdAt: CREATED_AT,
-    updatedAt: CREATED_AT,
+    createdAt: time,
+    updatedAt: time,
     expiresAt: null,
+    priority: 10,
     state: { status: "active" },
     content: {
       eventType: "automation-disabled",
-      automationId: AUTOMATION_ID,
-      workflowId: WORKFLOW_ID,
-      workspaceId: WORKSPACE_ID,
+      automationId: crypto.randomUUID(),
+      workflowId: crypto.randomUUID(),
+      workspaceId: "org_default",
       automationName: "Daily work summary",
-      automationDescription: AUTOMATION_DESCRIPTION,
-      disabledAt: DISABLED_AT,
+      disabledAt: time,
       consecutiveFailures: 3,
-      recoveryScheduled: false,
+      recoveryScheduled: true,
     },
   };
 }
 
-function automation(
-  id = AUTOMATION_ID,
-  enabled = false,
-): WorkflowAutomationSummary {
-  return {
-    id,
-    kind: "schedule",
-    schedule: {
-      type: "loop",
-      intervalSeconds: id === AUTOMATION_ID ? 3600 : 7200,
-    },
-    scheduleSummary: "Hourly summary",
-    ownerUserId: "test-user-123",
-    enabled,
-    chatThreadId: null,
-    nextRunAt: enabled ? "2026-11-10T06:00:00.000Z" : null,
-    lastRunAt: DISABLED_AT,
-    official: null,
-  };
+function pathTo({ content }: PlatformEvent) {
+  return (
+    "/workflows/" +
+    content.workflowId +
+    "/automations?automationId=" +
+    content.automationId +
+    "&workspaceId=" +
+    content.workspaceId
+  );
 }
 
-function workflow(): WorkflowDetailResponse {
-  return {
-    id: WORKFLOW_ID,
-    agentId: "c0000000-0000-4000-a000-000000000001",
-    agentName: "research-bot",
-    agentDisplayName: "Research Bot",
-    name: "daily-summary",
-    displayName: "Daily summary workflow",
-    description: "Prepare a summary",
-    visibility: "private",
-    ownerUserId: "test-user-123",
-    canManage: true,
-    canPublish: false,
-    official: null,
-    importSource: null,
-    createdByUserId: "test-user-123",
-    updatedByUserId: "test-user-123",
-    createdAt: CREATED_AT,
-    updatedAt: CREATED_AT,
-    instruction: "Prepare the summary.",
-    files: [],
-    fileContents: [],
-    automations: [automation(), automation(OTHER_AUTOMATION_ID, true)],
-  };
-}
-
-function mockAutomationDestination(detail = workflow()) {
-  context.mocks.api(workflowAutomationsContract.get, ({ respond }) => {
-    return respond(200, detail.automations[0]!);
-  });
-  context.mocks.api(workflowsDetailContract.get, ({ respond }) => {
-    return respond(200, detail);
-  });
-  context.mocks.api(workflowsDetailContract.ownerProfile, ({ respond }) => {
-    return respond(200, { displayName: "Feed tester", imageUrl: null });
-  });
-}
-
-function control(
-  role: "button" | "link" | "tab",
-  name: string,
-  container: ParentNode = document.body,
-): HTMLElement {
-  const result = queryAllByRoleFast(role, container).find((item) => {
-    return (
-      item.getAttribute("aria-label") === name ||
-      item.textContent?.trim() === name
-    );
-  });
-  if (!result) {
-    throw new Error(`Missing ${role}: ${name}`);
-  }
-  return result;
-}
-
-async function openDetails(item = platformEvent()) {
+function showEvent(item: PlatformEvent) {
   context.mocks.api(feedContract.list, ({ respond }) => {
     return respond(200, { items: [item] });
   });
-  context.mocks.data.userPreferences({ timezone: "Asia/Shanghai" });
-  await setupPage({
+  return setupPage({
     context,
     path: "/for-you",
-    auth: auth(),
     featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: true },
   });
-  await screen.findByRole("heading", { name: "Automation paused" });
-  return screen.getByRole("main");
 }
 
-function destination(workspaceId = WORKSPACE_ID) {
-  return `/workflows/${WORKFLOW_ID}/automations?automationId=${AUTOMATION_ID}&workspaceId=${workspaceId}`;
-}
-
-test("A fast event destination replaces its initially hidden loading status", async () => {
-  mockAutomationDestination();
-  const response = createDeferredPromise<void>(context.signal);
-  const initiallyHidden = createDeferredPromise<boolean>(context.signal);
-  context.mocks.api(workflowAutomationsContract.get, async ({ respond }) => {
-    await response.promise;
-    return respond(200, automation());
-  });
-  // Capture the initial state at mount, before startup or CI load can consume
-  // the entire delay. The response can now finish without waiting on the timer.
-  const observer = new MutationObserver(() => {
-    const loading = screen.queryByLabelText("Loading automation");
-    if (loading) {
-      observer.disconnect();
-      initiallyHidden.resolve(loading.closest("[hidden]") !== null);
-      response.resolve();
-    }
-  });
-  observer.observe(document.body, { childList: true, subtree: true });
-  context.signal.addEventListener(
-    "abort",
-    () => {
-      observer.disconnect();
-    },
-    { once: true },
-  );
-
-  await setupPage({ context, path: destination(), auth: auth() });
-  const selected = await screen.findByRole("group", { name: "Every 1 hour" });
-  await expect(initiallyHidden.promise).resolves.toBeTruthy();
-  expect(selected).toHaveAttribute("aria-current", "true");
-  expect(within(selected).getByRole("switch")).not.toBeChecked();
-  expect(screen.queryByLabelText("Loading automation")).not.toBeInTheDocument();
-});
-
-test("A pending event destination shows a lightweight status until access resolves", async () => {
-  mockAutomationDestination();
-  const response = createDeferredPromise<void>(context.signal);
-  context.mocks.api(workflowAutomationsContract.get, async ({ respond }) => {
-    await response.promise;
-    return respond(200, automation());
-  });
-  await setupPage({ context, path: destination(), auth: auth() });
-  const loading = await screen.findByLabelText("Loading automation");
-  await waitFor(() => {
-    expect(loading).toBeVisible();
-  });
-  expect(loading).toHaveAttribute("aria-busy", "true");
-  response.resolve();
-  const selected = await screen.findByRole("group", { name: "Every 1 hour" });
-  expect(selected).toHaveAttribute("aria-current", "true");
-  expect(within(selected).getByRole("switch")).not.toBeChecked();
-});
-
-test("A failed destination can retry through the loading status and reach the same automation", async () => {
-  mockAutomationDestination();
-  let failed = true;
-  const response = createDeferredPromise<void>(context.signal);
-  context.mocks.api(workflowAutomationsContract.get, async ({ respond }) => {
-    if (failed) {
-      return respond(500, {
-        error: { code: "INTERNAL_ERROR", message: "Unavailable" },
-      });
-    }
-    await response.promise;
-    return respond(200, automation());
-  });
-  await setupPage({ context, path: destination(), auth: auth() });
-  await screen.findByText("Couldn’t load this automation");
-  expect(control("link", "Back to workflows")).toBeInTheDocument();
-  failed = false;
-  click(control("button", "Try again"));
-  const loading = await screen.findByLabelText("Loading automation");
-  await waitFor(() => {
-    expect(loading).toBeVisible();
-  });
-  response.resolve();
-  const selected = await screen.findByRole("group", { name: "Every 1 hour" });
-  expect(within(selected).getByRole("switch")).not.toBeChecked();
-});
-
-test("The linked destination rechecks access and focuses the exact current automation", async () => {
-  mockAutomationDestination();
-  await setupPage({ context, path: destination(), auth: auth() });
-  const selected = await screen.findByRole("group", { name: "Every 1 hour" });
-  await waitFor(() => {
-    expect(selected).toHaveFocus();
-  });
-  expect(selected).toHaveAttribute("aria-current", "true");
-  expect(within(selected).getByRole("switch")).not.toBeChecked();
-  const other = screen.getByRole("group", { name: "Every 2 hours" });
-  expect(within(other).getByRole("switch")).toBeChecked();
-  expect(pathname()).toBe(`/workflows/${WORKFLOW_ID}/automations`);
-  expect(search()).toBe(
-    `?automationId=${AUTOMATION_ID}&workspaceId=${WORKSPACE_ID}`,
-  );
-});
-
-test.each([
-  { tab: "Instructions", route: "instructions" },
-  { tab: "Settings", route: "info" },
-])(
-  "A valid event destination hands $tab over to the normal workflow page",
-  async ({ tab, route }) => {
-    mockAutomationDestination();
-    await setupPage({ context, path: destination(), auth: auth() });
-    const selected = await screen.findByRole("group", { name: "Every 1 hour" });
-    expect(selected).toHaveAttribute("aria-current", "true");
-
-    await userEvent.click(control("tab", tab));
-
-    await expect(
-      tab === "Instructions"
-        ? screen.findByText("Prepare the summary.")
-        : screen.findByDisplayValue("Daily summary workflow"),
-    ).resolves.toBeInTheDocument();
-    expect(pathname()).toBe(`/workflows/${WORKFLOW_ID}/${route}`);
-    expect(search()).toBe("");
-    expect(control("tab", tab)).toHaveAttribute("aria-selected", "true");
-    expect(control("tab", tab)).toHaveFocus();
-
-    click(control("tab", "Automations"));
-
-    const automationRow = await screen.findByRole("group", {
-      name: "Every 1 hour",
-    });
-    expect(within(automationRow).getByRole("switch")).not.toBeChecked();
-    expect(pathname()).toBe(`/workflows/${WORKFLOW_ID}/automations`);
-    expect(search()).toBe("");
-  },
-);
-
-test.each([403, 404] as const)(
-  "An automation API %i produces safe no-access feedback rather than a recovery action",
-  async (status) => {
-    mockAutomationDestination();
-    context.mocks.api(workflowAutomationsContract.get, ({ respond }) => {
-      return respond(status, {
-        error: {
-          code: status === 403 ? "FORBIDDEN" : "NOT_FOUND",
-          message: "Unavailable",
-        },
-      });
-    });
-    await setupPage({ context, path: destination(), auth: auth() });
-    await expect(
-      screen.findByText("Automation not found or you do not have access"),
-    ).resolves.toBeInTheDocument();
-    expect(control("link", "Back to workflows")).toBeInTheDocument();
-    expect(queryAllByRoleFast("tab")).toHaveLength(0);
-    expect(document.body).not.toHaveTextContent(WORKFLOW_ID);
-    expect(document.body).not.toHaveTextContent(AUTOMATION_ID);
-  },
-);
-
-test("A cross-workspace event uses the normal explicit workspace switch and preserves the exact destination", async () => {
-  mockAutomationDestination();
-  const clerk = context.mocks.clerk();
-  mockedClerk.setActive.mockImplementation(() => {
-    clerk.organization({
-      activeOrg: { id: OTHER_WORKSPACE_ID, name: "Design workspace" },
-    });
-    clerk.stateChanged();
-    return Promise.resolve();
-  });
-  await setupPage({
-    context,
-    path: destination(OTHER_WORKSPACE_ID),
-    auth: auth(),
-  });
-  await screen.findByText(
-    "This automation is in Design workspace. Switch workspace to view it.",
-  );
-  click(control("button", "Switch workspace", screen.getByRole("main")));
-  const selected = await screen.findByRole("group", { name: "Every 1 hour" });
-  expect(within(selected).getByRole("switch")).not.toBeChecked();
-  expect(location.pathname + location.search).toBe(
-    destination(OTHER_WORKSPACE_ID),
-  );
-  await waitFor(() => {
-    expect(selected).toHaveFocus();
-  });
-});
-
-test("A removed workspace membership does not grant access from a event's structural IDs", async () => {
-  await setupPage({
-    context,
-    path: destination("org_removed_membership"),
-    auth: auth(),
-  });
-  await expect(
-    screen.findByText("Automation not found or you do not have access"),
-  ).resolves.toBeInTheDocument();
-  expect(document.body).not.toHaveTextContent("org_removed_membership");
-});
-
-test("A recovered Official Workflow automation opens read-only with its current enabled state", async () => {
-  const detail = workflow();
-  const recovered: WorkflowDetailResponse = {
-    ...detail,
-    canManage: false,
-    official: {
-      definitionName: "daily-summary",
-      installationState: "installed",
-      definitionLifecycle: "active",
-      readOnly: true,
-    },
-    automations: [{ ...automation(), enabled: true }],
+function workflow(item: PlatformEvent, official = false) {
+  const automation: WorkflowAutomationSummary = {
+    id: item.content.automationId,
+    ownerUserId: "user_default",
+    chatThreadId: null,
+    kind: "schedule",
+    enabled: official,
+    official: null,
+    nextRunAt: null,
+    lastRunAt: null,
+    schedule: { type: "loop", intervalSeconds: 3600 },
+    scheduleSummary: "Every hour",
   };
-  mockAutomationDestination(recovered);
-  await setupPage({ context, path: destination(), auth: auth() });
-  await screen.findByText(
-    "This automation is managed by the system. Its current status is shown below.",
-  );
-  const selected = screen.getByRole("group", { name: "Every 1 hour" });
-  expect(within(selected).getByRole("switch")).toBeChecked();
-  expect(within(selected).getByRole("switch")).toHaveAttribute(
-    "aria-disabled",
-    "true",
-  );
-  expect(pathname()).toBe(`/workflows/${WORKFLOW_ID}/automations`);
+  const detail: WorkflowDetailResponse = {
+    id: item.content.workflowId,
+    name: "warehouse-report",
+    displayName: "Warehouse report",
+    agentId: crypto.randomUUID(),
+    agentName: "warehouse",
+    agentDisplayName: "Warehouse assistant",
+    description: "Review shipments",
+    visibility: "private",
+    ownerUserId: "user_default",
+    createdAt: item.createdAt,
+    createdByUserId: "user_default",
+    updatedByUserId: "user_default",
+    updatedAt: item.updatedAt,
+    instruction: "Review shipments every hour",
+    files: null,
+    fileContents: null,
+    automations: [automation],
+    canManage: !official,
+    canPublish: false,
+    importSource: null,
+    official: official
+      ? {
+          definitionName: "warehouse-report",
+          definitionLifecycle: "active",
+          installationState: "installed",
+          readOnly: true,
+        }
+      : null,
+  };
+  context.mocks.api(workflowsDetailContract.get, ({ respond }) => {
+    return respond(200, detail);
+  });
+  return automation;
+}
+
+test("platform-feed-events-008 an inaccessible automation offers the workflows return link", async () => {
+  const item = pausedEvent();
+  context.mocks.api(workflowAutomationsContract.get, ({ respond }) => {
+    return respond(404, { error: { code: "NOT_FOUND", message: "Missing" } });
+  });
+  await setupPage({ context, path: pathTo(item) });
+  await screen.findByText("Automation not found or you do not have access");
+  await expect(
+    findFastControl("link", "Back to workflows"),
+  ).resolves.toHaveAttribute("href", "/workflows");
+  expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+  expect(queryAllByRoleFast("tab")).toHaveLength(0);
+  expect(document.body).not.toHaveTextContent(item.content.workflowId);
+  expect(document.body).not.toHaveTextContent(item.content.automationId);
+  expect(queryFastControl("button", "Try again")).toBeNull();
+  expect(queryFastControl("button", "Enable")).toBeNull();
 });
 
-test("A failed dismissal stays visible and can be retried without changing its automation", async () => {
-  let fail = true;
-  context.mocks.api(feedContract.dismiss, ({ respond }) => {
-    return fail
-      ? respond(500, {
-          error: { code: "INTERNAL_ERROR", message: "Unable to dismiss" },
-        })
-      : respond(204);
+test("platform-feed-events-010 an unrecognized workspace is redacted in the destination", async () => {
+  const item = pausedEvent();
+  item.content.workspaceId = "org_removed_warehouse";
+  await setupPage({
+    context,
+    path: pathTo(item),
+    auth: {
+      user: { id: "user_default", fullName: "Warehouse member" },
+      organization: {
+        activeOrg: { id: "org_default", name: "Warehouse" },
+        memberships: [
+          {
+            id: "present-membership",
+            organization: { id: "org_default", name: "Warehouse" },
+          },
+        ],
+      },
+    },
   });
-  await openDetails();
-  expect(screen.getByText("System update")).toBeInTheDocument();
-  click(control("button", "Dismiss"));
-  await screen.findByRole("alert");
+  await screen.findByText("Automation not found or you do not have access");
+  expect(document.body).not.toHaveTextContent(item.content.workspaceId);
+});
+
+test("platform-feed-events-012 retrying a failed event dismissal clears the card", async () => {
+  const item = pausedEvent();
+  let available = false;
+  context.mocks.api(feedContract.dismiss, ({ params, respond }) => {
+    return available && params.id === item.id
+      ? respond(204)
+      : respond(503, { error: { code: "UNAVAILABLE", message: "Try later" } });
+  });
+  await showEvent(item);
+  const card = await screen.findByRole("article", {
+    name: "Automation paused",
+  });
+  click(await findFastControl("button", "Dismiss", card));
+  await within(card).findByRole("alert");
   expect(
-    screen.getByRole("heading", { name: "Automation paused" }),
-  ).toBeInTheDocument();
-  fail = false;
-  click(control("button", "Dismiss"));
+    within(card).getByRole("heading", { name: "Automation paused" }),
+  ).toBeVisible();
+  expect(card).toHaveTextContent(item.content.automationName);
+  available = true;
+  click(await findFastControl("button", "Dismiss", card));
   await screen.findByText("All caught up");
-});
-
-test("A pause update explains the failure, shows the description, and links to the exact automation in a new tab", async () => {
-  const card = await openDetails();
-  expect(within(card).getByText("Daily work summary")).toBeInTheDocument();
-  expect(within(card).getByText(AUTOMATION_DESCRIPTION)).toBeInTheDocument();
-  expect(within(card).getByText("System update")).toBeInTheDocument();
   expect(
-    within(card).getByText(/3 consecutive run attempts/u),
-  ).toBeInTheDocument();
-  const timestamp = within(card).getByText(/^Paused on /u);
-  expect(timestamp).toHaveAttribute("datetime", DISABLED_AT);
-  expect(timestamp).toHaveTextContent("2026");
-  expect(timestamp).toHaveTextContent("11:00 AM");
-  const link = control("link", "View automation", card);
-  expect(link).toHaveAttribute("href", destination());
-  expect(link).toHaveAttribute("target", "_blank");
-  expect(link).toHaveAttribute("rel", "noopener noreferrer");
-  expect(control("button", "Enable", card)).toBeInTheDocument();
-  expect(control("button", "Dismiss", card)).toBeInTheDocument();
-  expect(card).not.toHaveTextContent(WORKSPACE_ID);
+    screen.queryByRole("article", { name: "Automation paused" }),
+  ).toBeNull();
 });
 
-test("Enable keeps the update available after rejection and clears it after enabling the linked automation", async () => {
-  const item = platformEvent();
-  const enabled = new Set([OTHER_AUTOMATION_ID]);
-  const response = createDeferredPromise<void>(context.signal);
-  let reject = true;
-  context.mocks.api(workflowAutomationsContract.get, ({ params, respond }) => {
-    return respond(200, automation(params.id, enabled.has(params.id)));
+test("platform-feed-events-013 the localized pause timestamp and destination describe the same automation", async () => {
+  const item = pausedEvent();
+  context.mocks.data.userPreferences({ timezone: "Asia/Shanghai" });
+  await showEvent(item);
+  const card = await screen.findByRole("article", {
+    name: "Automation paused",
   });
+  const time = await within(card).findByText(/Nov 5, 2026.*11:00 AM/);
+  expect(time).toHaveAttribute("datetime", item.content.disabledAt);
+  const link = await findFastControl("link", "View automation", card);
+  expect(link).toHaveTextContent("Daily work summary");
+  expect(link).toHaveAttribute("href", pathTo(item));
+  expect(card).not.toHaveTextContent(item.content.workspaceId);
+});
+
+test("platform-feed-events-011 the system-managed automation is enabled and read-only", async () => {
+  const item = pausedEvent(),
+    schedule = workflow(item, true);
+  context.mocks.api(workflowAutomationsContract.get, ({ respond }) => {
+    return respond(200, schedule);
+  });
+  await setupPage({ context, path: pathTo(item) });
+  await screen.findByText(/This automation is managed by the system/);
+  const toggle = await screen.findByRole("switch");
+  expect(toggle).toBeChecked();
+  expect(toggle).toHaveAttribute("aria-disabled", "true");
+  click(toggle);
+  expect(toggle).toBeChecked();
+  expect(location.pathname).toBe(
+    "/workflows/" + item.content.workflowId + "/automations",
+  );
+});
+
+test("platform-feed-events-006 ordinary workflow tabs preserve the hourly automation after recovery", async () => {
+  const item = pausedEvent(),
+    schedule = workflow(item);
+  context.mocks.api(workflowAutomationsContract.get, ({ respond }) => {
+    return respond(200, schedule);
+  });
+  await setupPage({ context, path: pathTo(item) });
+  const settings = await findFastControl("tab", "Settings");
+  click(settings);
+  await waitFor(() => {
+    return expect(location.pathname).toBe(
+      "/workflows/" + item.content.workflowId + "/info",
+    );
+  });
+  expect(location.search).toBe("");
+  expect(settings).toHaveAttribute("aria-selected", "true");
+  const name = await screen.findByDisplayValue("Warehouse report");
+  expect(name).toHaveAttribute("name", "displayName");
+  click(await findFastControl("tab", "Automations"));
+  const toggle = await screen.findByRole("switch");
+  expect(toggle).not.toBeChecked();
+  await screen.findByText(/Every (1 )?hour/i);
+  expect(location.pathname).toBe(
+    "/workflows/" + item.content.workflowId + "/automations",
+  );
+  expect(location.search).toBe("");
+});
+
+test("platform-feed-events-003 a pending retry resolves to the original disabled hourly automation", async () => {
+  const item = pausedEvent(),
+    schedule = workflow(item);
+  let recovering = false;
+  const resume = context.mocks.deferred<void>();
   context.mocks.api(
-    workflowAutomationsContract.enable,
+    workflowAutomationsContract.get,
     async ({ params, respond }) => {
-      if (reject) {
-        return respond(409, {
-          error: { code: "CONFLICT", message: "Try again" },
+      if (params.id !== schedule.id) {
+        return respond(404, {
+          error: { code: "NOT_FOUND", message: "Missing" },
         });
       }
-      await response.promise;
-      enabled.add(params.id);
-      return respond(200, automation(params.id, true));
+      if (!recovering) {
+        return respond(503, {
+          error: { code: "UNAVAILABLE", message: "Unavailable" },
+        });
+      }
+      await resume.promise;
+      return respond(200, schedule);
     },
   );
-  context.mocks.api(feedContract.dismiss, ({ params, respond }) => {
-    expect(params.id).toBe(item.id);
-    expect(enabled.has(AUTOMATION_ID)).toBeTruthy();
-    return respond(204);
-  });
-
-  const card = await openDetails(item);
-  click(control("button", "Enable", card));
-  await within(card).findByText("We couldn’t complete that action. Try again.");
-  expect(enabled.has(AUTOMATION_ID)).toBeFalsy();
-  reject = false;
-  click(control("button", "Enable", card));
-  expect(control("button", "Enable", card)).toHaveAttribute(
-    "aria-busy",
-    "true",
+  await setupPage({ context, path: pathTo(item) });
+  await screen.findByText("Couldn’t load this automation");
+  await expect(
+    findFastControl("link", "Back to workflows"),
+  ).resolves.toHaveAttribute("href", "/workflows");
+  recovering = true;
+  click(await findFastControl("button", "Try again"));
+  try {
+    await screen.findByRole("status", { name: "Loading automation" });
+  } finally {
+    resume.resolve();
+  }
+  await screen.findByText(/Every (1 )?hour/i);
+  await expect(screen.findByRole("switch")).resolves.not.toBeChecked();
+  expect(location.pathname).toBe(
+    "/workflows/" + item.content.workflowId + "/automations",
   );
-  expect(control("button", "Dismiss", card)).toBeDisabled();
-  response.resolve();
-  await screen.findByRole("heading", { name: "All caught up" });
-  expect(enabled).toStrictEqual(new Set([AUTOMATION_ID, OTHER_AUTOMATION_ID]));
-});
-
-test("Enable closes an update for a recovered automation without restarting it", async () => {
-  const item = platformEvent();
-  item.content.recoveryScheduled = true;
-  let restarts = 0;
-  context.mocks.api(workflowAutomationsContract.get, ({ respond }) => {
-    return respond(200, automation(AUTOMATION_ID, true));
-  });
-  context.mocks.api(workflowAutomationsContract.enable, ({ respond }) => {
-    restarts += 1;
-    return respond(200, automation(AUTOMATION_ID, true));
-  });
-  context.mocks.api(feedContract.dismiss, ({ respond }) => {
-    return respond(204);
-  });
-  const card = await openDetails(item);
-  expect(
-    within(card).getByText(/An automatic recovery attempt was scheduled/u),
-  ).toBeInTheDocument();
-  click(control("button", "Enable", card));
-  await screen.findByRole("heading", { name: "All caught up" });
-  expect(restarts).toBe(0);
 });

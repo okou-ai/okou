@@ -1,70 +1,87 @@
 import { bankingUserContract } from "@okouai/api-contracts/contracts/banking";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
+
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { createMarkdownChatFixture } from "./markdown-page-test-helpers.ts";
+import { AGENT_ID } from "./chat-lifecycle-test-helpers.ts";
+import { createMessageExperienceHelpers } from "./chat-message-experience-test-helpers.ts";
 
 const context = testContext();
-const AGENT_ID = "c0000000-0000-4000-a000-000000000071";
-const REASON = "Review quarterly subscription expenses";
+const { installMessageExperienceChat } =
+  createMessageExperienceHelpers(context);
+const THREAD_ID = "b0000000-0000-4000-a000-000000000c91";
+const CHANNEL = "user:test-user-123";
+const TOPIC = "bankingAccessChanged";
+const ANSWER = "I need read access to your bank accounts.";
+
+function bankingLink(): string {
+  const params = new URLSearchParams({
+    reason: "Review this month's cash flow",
+    callbackPrompt: "Continue the cash flow review.",
+    threadId: THREAD_ID,
+  });
+  return `https://app.okou.ai/agents/${AGENT_ID}/banking?${params}`;
+}
+
+async function expectBothCards(agentName: string): Promise<void> {
+  await waitFor(() => {
+    const cards = screen.queryAllByTestId("banking-action-card");
+    expect(cards).toHaveLength(2);
+    for (const card of cards) {
+      expect(card).toHaveTextContent(agentName);
+    }
+  });
+}
 
 test("Duplicate banking cards update together on events and recover after a continuity gap", async () => {
-  const chat = createMarkdownChatFixture(context);
-  const url = new URL(`https://app.okou.ai/agents/${AGENT_ID}/banking`);
-  url.searchParams.set("reason", REASON);
-  url.searchParams.set("threadId", context.resourceId);
-  url.searchParams.set("callbackPrompt", "Continue the expense review");
-  let name = "Finance Assistant";
+  const server = { agentName: "Finance Assistant" };
   context.mocks.api(bankingUserContract.accessRequestStatus, ({ respond }) => {
     return respond(200, {
-      agent: { id: AGENT_ID, name },
+      agent: { id: AGENT_ID, name: server.agentName },
       connection: null,
       session: null,
       grant: null,
     });
   });
-  chat.install({
-    rows: () => {
-      return [
-        chat.outputMessage(`${url.toString()}\n\n${url.toString()}`, {
-          seqId: 1,
-        }),
-        chat.runCompleted({ seqId: 2 }),
-      ];
-    },
+  installMessageExperienceChat({
+    threadId: THREAD_ID,
+    chatEvents: [
+      {
+        id: "banking-request",
+        role: "assistant",
+        content: `${ANSWER}\n\n${bankingLink()}\n\nSame request again:\n\n${bankingLink()}`,
+        runId: "d0000000-0000-4000-a000-000000000c91",
+        seqId: 1,
+        createdAt: "2026-11-20T09:00:00.000Z",
+      },
+    ],
   });
-  const attachment = context.mocks.ably.deferSubscribeOnChannel(
-    "user:test-user-123",
-    "bankingAccessChanged",
-  );
   await setupPage({
     context,
-    path: chat.path,
+    path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
+    // Continuity recovery runs through the complete SharedWorker port host.
     sharedWorkerTestTransport: "message-port",
   });
-  await waitFor(() => {
-    expect(screen.getAllByTestId("banking-action-card")).toHaveLength(2);
-    expect(screen.getAllByText(name)).toHaveLength(2);
-  });
-  await attachment.started;
-  name = "Updated Finance Assistant";
-  attachment.attach();
+  await expectBothCards("Finance Assistant");
   await waitFor(() => {
     expect(
-      context.mocks.ably.hasSubscription("bankingAccessChanged"),
+      context.mocks.ably.hasSubscriptionOnChannel(CHANNEL, TOPIC),
     ).toBeTruthy();
   });
-  context.mocks.ably.trigger("bankingAccessChanged", {});
-  await waitFor(() => {
-    expect(screen.getAllByText(name)).toHaveLength(2);
-  });
 
-  context.mocks.ably.triggerConnectionState("suspended");
-  name = "Recovered Finance Assistant";
-  context.mocks.ably.triggerConnectionState("connected");
-  await waitFor(() => {
-    expect(screen.getAllByText(name)).toHaveLength(2);
+  server.agentName = "Updated Finance Assistant";
+  context.mocks.ably.triggerOnChannel(CHANNEL, TOPIC, {});
+
+  await expectBothCards("Updated Finance Assistant");
+
+  // The rename happens while realtime is suspended, so no event reaches the page.
+  context.mocks.ably.triggerConnectionState("suspended", {
+    channelName: CHANNEL,
   });
+  server.agentName = "Recovered Finance Assistant";
+  context.mocks.ably.triggerReconnect();
+
+  await expectBothCards("Recovered Finance Assistant");
 });

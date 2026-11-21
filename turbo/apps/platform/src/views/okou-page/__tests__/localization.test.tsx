@@ -1,148 +1,58 @@
-import { screen, waitFor, within } from "@testing-library/react";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
-import { runAgentEventsContract } from "@okouai/api-contracts/contracts/run-routes";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
+const RUN_ID = "d0000000-0000-4000-a000-000000000d81";
 
-function accountMenuTrigger(): HTMLElement | undefined {
-  const rail = screen.queryByTestId("labeled-nav-rail");
-  if (rail) {
-    return within(rail).queryByLabelText("Test User") ?? undefined;
-  }
-  return queryAllByRoleFast("button").find((button) => {
-    return button.textContent?.includes("Test User") ?? false;
-  });
-}
-
-function fastRoleElement(
-  role: "button" | "combobox" | "link" | "option",
-  name: string | RegExp,
-  container: ParentNode = document.body,
-): HTMLElement {
-  const element = queryAllByRoleFast(role, container).find((candidate) => {
-    const accessibleName =
-      candidate.getAttribute("aria-label") ??
-      candidate.textContent?.replace(/\s+/gu, " ").trim() ??
-      "";
-    return typeof name === "string"
-      ? accessibleName === name
-      : name.test(accessibleName);
-  });
-  if (!element) {
-    throw new Error(`Expected ${role} named ${String(name)}`);
-  }
-  return element;
-}
-
-function waitForFastRole(
-  role: "button" | "combobox" | "link" | "option",
-  name: string | RegExp,
-  container: ParentNode = document.body,
-): Promise<HTMLElement> {
-  return waitFor(() => {
-    return fastRoleElement(role, name, container);
-  });
-}
-
-async function selectLanguage(
-  currentLabel: string,
-  optionLabel: string,
-): Promise<void> {
-  click(await waitForFastRole("combobox", currentLabel));
-  click(await waitForFastRole("option", optionLabel));
-}
-
-async function openSettingsDialog(label: string): Promise<HTMLElement> {
-  const trigger = await waitFor(() => {
-    const button = accountMenuTrigger();
-    if (!button) {
-      throw new Error("Expected the account menu trigger");
-    }
-    return button;
-  });
-  click(trigger);
-  const menu = await screen.findByRole("menu");
-  click(within(menu).getByText(label));
-  return screen.findByRole("dialog", { name: label });
-}
-
-async function closeDialog(dialog: HTMLElement, label: string): Promise<void> {
-  click(fastRoleElement("button", label, dialog));
-  await waitFor(() => {
-    expect(dialog).not.toBeInTheDocument();
-  });
+/** The value shown beside the activity's Duration label. */
+function durationValue(): string | undefined {
+  const label = screen.getByText("Duration");
+  return label.nextElementSibling?.textContent?.trim();
 }
 
 test("French uses local number formatting", async () => {
-  const runId = "94000000-0000-4000-a000-000000000001";
   context.mocks.api(logsByIdContract.getById, ({ respond }) => {
     return respond(200, {
-      id: runId,
+      id: RUN_ID,
       sessionId: null,
-      agentId: null,
-      displayName: null,
+      agentId: "c0000000-0000-4000-a000-000000000d81",
+      displayName: "Quarterly summary",
       framework: "claude-code",
       modelProvider: null,
       selectedModel: null,
       triggerSource: "web",
       status: "completed",
-      prompt: "Read two files",
+      prompt: "Summarize the quarter",
       appendSystemPrompt: null,
-      createdAt: "2026-01-01T12:00:00.000Z",
-      startedAt: "2026-01-01T12:00:00.000Z",
-      completedAt: "2026-01-01T12:00:01.200Z",
+      createdAt: "2026-11-21T09:00:00.000Z",
+      startedAt: "2026-11-21T09:00:01.000Z",
+      completedAt: "2026-11-21T09:00:02.200Z",
     });
   });
-  context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
-    return respond(200, {
-      events: [
-        {
-          sequenceNumber: 1,
-          eventType: "assistant",
-          eventData: {
-            message: {
-              content: [
-                {
-                  type: "tool_use",
-                  id: "read-one",
-                  name: "Read",
-                  input: { file_path: "/tmp/one.txt" },
-                },
-                {
-                  type: "tool_use",
-                  id: "read-two",
-                  name: "Read",
-                  input: { file_path: "/tmp/two.txt" },
-                },
-              ],
-            },
-          },
-          createdAt: "2026-01-01T12:00:00.500Z",
-        },
-      ],
-      hasMore: false,
-      nextCursor: null,
-      status: "completed",
-      lastEventSequence: 1,
-    });
+  await setupPage({
+    context,
+    path: `/activities/${RUN_ID}?settings=preference`,
   });
-  await setupPage({ context, path: `/activities/${runId}` });
-  await screen.findAllByText("Read two files");
+  const settings = await screen.findByRole("dialog", { name: "Settings" });
+  expect(durationValue()).toBe("1.2s");
+  const user = userEvent.setup({ delay: null });
 
-  const settings = await openSettingsDialog("Settings");
-  await selectLanguage("Language", "Français");
+  await user.click(
+    within(settings).getByRole("combobox", { name: "Language" }),
+  );
+  await user.click(await screen.findByRole("option", { name: "Français" }));
   await waitFor(() => {
     expect(document.documentElement).toHaveAttribute("lang", "fr-FR");
   });
-  await closeDialog(settings, "Close");
+  await user.keyboard("{Escape}");
 
-  expect(screen.getByText("1,2s")).toBeVisible();
+  await waitFor(() => {
+    expect(settings).not.toBeInTheDocument();
+  });
+  expect(durationValue()).toBe("1,2s");
 });

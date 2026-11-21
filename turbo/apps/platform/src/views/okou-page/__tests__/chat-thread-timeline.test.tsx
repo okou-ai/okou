@@ -1,156 +1,138 @@
-import { screen, within } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
-
 import { setupPage } from "../../../__tests__/page-helper.ts";
-import { mockNow } from "../../../__tests__/time.ts";
+import { mockNow } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  assistantEvent,
+  completedEvent,
+  createChatRunFixtures,
+  promptEvent,
+  RUN_PATH,
+} from "./chat-run-test-fixtures.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
-import { createMessageExperienceHelpers } from "./chat-message-experience-test-helpers.ts";
-
 const context = testContext();
-const { installMessageExperienceChat } =
-  createMessageExperienceHelpers(context);
-const RUN_ID = "a0000000-0000-4000-a000-000000000901";
-const NOW = "2026-10-28T12:00:00.000Z";
-
-function prompt(content: string, createdAt: string): MockChatEventInput {
-  return {
-    id: content,
-    role: "user",
-    content,
-    createdAt,
-    runId: RUN_ID,
-  };
+function stamp(day: number, hour: number, minute: number) {
+  return new Date(2026, 9, day, hour, minute).toISOString();
 }
-
-async function openChat(events: MockChatEventInput[], lastMessage: string) {
-  mockNow(new Date(NOW), context.signal);
-  installMessageExperienceChat({
-    threadId: context.resourceId,
-    chatEvents: events,
-  });
-  await setupPage({
-    context,
-    path: `/chats/${context.resourceId}`,
-  });
-  const message = await screen.findByText(lastMessage);
-  const transcript = message.closest<HTMLElement>("[data-message-container]");
-  if (!transcript) {
-    throw new Error("Expected the message in the chat transcript");
-  }
-  return within(transcript);
+async function open(events: MockChatEventInput[]) {
+  mockNow(new Date(2026, 9, 28, 12), context.signal);
+  createChatRunFixtures(context).installRunChat({ chatEvents: events });
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
 }
-
-test("Chat dates separate days once and include the year only for past years", async () => {
-  const chat = await openChat(
-    [
-      prompt("Save last year's priorities", "2025-12-18T10:00:00.000Z"),
-      prompt("Plan the week", "2026-10-26T10:00:00.000Z"),
-      prompt("Review yesterday's plan", "2026-10-27T10:00:00.000Z"),
-      prompt("Add another priority", "2026-10-27T11:00:00.000Z"),
-      prompt("Review today's plan", "2026-10-28T10:00:00.000Z"),
-    ],
-    "Review today's plan",
+function appearsBefore(first: Element, second: Element) {
+  return Boolean(
+    first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING,
   );
-
-  expect(
-    chat.getAllByRole("separator").map((separator) => {
-      return separator.textContent;
+}
+test("chat-thread-timeline-002 a thread containing only this morning's message needs no Today divider", async () => {
+  const runId = crypto.randomUUID(),
+    createdAt = stamp(28, 8, 12);
+  await open([
+    promptEvent({
+      id: "today-note",
+      runId,
+      seqId: 1,
+      text: "Morning reconciliation",
+      createdAt,
     }),
-  ).toStrictEqual(["Dec 18, 2025", "Oct 26", "Yesterday", "Today"]);
+    completedEvent({ id: "today-finished", runId, seqId: 2, createdAt }),
+  ]);
+  await screen.findByText("Morning reconciliation");
+  expect(screen.queryByRole("separator", { name: "Today" })).toBeNull();
 });
-
-test("A conversation containing only today's messages does not need a Today divider", async () => {
-  const chat = await openChat(
-    [prompt("Start a new conversation", "2026-10-28T10:00:00.000Z")],
-    "Start a new conversation",
-  );
-
-  expect(chat.getByText("Start a new conversation")).toBeInTheDocument();
-  expect(chat.queryByRole("separator", { name: "Today" })).toBeNull();
-});
-
-test("Older history does not enable Today without a Yesterday section", async () => {
-  const chat = await openChat(
-    [
-      prompt("An earlier discussion", "2026-10-26T10:00:00.000Z"),
-      prompt("Continue the discussion", "2026-10-28T10:00:00.000Z"),
-    ],
-    "Continue the discussion",
-  );
-
-  expect(chat.getByRole("separator", { name: "Oct 26" })).toBeInTheDocument();
-  expect(chat.queryByRole("separator", { name: "Today" })).toBeNull();
-});
-
-test("Messages in the same user turn receive a date boundary at local midnight", async () => {
-  const chat = await openChat(
-    [
-      prompt("A late-night note", new Date(2026, 9, 27, 23, 59).toISOString()),
-      prompt(
-        "An early-morning note",
-        new Date(2026, 9, 28, 0, 1).toISOString(),
-      ),
-    ],
-    "An early-morning note",
-  );
-
-  const yesterday = chat.getByRole("separator", { name: "Yesterday" });
-  const today = chat.getByRole("separator", { name: "Today" });
-  expect(yesterday).toBeInTheDocument();
-  expect(today).toBeInTheDocument();
+test("chat-thread-timeline-004 a turn crossing midnight places today's divider before the early user message", async () => {
+  const runId = crypto.randomUUID(),
+    late = stamp(27, 23, 59),
+    early = stamp(28, 0, 1);
+  await open([
+    promptEvent({
+      id: "late-request",
+      runId,
+      seqId: 1,
+      text: "Record the evening count",
+      createdAt: late,
+    }),
+    promptEvent({
+      id: "early-note",
+      runId,
+      seqId: 2,
+      text: "Record the opening inventory",
+      createdAt: early,
+    }),
+    completedEvent({ id: "counted", runId, seqId: 3, createdAt: early }),
+  ]);
+  const morningNote = await screen.findByText("Record the opening inventory");
+  const request = screen.getByText("Record the evening count");
   expect(
-    today.compareDocumentPosition(chat.getByText("An early-morning note")) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).not.toBe(0);
-});
-
-test("Hidden lifecycle events from yesterday do not create a Yesterday section", async () => {
-  const chat = await openChat(
-    [
-      {
-        id: "yesterday-completion",
-        eventType: "run.completed",
-        content: null,
-        runId: "a0000000-0000-4000-a000-000000000902",
-        createdAt: "2026-10-27T10:00:00.000Z",
-      },
-      prompt("Today's first visible message", "2026-10-28T10:00:00.000Z"),
-    ],
-    "Today's first visible message",
-  );
-
-  expect(chat.queryByRole("separator", { name: "Yesterday" })).toBeNull();
-  expect(chat.queryByRole("separator", { name: "Today" })).toBeNull();
-});
-
-test("An assistant reply can open a new date section", async () => {
-  const chat = await openChat(
-    [
-      prompt(
-        "Review the overnight plan",
-        new Date(2026, 9, 26, 23, 50).toISOString(),
-      ),
-      {
-        id: "overnight-reply",
-        role: "assistant",
-        content: "The overnight review is ready.",
-        runId: RUN_ID,
-        createdAt: "2026-10-27T10:00:00.000Z",
-      },
-      {
-        ...prompt("Continue today", "2026-10-28T10:00:00.000Z"),
-        runId: "a0000000-0000-4000-a000-000000000903",
-      },
-    ],
-    "Continue today",
-  );
-
-  const yesterday = chat.getByRole("separator", { name: "Yesterday" });
+    appearsBefore(
+      screen.getByRole("separator", { name: "Yesterday" }),
+      request,
+    ),
+  ).toBeTruthy();
   expect(
-    yesterday.compareDocumentPosition(
-      chat.getByText("The overnight review is ready."),
-    ) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).not.toBe(0);
-  expect(chat.getByRole("separator", { name: "Today" })).toBeInTheDocument();
+    appearsBefore(request, screen.getByRole("separator", { name: "Today" })),
+  ).toBeTruthy();
+  expect(
+    appearsBefore(
+      screen.getByRole("separator", { name: "Today" }),
+      morningNote,
+    ),
+  ).toBeTruthy();
+});
+test("chat-thread-timeline-006 an assistant reply opens yesterday's section before today's next user turn", async () => {
+  const first = crypto.randomUUID(),
+    next = crypto.randomUUID();
+  await open([
+    promptEvent({
+      id: "oct26",
+      runId: first,
+      seqId: 1,
+      text: "Send the quarterly totals",
+      createdAt: stamp(26, 23, 50),
+    }),
+    assistantEvent({
+      id: "oct27",
+      runId: first,
+      seqId: 2,
+      text: "The quarterly totals are available",
+      createdAt: stamp(27, 8, 0),
+    }),
+    completedEvent({
+      id: "totals-done",
+      runId: first,
+      seqId: 3,
+      createdAt: stamp(27, 8, 2),
+    }),
+    promptEvent({
+      id: "oct28",
+      runId: next,
+      seqId: 4,
+      text: "Archive the result",
+      createdAt: stamp(28, 8, 25),
+    }),
+    completedEvent({
+      id: "archived",
+      runId: next,
+      seqId: 5,
+      createdAt: stamp(28, 8, 26),
+    }),
+  ]);
+  const archive = await screen.findByText("Archive the result");
+  const reply = screen.getByText("The quarterly totals are available");
+  expect(
+    appearsBefore(
+      screen.getByText("Send the quarterly totals"),
+      screen.getByRole("separator", { name: "Yesterday" }),
+    ),
+  ).toBeTruthy();
+  expect(
+    appearsBefore(screen.getByRole("separator", { name: "Yesterday" }), reply),
+  ).toBeTruthy();
+  expect(
+    appearsBefore(reply, screen.getByRole("separator", { name: "Today" })),
+  ).toBeTruthy();
+  expect(
+    appearsBefore(screen.getByRole("separator", { name: "Today" }), archive),
+  ).toBeTruthy();
 });

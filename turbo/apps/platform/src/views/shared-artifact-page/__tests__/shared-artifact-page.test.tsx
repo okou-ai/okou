@@ -1,366 +1,183 @@
-import {
-  artifactReferencePath,
-  artifactReferencesContract,
-} from "@okouai/api-contracts/contracts/artifact-references";
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { screen, waitFor, within } from "@testing-library/react";
-import { HttpResponse } from "msw";
-import { beforeEach, expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import {
-  testContext,
-  warmMermaidParser,
-} from "../../../signals/__tests__/test-helpers.ts";
+  findNamedButton,
+  findNamedLink,
+  findNamedMenuItem,
+} from "../../okou-page/__tests__/chat-attachment-test-helpers.ts";
 
 const context = testContext();
-beforeEach(() => {
-  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Artifact not found" },
-    });
+const fileId = "70000000-0000-4000-8000-000000000022";
+const filename = "site-plan.png";
+const path = "/artifacts/70000000000040008000000000000022.png";
+const downloadUrl = "https://files.example.test/delivery/site-plan-attachment";
+const imageUrl = "https://files.example.test/preview/site-plan.png";
+function missingReference() {
+  return { error: { code: "NOT_FOUND", message: "Missing reference" } };
+}
+
+function imageReference(reference = path.slice("/artifacts/".length)) {
+  context.mocks.api(
+    artifactReferencesContract.resolve,
+    ({ params, respond }) => {
+      if (params.reference !== reference) {
+        return respond(404, missingReference());
+      }
+      return respond(200, {
+        target: { kind: "file", id: fileId },
+        filename,
+        contentType: "image/png",
+        url: imageUrl,
+        downloadUrl,
+        expiresAt: "2099-01-01T00:00:00Z",
+      });
+    },
+  );
+}
+
+function unavailableReference() {
+  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+    return respond(404, missingReference());
   });
   context.mocks.api(artifactReferencesContract.publicUrl, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Artifact unavailable" },
+    return respond(404, missingReference());
+  });
+}
+
+test("shared-artifact-page-001 zooms and resets the image at its shared address", async () => {
+  imageReference();
+  const navigation = context.mocks.browser.locationReplace();
+  await setupPage({ context, path, host: "app.okou.ai" });
+  const main = within(screen.getByRole("main"));
+  await expect(
+    main.findByRole("img", { name: filename }),
+  ).resolves.toHaveAttribute("src", imageUrl);
+  expect(screen.getByRole("heading", { name: filename })).toBeInTheDocument();
+  expect(document.title).toBe(`${filename} | Okou`);
+  click(main.getByLabelText("Zoom in"));
+  await waitFor(() => {
+    expect(
+      Number.parseInt(main.getByText(/^\d+%$/u).textContent ?? "", 10),
+    ).toBeGreaterThan(100);
+  });
+  click(main.getByLabelText("Reset zoom"));
+  await expect(main.findByText("100%")).resolves.toBeInTheDocument();
+  expect(location.href).toBe(`https://app.okou.ai${path}`);
+  expect(navigation.calls).toStrictEqual([]);
+});
+
+test("shared-artifact-page-003 saves the named attachment from a legacy address", async () => {
+  imageReference(fileId.replaceAll("-", ""));
+  const browser = context.mocks.browser.blobDownload();
+  await setupPage({
+    context,
+    path: `/share/artifacts/${fileId}?from=catalog#image`,
+  });
+  click(await findNamedButton("Download options"));
+  click(await findNamedMenuItem("Download"));
+  await waitFor(() => {
+    expect(browser.downloads).toContainEqual({
+      filename,
+      url: downloadUrl,
+      blob: null,
     });
   });
 });
 
-warmMermaidParser();
-const artifactId = "00000000-0000-4000-8000-000000000010";
-const imagePath = artifactReferencePath(artifactId, "launch.png");
-const imageUrl = "https://artifacts.example.com/launch.png?signature=private";
-
-function action(role: "button" | "link" | "menuitem", name: string) {
-  const element = queryAllByRoleFast(role).find((candidate) => {
-    return (
-      candidate.getAttribute("aria-label") === name ||
-      candidate.textContent?.trim() === name
-    );
+test("shared-artifact-page-007 gives the signed-in reader recovery choices for a missing reference", async () => {
+  unavailableReference();
+  context.mocks.data.userPreferences({
+    theme: "dark",
+    colorTheme: "blue-horizon",
   });
-  if (!element) {
-    throw new Error(`Missing ${role}: ${name}`);
-  }
-  return element;
-}
-
-async function openViewer({
-  path = imagePath,
-  filename = "launch.png",
-  contentType = "image/png",
-  url = imageUrl,
-}: {
-  path?: string;
-  filename?: string;
-  contentType?: string;
-  url?: string;
-} = {}) {
-  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
-    return respond(200, {
-      downloadUrl: new URL("?download=1", url).href,
-      url,
-      expiresAt: "2099-01-01T00:00:00Z",
-      filename,
-      contentType,
-      target: {
-        kind: contentType === "text/html" ? "html" : "file",
-        id: artifactId,
-      },
-    });
-  });
+  const email = "reader@example.test";
   await setupPage({
     context,
     path,
-    host: "app.okou.ai",
+    auth: { user: { id: "reader", fullName: "Site reader", email } },
   });
-}
-
-test("an image link stays in the app and reuses the lightbox preview and zoom controls", async () => {
-  vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(
-    1600,
-  );
-  vi.spyOn(HTMLImageElement.prototype, "naturalHeight", "get").mockReturnValue(
-    900,
-  );
-  const redirect = vi
-    .spyOn(window.location, "replace")
-    .mockImplementation(() => {});
-  await openViewer();
-
   await expect(
-    screen.findByTestId("attachment-lightbox-image"),
-  ).resolves.toHaveAttribute("src", imageUrl);
-  expect(
-    screen.getByRole("heading", { name: "launch.png" }),
-  ).toBeInTheDocument();
-  expect(document.title).toBe("launch.png | Okou");
-  await expect(
-    screen.findByTestId("artifact-dialog-image-zoom-controls"),
+    screen.findByText(`Signed in as ${email}`),
   ).resolves.toBeInTheDocument();
-  expect(redirect).not.toHaveBeenCalled();
-  click(action("button", "Zoom in"));
-  await waitFor(() => {
-    expect(
-      Number.parseInt(
-        screen.getByTestId("artifact-dialog-image-zoom-level").textContent ??
-          "0",
-        10,
-      ),
-    ).toBeGreaterThan(100);
-  });
-  click(action("button", "Reset zoom"));
+  const main = within(screen.getByRole("main"));
   expect(
-    screen.getByTestId("artifact-dialog-image-zoom-level"),
-  ).toHaveTextContent("100%");
-});
-
-test("Share copies the current app address without changing sharing or copying a signature", async () => {
-  const path = imagePath;
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  const shareChanges: string[] = [];
-  context.mocks.api(artifactSharesContract.update, ({ body, respond }) => {
-    shareChanges.push(body.audience);
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Unavailable" },
-    });
-  });
-  await openViewer({ path: `${path}#detail` });
-  click(action("button", "Share"));
-
-  await waitFor(() => {
-    expect(clipboard.writes).toStrictEqual([
-      `https://app.okou.ai${path}#detail`,
-    ]);
-  });
-  await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
-  expect(shareChanges).toStrictEqual([]);
-  expect(queryAllByRoleFast("menuitem")).toHaveLength(0);
-});
-
-test("downloads resolve attachment URLs and preserve the original filename", async () => {
-  const path = `/share/artifacts/${artifactId}?source=shared#detail`;
-  const browser = context.mocks.browser.blobDownload();
-  await openViewer({
-    path,
-  });
-  click(action("button", "Download options"));
-  await waitFor(() => {
-    expect(action("menuitem", "Download")).toBeInTheDocument();
-  });
-  expect(queryAllByRoleFast("menuitem")).toHaveLength(1);
-  click(action("menuitem", "Download"));
-
-  await waitFor(() => {
-    expect(browser.downloads).toHaveLength(1);
-  });
-  expect(browser.downloads[0]).toMatchObject({
-    filename: "launch.png",
-    url: "https://artifacts.example.com/launch.png?download=1",
-    blob: null,
-  });
-});
-
-test("HTML stays on its isolated origin and retains the requested slide", async () => {
-  const temporary = `https://ps-${"c".repeat(48)}.okou.app/`;
-  await openViewer({
-    path: `${artifactReferencePath(artifactId, "index.html")}#slide-2`,
-    filename: "index.html",
-    contentType: "text/html",
-    url: temporary,
-  });
-
-  const frame = await screen.findByTitle("index.html preview");
-  expect(frame).toHaveAttribute("src", `${temporary}#slide-2`);
-  expect(frame).toHaveAttribute("sandbox", "allow-same-origin allow-scripts");
-  expect(frame).toHaveAttribute("referrerpolicy", "origin");
-  const href = action("link", "Continue with Okou").getAttribute("href");
-  expect(href).not.toBeNull();
-  const handoff = new URL(href ?? "");
-  expect(handoff.origin).toBe("https://app.okou.ai");
-  expect(handoff.pathname).toBe("/");
-  expect(handoff.searchParams.get("prompt")).toBe(
-    `Help me work with this artifact: https://app.okou.ai${artifactReferencePath(artifactId, "index.html")}#slide-2`,
-  );
-});
-
-test("an external HTML preview receives no app or artifact referrer", async () => {
-  await openViewer({
-    filename: "index.html",
-    contentType: "text/html",
-    url: "https://preview.okou.app.untrusted.example/index.html",
-  });
-  await expect(
-    screen.findByTitle("index.html preview"),
-  ).resolves.toHaveAttribute("referrerpolicy", "no-referrer");
-});
-
-test.each([403, 404] as const)(
-  "unavailable links preserve access controls without disclosing content: status %s",
-  async (status) => {
-    context.mocks.browser.matchMedia(true);
-    context.mocks.data.userPreferences({ colorTheme: "blue-horizon" });
-    context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
-      return respond(status, {
-        error: { code: "NOT_FOUND", message: "Artifact unavailable" },
-      });
-    });
-    await setupPage({
-      context,
-      path: imagePath,
-      host: "app.okou.ai",
-      auth: {
-        user: {
-          id: "recipient",
-          fullName: "Alex Rivera",
-          email: "alex@example.test",
-        },
-      },
-    });
-
-    expect(
-      screen.getByRole("heading", { name: "You can’t view this artifact" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Artifacts" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByTestId("attachment-lightbox-image"),
-    ).not.toBeInTheDocument();
-    expect(screen.getByRole("main").querySelector("iframe")).toBeNull();
-    expect(document.title).toBe("Artifacts | Okou");
-    expect(screen.queryByText("launch.png")).not.toBeInTheDocument();
-    expect(action("button", "Switch account")).toBeEnabled();
-    expect(action("link", "Back to Okou")).toHaveAttribute("href", "/");
-    // One status covers every denial, so a signed-in visitor is told both
-    // possibilities rather than the signed-out guess about privacy.
-    expect(
-      screen.getByText(
-        /It may not exist, or it may be shared with a different account or organization\./u,
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText(/It may be private or no longer available\./u),
-    ).not.toBeInTheDocument();
-    await expect(
-      screen.findByText("Signed in as alex@example.test"),
-    ).resolves.toBeInTheDocument();
-    await waitFor(() => {
-      expect(document.documentElement).toHaveAttribute("data-theme", "dark");
-      expect(document.documentElement).toHaveAttribute(
-        "data-color-theme",
-        "blue-horizon",
-      );
-      expect(document.documentElement).toHaveAttribute(
-        "data-gradient-color-themes",
-      );
-    });
-  },
-);
-
-async function openUnavailableArtifact(path = imagePath) {
-  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Artifact unavailable" },
-    });
-  });
-  await setupPage({ context, path, host: "app.okou.ai" });
-  expect(
-    screen.getByRole("heading", { name: "You can’t view this artifact" }),
+    main.getByRole("heading", { name: "You can’t view this artifact" }),
   ).toBeInTheDocument();
-}
-
-test("switching accounts keeps the artifact URL and leaves the current session signed in", async () => {
-  await openUnavailableArtifact(`${imagePath}?source=shared#detail`);
-  click(action("button", "Switch account"));
+  expect(
+    main.getByText(
+      /It may not exist, or it may be shared with a different account or organization\./u,
+    ),
+  ).toBeInTheDocument();
+  expect(
+    main.queryByText(/private or no longer available/u),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: "Artifacts" }),
+  ).toBeInTheDocument();
+  await expect(findNamedButton("Switch account")).resolves.toBeEnabled();
+  await expect(findNamedLink("Back to Okou")).resolves.toHaveAttribute(
+    "href",
+    "/",
+  );
   await waitFor(() => {
-    expect(mockedClerk.openSignIn).toHaveBeenCalledExactlyOnceWith(
+    expect(document.documentElement).toHaveAttribute(
+      "data-color-theme",
+      "blue-horizon",
+    );
+  });
+  expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+  expect(main.queryByRole("img")).not.toBeInTheDocument();
+  expect(document.querySelector("main iframe")).not.toBeInTheDocument();
+  expect(screen.queryByText(filename)).not.toBeInTheDocument();
+});
+
+test("shared-artifact-page-008 carries the reader's return address into the account chooser", async () => {
+  unavailableReference();
+  const address = `${path}?source=mail#sheet-2`;
+  await setupPage({ context, path: address });
+  const handoff = context.mocks.deferred<void>();
+  mockedClerk.openSignIn.mockReturnValueOnce(handoff.promise);
+  const changeAccount = await findNamedButton("Switch account");
+  click(changeAccount);
+  const returnTo = new URL(address, location.origin).href;
+  await waitFor(() => {
+    expect(mockedClerk.openSignIn).toHaveBeenCalledWith(
       expect.objectContaining({
-        fallbackRedirectUrl: `https://app.okou.ai${imagePath}?source=shared#detail`,
-        forceRedirectUrl: `https://app.okou.ai${imagePath}?source=shared#detail`,
+        fallbackRedirectUrl: returnTo,
+        forceRedirectUrl: returnTo,
       }),
     );
+  });
+  expect(changeAccount).toBeDisabled();
+  handoff.resolve();
+  await waitFor(() => {
+    expect(changeAccount).toBeEnabled();
   });
   expect(mockedClerk.signOut).not.toHaveBeenCalled();
 });
 
-test("A shared Markdown artifact displays its diagram", async () => {
-  const browser = context.mocks.browser.blobDownload();
-  const url = "https://artifacts.example.com/plan.md";
-  context.mocks.http.get(url, () => {
-    return HttpResponse.text(
-      "# Shared plan\n\n**阶段：**共享*说明：*预览\n\n```mermaid\nflowchart LR\n  Shared --> Preview\n```",
-    );
-  });
-  await openViewer({
-    path: artifactReferencePath(artifactId, "plan.md"),
-    filename: "plan.md",
-    contentType: "text/markdown",
-    url,
-  });
-
-  await expect(screen.findByText("Shared plan")).resolves.toBeInTheDocument();
-  expect((await screen.findByText("阶段：")).tagName).toBe("STRONG");
-  expect(screen.getByText("说明：").tagName).toBe("EM");
-  const image = await screen.findByRole("img", { name: "Diagram" });
-  const imageUrl = image.getAttribute("src");
-  if (!imageUrl) {
-    throw new Error("Expected the shared diagram image URL");
-  }
-  expect(browser.blobForUrl(imageUrl)?.type).toBe("image/svg+xml");
-  expect(action("button", "Expand diagram")).toBeEnabled();
-
-  click(action("button", "Expand diagram"));
-
-  const dialog = await screen.findByRole("dialog");
-  // The expanded copy mounts its own image, so it owns a separate object URL
-  // for the same rendered diagram.
-  const expanded = await within(dialog).findByTestId(
-    "attachment-lightbox-image",
-  );
-  const expandedUrl = expanded.getAttribute("src");
-  if (!expandedUrl) {
-    throw new Error("Expected the expanded diagram to have a source");
-  }
-  expect(browser.blobForUrl(expandedUrl)?.type).toBe("image/svg+xml");
-  expect(within(dialog).getByText("diagram.svg")).toBeInTheDocument();
-  // A diagram drawn in this browser has no address worth copying.
-  expect(
-    queryAllByRoleFast("button", dialog).map((button) => {
-      return button.getAttribute("aria-label") ?? button.textContent?.trim();
-    }),
-  ).not.toContain("Copy link");
-});
-
-test("the viewer names who can reach the artifact without opening the share menu", async () => {
+test("shared-artifact-page-010 displays the public audience alongside the image type", async () => {
+  imageReference();
   context.mocks.api(artifactSharesContract.status, ({ respond }) => {
     return respond(200, {
-      ownerUrl: `https://app.okou.ai${imagePath}`,
-      shareId: artifactId,
+      ownerUrl: `http://localhost${path}`,
+      shareId: fileId,
       audience: "public",
-      organization: { id: "org_test", name: "Acme" },
-      selectedTarget: null,
-      selectedVersion: null,
-      candidateVersion: null,
-      url: `https://app.okou.ai${imagePath}`,
-      shortUrl: `https://app.okou.ai${imagePath}`,
+      organization: { id: "org_default", name: "Default Org" },
+      selectedTarget: { kind: "file", id: fileId },
+      selectedVersion: 1,
+      candidateVersion: 1,
+      url: "https://files.example.test/public/site-plan",
+      shortUrl: "https://files.example.test/public/site-plan",
     });
   });
-  await openViewer();
-
-  // The audience is a standing fact about the artifact, so it belongs beside
-  // the kind rather than behind a menu. The subtitle composes the two from
-  // separate nodes, so the match is on the rendered line.
+  await setupPage({ context, path });
   await expect(
-    screen.findByText((_content, element) => {
-      return (
-        element?.tagName === "P" &&
-        element.textContent === "Image · Public access"
-      );
-    }),
-  ).resolves.toBeVisible();
+    screen.findByText("Image · Public access"),
+  ).resolves.toBeInTheDocument();
 });

@@ -1,183 +1,103 @@
-import { screen, waitFor } from "@testing-library/react";
+import {
+  getAction,
+  findAction,
+} from "../../okou-page/__tests__/connector-integrations-test-helpers.ts";
 import { avatarComposerUrl } from "@okouai/core/agent-avatar";
+import { screen, within, waitFor } from "@testing-library/react";
 
 import { expect, test } from "vitest";
-
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  RESEARCH_AGENT_ID,
-  agentFixture,
-  setupTeamPage,
-} from "./team-page-test-helpers.ts";
-
+import { agentFixture, setupTeamPage } from "./team-page-test-helpers.ts";
 const context = testContext();
-
-test.each(["", "?tab=authorization"])(
-  "Chat connector accounts keeps agent editing available without old authorization controls: %s",
-  async (query) => {
-    await setupTeamPage({
-      context,
-      path: `/agents/${RESEARCH_AGENT_ID}${query}`,
-      featureSwitches: {},
-    });
-
-    await screen.findByRole("heading", { name: "Research Agent" });
-    await screen.findByRole("textbox", { name: "Name" });
+async function researchProfile(
+  search: string,
+  avatarUrl: string | null = null,
+) {
+  const research = context.resourceId;
+  const primary = crypto.randomUUID();
+  context.mocks.data.onboardingStatus({ defaultAgentId: primary });
+  const path = "/agents/" + research;
+  await setupTeamPage({
+    context,
+    path: path + search,
+    agents: [
+      agentFixture(primary, "Workspace assistant", { isDefaultAgent: true }),
+      agentFixture(research, "Research Agent", { avatarUrl }),
+    ],
+  });
+  await expect(
+    screen.findByRole("heading", { name: "Research Agent" }),
+  ).resolves.toBeInTheDocument();
+  return path;
+}
+test.each([
+  ["team-navigation-001", ""],
+  ["team-navigation-002", "?tab=authorization"],
+])(
+  "%s the Research profile offers its two editing sections",
+  async (_id, search) => {
+    const path = await researchProfile(search);
     expect(
-      queryAllByRoleFast("tab").map((tab) => {
+      queryAllByRoleFast("tab", document.body).map((tab) => {
         return tab.textContent?.trim();
       }),
     ).toStrictEqual(["Profile", "Instructions"]);
-
-    click(screen.getByRole("combobox", { name: "Agent details section" }));
-    await screen.findByRole("option", { name: "Instructions" });
-    expect(screen.queryByRole("option", { name: "Authorization" })).toBeNull();
+    const selector = screen.getByRole("combobox", {
+      name: "Agent details section",
+    });
+    click(selector);
+    const options = within(await screen.findByRole("listbox")).getAllByRole(
+      "option",
+    );
+    expect(
+      options.map((option) => {
+        return option.textContent?.trim();
+      }),
+    ).toStrictEqual(["Profile", "Instructions"]);
     click(screen.getByRole("option", { name: "Instructions" }));
     await waitFor(() => {
-      expect(window.location.search).toBe("?tab=instructions");
+      return expect(location.pathname + location.search).toBe(
+        path + "?tab=instructions",
+      );
     });
+    expect(selector).toHaveTextContent("Instructions");
   },
 );
-
-test("Chat connector accounts preserves a member's chat access without exposing agent editing", async () => {
-  context.mocks.data.org({
-    id: "org_default",
-    name: "Default Org",
-    role: "member",
+test("team-navigation-004 avatar customization starts with all six saved Research selections", async () => {
+  const avatar = avatarComposerUrl({
+    face: "oval",
+    hair: "rounded-crop",
+    hairColor: "green",
+    expression: "neutral-smile",
+    skin: "deep",
+    sweater: "lime",
   });
-  await setupTeamPage({
-    context,
-    path: `/agents/${RESEARCH_AGENT_ID}?tab=authorization`,
-    agents: [
-      agentFixture(RESEARCH_AGENT_ID, "Research Agent", {
-        ownerId: "other-owner",
-      }),
-    ],
-    featureSwitches: {},
-  });
-
-  await screen.findByRole("heading", { name: "Research Agent" });
-  expect(screen.getByLabelText("Chat with Research Agent")).toHaveAttribute(
-    "href",
-    `/agents/${RESEARCH_AGENT_ID}/chat`,
-  );
-  expect(queryAllByRoleFast("tab")).toHaveLength(0);
-  expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
-});
-
-function renderedAvatarSvgLayerSrcs(root: ParentNode): string[] {
-  return Array.from(root.querySelectorAll<HTMLImageElement>("img"), (img) => {
-    return img.src;
-  }).filter((src) => {
-    return src.includes("/platform/views/zero-page/assets/avatar-svg");
-  });
-}
-
-function labelledButton(name: string): HTMLElement {
-  const button = queryAllByRoleFast("button").find((candidate) => {
-    return candidate.getAttribute("aria-label") === name;
-  });
-  if (!button) {
-    throw new Error(`Labelled button not found: ${name}`);
+  await researchProfile("", avatar);
+  const header = screen
+    .getByRole("heading", { name: "Research Agent" })
+    .closest("header");
+  if (!header) {
+    throw new Error("Research header is missing");
   }
-  return button;
-}
-
-test("The agent header opens avatar customization on the current avatar", async () => {
-  await setupTeamPage({
-    context,
-    path: `/agents/${RESEARCH_AGENT_ID}`,
-    agents: [
-      agentFixture(RESEARCH_AGENT_ID, "Research Agent", {
-        avatarUrl: avatarComposerUrl({
-          face: "oval",
-          hair: "rounded-crop",
-          expression: "neutral-smile",
-          skin: "deep",
-          hairColor: "green",
-          sweater: "lime",
-        }),
-      }),
-    ],
+  click(getAction("button", "Customize avatar", header));
+  const editorElement = await screen.findByRole("dialog", {
+    name: "Edit avatar",
   });
-
-  await screen.findByRole("heading", { name: "Research Agent" });
-  click(labelledButton("Customize avatar"));
-
-  const dialog = await screen.findByRole("dialog", { name: "Edit avatar" });
-  expect(renderedAvatarSvgLayerSrcs(dialog).slice(0, 6)).toStrictEqual([
-    expect.stringContaining("/neck/deep.svg"),
-    expect.stringContaining("/hairs/oval/rounded-crop-green-rear.svg"),
-    expect.stringContaining("/faces/oval-deep.svg"),
-    expect.stringContaining("/hairs/oval/rounded-crop-green-front.svg"),
-    expect.stringContaining("/expressions/neutral-smile-oval.svg"),
-    expect.stringContaining("/sweater/lime.svg"),
-  ]);
-});
-
-test("A member cannot customize another user's public agent avatar", async () => {
-  context.mocks.data.org({
-    id: "org_default",
-    name: "Default Org",
-    role: "member",
-  });
-  await setupTeamPage({
-    context,
-    path: `/agents/${RESEARCH_AGENT_ID}?tab=profile`,
-    agents: [
-      agentFixture(RESEARCH_AGENT_ID, "Research Agent", {
-        ownerId: "agent-owner",
-      }),
-    ],
-  });
-
-  await screen.findByRole("heading", { name: "Research Agent" });
-  expect(screen.queryByLabelText("Customize avatar")).not.toBeInTheDocument();
-  expect(
-    screen.queryByLabelText("Create custom avatar"),
-  ).not.toBeInTheDocument();
-});
-
-test("An org admin cannot customize another user's private agent avatar", async () => {
-  context.mocks.data.org({
-    id: "org_default",
-    name: "Default Org",
-    role: "admin",
-  });
-  await setupTeamPage({
-    context,
-    path: `/agents/${RESEARCH_AGENT_ID}?tab=profile`,
-    agents: [
-      agentFixture(RESEARCH_AGENT_ID, "Private Agent", {
-        ownerId: "agent-owner",
-        visibility: "private",
-      }),
-    ],
-  });
-
-  await screen.findByRole("heading", { name: "Private Agent" });
-  expect(screen.queryByLabelText("Customize avatar")).not.toBeInTheDocument();
-  expect(
-    screen.queryByLabelText("Create custom avatar"),
-  ).not.toBeInTheDocument();
-});
-
-test("A user starts a chat from an agent's detail page", async () => {
-  await setupTeamPage({
-    context,
-    path: `/agents/${RESEARCH_AGENT_ID}`,
-  });
-
-  await screen.findByRole("heading", { name: "Research Agent" });
-  const chatLink = screen.getByLabelText("Chat with Research Agent");
-  expect(chatLink).toHaveAttribute("href", `/agents/${RESEARCH_AGENT_ID}/chat`);
-  click(chatLink);
-
-  await waitFor(() => {
-    expect(window.location.pathname).toBe("/");
-    expect(
-      screen.getByText("Ask me to automate workflows, manage tasks..."),
-    ).toBeVisible();
-  });
+  expect(getAction("button", "Oval", editorElement)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  for (const selected of [
+    "Rounded crop",
+    "Neutral smile",
+    "Deep",
+    "Green",
+    "Lime",
+  ]) {
+    click(getAction("button", "Next step", editorElement));
+    await expect(
+      findAction("button", selected, editorElement),
+    ).resolves.toHaveAttribute("aria-pressed", "true");
+  }
 });

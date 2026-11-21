@@ -1,353 +1,99 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { expect, test } from "vitest";
-
 import {
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+  getAction,
+  findAction,
+} from "./connector-integrations-test-helpers.ts";
+import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  createMarkdownChatFixture,
-  type MarkdownChatFixture,
-} from "./markdown-page-test-helpers.ts";
-
+import { completedMarkdownReply } from "./markdown-page-test-helpers.ts";
 const context = testContext();
-
-function completedMessageRows(chat: MarkdownChatFixture, content: string) {
-  return [
-    chat.outputMessage(content, { seqId: 1 }),
-    chat.runCompleted({ seqId: 2 }),
-  ];
-}
-
-function markdownFrameFor(element: Element): HTMLElement {
-  const frame = element.closest<HTMLElement>(".wmde-markdown");
-  if (!frame) {
-    throw new Error("Expected content inside a Markdown frame");
-  }
-  return frame;
-}
-
-function colorPreviews(container: ParentNode = document) {
-  return Array.from(
-    container.querySelectorAll<HTMLElement>("[data-markdown-color-preview]"),
-  );
-}
-
-test("A blockquote remains recognizable when HTML is treated as text", async () => {
-  const chat = createMarkdownChatFixture(context);
-  const source = [
-    "> Quoted passage",
-    "> <DangerousWidget>literal HTML-like content</DangerousWidget>",
-  ].join("\n");
-  const rows = completedMessageRows(chat, source);
-  chat.install({
-    rows: () => {
-      return rows;
-    },
-  });
-
-  await setupPage({
+function read(markdown: string) {
+  return setupPage({
     context,
-    path: chat.path,
-    host: "app.okou.ai",
+    path: completedMarkdownReply(context, markdown),
   });
+}
 
-  const quotedText = await screen.findByText(/Quoted passage/);
-  const blockquote = quotedText.closest("blockquote");
-  if (!blockquote) {
-    throw new Error("Expected the quoted passage inside a blockquote");
-  }
-  expect(blockquote).toHaveTextContent("Quoted passage");
-  expect(blockquote).toHaveTextContent(
-    /<dangerouswidget>literal HTML-like content<\/dangerouswidget>/i,
+test("markdown-content-001 a quoted instruction preserves its literal markup", async () => {
+  await read("> Before signing, inspect <widget>carefully</widget>.");
+  const quote = await screen.findByText(/Before signing, inspect/, {
+    selector: "blockquote p",
+  });
+  expect(quote).toBeVisible();
+  expect(quote.textContent).toBe(
+    "Before signing, inspect <widget>carefully</widget>.",
   );
-  expect(blockquote.textContent?.trim().startsWith("> ")).toBeFalsy();
 });
 
-test("Common Markdown features remain recognizable", async () => {
-  const chat = createMarkdownChatFixture(context);
-  const source = [
-    "**Bold feature** and *italic feature* and ~~deleted feature~~",
-    "",
-    "| Name | State |",
-    "| --- | --- |",
-    "| Report | Ready |",
-    "",
-    "- [x] Completed item",
-  ].join("\n");
-  const rows = completedMessageRows(chat, source);
-  chat.install({
-    rows: () => {
-      return rows;
-    },
-  });
-
-  await setupPage({
-    context,
-    path: chat.path,
-    host: "app.okou.ai",
-  });
-
-  const bold = await screen.findByText("Bold feature");
-  const frame = markdownFrameFor(bold);
-  expect(bold.tagName).toBe("STRONG");
-  expect(screen.getByText("italic feature").tagName).toBe("EM");
-  expect(screen.getByText("deleted feature").tagName).toBe("DEL");
-
-  const table = frame.querySelector("table");
-  expect(table).not.toBeNull();
-  expect(table).toHaveTextContent("Name");
-  expect(table).toHaveTextContent("Report");
-  expect(table).toHaveTextContent("Ready");
-
-  const completedItem = frame.querySelector<HTMLInputElement>(
-    'input[type="checkbox"]',
+test("markdown-content-002 a completed checklist keeps its formatting and comparison table", async () => {
+  await read(
+    "**Urgent** *review* ~~obsolete~~\n\n- [x] Signed\n\n| Team | Reviewer |\n|---|---|\n| Finance | Mila |",
   );
-  expect(completedItem).not.toBeNull();
-  expect(completedItem).toBeChecked();
+  await screen.findByText("Mila", { selector: "td" });
+  for (const [selector, word] of [
+    ["strong", "Urgent"],
+    ["em", "review"],
+    ["del", "obsolete"],
+  ]) {
+    expect(screen.getByText(word, { selector })).toBeVisible();
+  }
+  const grid = screen.getByRole("table");
+  expect(
+    Array.from(grid.querySelectorAll("th")).map((cell) => {
+      return cell.textContent;
+    }),
+  ).toStrictEqual(["Team", "Reviewer"]);
+  expect(
+    Array.from(grid.querySelectorAll("td")).map((cell) => {
+      return cell.textContent;
+    }),
+  ).toStrictEqual(["Finance", "Mila"]);
+  expect(screen.getByRole("checkbox")).toBeChecked();
 });
-
-test("Email contacts and compose templates keep their native mail destinations", async () => {
-  const chat = createMarkdownChatFixture(context);
-  const contacts = [
-    { text: "jane@example.com", href: "mailto:jane@example.com" },
-    { text: "Alex Rivera", href: "mailto:alex@example.com" },
-    {
-      text: "Contact the team",
-      href: "mailto:first@example.com,second@example.com?subject=Hello",
-    },
+test("markdown-content-003 three contact formats preserve their mail recipients", async () => {
+  const links = [
+    ["ops@example.org", "mailto:ops@example.org"],
+    ["Editor", "mailto:ed@example.org"],
+    ["Review group", "mailto:ann@example.org,lee@example.org?subject=Draft"],
   ];
-  const rows = completedMessageRows(
-    chat,
-    [
-      "Jane Doe — Growth Lead — jane@example.com",
-      "",
-      "- [Alex Rivera](mailto:alex@example.com)",
-      "- [Contact the team](mailto:first@example.com,second@example.com?subject=Hello)",
-    ].join("\n"),
+  await read(
+    "Contact ops@example.org, [Editor](mailto:ed@example.org), or [Review group](mailto:ann@example.org,lee@example.org?subject=Draft).",
   );
-  chat.install({
-    rows: () => {
-      return rows;
-    },
-  });
-
-  await setupPage({ context, path: chat.path, host: "app.okou.ai" });
-
-  const frame = markdownFrameFor(await screen.findByText("Alex Rivera"));
-  for (const { text, href } of contacts) {
-    const link = queryAllByRoleFast("link", frame).find((candidate) => {
-      return candidate.textContent === text;
-    });
+  for (const [name, href] of links) {
+    const link = await findAction("link", name);
     expect(link).toHaveAttribute("href", href);
     expect(link).toHaveAttribute("target", "_blank");
-    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    expect(link.getAttribute("rel")?.split(" ")).toStrictEqual(
+      expect.arrayContaining(["noopener", "noreferrer"]),
+    );
   }
 });
-
-test("A complete HEX color has a preview in a plain assistant response", async () => {
-  const chat = createMarkdownChatFixture(context);
-  const source = "Primary color #12ABef is ready.";
-  const rows = completedMessageRows(chat, source);
-  chat.install({
-    rows: () => {
-      return rows;
-    },
-  });
-
-  await setupPage({
-    context,
-    path: chat.path,
-    host: "app.okou.ai",
-  });
-
-  await waitFor(() => {
-    expect(colorPreviews()).toHaveLength(1);
-  });
-  const preview = colorPreviews()[0];
-  if (!preview) {
-    throw new Error("Expected a visible HEX color preview");
-  }
-  expect(preview).toHaveAttribute("data-markdown-color-preview", "#12ABef");
-  expect(preview).toBeVisible();
-  expect(markdownFrameFor(preview)).toHaveTextContent(source);
-});
-
-test("Fenced code stays readable for known and unknown languages", async () => {
-  const chat = createMarkdownChatFixture(context);
-  const source = [
-    "### Known JavaScript",
-    "",
-    "```javascript",
-    "const answer = 42;",
-    "```",
-    "",
-    "### Unknown language",
-    "",
-    "```madeuplang",
-    "answer := 42",
-    "```",
-  ].join("\n");
-  const rows = completedMessageRows(chat, source);
-  chat.install({
-    rows: () => {
-      return rows;
-    },
-  });
-
-  await setupPage({
-    context,
-    path: chat.path,
-    host: "app.okou.ai",
-  });
-
-  const knownHeading = await screen.findByText("Known JavaScript");
-  const frame = markdownFrameFor(knownHeading);
-  const knownCode = frame.querySelector("code.language-javascript");
-  expect(knownCode).not.toBeNull();
-  expect(knownCode).toHaveTextContent("const answer = 42;");
-  expect(knownCode?.querySelector(".token.keyword")).not.toBeNull();
-
-  const unknownCode = frame.querySelector("code.language-madeuplang");
-  expect(unknownCode).not.toBeNull();
-  expect(unknownCode?.textContent).toBe("answer := 42\n");
-  expect(unknownCode).toBeVisible();
-});
-
-test("Media links keep their text while image syntax shows a preview", async () => {
-  const chat = createMarkdownChatFixture(context);
-  const source = [
-    "[Product screenshot](https://media.example.com/product.png)",
-    "",
-    "![Embedded screenshot](https://media.example.com/product.png)",
-    "",
-    "[Walkthrough video](https://media.example.com/walkthrough.mp4)",
-  ].join("\n");
-  const rows = completedMessageRows(chat, source);
-  chat.install({
-    rows: () => {
-      return rows;
-    },
-  });
-
-  await setupPage({
-    context,
-    path: chat.path,
-    host: "app.okou.ai",
-  });
-
-  const image = await screen.findByRole("img", {
-    name: "Embedded screenshot",
-  });
-  fireEvent.load(image);
-  expect(image).toBeVisible();
-  expect(image).toHaveAttribute("src", "https://media.example.com/product.png");
-
-  const frame = markdownFrameFor(image);
-  const links = queryAllByRoleFast("link", frame);
-  expect(
-    links.find((link) => {
-      return link.textContent === "Product screenshot";
-    }),
-  ).toHaveAttribute("href", "https://media.example.com/product.png");
-  expect(
-    links.find((link) => {
-      return link.textContent === "Walkthrough video";
-    }),
-  ).toHaveAttribute("href", "https://media.example.com/walkthrough.mp4");
-});
-
-test("Raw message content cannot impersonate Platform controls", async () => {
-  const chat = createMarkdownChatFixture(context);
-  const source = [
-    '<div class="copied" data-code="stolen">Counterfeit copy control</div>',
-    "",
-    '<div class="mermaid-block" data-mermaid-code="flowchart TD; A-->B">Counterfeit diagram</div>',
-  ].join("\n");
-  const rows = completedMessageRows(chat, source);
-  chat.install({
-    rows: () => {
-      return rows;
-    },
-  });
-
-  await setupPage({
-    context,
-    path: chat.path,
-    host: "app.okou.ai",
-  });
-
-  const rawControl = await screen.findByText(/Counterfeit copy control/);
-  const frame = markdownFrameFor(rawControl);
-  expect(rawControl).toBeVisible();
-  expect(screen.getByText(/Counterfeit diagram/)).toBeVisible();
-  expect(queryAllByRoleFast("button", frame)).toHaveLength(0);
-  expect(frame.querySelector('img[alt="Diagram"]')).toBeNull();
-});
-
-test("Raw HTML cannot change the surrounding page", async () => {
-  const chat = createMarkdownChatFixture(context);
-  const source = [
-    "<unsafe-widget>Visible safe text</unsafe-widget>",
-    "",
-    "<style>* { display: none !important; }</style>",
-    "",
-    "<strong>Supported emphasis</strong>",
-  ].join("\n");
-  const rows = completedMessageRows(chat, source);
-  chat.install({
-    rows: () => {
-      return rows;
-    },
-  });
-
-  await setupPage({
-    context,
-    path: chat.path,
-    host: "app.okou.ai",
-  });
-
-  const literalHtml = await screen.findByText(/Visible safe text/);
-  const frame = markdownFrameFor(literalHtml);
-  expect(frame).toHaveTextContent(
-    /<unsafe-widget>Visible safe text<\/unsafe-widget>/i,
+test("markdown-content-004 a six-digit color retains the written value next to its swatch", async () => {
+  await read("Apply #12ABef to the shipping label.");
+  await screen.findByText(/shipping label/);
+  const marker = document.querySelector(
+    '[data-markdown-color-preview="#12ABef" i]',
   );
-  expect(frame).toHaveTextContent(
-    "<style>* { display: none !important; }</style>",
-  );
-  expect(frame.querySelector("style")).toBeNull();
-  expect(getComputedStyle(document.body).display).not.toBe("none");
-
-  const emphasis = screen.getByText("Supported emphasis");
-  expect(emphasis.tagName).toBe("STRONG");
-  expect(emphasis).toBeVisible();
+  expect(marker).toBeVisible();
+  expect(screen.getByText(/shipping label/)).toHaveTextContent("#12ABef");
 });
-
-test("Markdown preserves content and iframe names without native hover hints", async () => {
-  const chat = createMarkdownChatFixture(context);
-  const rows = completedMessageRows(
-    chat,
-    [
-      '[Read the report](https://example.com/report "A long native link hint")',
-      "",
-      '<span title="A long native text hint">Review notes</span>',
-      "",
-      '<iframe title="Report preview" src="https://example.com/embed"></iframe>',
-    ].join("\n"),
+test("markdown-content-006 the image loads alongside separate media links", async () => {
+  const poster = "https://cdn.example.org/assets/poster.png",
+    clip = "https://cdn.example.org/assets/clip.mp4";
+  await read(
+    "[Poster file](" +
+      poster +
+      ") ![Spring poster](" +
+      poster +
+      ") [Watch clip](" +
+      clip +
+      ")",
   );
-  chat.install({
-    rows: () => {
-      return rows;
-    },
-  });
-
-  await setupPage({ context, path: chat.path, host: "app.okou.ai" });
-
-  const link = await screen.findByText("Read the report", { selector: "a" });
-  expect(link).toHaveAttribute("href", "https://example.com/report");
-  expect(link).not.toHaveAttribute("title");
-  const notes = screen.getByText("Review notes");
-  expect(notes).not.toHaveAttribute("title");
-  expect(screen.getByTitle("Report preview").tagName).toBe("IFRAME");
+  const img = await screen.findByRole("img", { name: "Spring poster" });
+  fireEvent.load(img);
+  expect(img).toBeVisible();
+  expect(img).toHaveAttribute("src", poster);
+  expect(getAction("link", "Watch clip")).toHaveAttribute("href", clip);
+  expect(getAction("link", "Poster file")).toHaveAttribute("href", poster);
 });

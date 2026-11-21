@@ -1,127 +1,125 @@
-import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
-import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
-import { screen, within } from "@testing-library/react";
+import type { TailscaleConfig } from "@okouai/api-contracts/contracts/tailscale";
+import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
+
 import {
+  click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { getConnectorAction } from "./connector-page-test-helpers.ts";
 import {
-  mockConnectors,
-  mockPublicConnectorStatus,
-} from "./connector-page-test-helpers.ts";
-import {
-  mockHostInventories,
-  orderedNames,
-  resourceId,
-  sshHosts,
-  timestamp,
-  vncHosts,
-} from "./remote-resource-order-test-helpers.ts";
+  mockRemoteInventory,
+  REMOTE_TIMESTAMP,
+  remoteId,
+} from "./connectors-remote-control-test-helpers.ts";
 
 const context = testContext();
+function naturalNames(): string[] {
+  return ["android", "DEV-1", "dev-1", "dev-2", "dev-11"];
+}
 
-function network(
-  name: string,
+function tailnet(
   index: number,
-  scope: "personal" | "organization" = "personal",
-) {
+  name: string,
+  overrides: Partial<TailscaleConfig> = {},
+): TailscaleConfig {
   return {
-    id: resourceId("c", index),
+    id: remoteId("a", index),
     name,
-    scope,
+    scope: "personal",
+    tags: ["tag:okou"],
     revision: 1,
     generation: 1,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    sshHosts: sshHosts.map(({ id, displayName }) => {
-      return { id, displayName };
-    }),
-    vncHosts: vncHosts.map(({ id, displayName }) => {
-      return { id, displayName, roles: ["rfb" as const] };
-    }),
+    createdAt: REMOTE_TIMESTAMP,
+    updatedAt: REMOTE_TIMESTAMP,
+    sshHosts: [],
+    vncHosts: [],
+    ...overrides,
   };
 }
 
-function mockNetworks(): void {
-  mockConnectors(context, []);
-  mockPublicConnectorStatus(context, []);
-  mockHostInventories(context);
-  context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    return respond(200, {
-      configs: [
-        network("Network-11", 0),
-        network("Network-2", 1),
-        network("Org-11", 4, "organization"),
-      ].map((config) => {
-        return { ...config, tags: ["tag:okou"] };
-      }),
-    });
-  });
-  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return respond(200, {
-      configs: [
-        network("Network-1", 2),
-        network("Android network", 3),
-        network("Org-2", 5, "organization"),
-      ],
-    });
+function managedNetworks(section: HTMLElement): string[] {
+  return queryAllByRoleFast("link", section).flatMap((link) => {
+    const label = link.getAttribute("aria-label") ?? "";
+    return label.startsWith("Manage ") ? [label.slice("Manage ".length)] : [];
   });
 }
 
 test("Private networks are sorted within their scope", async () => {
-  mockNetworks();
-  await setupPage({
-    context,
-    path: "/connectors?scope=private-network",
+  mockRemoteInventory(context, {
+    tailscale: [
+      tailnet(1, "Network-11"),
+      tailnet(2, "Org-11", { scope: "organization" }),
+      tailnet(3, "Network-2"),
+      tailnet(4, "Android network"),
+      tailnet(5, "Org-2", { scope: "organization" }),
+      tailnet(6, "Network-1"),
+    ],
   });
-  await screen.findByText("Android network");
-  await screen.findByText("Network-2");
-  const personal = screen.getByRole("region", {
+
+  await setupPage({ context, path: "/connectors?scope=private-network" });
+
+  const personal = await screen.findByRole("region", {
     name: "Personal networks",
   });
-  const organization = screen.getByRole("region", {
-    name: "Organization networks",
-  });
-  const renderedGroups = [personal, organization].map((group) => {
-    return queryAllByRoleFast("link", group).map((link) => {
-      return link.getAttribute("aria-label");
-    });
-  });
-  expect(renderedGroups).toStrictEqual([
-    [
-      "Manage Android network",
-      "Manage Network-1",
-      "Manage Network-2",
-      "Manage Network-11",
-    ],
-    ["Manage Org-2", "Manage Org-11"],
+  expect(managedNetworks(personal)).toStrictEqual([
+    "Android network",
+    "Network-1",
+    "Network-2",
+    "Network-11",
   ]);
+  expect(
+    managedNetworks(
+      screen.getByRole("region", { name: "Organization networks" }),
+    ),
+  ).toStrictEqual(["Org-2", "Org-11"]);
 });
 
-test.each(["tailscale", "cloudflare"] as const)(
-  "A %s network shows linked hosts in natural order",
-  async (kind) => {
-    mockNetworks();
-    await setupPage({
-      context,
-      path: `/connectors?scope=private-network&remoteResource=${kind}:${resourceId("c", kind === "tailscale" ? 0 : 2)}`,
-    });
-    const list = await screen.findByRole("list", {
-      name: "Connections using this network",
-    });
-    expect(
-      within(list)
-        .getAllByRole("listitem")
-        .map((item) => {
-          return item.textContent;
+test("A tailscale network shows linked hosts in natural order", async () => {
+  // Linked hosts arrive in saved order, not natural name order.
+  const saved = ["dev-11", "android", "dev-2", "DEV-1", "dev-1"];
+  mockRemoteInventory(context, {
+    tailscale: [
+      tailnet(1, "Home tailnet", {
+        sshHosts: saved.map((displayName, index) => {
+          return { id: remoteId("b", index + 1), displayName };
         }),
-    ).toStrictEqual([
-      ...orderedNames,
-      ...orderedNames.map((name) => {
-        return `desktop-${name}`;
+        vncHosts: saved.map((name, index) => {
+          return {
+            id: remoteId("e", index + 1),
+            displayName: `desktop-${name}`,
+            roles: ["rfb" as const],
+          };
+        }),
       }),
-    ]);
-  },
-);
+    ],
+  });
+  await setupPage({ context, path: "/connectors?scope=private-network" });
+  await waitFor(() => {
+    expect(
+      getConnectorAction("link", "Manage Home tailnet"),
+    ).toBeInTheDocument();
+  });
+
+  click(getConnectorAction("link", "Manage Home tailnet"));
+
+  const usage = await screen.findByRole("heading", {
+    name: "Connections using this network",
+  });
+  const section = usage.parentElement;
+  if (!section) {
+    throw new Error("Expected the network usage section");
+  }
+  expect(
+    queryAllByRoleFast("listitem", section).map((item) => {
+      return item.textContent;
+    }),
+  ).toStrictEqual([
+    ...naturalNames(),
+    ...naturalNames().map((name) => {
+      return `desktop-${name}`;
+    }),
+  ]);
+});

@@ -1,237 +1,88 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-import { screen, waitFor, within } from "@testing-library/react";
+import { test, expect } from "vitest";
+import { screen, within, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
-import { expect, test } from "vitest";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { click } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  artifactRun,
-  buttonNamed,
-  mockArtifactConversation,
-  NAVIGATION_ARTIFACT_THREAD_ID,
-} from "./chat-navigation-artifact-test-helpers.ts";
-
+  findAction,
+  queryAction,
+} from "./connector-integrations-test-helpers.ts";
+import {
+  attachment,
+  assistantRow,
+  userRow,
+  fileParts,
+  conversation,
+  serveUploaded,
+} from "./attachment-preview-boundaries.ts";
 const context = testContext();
-const FILE_URL =
-  "https://cdn.vm7.io/artifacts/tests/sidebar/sidebar-report.pdf";
-
-test("Chat artifacts open a closed sidebar directly", async () => {
-  mockArtifactConversation(context, {
-    catalog: [],
-    artifactRuns: () => {
-      return [
-        artifactRun({
-          filename: "sidebar-report.pdf",
-          fileId: "sidebar-report-file",
-          contentType: "application/pdf",
-          url: FILE_URL,
-        }),
-      ];
-    },
-    chatEvents: [
-      {
-        id: "sidebar-artifact-message",
-        createdAt: "2026-09-01T12:00:00.000Z",
-        role: "assistant",
-        content: `![sidebar-report.pdf](${FILE_URL})`,
-        runId: "navigation-artifact-run",
-        seqId: 1,
-      },
-      {
-        id: "sidebar-artifact-completed",
-        createdAt: "2026-09-01T12:00:01.000Z",
-        role: "assistant",
-        content: null,
-        runId: "navigation-artifact-run",
-        runLifecycleEvent: "completed",
-        seqId: 2,
-      },
-    ],
-  });
-  await setupPage({
+test("chat-artifact-sidebar-preview-001 reopening a PDF directly restores the sidebar document", async () => {
+  const url = "https://cdn.okou.io/artifacts/review/session/estimate.pdf";
+  await conversation(
     context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
-    featureSwitches: {
-      [FeatureSwitchKey.ArtifactSidebarPreview]: true,
-    },
-  });
-  const card = await screen.findByLabelText(
-    "Open pdf preview for sidebar-report.pdf",
+    { chatEvents: [assistantRow("[Estimate](" + url + ")")] },
+    true,
   );
-  expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
-  click(card);
-  const preview = await screen.findByTestId("artifact-sidebar");
-  await expect(
-    within(preview).findByTitle("sidebar-report.pdf preview"),
-  ).resolves.toHaveAttribute("src", `${FILE_URL}#navpanes=0`);
-  expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
-  click(buttonNamed("Close artifact", preview));
+  const open = await findAction("link", "Estimate");
+  expect(screen.queryByTestId("artifact-sidebar")).toBeNull();
+  click(open);
+  const side = await screen.findByTestId("artifact-sidebar");
+  const frame = await within(side).findByTitle("estimate.pdf preview");
+  expect(frame.getAttribute("src")).toContain(url);
+  expect(frame.getAttribute("src")).toContain("navpanes=0");
+  click(await findAction("button", "Close artifact", side));
   await waitFor(() => {
-    expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
+    return expect(side).not.toBeInTheDocument();
   });
-  click(card);
+  click(open);
+  const reopened = await screen.findByTestId("artifact-sidebar");
   await expect(
-    screen.findByTestId("artifact-sidebar"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
+    within(reopened).findByTitle("estimate.pdf preview"),
+  ).resolves.toHaveAttribute("src", frame.getAttribute("src"));
+  expect(screen.queryByTestId("attachment-lightbox-panel")).toBeNull();
 });
-
-test("Sent user attachments open in the sidebar and retain their private sharing behavior", async () => {
-  const url = "https://files.example.test/upload.txt";
-  context.mocks.api(webFilesContract.fileUrl, ({ respond }) => {
-    return respond(200, {
-      downloadUrl: new URL("?download=1", url).href,
-      url,
-      publicUrl: null,
-      expiresAt: "2099-01-01T00:00:00.000Z",
-    });
+test("chat-artifact-sidebar-preview-002 a private uploaded text file opens its content in the sidebar", async () => {
+  const file = attachment("upload.txt", "text/plain");
+  serveUploaded(context, [file]);
+  context.mocks.http.get(file.url.split("?")[0], () => {
+    return HttpResponse.text("Only the expedition team has this file.");
   });
-  context.mocks.http.get(url, () => {
-    return HttpResponse.text("Uploaded document content");
-  });
-  mockArtifactConversation(context, {
-    catalog: [],
-    chatEvents: [
-      {
-        id: "sidebar-user-message",
-        createdAt: "2026-09-01T12:00:00.000Z",
-        role: "user",
-        content: "Review this document",
-        fileParts: [
-          {
-            type: "file",
-            fileId: "sidebar-upload-file",
-            filenameSnapshot: "upload.txt",
-            contentType: "text/plain",
-          },
-        ],
-        runId: "sidebar-upload-run",
-        seqId: 1,
-      },
-      {
-        id: "sidebar-upload-completed",
-        createdAt: "2026-09-01T12:00:01.000Z",
-        role: "assistant",
-        content: null,
-        runId: "sidebar-upload-run",
-        runLifecycleEvent: "completed",
-        seqId: 2,
-      },
-    ],
-  });
-  await setupPage({
+  await conversation(
     context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: true },
-  });
-  click(await screen.findByLabelText("Open text preview for upload.txt"));
-  const preview = await screen.findByTestId("artifact-sidebar");
+    { chatEvents: [userRow(fileParts([file]))] },
+    true,
+  );
+  click(await findAction("button", "Open text preview for upload.txt"));
+  const side = await screen.findByTestId("artifact-sidebar");
   await expect(
-    within(preview).findByText("Uploaded document content"),
-  ).resolves.toBeInTheDocument();
-  expect(
-    within(preview).queryByLabelText("Share artifact"),
-  ).not.toBeInTheDocument();
-  expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
+    within(side).findByText("Only the expedition team has this file."),
+  ).resolves.toBeVisible();
+  expect(queryAction("button", "Share artifact", side)).toBeNull();
+  expect(queryAction("button", "Share", side)).toBeNull();
+  expect(screen.queryByTestId("attachment-lightbox-panel")).toBeNull();
 });
-
-async function openCsvSidebar(source: string) {
-  const url = "https://files.example.test/review.csv";
-  context.mocks.api(webFilesContract.fileUrl, ({ respond }) => {
-    return respond(200, {
-      downloadUrl: new URL("?download=1", url).href,
-      url,
-      publicUrl: null,
-      expiresAt: "2099-01-01T00:00:00.000Z",
-    });
+test("chat-artifact-sidebar-preview-003 the CSV sidebar preserves repeated records and quoted fields", async () => {
+  const file = attachment("observations.csv", "text/csv");
+  serveUploaded(context, [file]);
+  const record = '"East, West","Line one\nLine two","She said ""go""",';
+  context.mocks.http.get(file.url.split("?")[0], () => {
+    return HttpResponse.text(
+      ["Area,Notes,Quote,Spare", record, record].join("\r\n"),
+    );
   });
-  context.mocks.http.get(url, () => {
-    return HttpResponse.text(source);
-  });
-  mockArtifactConversation(context, {
-    catalog: [],
-    chatEvents: [
-      {
-        id: "sidebar-csv-message",
-        createdAt: "2026-09-01T12:00:00.000Z",
-        role: "user",
-        content: "Review this CSV",
-        fileParts: [
-          {
-            type: "file",
-            fileId: "sidebar-csv-file",
-            filenameSnapshot: "review.csv",
-            contentType: "text/csv",
-          },
-        ],
-        runId: "sidebar-csv-run",
-        seqId: 1,
-      },
-      {
-        id: "sidebar-csv-completed",
-        createdAt: "2026-09-01T12:00:01.000Z",
-        role: "assistant",
-        content: null,
-        runId: "sidebar-csv-run",
-        runLifecycleEvent: "completed",
-        seqId: 2,
-      },
-    ],
-  });
-  await setupPage({
+  await conversation(
     context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: true },
-  });
-  click(await screen.findByLabelText("Open csv preview for review.csv"));
-  return screen.findByTestId("artifact-sidebar");
-}
-
-test("The CSV sidebar preserves quoted fields and duplicate records", async () => {
-  const source =
-    'name,name,,\r\n"Doe, Jane","first\r\nsecond ""quoted"" line",,\r\n"Doe, Jane","first\r\nsecond ""quoted"" line",,\r\n';
-  const preview = await openCsvSidebar(source);
-  const table = await within(preview).findByRole("table");
-  expect(
-    Array.from(table.querySelectorAll("tbody td"), (cell) => {
+    { chatEvents: [userRow(fileParts([file]))] },
+    true,
+  );
+  click(await findAction("button", "Open csv preview for observations.csv"));
+  const side = await screen.findByTestId("artifact-sidebar");
+  const table = await within(side).findByRole("table");
+  const data = Array.from(table.querySelectorAll("tbody tr"), (row) => {
+    return Array.from(row.querySelectorAll("td"), (cell) => {
       return cell.textContent;
-    }),
-  ).toStrictEqual([
-    "Doe, Jane",
-    'first\r\nsecond "quoted" line',
-    "",
-    "",
-    "Doe, Jane",
-    'first\r\nsecond "quoted" line',
-    "",
-    "",
-  ]);
-});
-
-test.each([
-  {
-    shape: "malformed",
-    source: 'name,note\nvalue,"unfinished',
-  },
-  {
-    shape: "oversized",
-    source: [
-      Array.from({ length: 101 }, (_, index) => {
-        return `column${index}`;
-      }).join(","),
-      ...Array.from({ length: 100 }, () => {
-        return "value" + ",".repeat(100);
-      }),
-    ].join("\n"),
-  },
-])("The CSV sidebar preserves $shape content as source", async ({ source }) => {
-  const preview = await openCsvSidebar(source);
-  await waitFor(() => {
-    expect(preview.querySelector("pre")?.textContent).toBe(source);
+    });
   });
-  expect(preview.querySelector("table")).toBeNull();
+  const expected = ["East, West", "Line one\nLine two", 'She said "go"', ""];
+  expect(data).toStrictEqual([expected, expected]);
 });

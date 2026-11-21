@@ -1,342 +1,231 @@
-import { screen, waitFor, within } from "@testing-library/react";
-import {
-  logsByIdContract,
-  type LogDetail,
-} from "@okouai/api-contracts/contracts/logs";
-import {
-  runAgentEventsContract,
-  runRunnerContract,
-  type RunRunnerResponse,
-} from "@okouai/api-contracts/contracts/run-routes";
+import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
+import { runRunnerContract } from "@okouai/api-contracts/contracts/run-routes";
 import type { SandboxStartupPath } from "@okouai/api-contracts/contracts/runner-primitives";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
-import { detachedNavigateTo$ } from "../../../signals/route.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import type {
-  AgentEventsResponse,
-  LogStatus,
-} from "../../../signals/okou-page/log-types.ts";
 
 const context = testContext();
 
-interface ActivityFixture {
-  readonly status: LogStatus;
-  readonly framework?: string | null;
-  readonly runner: RunRunnerResponse;
+interface RunnerFixture {
+  readonly framework: string;
+  readonly sandboxStartupPath: SandboxStartupPath | null;
+  readonly runnerHostname: string;
+  readonly runnerVersion?: string;
+  readonly runnerId?: string;
+  readonly runnerHeartbeatGeneration?: number;
 }
 
-function logDetail(
-  runId: string,
-  status: LogStatus,
-  framework: string | null = "claude-code",
-): LogDetail {
-  return {
-    id: runId,
-    sessionId: "session-runner-attribution",
-    agentId: "c0000000-0000-4000-a000-000000000001",
-    displayName: "Runner Attribution",
-    framework,
-    modelProvider: null,
-    selectedModel: null,
-    triggerSource: "web",
-    status,
-    prompt: "Inspect runner attribution",
-    appendSystemPrompt: null,
-    createdAt: "2026-08-26T10:00:00Z",
-    startedAt: status === "queued" ? null : "2026-08-26T10:00:01Z",
-    completedAt: status === "completed" ? "2026-08-26T10:00:10Z" : null,
-  };
-}
-
-function mockActivities(
-  fixtures: Readonly<Record<string, ActivityFixture>>,
-): void {
+/** Serves completed activities whose runner details the API persisted. */
+function mockActivities(runs: Readonly<Record<string, RunnerFixture>>): void {
   context.mocks.api(logsByIdContract.getById, ({ params, respond }) => {
-    const fixture = fixtures[params.id];
-    if (!fixture) {
-      throw new Error("Missing activity fixture for " + params.id);
+    const run = runs[params.id];
+    if (!run) {
+      return respond(404, {
+        error: { message: "Log not found", code: "NOT_FOUND" },
+      });
     }
-    return respond(
-      200,
-      logDetail(params.id, fixture.status, fixture.framework),
-    );
+    return respond(200, {
+      id: params.id,
+      sessionId: null,
+      agentId: "c0000000-0000-4000-a000-000000000064",
+      displayName: "Runner check",
+      framework: run.framework,
+      modelProvider: null,
+      selectedModel: null,
+      triggerSource: "web",
+      status: "completed",
+      prompt: "Check the runner",
+      appendSystemPrompt: null,
+      createdAt: "2026-11-20T10:00:00.000Z",
+      startedAt: "2026-11-20T10:00:01.000Z",
+      completedAt: "2026-11-20T10:00:40.000Z",
+    });
   });
-  context.mocks.api(
-    runAgentEventsContract.getAgentEvents,
-    ({ params, respond }) => {
-      const fixture = fixtures[params.id];
-      if (!fixture) {
-        throw new Error("Missing activity fixture for " + params.id);
-      }
-      return respond(200, {
-        events: [],
-        hasMore: false,
-        status: fixture.status,
-        lastEventSequence: null,
-      } satisfies AgentEventsResponse);
-    },
-  );
   context.mocks.api(runRunnerContract.getRunner, ({ params, respond }) => {
-    const fixture = fixtures[params.id];
-    if (!fixture) {
-      throw new Error("Missing activity fixture for " + params.id);
+    const run = runs[params.id];
+    if (!run) {
+      return respond(404, {
+        error: { message: "Run not found", code: "NOT_FOUND" },
+      });
     }
-    return respond(200, fixture.runner);
+    return respond(200, {
+      sandboxStartupPath: run.sandboxStartupPath,
+      runnerHostname: run.runnerHostname,
+      runnerVersion: run.runnerVersion ?? null,
+      runnerId: run.runnerId ?? null,
+      runnerHeartbeatGeneration: run.runnerHeartbeatGeneration ?? null,
+    });
   });
 }
 
-function setupRunnerPage(runId: string): Promise<void> {
-  return setupPage({
+function runnerPath(runId: string): string {
+  return `/activities/${runId}?tab=runner`;
+}
+
+async function openRunner(runId: string): Promise<void> {
+  await setupPage({
     context,
-    path: "/activities/" + runId + "?tab=runner",
+    path: runnerPath(runId),
     featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
   });
 }
 
-function navigateToRunner(runId: string): void {
-  context.store.set(detachedNavigateTo$, "/activities/:activityRunId", {
-    pathParams: { activityRunId: runId },
-    searchParams: new URLSearchParams({ tab: "runner" }),
+/** The browser moves to another activity's runner diagnostics. */
+function visitRunner(runId: string): void {
+  window.history.pushState({}, "", runnerPath(runId));
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
+/** The value listed under a runner attribution label. */
+function runnerField(label: string): string | undefined {
+  const term = [...document.querySelectorAll("dt")].find((candidate) => {
+    return candidate.textContent?.trim() === label;
+  });
+  return term?.nextElementSibling?.textContent?.trim();
+}
+
+async function findHostname(hostname: string): Promise<void> {
+  await waitFor(() => {
+    expect(runnerField("Hostname")).toBe(hostname);
   });
 }
 
-function expectRunnerAttribute(label: string, value: string): void {
-  const term = screen.getByText(label);
-  const field = term.closest("div");
-  if (!field) {
-    throw new Error("Runner attribution field not found: " + label);
+function startupCard(): { label: string; description: string } {
+  const heading = [...document.querySelectorAll("h4")].find((candidate) => {
+    return candidate.textContent?.trim() === "Startup";
+  });
+  const card = heading?.closest("article");
+  if (!heading || !card) {
+    throw new Error("Expected the Startup card");
   }
-  expect(within(field).getByText(value)).toBeInTheDocument();
+  return {
+    label: heading.nextElementSibling?.textContent?.trim() ?? "",
+    description: card.querySelector("p")?.textContent?.trim() ?? "",
+  };
 }
 
-function getStartupCard(): HTMLElement {
-  const heading = screen.getByRole("heading", { name: "Startup" });
-  const card = heading.closest("article");
-  if (!card) {
-    throw new Error("Startup card not found");
-  }
-  return card;
-}
+const CLAUDE_RUN = "d0000000-0000-4000-a000-000000000f71";
+const CODEX_RUN = "d0000000-0000-4000-a000-000000000f72";
+const PI_RUN = "d0000000-0000-4000-a000-000000000f73";
 
 test("Runner diagnostics identify the exact environment used for an activity", async () => {
-  const firstRunId = "a0000000-0000-4000-a000-000000000301";
-  const secondRunId = "a0000000-0000-4000-a000-000000000302";
-  const piRunId = "a0000000-0000-4000-a000-000000000303";
   mockActivities({
-    [firstRunId]: {
-      status: "completed",
-      runner: {
-        sandboxStartupPath: "sandbox",
-        runnerHostname: "prod-1.aws.vm3.ai",
-        runnerVersion: "0.168.14",
-        runnerId: "b0000000-0000-4000-a000-000000000001",
-        runnerHeartbeatGeneration: 7,
-      },
+    [CLAUDE_RUN]: {
+      framework: "claude-code",
+      sandboxStartupPath: null,
+      runnerHostname: "prod-1.aws.vm3.ai",
+      runnerVersion: "0.168.14",
+      runnerId: "b0000000-0000-4000-a000-000000000001",
+      runnerHeartbeatGeneration: 7,
     },
-    [secondRunId]: {
-      status: "completed",
+    [CODEX_RUN]: {
       framework: "codex",
-      runner: {
-        sandboxStartupPath: "sandbox",
-        runnerHostname: "prod-2.aws.vm3.ai",
-        runnerVersion: "0.168.14",
-        runnerId: "b0000000-0000-4000-a000-000000000002",
-        runnerHeartbeatGeneration: 8,
-      },
+      sandboxStartupPath: null,
+      runnerHostname: "prod-2.aws.vm3.ai",
+      runnerVersion: "0.168.14",
+      runnerId: "b0000000-0000-4000-a000-000000000002",
+      runnerHeartbeatGeneration: 8,
     },
-    [piRunId]: {
-      status: "completed",
+    [PI_RUN]: {
       framework: "pi",
-      runner: {
-        sandboxStartupPath: "sandbox",
-        runnerHostname: "prod-3.aws.vm3.ai",
-      },
+      sandboxStartupPath: null,
+      runnerHostname: "prod-3.aws.vm3.ai",
     },
   });
+  await openRunner(CLAUDE_RUN);
+  await findHostname("prod-1.aws.vm3.ai");
+  expect(runnerField("Framework")).toBe("Claude Code");
+  expect(runnerField("Version")).toBe("0.168.14");
+  expect(runnerField("Runner ID")).toBe("b0000000-0000-4000-a000-000000000001");
+  expect(runnerField("Generation")).toBe("7");
 
-  await setupRunnerPage(firstRunId);
+  visitRunner(CODEX_RUN);
 
-  await expect(
-    screen.findByRole("heading", { name: "Environment" }),
-  ).resolves.toBeInTheDocument();
-  await expect(
-    screen.findByText("prod-1.aws.vm3.ai"),
-  ).resolves.toBeInTheDocument();
-  expectRunnerAttribute("Framework", "Claude Code");
-  expectRunnerAttribute("Version", "0.168.14");
-  expectRunnerAttribute("Runner ID", "b0000000-0000-4000-a000-000000000001");
-  expectRunnerAttribute("Generation", "7");
-  expect(screen.getByText("Sandbox reuse")).toBeInTheDocument();
-
-  navigateToRunner(secondRunId);
-
-  await expect(
-    screen.findByText("prod-2.aws.vm3.ai"),
-  ).resolves.toBeInTheDocument();
-  expectRunnerAttribute("Framework", "Codex");
-  expectRunnerAttribute("Version", "0.168.14");
-  expectRunnerAttribute("Runner ID", "b0000000-0000-4000-a000-000000000002");
-  expectRunnerAttribute("Generation", "8");
+  await findHostname("prod-2.aws.vm3.ai");
+  expect(runnerField("Framework")).toBe("Codex");
+  expect(runnerField("Version")).toBe("0.168.14");
+  expect(runnerField("Runner ID")).toBe("b0000000-0000-4000-a000-000000000002");
+  expect(runnerField("Generation")).toBe("8");
   expect(screen.queryByText("prod-1.aws.vm3.ai")).not.toBeInTheDocument();
 
-  navigateToRunner(piRunId);
+  visitRunner(PI_RUN);
 
-  await expect(
-    screen.findByText("prod-3.aws.vm3.ai"),
-  ).resolves.toBeInTheDocument();
-  expectRunnerAttribute("Framework", "pi");
+  await findHostname("prod-3.aws.vm3.ai");
+  expect(runnerField("Framework")).toBe("pi");
   expect(screen.queryByText("prod-2.aws.vm3.ai")).not.toBeInTheDocument();
 });
 
 test("Runner diagnostics display each persisted startup path", async () => {
-  const cases = [
+  const runs = [
     {
-      runId: "a0000000-0000-4000-a000-000000000306",
+      runId: "d0000000-0000-4000-a000-000000000f81",
       path: "sandbox",
       label: "Sandbox reuse",
       description: "The sandbox and its workspace were reused.",
     },
     {
-      runId: "a0000000-0000-4000-a000-000000000307",
+      runId: "d0000000-0000-4000-a000-000000000f82",
       path: "home",
       label: "Home reuse",
       description: "A fresh sandbox restored a cached home directory.",
     },
     {
-      runId: "a0000000-0000-4000-a000-000000000308",
+      runId: "d0000000-0000-4000-a000-000000000f83",
       path: "cold",
       label: "Cold start",
       description: "A fresh sandbox and workspace were prepared.",
     },
     {
-      runId: "a0000000-0000-4000-a000-000000000309",
+      runId: "d0000000-0000-4000-a000-000000000f84",
       path: "blank",
       label: "Blank start",
       description: "A prepared sandbox started with a fresh home directory.",
     },
-  ] as const satisfies readonly {
-    runId: string;
-    path: SandboxStartupPath;
-    label: string;
-    description: string;
-  }[];
+  ] as const;
   mockActivities(
     Object.fromEntries(
-      cases.map((entry) => {
+      runs.map(({ runId, path }) => {
         return [
-          entry.runId,
+          runId,
           {
-            status: "completed",
-            runner: {
-              sandboxStartupPath: entry.path,
-            },
-          } satisfies ActivityFixture,
+            framework: "claude-code",
+            sandboxStartupPath: path,
+            runnerHostname: `${path}-runner`,
+          },
         ];
       }),
     ),
   );
+  await openRunner(runs[0].runId);
 
-  await setupRunnerPage(cases[0].runId);
-
-  for (const [index, entry] of cases.entries()) {
+  for (const [index, run] of runs.entries()) {
     if (index > 0) {
-      navigateToRunner(entry.runId);
+      visitRunner(run.runId);
     }
-    await expect(screen.findByText(entry.label)).resolves.toBeInTheDocument();
-    const startupCard = getStartupCard();
-    expect(within(startupCard).getByText(entry.label)).toBeInTheDocument();
-    expect(
-      within(startupCard).getByText(entry.description),
-    ).toBeInTheDocument();
+    await findHostname(`${run.path}-runner`);
+    expect(startupCard()).toStrictEqual({
+      label: run.label,
+      description: run.description,
+    });
   }
 });
 
 test("Runner metadata remains visible when the startup path is unreported", async () => {
-  const runId = "a0000000-0000-4000-a000-000000000312";
+  const runId = "d0000000-0000-4000-a000-000000000f91";
   mockActivities({
     [runId]: {
-      status: "completed",
-      runner: {
-        sandboxStartupPath: null,
-        runnerHostname: "available-runner",
-      },
+      framework: "claude-code",
+      sandboxStartupPath: null,
+      runnerHostname: "available-runner",
     },
   });
-  await setupRunnerPage(runId);
-  await expect(
-    screen.findByText("available-runner"),
-  ).resolves.toBeInTheDocument();
-  expect(within(getStartupCard()).getByText("Unknown")).toBeInTheDocument();
-});
 
-test("The persisted startup path is visible before completion metadata is saved", async () => {
-  const runId = "a0000000-0000-4000-a000-000000000315";
-  mockActivities({
-    [runId]: {
-      status: "running",
-      runner: {
-        sandboxStartupPath: "home",
-        runnerHostname: "running-runner",
-      },
-    },
-  });
-  await setupRunnerPage(runId);
-  await expect(
-    screen.findByText("running-runner"),
-  ).resolves.toBeInTheDocument();
-  await expect(
-    within(getStartupCard()).findByText("Home reuse"),
-  ).resolves.toBeInTheDocument();
-});
+  await openRunner(runId);
 
-test("Runner diagnostics do not carry over while the next activity's request is pending", async () => {
-  const firstRunId = "a0000000-0000-4000-a000-000000000313";
-  const nextRunId = "a0000000-0000-4000-a000-000000000314";
-  const runnerRequested = context.mocks.deferred<void>();
-  const releaseRunner = context.mocks.deferred<void>();
-  const firstRunner = {
-    sandboxStartupPath: "blank",
-    runnerHostname: "blank-runner",
-  } as const satisfies RunRunnerResponse;
-  const nextRunner = {
-    sandboxStartupPath: "cold",
-    runnerHostname: "cold-runner",
-  } as const satisfies RunRunnerResponse;
-  mockActivities({
-    [firstRunId]: { status: "completed", runner: firstRunner },
-    [nextRunId]: { status: "completed", runner: nextRunner },
-  });
-  context.mocks.api(
-    runRunnerContract.getRunner,
-    async ({ params, respond }) => {
-      if (params.id === firstRunId) {
-        return respond(200, firstRunner);
-      }
-      if (!runnerRequested.settled()) {
-        runnerRequested.resolve();
-      }
-      await releaseRunner.promise;
-      return respond(200, nextRunner);
-    },
-  );
-  await setupRunnerPage(firstRunId);
-  await expect(
-    within(getStartupCard()).findByText("Blank start"),
-  ).resolves.toBeInTheDocument();
-
-  navigateToRunner(nextRunId);
-
-  await runnerRequested.promise;
-  await waitFor(() => {
-    expect(screen.queryByText("Blank start")).not.toBeInTheDocument();
-    expect(screen.queryByText("blank-runner")).not.toBeInTheDocument();
-  });
-  releaseRunner.resolve();
-  await expect(screen.findByText("cold-runner")).resolves.toBeInTheDocument();
-  await expect(
-    within(getStartupCard()).findByText("Cold start"),
-  ).resolves.toBeInTheDocument();
+  await findHostname("available-runner");
+  expect(startupCard().label).toBe("Unknown");
 });

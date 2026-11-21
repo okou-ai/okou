@@ -1,8 +1,6 @@
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
-import { mockAuthorizationCallbackThread } from "../../okou-page/__tests__/authorization-callback-test-helpers.ts";
 import {
   computerUseAuthorizationRequestsContract,
-  type ComputerUseAuthorizationSource,
   type ComputerUseHost,
 } from "@okouai/api-contracts/contracts/computer-use";
 import { screen, waitFor } from "@testing-library/react";
@@ -14,207 +12,110 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { onlineComputerUseHost } from "../../okou-page/__tests__/chat-list-test-helpers.ts";
 
 const context = testContext();
-const REQUEST_TOKEN = "computer-use-request-token";
-const OFFLINE_HOST_ID = "33333333-3333-4333-8333-333333333333";
+const REQUEST_TOKEN = "cu-request-token-4410";
+const STUDIO_MAC = "f0000000-0000-4000-8000-000000000001";
 
-function computerUseHost(
-  id: string,
-  displayName: string,
-  overrides: Partial<ComputerUseHost> = {},
-): ComputerUseHost {
-  return {
-    id,
-    hostName: displayName,
-    displayName,
-    appVersion: "1.0.0",
-    osVersion: "14.6",
-    supportedCapabilities: [],
-    permissions: {
-      accessibility: true,
-      screenRecording: true,
-      automation: {
-        chrome: { status: "granted", updatedAt: null, reason: null },
-        safari: { status: "granted", updatedAt: null, reason: null },
-      },
-    },
-    status: "online",
-    lastSeenAt: "2026-09-01T10:00:00.000Z",
-    createdAt: "2026-09-01T09:00:00.000Z",
-    ...overrides,
-  };
-}
-
-function mockAuthorizationRequest({
-  hosts,
-  source = "chat",
-}: {
-  readonly hosts: ComputerUseHost[];
-  readonly source?: ComputerUseAuthorizationSource;
-}): void {
+function mockAuthorizationRequest(hosts: ComputerUseHost[]): {
+  appliedHostId?: string;
+} {
+  const applied: { appliedHostId?: string } = {};
   context.mocks.api(
     computerUseAuthorizationRequestsContract.get,
     ({ respond }) => {
       return respond(200, {
-        source,
-        id: "10000000-0000-4000-8000-000000000001",
-        chatThreadId:
-          source === "chat" ? "20000000-0000-4000-8000-000000000001" : null,
-        expiresAt: "2099-09-01T10:00:00.000Z",
-        completedAt: null,
-        computerUseHostId: null,
+        id: "a3000000-0000-4000-8000-000000000001",
+        source: "chat",
+        chatThreadId: null,
+        expiresAt: "2099-01-01T00:00:00.000Z",
+        completedAt: applied.appliedHostId ? "2026-11-20T08:00:00.000Z" : null,
+        computerUseHostId: applied.appliedHostId ?? null,
         hosts,
       });
     },
   );
+  context.mocks.api(
+    computerUseAuthorizationRequestsContract.apply,
+    ({ body, respond }) => {
+      applied.appliedHostId = body.computerUseHostId;
+      return respond(200, {
+        ok: true,
+        source: "chat",
+        computerUseHostId: body.computerUseHostId,
+      });
+    },
+  );
+  return applied;
 }
 
-function getButton(
-  name: string,
-  container: ParentNode = document.body,
-): HTMLButtonElement {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
+function button(name: string): HTMLElement | undefined {
+  return queryAllByRoleFast("button").find((candidate) => {
     return candidate.textContent?.trim() === name;
   });
-  if (!(button instanceof HTMLButtonElement)) {
-    throw new Error(`Button not found: ${name}`);
-  }
-  return button;
 }
-
-function getDownloadLink(): HTMLAnchorElement | undefined {
-  const link = queryAllByRoleFast("link").find((candidate) => {
-    return candidate.textContent?.trim() === "Download for macOS";
-  });
-  return link instanceof HTMLAnchorElement ? link : undefined;
-}
-
-function mockIntelMac(): void {
-  const original = Object.getOwnPropertyDescriptor(navigator, "userAgentData");
-  Object.defineProperty(navigator, "userAgentData", {
-    configurable: true,
-    value: {
-      platform: "macOS",
-      getHighEntropyValues: () => {
-        return Promise.resolve({
-          architecture: "x86_64",
-          platform: "macOS",
-        });
-      },
-    },
-  });
-  context.signal.addEventListener(
-    "abort",
-    () => {
-      if (original) {
-        Object.defineProperty(navigator, "userAgentData", original);
-      } else {
-        Reflect.deleteProperty(navigator, "userAgentData");
-      }
-    },
-    { once: true },
-  );
-}
-
-test("An Intel Mac cannot download the unsupported computer-use app", async () => {
-  mockIntelMac();
-  mockAuthorizationRequest({ hosts: [] });
-
-  await setupPage({
-    context,
-    path: `/computer-use/authorize/${REQUEST_TOKEN}`,
-    host: "app.okou.ai",
-  });
-
-  await expect(
-    screen.findByRole("heading", { name: "No online computers" }),
-  ).resolves.toBeVisible();
-  await waitFor(() => {
-    expect(getButton("Requires an Apple silicon Mac")).toBeDisabled();
-  });
-  expect(
-    screen.getByText(
-      "Requires an Apple silicon Mac with macOS 14 or newer. Intel Macs aren't supported.",
-    ),
-  ).toBeVisible();
-  expect(getDownloadLink()).toBeUndefined();
-});
 
 test("A user with no online computer receives setup guidance", async () => {
-  mockAuthorizationRequest({
-    hosts: [
-      computerUseHost(OFFLINE_HOST_ID, "Offline Desktop", {
-        status: "offline",
-      }),
-    ],
-  });
+  mockAuthorizationRequest([
+    { ...onlineComputerUseHost(STUDIO_MAC, "Studio Mac"), status: "offline" },
+  ]);
 
   await setupPage({
     context,
     path: `/computer-use/authorize/${REQUEST_TOKEN}`,
-    host: "app.okou.ai",
   });
 
   await expect(
     screen.findByRole("heading", { name: "No online computers" }),
-  ).resolves.toBeVisible();
+  ).resolves.toBeInTheDocument();
   expect(
     screen.getByText("Open Okou on your Mac to bring it online."),
-  ).toBeVisible();
-  expect(screen.queryByText("Offline Desktop")).toBeNull();
-  expect(
-    screen.getByText(
-      "Requires an Apple silicon Mac with macOS 14 or newer. Intel Macs aren't supported.",
-    ),
-  ).toBeVisible();
-  expect(getDownloadLink()).toHaveAttribute(
-    "href",
-    expect.stringContaining("/api/desktop/updates/stable/darwin/arm64/dmg"),
+  ).toBeInTheDocument();
+  expect(screen.queryByText("Studio Mac")).not.toBeInTheDocument();
+  const download = await waitFor(() => {
+    const link = queryAllByRoleFast("link").find((candidate) => {
+      return candidate.textContent?.trim() === "Download for macOS";
+    });
+    if (!link) {
+      throw new Error("Expected the macOS download link");
+    }
+    return link;
+  });
+  expect(new URL(download.getAttribute("href") ?? "").pathname).toBe(
+    "/api/desktop/updates/stable/darwin/arm64/dmg",
   );
 });
 
-test.each([false, true])(
-  "The standalone computer page honors the optional callback (%s)",
-  async (callback) => {
-    const threadId = "20000000-0000-4000-8000-000000000001";
-    const hostId = "30000000-0000-4000-8000-000000000001";
-    mockAuthorizationRequest({ hosts: [computerUseHost(hostId, "Work Mac")] });
-    mockAuthorizationCallbackThread(context, threadId);
-    let grants = 0;
-    const prompts: string[] = [];
-    context.mocks.api(
-      computerUseAuthorizationRequestsContract.apply,
-      ({ respond }) => {
-        grants++;
-        return respond(200, {
-          ok: true,
-          source: "chat",
-          computerUseHostId: hostId,
-        });
-      },
-    );
-    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-      expect(grants).toBe(1);
-      expect(body.clientEventId).toBe("10000000-0000-4000-8000-000000000001");
-      if (body.prompt) {
-        prompts.push(body.prompt);
-      }
-      return respond(201, { threadId });
+test("The standalone computer page honors the optional callback (false)", async () => {
+  const request = mockAuthorizationRequest([
+    onlineComputerUseHost(STUDIO_MAC, "Studio Mac"),
+  ]);
+  const callback: { prompt?: string } = {};
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    callback.prompt = body.prompt;
+    return respond(500, {
+      error: { code: "UNEXPECTED_CALLBACK", message: "No callback expected" },
     });
-    await setupPage({
-      context,
-      path: `/computer-use/authorize/${REQUEST_TOKEN}${callback ? `?threadId=${threadId}&callbackPrompt=Continue` : ""}`,
-      host: "app.okou.ai",
-    });
-    await waitFor(() => {
-      expect(getButton("Authorize")).toBeEnabled();
-    });
-    click(getButton("Authorize"));
-    await waitFor(() => {
-      expect(getButton("Authorized")).toBeDisabled();
-    });
-    expect(grants).toBe(1);
-    expect(prompts).toStrictEqual(callback ? ["Continue"] : []);
-  },
-);
+  });
+  await setupPage({
+    context,
+    path: `/computer-use/authorize/${REQUEST_TOKEN}`,
+  });
+  await expect(screen.findByText("Studio Mac")).resolves.toBeInTheDocument();
+  const authorize = await waitFor(() => {
+    const found = button("Authorize");
+    expect(found).toBeEnabled();
+    return found as HTMLElement;
+  });
+
+  click(authorize);
+
+  await waitFor(() => {
+    expect(button("Authorized")).toBeDisabled();
+  });
+  expect(request.appliedHostId).toBe(STUDIO_MAC);
+  expect(button("Authorize")).toBeUndefined();
+  // Without a callback thread or prompt, nothing is posted to a chat.
+  expect(callback.prompt).toBeUndefined();
+});

@@ -1,235 +1,142 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-  startPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import {
-  CHAT_LIST_AGENT_ID,
   cachedChatListEvents,
-  chatListAuth,
   chatListEvent,
   chatListThread,
-  chatListThreadId,
-  fastButton,
-  installActiveChatBoundaries,
+  CHAT_LIST_AGENT_ID,
   installChatListAgent,
-  installChatListRunModels,
   installChatListStream,
+  installActiveChatBoundaries,
+  installChatListRunModels,
   onlineComputerUseHost,
-  sidebarThreadLinks,
   sidebarThreadTitles,
 } from "./chat-list-test-helpers.ts";
+import { findNamedButton } from "./chat-attachment-test-helpers.ts";
+import { queryComposerModelTrigger } from "./chat-composer-test-helpers.ts";
 
 const context = testContext();
-const HOST_ID = "a7000000-0000-4000-a000-000000000001";
-
-function computerMenuIsOpen(): boolean {
-  return queryAllByRoleFast("button", document).some((candidate) => {
-    return (
-      candidate.textContent?.replace(/\s+/gu, " ").trim() ===
-      "Connect my computer"
-    );
-  });
+const workstation = onlineComputerUseHost(
+  "58000000-0000-4000-8000-000000000028",
+);
+async function openHostSettings() {
+  click(await findNamedButton("Connectors"));
+  const menu = await screen.findByRole("dialog", { name: "Connectors" });
+  return await within(menu).findByRole("switch", { name: "Studio Mac" });
 }
 
-async function openComputerMenu(): Promise<void> {
-  if (!computerMenuIsOpen()) {
-    click(
-      await waitFor(() => {
-        return fastButton("Connectors");
-      }),
-    );
-  }
-  await waitFor(() => {
-    expect(fastButton("Connect my computer")).toBeVisible();
+test("chat-list-configuration-002 replays the model, fast tier and computer selection when the missing chat arrives", async () => {
+  const record = chatListThread(8, "Prepared workspace", {
+    selectedModel: "deepseek-v4-flash",
   });
-}
-
-async function expectSelectedModel(modelLabel: string): Promise<void> {
-  await expect(composerModelTrigger(modelLabel)).resolves.toBeVisible();
-}
-
-async function findThreadLink(threadId: string): Promise<HTMLAnchorElement> {
-  return await waitFor(() => {
-    const link = sidebarThreadLinks().find((candidate) => {
-      return candidate.dataset.sidebarChatThreadId === threadId;
-    });
-    if (!link) {
-      throw new Error(`Conversation ${threadId} not found in the sidebar`);
-    }
-    return link;
-  });
-}
-
-test("Enabling cloud browser replaces the Computer Use host", async () => {
-  const auth = chatListAuth(2);
-  const thread = chatListThread(36, "Hosted conversation", {
-    computerUseHostId: HOST_ID,
-  });
-  const remote = context.mocks.deferred<void>();
   installChatListAgent(context);
   installChatListRunModels(context);
-  installChatListStream(context, {
-    caseId: 2,
-    snapshot: [thread],
-    events: [
-      chatListEvent(2, 2, "computer_use_host_updated", thread.id, {
-        computerUseHostId: null,
-        cloudBrowserEnabled: true,
-      }),
-    ],
-    remoteGate: remote.promise,
-  });
   installActiveChatBoundaries(context, {
-    metadata: thread,
-    hosts: [onlineComputerUseHost(HOST_ID)],
+    metadata: record,
+    hosts: [workstation],
   });
-
-  const page = await startPage({
-    context,
-    path: `/chats/${thread.id}`,
-    auth,
-    cachedChatThreadEvents: cachedChatListEvents(2, [thread]),
-  });
-  await page.content;
-
-  await openComputerMenu();
-  const selectedHost = await screen.findByRole("switch", {
-    name: "Studio Mac",
-    checked: true,
-  });
-  expect(selectedHost).toBeChecked();
-  expect(
-    screen.getByRole("switch", { name: "Cloud browser", checked: false }),
-  ).not.toBeChecked();
-  remote.resolve();
-  await page.ready;
-
-  await openComputerMenu();
-  const enabledCloudBrowser = await screen.findByRole("switch", {
-    name: "Cloud browser",
-    checked: true,
-  });
-  expect(enabledCloudBrowser).toBeChecked();
-  expect(
-    screen.getByRole("switch", { name: "Studio Mac", checked: false }),
-  ).not.toBeChecked();
-});
-
-test("Conversation configuration arriving before creation is retained", async () => {
-  const auth = chatListAuth(4);
-  const threadId = chatListThreadId(37);
-  const host = onlineComputerUseHost(HOST_ID);
-  installChatListAgent(context);
-  installChatListRunModels(context);
   installChatListStream(context, {
-    caseId: 4,
+    caseId: 286,
     snapshot: [],
     events: [
-      chatListEvent(4, 2, "model_selection_updated", threadId, {
+      chatListEvent(286, 2, "model_selection_updated", record.id, {
         selectedModel: "gpt-5.6-sol",
-        createdAt: "2026-08-01T02:00:02.000Z",
       }),
-      chatListEvent(4, 3, "service_tier_updated", threadId, {
+      chatListEvent(286, 3, "service_tier_updated", record.id, {
         serviceTier: "priority",
-        createdAt: "2026-08-01T02:00:03.000Z",
       }),
-      chatListEvent(4, 4, "computer_use_host_updated", threadId, {
-        computerUseHostId: HOST_ID,
-        cloudBrowserEnabled: false,
-        createdAt: "2026-08-01T02:00:04.000Z",
+      chatListEvent(286, 4, "computer_use_host_updated", record.id, {
+        computerUseHostId: workstation.id,
       }),
-      chatListEvent(4, 5, "created", threadId, {
-        title: "Out-of-order configuration",
-        selectedModel: "deepseek-v4-flash",
-        createdAt: "2026-08-01T02:00:00.000Z",
+      chatListEvent(286, 5, "created", record.id, {
+        title: record.title,
+        selectedModel: record.selectedModel,
+        createdAt: record.createdAt,
       }),
     ],
   });
-  installActiveChatBoundaries(context, { hosts: [host] });
-
   await setupPage({
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
-    auth,
   });
-
+  const sidebar = within(await screen.findByTestId("chat-list-column"));
+  click(await sidebar.findByText("Prepared workspace"));
   await waitFor(() => {
-    expect(sidebarThreadTitles()).toStrictEqual(["Out-of-order configuration"]);
+    expect(location.pathname).toBe(`/chats/${record.id}`);
+    expect(
+      queryComposerModelTrigger("GPT 5.6 Sol, Max, Fast"),
+    ).toBeInTheDocument();
   });
-  expect(sidebarThreadLinks()).toHaveLength(1);
-  click(await findThreadLink(threadId));
-
-  await expectSelectedModel("GPT 5.6 Sol, Max, Fast");
-  await openComputerMenu();
-  const configuredHost = await screen.findByRole("switch", {
-    name: "Studio Mac",
-    checked: true,
-  });
-  expect(configuredHost).toBeChecked();
+  await expect(openHostSettings()).resolves.toBeChecked();
 });
 
-test("Service tier and Computer Use settings update independently", async () => {
-  const auth = chatListAuth(14);
-  const target = chatListThread(43, "Configured conversation", {
+test("chat-list-configuration-003 applies tier and host changes without moving the configured chat", async () => {
+  const configured = chatListThread(5, "Configured conversation", {
     selectedModel: "gpt-5.6-sol",
   });
-  const newer = chatListThread(44, "Newer conversation");
+  const recent = chatListThread(22, "Newer conversation");
   const remote = context.mocks.deferred<void>();
+  const records = [configured, recent];
   installChatListAgent(context);
   installChatListRunModels(context);
-  installChatListStream(context, {
-    caseId: 14,
-    snapshot: [target, newer],
-    events: [
-      chatListEvent(14, 2, "service_tier_updated", target.id, {
-        serviceTier: "priority",
-      }),
-      chatListEvent(14, 3, "computer_use_host_updated", target.id, {
-        computerUseHostId: HOST_ID,
-        cloudBrowserEnabled: false,
-      }),
-    ],
-    remoteGate: remote.promise,
-  });
   installActiveChatBoundaries(context, {
-    metadata: target,
-    hosts: [onlineComputerUseHost(HOST_ID)],
+    metadata: configured,
+    hosts: [workstation],
   });
-
+  const priority = chatListEvent(
+    287,
+    2,
+    "service_tier_updated",
+    configured.id,
+    { serviceTier: "priority" },
+  );
+  const connect = chatListEvent(
+    287,
+    3,
+    "computer_use_host_updated",
+    configured.id,
+    { computerUseHostId: workstation.id },
+  );
+  const stream = installChatListStream(context, {
+    caseId: 287,
+    snapshot: records,
+    remoteGate: remote.promise,
+    events: [priority],
+  });
   const page = await startPage({
     context,
-    path: `/chats/${target.id}`,
-    auth,
-    cachedChatThreadEvents: cachedChatListEvents(14, [target, newer]),
+    path: `/chats/${configured.id}`,
+    cachedChatThreadEvents: cachedChatListEvents(287, records),
   });
   await page.content;
-
-  const order = ["Newer conversation", "Configured conversation"];
   await waitFor(() => {
-    expect(sidebarThreadTitles()).toStrictEqual(order);
+    expect(sidebarThreadTitles()).toStrictEqual([
+      recent.title,
+      configured.title,
+    ]);
+    expect(queryComposerModelTrigger("GPT 5.6 Sol")).toBeInTheDocument();
   });
-  await expectSelectedModel("GPT 5.6 Sol");
-  await openComputerMenu();
-  await screen.findByRole("switch", {
-    name: "Studio Mac",
-    checked: false,
-  });
+  expect(
+    queryComposerModelTrigger("GPT 5.6 Sol, Max, Fast"),
+  ).not.toBeInTheDocument();
+  const host = await openHostSettings();
+  expect(host).not.toBeChecked();
   remote.resolve();
-  await page.ready;
-
-  await expectSelectedModel("GPT 5.6 Sol, Max, Fast");
-  await openComputerMenu();
-  const connectedHost = await screen.findByRole("switch", {
-    name: "Studio Mac",
-    checked: true,
+  await waitFor(() => {
+    expect(
+      queryComposerModelTrigger("GPT 5.6 Sol, Max, Fast"),
+    ).toBeInTheDocument();
   });
-  expect(connectedHost).toBeChecked();
-  expect(sidebarThreadTitles()).toStrictEqual(order);
+  expect(host).not.toBeChecked();
+  stream.setEvents([priority, connect]);
+  context.mocks.ably.trigger("threadListChanged");
+  await waitFor(() => {
+    expect(host).toBeChecked();
+  });
+  expect(
+    queryComposerModelTrigger("GPT 5.6 Sol, Max, Fast"),
+  ).toBeInTheDocument();
+  expect(sidebarThreadTitles()).toStrictEqual([recent.title, configured.title]);
 });

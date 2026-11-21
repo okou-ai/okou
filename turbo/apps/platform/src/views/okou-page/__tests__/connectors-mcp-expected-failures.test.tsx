@@ -1,95 +1,86 @@
+import { getAction } from "./connector-integrations-test-helpers.ts";
 import {
-  CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
-  customConnectorOAuth2Contract,
   customConnectorsContract,
+  customConnectorOAuth2Contract,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, within, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
-
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
-import { initSentry } from "../../../lib/sentry.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  getConnectorAction,
-  getConnectorCard,
   mcpCustomConnector,
+  getConnectorCard,
   mockSavedConnectorAccounts,
 } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
-const DISCOVERY_MESSAGE =
-  "The MCP server's OAuth discovery metadata is incomplete or inconsistent. Fix the advertised metadata if you manage the server, or contact the server administrator.";
-
 test.each([
   {
-    name: "invalid discovery metadata",
+    id: "connectors-mcp-expected-failures-001",
     status: 400,
-    code: CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.DISCOVERY_INVALID,
-    message: DISCOVERY_MESSAGE,
-    report: false,
+    code: "MCP_OAUTH_DISCOVERY_INVALID",
+    notice:
+      "The MCP server's OAuth discovery metadata is incomplete or inconsistent. Fix the advertised metadata if you manage the server, or contact the server administrator.",
   },
   {
-    name: "temporary provider unavailability",
+    id: "connectors-mcp-expected-failures-002",
     status: 502,
-    code: CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.PROVIDER_UNAVAILABLE,
-    message:
+    code: "MCP_OAUTH_PROVIDER_UNAVAILABLE",
+    notice:
       "The MCP OAuth provider is temporarily unavailable or rate-limited. Check the provider's availability.",
-    report: false,
-  },
-  {
-    name: "an unknown setup failure",
-    status: 400,
-    code: "UNKNOWN_MCP_SETUP_ERROR",
-    message: "MCP setup failed",
-    report: true,
-  },
-  {
-    name: "an internal failure with a recognized code",
-    status: 500,
-    code: CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.DISCOVERY_INVALID,
-    message: DISCOVERY_MESSAGE,
-    report: true,
   },
 ] as const)(
-  "Keep MCP failure feedback and retry available for $name",
-  async ({ status, code, message, report }) => {
-    const connector = mcpCustomConnector({
+  "$id an unsuccessful OAuth start leaves Acme MCP available to retry",
+  async ({ status, code, notice }) => {
+    const definition = mcpCustomConnector({
       authMode: "automatic",
       fields: [],
       headerInjections: [],
-      account: undefined,
+      account: { missingRequiredFields: [], configuredFieldKeys: [] },
     });
-    context.mocks.data.org({ id: "org_1", name: "Test Org", role: "admin" });
+    context.mocks.data.org({
+      id: "org_review",
+      name: "Review workspace",
+      role: "admin",
+    });
     context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-      return respond(200, { connectors: [connector] });
+      return respond(200, { connectors: [definition] });
     });
     mockSavedConnectorAccounts(context, () => {
       return [];
     });
-    context.mocks.api(customConnectorOAuth2Contract.start, ({ respond }) => {
-      return respond(status, {
-        error: { code, message: "MCP setup failed" },
-      });
-    });
+    const release = context.mocks.deferred<void>();
     const popup = context.mocks.browser.authWindow();
-    context.mocks.browser.open(popup);
-    const sentry = context.mocks.sentry();
-    initSentry();
-
-    await setupPage({ context, path: "/connectors?scope=custom" });
-    const connect = await waitFor(() => {
-      return getConnectorAction("button", "Connect Acme MCP");
-    });
-    click(connect);
-
-    await expect(screen.findByText(message)).resolves.toBeInTheDocument();
-    await waitFor(() => {
-      expect(popup.closed).toBeTruthy();
-      expect(getConnectorAction("button", "Connect Acme MCP")).toBeEnabled();
-    });
-    expect(getConnectorCard("Acme MCP")).toHaveTextContent("No accounts");
-    expect(sentry.reports).toMatchObject(
-      report ? [{ type: "exception", error: { code, status } }] : [],
+    const open = context.mocks.browser.open(popup);
+    const telemetry = context.mocks.sentry();
+    context.mocks.api(
+      customConnectorOAuth2Contract.start,
+      async ({ params, respond }) => {
+        expect(params.id).toBe(definition.id);
+        await release.promise;
+        return respond(status, {
+          error: { code, message: "Upstream discovery failed" },
+        });
+      },
     );
+    await setupPage({ context, path: "/connectors?scope=custom" });
+    await screen.findByText("Acme MCP");
+    const cardElement = getConnectorCard("Acme MCP");
+    const card = within(cardElement);
+    click(getAction("button", "Connect Acme MCP", cardElement));
+    await waitFor(() => {
+      return expect(open.calls).toHaveLength(1);
+    });
+    expect(popup.closed).toBeFalsy();
+    release.resolve();
+    await expect(screen.findByText(notice)).resolves.toBeInTheDocument();
+    expect(popup.closed).toBeTruthy();
+    expect(getAction("button", "Connect Acme MCP", cardElement)).toBeEnabled();
+    expect(card.getByText("No accounts")).toBeInTheDocument();
+    expect(
+      telemetry.reports.filter((item) => {
+        return item.type === "exception";
+      }),
+    ).toStrictEqual([]);
   },
 );

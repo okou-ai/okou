@@ -1,417 +1,228 @@
-import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
 import {
-  connectorPermissionsResponse,
-  type ConnectorPermissionFixture,
-} from "../../../__tests__/connector-permissions.ts";
-import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
+  getAction,
+  findAction,
+} from "./connector-integrations-test-helpers.ts";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
-import type { UserPermissionGrantBatchItem } from "@okouai/api-contracts/validators/user-permission-grants";
-
+import {
+  connectorPermissionsContract,
+  type ConnectorPermissions,
+} from "@okouai/api-contracts/contracts/connector-permissions";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { createMarkdownChatFixture } from "./markdown-page-test-helpers.ts";
+import {
+  createMarkdownChatFixture,
+  MARKDOWN_AGENT_ID,
+} from "./markdown-page-test-helpers.ts";
+import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
+import {
+  permissionMetadataFixture,
+  agentFixture,
+} from "../../team-page/__tests__/team-page-test-helpers.ts";
 
 const context = testContext();
-const AGENT_ID = "c0000000-0000-4000-a000-000000000071";
 
-const defaultItems = [
-  { connectorSlug: "slack", permission: "files:read" },
-  { connectorSlug: "github", permission: "repos.read" },
-  { connectorSlug: "slack", permission: "files:read" },
-] as const;
-
-function batchUrl(
-  items: readonly UserPermissionGrantBatchItem[] = defaultItems,
-): URL {
-  const url = new URL(
-    `https://app.okou.ai/agents/${AGENT_ID}/permissions/batch`,
+async function showRequest({
+  serviceCount = 2,
+  bothSlack = false,
+  member = false,
+  slackAllowed = false,
+  catalogReady,
+  saveReady,
+}: {
+  serviceCount?: number;
+  bothSlack?: boolean;
+  member?: boolean;
+  slackAllowed?: boolean;
+  catalogReady?: Promise<void>;
+  saveReady?: Promise<void>;
+} = {}) {
+  const services = [
+    permissionMetadataFixture("slack", "Slack", ["files:read", "chat:write"]),
+    permissionMetadataFixture("github", "GitHub", ["repos.read"]),
+    permissionMetadataFixture("google-drive", "Google Drive", ["files.read"]),
+    permissionMetadataFixture("notion", "Notion", ["pages.read"]),
+    permissionMetadataFixture("linear", "Linear", ["issues.read"]),
+  ];
+  const grants = new Map<string, ConnectorPermissions["grants"]>();
+  if (slackAllowed) {
+    grants.set("slack", [
+      { permission: "files:read", action: "allow", expiresAt: null },
+    ]);
+  }
+  context.mocks.api(
+    connectorCatalogContract.permissions,
+    async ({ params, respond }) => {
+      await catalogReady;
+      const metadata = services.find((s) => {
+        return s.connectorSlug === params.connectorSlug;
+      });
+      if (!metadata) {
+        throw new Error("Unexpected service " + params.connectorSlug);
+      }
+      return respond(200, { permissions: metadata });
+    },
   );
-  url.searchParams.set("action", "allow");
-  url.searchParams.set("items", JSON.stringify(items));
-  return url;
-}
-
-async function openMarkdown(source: string, enabled: boolean) {
+  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
+    return respond(200, {
+      target: query,
+      grants:
+        query.kind === "builtin" ? (grants.get(query.connectorSlug) ?? []) : [],
+    });
+  });
+  context.mocks.api(
+    connectorPermissionsContract.apply,
+    async ({ body, respond }) => {
+      await saveReady;
+      if (body.target.kind !== "builtin") {
+        throw new Error("Expected a built-in connector");
+      }
+      const saved = body.grants.map((g) => {
+        return {
+          action: g.action,
+          permission: g.permission,
+          expiresAt: null,
+        };
+      });
+      grants.set(body.target.connectorSlug, saved);
+      return respond(200, { target: body.target, grants: saved });
+    },
+  );
+  const items = services.slice(0, serviceCount).flatMap((s) => {
+    return s.permissions.slice(0, bothSlack ? 2 : 1).map((p) => {
+      return { permission: p.name, connectorSlug: s.connectorSlug };
+    });
+  });
   const chat = createMarkdownChatFixture(context);
+  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
+    return params.id !== MARKDOWN_AGENT_ID
+      ? respond(404, { error: { code: "NOT_FOUND", message: "Unknown agent" } })
+      : respond(200, agentFixture(MARKDOWN_AGENT_ID, "Markdown Agent"));
+  });
+  const params = new URLSearchParams({
+    items: JSON.stringify(items),
+    action: "allow",
+  });
+  if (member) {
+    params.set("orgId", "org_default");
+    params.set("userId", "test-user-123");
+  }
+  const path = member
+    ? "/connectors/permissions/batch"
+    : "/agents/" + MARKDOWN_AGENT_ID + "/permissions/batch";
+  const link = path + "?" + params;
   chat.install({
     rows: () => {
       return [
-        chat.outputMessage(source, { seqId: 1 }),
+        chat.outputMessage(
+          "Review the publication access. [Approve services](" + link + ")",
+          { seqId: 1 },
+        ),
         chat.runCompleted({ seqId: 2 }),
       ];
     },
   });
-  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-    return respond(200, {
-      isDefaultAgent: false,
-      agentId: params.id,
-      ownerId: "test-user-123",
-      displayName: "Markdown Agent",
-      description: null,
-      sound: null,
-      avatarUrl: null,
-      visibility: "private",
-    });
-  });
   await setupPage({
     context,
     path: chat.path,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BatchConnectorPermissions]: enabled },
+    featureSwitches: { [FeatureSwitchKey.BatchConnectorPermissions]: true },
   });
 }
 
-function getButton(name: string, container: ParentNode): HTMLElement {
-  const result = queryAllByRoleFast("button", container).find((candidate) => {
-    return (
-      candidate.textContent?.trim() === name ||
-      candidate.getAttribute("aria-label") === name
-    );
-  });
-  if (!result) {
-    throw new Error(`Expected button named "${name}"`);
-  }
-  return result;
-}
-
-test("A markdown batch link renders grouped permissions without duplicate rows", async () => {
-  context.mocks.api(
-    connectorCatalogContract.permissions,
-    ({ params, respond }) => {
-      const github = params.connectorSlug === "github";
-      return respond(200, {
-        permissions: {
-          connectorSlug: params.connectorSlug,
-          label: github ? "GitHub" : "Slack",
-          icon: {
-            url: "https://assets.example.test/connector.svg",
-            invertInDarkMode: false,
-          },
-          permissionCount: 1,
-          permissions: [
-            {
-              name: github ? "repos.read" : "files:read",
-              description: github
-                ? "Read repositories"
-                : "Read workspace files",
-            },
-          ],
-          categories: null,
-          defaultPolicy: { permissionDefault: "ask", unknownPolicy: "deny" },
-        },
-      });
-    },
-  );
-  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
-    return respond(200, connectorPermissionsResponse(query, []));
-  });
-
-  await openMarkdown(
-    `Review these permissions.\n\n[Authorize tools](${batchUrl().toString()})`,
-    true,
-  );
-
-  const card = await screen.findByTestId("permission-batch-action-card");
+test("markdown-permission-batch-003 one existing Slack grant reduces the review count", async () => {
+  await showRequest({ slackAllowed: true });
   await expect(
-    within(card).findByText("2 permissions to allow"),
+    screen.findByText("1 permission to allow"),
   ).resolves.toBeInTheDocument();
-  const review = getButton("Review permissions", card);
-  expect(review).toBeEnabled();
-  click(review);
-  const dialog = await screen.findByRole("dialog", {
-    name: "Allow the following permissions",
-  });
-  await expect(
-    within(dialog).findByText("Read repositories"),
-  ).resolves.toBeInTheDocument();
-  await expect(
-    within(dialog).findByText("Read workspace files"),
-  ).resolves.toBeInTheDocument();
-  expect(within(dialog).getAllByText("files:read")).toHaveLength(1);
-  expect(within(dialog).getByText("repos.read")).toBeInTheDocument();
-  expect(screen.getByText("Review these permissions.")).toBeInTheDocument();
+  expect(screen.getByText("1 already allowed")).toBeInTheDocument();
+  expect(getAction("button", "Review permissions")).toBeEnabled();
 });
 
-const services = [
-  { slug: "slack", label: "Slack" },
-  { slug: "github", label: "GitHub" },
-  { slug: "google-drive", label: "Google Drive" },
-  { slug: "notion", label: "Notion" },
-  { slug: "linear", label: "Linear" },
-] as const;
-
-function installMetadata(
-  items: readonly UserPermissionGrantBatchItem[],
-  ready?: Promise<void>,
-) {
-  context.mocks.api(
-    connectorCatalogContract.permissions,
-    async ({ params, respond }) => {
-      await ready;
-      const permissions = items
-        .filter((item) => {
-          return item.connectorSlug === params.connectorSlug;
-        })
-        .map((item) => {
-          return {
-            name: item.permission,
-            description: `Description for ${item.permission}`,
-          };
-        });
-      return respond(200, {
-        permissions: {
-          connectorSlug: params.connectorSlug,
-          label:
-            services.find((service) => {
-              return service.slug === params.connectorSlug;
-            })?.label ?? params.connectorSlug,
-          icon: {
-            url: `https://assets.example.test/${params.connectorSlug}.svg`,
-            invertInDarkMode: false,
-          },
-          permissionCount: permissions.length,
-          permissions,
-          categories: null,
-          defaultPolicy: { permissionDefault: "ask", unknownPolicy: "deny" },
-        },
-      });
-    },
-  );
-}
-
-test("A batch card shows three service logos and exposes every service in its overflow tooltip", async () => {
-  const user = userEvent.setup();
-  const items = services.map((service) => {
-    return { connectorSlug: service.slug, permission: "files:read" };
-  });
-  installMetadata(items);
-  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
-    return respond(200, connectorPermissionsResponse(query, []));
-  });
-
-  await openMarkdown(`[Authorize tools](${batchUrl(items).toString()})`, true);
-
-  const card = await screen.findByTestId("permission-batch-action-card");
+test("markdown-permission-batch-002 the service overflow reveals all five names on hover", async () => {
+  await showRequest({ serviceCount: 5 });
   await expect(
-    within(card).findByText("5 permissions to allow"),
+    screen.findByText("5 permissions to allow"),
   ).resolves.toBeInTheDocument();
-  const logos = getButton("GitHub, Google Drive, Linear, Notion, Slack", card);
-  expect(
-    within(logos).getAllByRole("presentation", { hidden: true }),
-  ).toHaveLength(3);
-  expect(within(logos).getByText("+2", { exact: true })).toBeInTheDocument();
-  await user.hover(
-    getButton(
-      "GitHub, Google Drive, Linear, Notion, Slack",
-      screen.getByTestId("permission-batch-action-card"),
-    ),
+  const logos = getAction(
+    "button",
+    "GitHub, Google Drive, Linear, Notion, Slack",
   );
-  const tooltip = await screen.findByRole("tooltip");
-  for (const service of services) {
-    expect(tooltip).toHaveTextContent(service.label);
-  }
+  expect(logos.querySelectorAll("img")).toHaveLength(3);
+  expect(within(logos).getByText("+2")).toBeInTheDocument();
+  await userEvent.hover(logos);
+  await expect(screen.findByRole("tooltip")).resolves.toHaveTextContent(
+    "GitHub, Google Drive, Linear, Notion, Slack",
+  );
 });
 
-test("A partially allowed batch shows the remaining permission count", async () => {
-  installMetadata(defaultItems.slice(0, 2));
-  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
-    return respond(
-      200,
-      connectorPermissionsResponse(query, [
-        {
-          connectorSlug: "slack",
-          permission: "files:read",
-          action: "allow",
-          expiresAt: "2099-01-01T00:00:00.000Z",
-        },
-      ]),
-    );
-  });
-
-  await openMarkdown(`[Authorize tools](${batchUrl().toString()})`, true);
-  const card = await screen.findByTestId("permission-batch-action-card");
-  await expect(
-    within(card).findByText("1 permission to allow"),
-  ).resolves.toBeInTheDocument();
-  expect(within(card).getByText("1 already allowed")).toBeInTheDocument();
-  expect(getButton("Review permissions", card)).toBeEnabled();
-});
-
-test("A batch stays reviewable while service details load and enables duration only when ready", async () => {
-  const metadata = context.mocks.deferred<void>();
-  const items = [
-    { connectorSlug: "slack", permission: "files:read" },
-    { connectorSlug: "slack", permission: "chat:write" },
-    { connectorSlug: "github", permission: "repos.read" },
-  ];
-  installMetadata(items, metadata.promise);
-  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
-    return respond(200, connectorPermissionsResponse(query, []));
-  });
-
-  await openMarkdown(`[Authorize tools](${batchUrl(items).toString()})`, true);
-  const card = await screen.findByTestId("permission-batch-action-card");
+test("markdown-permission-batch-004 review displays the two requested groups before their catalogs arrive", async () => {
+  const release = context.mocks.deferred<void>();
+  await showRequest({ bothSlack: true, catalogReady: release.promise });
+  click(await findAction("button", "Review permissions"));
+  const dialog = await screen.findByRole("dialog");
+  const view = within(dialog);
+  const groups = [...dialog.querySelectorAll('section[aria-hidden="true"]')];
   expect(
-    within(card).getByRole("status", { name: "Loading permissions" }),
-  ).toBeInTheDocument();
-  click(getButton("Review permissions", card));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Allow the following permissions",
-  });
-  expect(
-    within(dialog).getByRole("status", { name: "Loading permissions" }),
-  ).toBeInTheDocument();
-  expect(
-    within(dialog).getByRole("combobox", { name: "Permission duration" }),
-  ).toBeDisabled();
-  expect(getButton("Allow all 3 permissions", dialog)).toBeDisabled();
-  const loadingGroups = within(dialog).getAllByRole("list", { hidden: true });
-  expect(loadingGroups).toHaveLength(2);
-  expect(
-    loadingGroups
-      .map((group) => {
-        return within(group).getAllByRole("listitem", { hidden: true }).length;
+    groups
+      .map((g) => {
+        return g.querySelectorAll("li").length;
       })
       .sort(),
   ).toStrictEqual([1, 2]);
-
-  metadata.resolve();
+  await waitFor(() => {
+    return expect(
+      view.getByRole("combobox", { name: "Permission duration" }),
+    ).toBeDisabled();
+  });
+  expect(getAction("button", "Allow all 3 permissions", dialog)).toBeDisabled();
+  release.resolve();
   await expect(
-    within(dialog).findByText("0 of 3 permissions allowed"),
+    view.findByRole("heading", { name: "Slack" }),
   ).resolves.toBeInTheDocument();
-  expect(
-    within(dialog).getByRole("heading", { name: "Slack" }),
-  ).toBeInTheDocument();
-  expect(
-    within(dialog).getByRole("heading", { name: "GitHub" }),
-  ).toBeInTheDocument();
-  for (const item of items) {
-    expect(
-      within(dialog).getByText(item.permission, { exact: true }),
-    ).toBeInTheDocument();
+  expect(view.getByRole("heading", { name: "GitHub" })).toBeInTheDocument();
+  for (const name of ["chat:write", "files:read", "repos.read"]) {
+    expect(view.getByText(name)).toBeInTheDocument();
   }
+  expect(getAction("button", "Allow all 3 permissions", dialog)).toBeEnabled();
   expect(
-    within(dialog).getByRole("combobox", { name: "Permission duration" }),
+    view.getByRole("combobox", { name: "Permission duration" }),
   ).toBeEnabled();
-  expect(getButton("Allow all 3 permissions", dialog)).toBeEnabled();
 });
 
-test.each(["legacy", "member"])(
-  "A %s batch card reports saving and then allowed after confirmation",
-  async (owner) => {
-    const save = context.mocks.deferred<void>();
-    const items = defaultItems.slice(0, 2);
-    installMetadata(items);
-    const grants: ConnectorPermissionFixture[] = [];
-    context.mocks.api(
-      connectorPermissionsContract.get,
-      ({ query, respond }) => {
-        return respond(200, connectorPermissionsResponse(query, grants));
-      },
-    );
-    context.mocks.api(
-      connectorPermissionsContract.apply,
-      async ({ body, respond }) => {
-        await save.promise;
-        if (body.target.kind !== "builtin") {
-          throw new Error("Expected a builtin connector");
-        }
-        const { connectorSlug } = body.target;
-        grants.push(
-          ...body.grants.map((grant) => {
-            return {
-              connectorSlug,
-              permission: grant.permission,
-              action: "allow" as const,
-              expiresAt: "2099-01-01T00:00:00.000Z",
-              createdAt: "2030-01-01T00:00:00.000Z",
-              updatedAt: "2030-01-01T00:00:00.000Z",
-            };
-          }),
-        );
-        context.mocks.ably.trigger("connectorPermissionUpdated");
-        return respond(200, connectorPermissionsResponse(body.target, grants));
-      },
-    );
-
-    const url = batchUrl(items);
-    if (owner === "member") {
-      url.pathname = "/connectors/permissions/batch";
-      url.searchParams.set("orgId", "org_default");
-      url.searchParams.set("userId", "test-user-123");
-    }
-    await openMarkdown(`[Authorize tools](${url})`, true);
-    const card = await screen.findByTestId("permission-batch-action-card");
-    await within(card).findByText("2 permissions to allow");
-    click(getButton("Review permissions", card));
-    const dialog = await screen.findByRole("dialog", {
-      name: "Allow the following permissions",
-    });
+test.each([
+  { label: "markdown-permission-batch-005", member: false },
+  { label: "Member batch link", member: true },
+])(
+  "$label the approval dialog shows saved access back on its card",
+  async ({ member }) => {
+    const release = context.mocks.deferred<void>();
+    await showRequest({ member, saveReady: release.promise });
+    await screen.findByText("2 permissions to allow");
+    click(getAction("button", "Review permissions"));
+    const dialog = await screen.findByRole("dialog");
+    const view = within(dialog);
+    click(getAction("button", "Allow all 2 permissions", dialog));
+    await expect(
+      findAction("button", "Saving...", dialog),
+    ).resolves.toBeDisabled();
+    expect(
+      view.getByRole("combobox", { name: "Permission duration" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText("Saving...", { selector: "div" }),
+    ).toBeInTheDocument();
+    release.resolve();
+    await expect(
+      view.findByText("Permissions allowed"),
+    ).resolves.toBeInTheDocument();
+    click(getAction("button", "Close", dialog));
     await waitFor(() => {
-      expect(getButton("Allow all 2 permissions", dialog)).toBeEnabled();
+      return expect(screen.queryByRole("dialog")).toBeNull();
     });
-    click(getButton("Allow all 2 permissions", dialog));
-    await waitFor(() => {
-      expect(
-        within(screen.getByTestId("permission-batch-action-card")).getByText(
-          "Saving...",
-        ),
-      ).toBeInTheDocument();
-    });
-    await waitFor(() => {
-      expect(
-        within(
-          screen.getByRole("dialog", {
-            name: "Allow the following permissions",
-          }),
-        ).getByRole("combobox", { name: "Permission duration" }),
-      ).toBeDisabled();
-    });
-
-    save.resolve();
-    await waitFor(() => {
-      expect(
-        within(screen.getByTestId("permission-batch-action-card")).getByText(
-          "Permissions allowed",
-        ),
-      ).toBeInTheDocument();
-    });
-    click(getButton("Close", dialog));
-    await waitFor(() => {
-      expect(
-        getButton(
-          "View permission details",
-          screen.getByTestId("permission-batch-action-card"),
-        ),
-      ).toBeEnabled();
-    });
+    expect(screen.getByText("Permissions allowed")).toBeInTheDocument();
+    expect(getAction("button", "View permission details")).toBeEnabled();
   },
 );
-
-test("An invalid batch query renders the unavailable action instead of partial permissions", async () => {
-  const url = batchUrl();
-  url.searchParams.append("action", "allow");
-  await openMarkdown(`[Authorize tools](${url.toString()})`, true);
-  await expect(
-    screen.findByTestId("unavailable-action-card"),
-  ).resolves.toBeInTheDocument();
-});
-
-test("A batch link stays an ordinary markdown link while the feature is disabled", async () => {
-  const href = batchUrl().toString();
-  await openMarkdown(`[Authorize tools](${href})`, false);
-  await screen.findByText("Authorize tools");
-  const link = queryAllByRoleFast("link").find((candidate) => {
-    return candidate.textContent === "Authorize tools";
-  });
-  expect(link).toHaveAttribute("href", href);
-});

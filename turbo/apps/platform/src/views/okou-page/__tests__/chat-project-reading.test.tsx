@@ -1,65 +1,70 @@
-import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
-import { waitFor } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
+
 import { setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  chatEventRowsResponse,
-  testContext,
-} from "../../../signals/__tests__/test-helpers.ts";
-import { createMessageExperienceHelpers } from "./chat-message-experience-test-helpers.ts";
+  assistantEvent,
+  createChatRunFixtures,
+  readyChat,
+  RUN_PATH,
+} from "./chat-run-test-fixtures.ts";
 
 const context = testContext();
-const { installMessageExperienceChat } =
-  createMessageExperienceHelpers(context);
+const { installRunChat } = createChatRunFixtures(context);
+const PROJECT_ID = "f0000000-0000-4000-a000-000000000e31";
+const RUN_ID = "d0000000-0000-4000-a000-000000000e31";
 
 test("future Project references remain readable in a restored conversation and feedback", async () => {
-  const projectId = "00000000-0000-4000-8000-000000000071";
-  const reference = {
-    type: "project",
-    projectId,
+  const project = {
+    type: "project" as const,
+    projectId: PROJECT_ID,
     nameSnapshot: "Original launch",
   };
-  installMessageExperienceChat({
-    threadId: context.resourceId,
-    chatEvents: [],
-  });
-  const row: ChatEventRow = {
-    id: "00000000-0000-4000-8000-000000000001",
-    chatThreadId: context.resourceId,
-    runId: null,
-    revokesEventId: null,
-    contextType: "web",
-    contextId: context.resourceId,
-    runEventSequenceNumber: null,
-    runEventId: null,
-    seqId: 1,
-    createdAt: "2026-11-02T00:00:00.000Z",
-    eventType: "input.prompt",
-    payload: {
-      userMessage: {
-        version: 1,
-        parts: [
-          { type: "text", text: "Review " },
-          reference,
-          { type: "feedback", quote: "Check the schedule", note: [reference] },
-        ],
+  installRunChat({
+    chatEvents: [
+      {
+        id: "project-request",
+        role: "user",
+        content: "Plan from Original launch",
+        runId: RUN_ID,
+        seqId: 1,
+        createdAt: "2026-11-21T10:00:00.000Z",
+        userMessage: {
+          version: 1,
+          parts: [
+            { type: "text", text: "Plan from " },
+            project,
+            {
+              type: "feedback",
+              quote: "Check the schedule",
+              note: [{ type: "text", text: "Compare with " }, project],
+            },
+          ],
+        },
       },
-    },
-  };
-  context.mocks.api(chatThreadEventsContract.rows, ({ query, respond }) => {
-    return respond(
-      200,
-      chatEventRowsResponse(query.sinceSeqId === 0 ? [row] : [], query),
-    );
+      assistantEvent({
+        id: "project-answer",
+        runId: RUN_ID,
+        seqId: 2,
+        text: "The schedule is on track.",
+      }),
+    ],
   });
-  await setupPage({ context, path: `/chats/${context.resourceId}` });
-  await waitFor(() => {
-    const message = document.querySelector("[data-structured-user-message]");
-    expect(message).toHaveTextContent("Original launch");
-    expect(
-      message?.querySelector(`a[href^="/projects/${projectId}"]`),
-    ).toHaveTextContent("Original launch");
-    expect(message).toHaveTextContent("Check the schedule");
+
+  await setupPage({ context, path: RUN_PATH });
+  await readyChat();
+
+  const message = (
+    await screen.findByText("Check the schedule", {
+      selector: "[data-role='user'] *",
+    })
+  ).closest<HTMLElement>("[data-role='user']") as HTMLElement;
+  const references = [...message.querySelectorAll("a")].filter((link) => {
+    return link.textContent?.trim() === "Original launch";
   });
+  expect(references.length).toBeGreaterThan(0);
+  for (const reference of references) {
+    expect(reference).toHaveAttribute("href", `/projects/${PROJECT_ID}`);
+  }
 });

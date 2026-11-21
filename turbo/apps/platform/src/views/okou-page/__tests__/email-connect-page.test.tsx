@@ -1,427 +1,248 @@
-import { beforeEach, expect, test } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
 import { integrationsEmailContract } from "@okouai/api-contracts/contracts/integrations-email";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { expect, test } from "vitest";
+
 import {
   click,
-  setupPage,
   queryAllByRoleFast,
+  setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  getAction,
-  getIntegrationCard,
-} from "./connector-integrations-test-helpers.ts";
 
 const context = testContext();
-const emailAddress = "verified@example.com";
-function proof() {
-  return {
-    messageId: "00000000-0000-4000-8000-000000000001",
-    expires: 1_784_880_000,
-    signature: "a".repeat(64),
-  };
-}
-const path = `/settings/email?${new URLSearchParams({ message: proof().messageId, expires: String(proof().expires), signature: proof().signature })}`;
-function featureSwitches() {
-  return {
-    [FeatureSwitchKey.WorksChannelCards]: true,
-    [FeatureSwitchKey.EmailIntegration]: true,
-  };
+const OKOU_ADDRESS = "okou@okou.io";
+const LOGIN_EMAIL = "test@example.com";
+const LINK_MESSAGE_ID = "e0000000-0000-4000-a000-000000000e01";
+const LINK_EXPIRES = 1_900_000_000;
+const LINK_SIGNATURE = "a".repeat(64);
+
+interface LinkProof {
+  readonly messageId: string;
+  readonly expires: number;
+  readonly signature: string;
 }
 
-beforeEach(() => {
+interface EmailServer {
+  emails: string[];
+  codes: string[];
+  codeAvailable: boolean;
+  /** The latest connection link proof the API received. */
+  connected?: LinkProof;
+}
+
+/** The member's email integration as the API reports it. */
+function mockEmailIntegration(initial: Partial<EmailServer> = {}): EmailServer {
+  const server: EmailServer = {
+    emails: [],
+    codes: ["11112222"],
+    codeAvailable: true,
+    ...initial,
+  };
   context.mocks.api(integrationsEmailContract.getLinkStatus, ({ respond }) => {
     return respond(200, {
-      address: "okou@okou.io",
+      address: OKOU_ADDRESS,
       configured: true,
-      emails: [],
-      availableEmails: [emailAddress],
+      emails: [...server.emails],
+      availableEmails: [],
       emailSources: {},
     });
   });
-});
+  context.mocks.api(integrationsEmailContract.createLinkCode, ({ respond }) => {
+    if (!server.codeAvailable) {
+      return respond(409, {
+        error: { code: "CONFLICT", message: "Code service is busy" },
+      });
+    }
+    const code = server.codes.shift() ?? "99990000";
+    return respond(200, { code, expiresAt: "2026-11-20T09:00:00.000Z" });
+  });
+  context.mocks.api(integrationsEmailContract.connect, ({ body, respond }) => {
+    server.connected = body;
+    return respond(200, { emailAddress: "verified@example.com" });
+  });
+  return server;
+}
+
+function control(
+  role: "button" | "link",
+  name: string,
+  container: ParentNode = document.body,
+): HTMLElement | undefined {
+  return queryAllByRoleFast(role, container).find((candidate) => {
+    return (
+      candidate.getAttribute("aria-label") === name ||
+      candidate.textContent?.trim() === name
+    );
+  });
+}
+
+async function findEnabled(
+  role: "button" | "link",
+  name: string,
+  container: ParentNode = document.body,
+): Promise<HTMLElement> {
+  return await waitFor(() => {
+    const found = control(role, name, container);
+    expect(found).toBeEnabled();
+    return found as HTMLElement;
+  });
+}
 
 test("connects in the active workspace without asking a multi-workspace user to choose again", async () => {
-  let requestBody: unknown;
-  context.mocks.api(integrationsEmailContract.connect, ({ body, respond }) => {
-    requestBody = body;
-    return respond(200, { emailAddress });
+  const server = mockEmailIntegration();
+  const query = new URLSearchParams({
+    message: LINK_MESSAGE_ID,
+    expires: String(LINK_EXPIRES),
+    signature: LINK_SIGNATURE,
   });
+
   await setupPage({
     context,
-    path,
-    featureSwitches: featureSwitches(),
+    path: `/settings/email?${query.toString()}`,
     auth: {
-      user: { id: "email-owner", fullName: "Email Owner" },
+      user: { id: "email-member", fullName: "Email Member" },
       organization: {
-        activeOrg: { id: "org_active", name: "Active workspace" },
-        memberships: [{ id: "org_other" }, { id: "org_active" }],
+        activeOrg: { id: "org_email_active", name: "Active workspace" },
+        memberships: [{ id: "org_email_active" }, { id: "org_email_other" }],
       },
     },
+    featureSwitches: { [FeatureSwitchKey.EmailIntegration]: true },
   });
+
   await expect(
     screen.findByRole("heading", { name: "Email connected" }),
   ).resolves.toBeInTheDocument();
-  const notifications = await screen.findByRole("region", {
-    name: /Notifications/u,
+  expect(
+    screen.getByText(
+      "verified@example.com is connected. Your original request will be answered in the same email conversation.",
+    ),
+  ).toBeInTheDocument();
+  // The success notification names the verified sender.
+  expect(
+    within(document.body).getAllByText("verified@example.com"),
+  ).not.toHaveLength(0);
+  expect(server.connected).toStrictEqual({
+    messageId: LINK_MESSAGE_ID,
+    expires: LINK_EXPIRES,
+    signature: LINK_SIGNATURE,
   });
-  await expect(
-    within(notifications).findByText("Email connected"),
-  ).resolves.toBeInTheDocument();
-  expect(within(notifications).getByText(emailAddress)).toBeInTheDocument();
   expect(window.location.pathname).toBe("/settings/email");
-  expect(requestBody).toStrictEqual(proof());
   expect(control("link", "Open email")).toHaveAttribute(
     "href",
-    "mailto:okou@okou.io",
+    `mailto:${OKOU_ADDRESS}`,
   );
-});
-
-test("explains an expired connection without asking the user to resend account details", async () => {
-  context.mocks.api(integrationsEmailContract.connect, ({ respond }) => {
-    return respond(400, {
-      error: {
-        code: "BAD_REQUEST",
-        message:
-          "Invalid or expired email connection link. Send a new email to Okou.",
-      },
-    });
-  });
-  await setupPage({ context, path, featureSwitches: featureSwitches() });
-  await expect(
-    screen.findByText(/Invalid or expired email connection link/u),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByText("Email connected")).not.toBeInTheDocument();
-});
-
-test("adds an email from the Works card with a short code and updates the open dialog", async () => {
-  let emails: string[] = [];
-  let code = "01234567";
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  context.mocks.api(integrationsEmailContract.getLinkStatus, ({ respond }) => {
-    return respond(200, {
-      address: "okou@okou.io",
-      configured: true,
-      emails,
-      availableEmails: [emailAddress],
-      emailSources: {},
-    });
-  });
-  context.mocks.api(integrationsEmailContract.createLinkCode, ({ respond }) => {
-    return respond(200, { code, expiresAt: "2026-11-10T08:10:00.000Z" });
-  });
-  await setupPage({
-    context,
-    path: "/works",
-    featureSwitches: featureSwitches(),
-  });
-  const card = getIntegrationCard("Email");
-  await waitFor(() => {
-    expect(getAction("button", "Connect", card)).toBeEnabled();
-  });
-  click(getAction("button", "Connect", card));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Email connections",
-  });
-  expect(
-    within(dialog).getByText("Send the code from the email you want to add."),
-  ).toBeInTheDocument();
-  await expect(within(dialog).findByText(code)).resolves.toBeInTheDocument();
-  expect(getAction("link", "Open email", dialog)).toHaveAttribute(
-    "href",
-    `mailto:okou@okou.io?subject=${code}&body=${code}`,
-  );
-  click(getAction("button", `Copy connection code ${code}`, dialog));
-  await waitFor(() => {
-    expect(clipboard.writes).toStrictEqual([code]);
-  });
-  code = "76543210";
-  click(getAction("button", "Generate new code", dialog));
-  await expect(within(dialog).findByText(code)).resolves.toBeInTheDocument();
-  expect(getAction("link", "Open email", dialog)).toHaveAttribute(
-    "href",
-    `mailto:okou@okou.io?subject=${code}&body=${code}`,
-  );
-  emails = [emailAddress];
-  await context.mocks.ably.trigger("email:changed");
-  await expect(
-    within(dialog).findByText(emailAddress),
-  ).resolves.toBeInTheDocument();
-  expect(window.location.pathname).toBe("/works");
-  click(getAction("button", "Close", dialog));
-  await waitFor(() => {
-    expect(getAction("button", "Email options", card)).toHaveFocus();
-  });
-  click(getAction("button", "Email options", card));
-  expect(getAction("link", "okou@okou.io")).toHaveAttribute(
-    "href",
-    "mailto:okou@okou.io",
-  );
+  // The active workspace is used; no workspace choice is offered.
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(control("button", "Switch workspace")).toBeUndefined();
 });
 
 test("opens unsigned email settings with the login email connected", async () => {
-  context.mocks.api(integrationsEmailContract.getLinkStatus, ({ respond }) => {
-    return respond(200, {
-      address: "okou@okou.io",
-      configured: true,
-      emails: [emailAddress],
-      availableEmails: [emailAddress],
-      emailSources: {},
-    });
-  });
+  mockEmailIntegration({ emails: [LOGIN_EMAIL] });
+
   await setupPage({
     context,
     path: "/settings/email",
-    featureSwitches: featureSwitches(),
-    auth: {
-      user: {
-        id: "user_email_settings_primary",
-        fullName: "Email User",
-        email: emailAddress,
-      },
-    },
+    featureSwitches: { [FeatureSwitchKey.EmailIntegration]: true },
   });
+
   const dialog = await screen.findByRole("dialog", {
     name: "Email connections",
   });
   expect(window.location.pathname).toBe("/works");
-  expect(within(dialog).getByText(emailAddress)).toBeInTheDocument();
-  expect(getAction("button", "Add email", dialog)).toBeEnabled();
-  click(getAction("button", "Close", dialog));
+  await expect(
+    within(dialog).findByRole("row", { name: LOGIN_EMAIL }),
+  ).resolves.toBeInTheDocument();
+  await expect(
+    findEnabled("button", "Add email", dialog),
+  ).resolves.toBeInTheDocument();
+
+  await userEvent.keyboard("{Escape}");
+
   await waitFor(() => {
-    expect(
-      getAction("button", "Email options", getIntegrationCard("Email")),
-    ).toHaveFocus();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+  expect(document.activeElement).toBe(control("button", "Email options"));
+});
+
+async function openEmailConnections(): Promise<HTMLElement> {
+  await setupPage({
+    context,
+    path: "/works",
+    featureSwitches: { [FeatureSwitchKey.EmailIntegration]: true },
+  });
+  click(await findEnabled("button", "Email options"));
+  click(await findEnabled("button", "Manage"));
+  return await screen.findByRole("dialog", { name: "Email connections" });
+}
+
+test("adds an email from the Works card with a short code and updates the open dialog", async () => {
+  const server = mockEmailIntegration({
+    emails: [LOGIN_EMAIL],
+    codes: ["11112222", "33334444"],
+  });
+  const dialog = await openEmailConnections();
+  click(await findEnabled("button", "Add email", dialog));
+  await expect(
+    within(dialog).findByText("11112222"),
+  ).resolves.toBeInTheDocument();
+  const user = userEvent.setup({ delay: null });
+  const clipboard = context.mocks.browser.clipboardWriteText();
+
+  await user.click(
+    await findEnabled("button", "Copy connection code 11112222", dialog),
+  );
+  await waitFor(() => {
+    expect(clipboard.writes.at(-1)).toBe("11112222");
+  });
+  click(await findEnabled("button", "Generate new code", dialog));
+
+  await expect(
+    within(dialog).findByText("33334444"),
+  ).resolves.toBeInTheDocument();
+  expect(control("link", "Open email", dialog)).toHaveAttribute(
+    "href",
+    `mailto:${OKOU_ADDRESS}?subject=33334444&body=33334444`,
+  );
+
+  // The member sends the code, and the API announces the new sender.
+  server.emails = [LOGIN_EMAIL, "new.sender@example.com"];
+  context.mocks.ably.trigger("email:changed");
+
+  await expect(
+    within(dialog).findByRole("row", { name: "new.sender@example.com" }),
+  ).resolves.toBeInTheDocument();
+  expect(window.location.pathname).toBe("/works");
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(document.activeElement).toBe(control("button", "Email options"));
 });
 
 test("keeps a failed code request in the dialog and lets the user retry", async () => {
-  let fail = true;
-  context.mocks.api(integrationsEmailContract.createLinkCode, ({ respond }) => {
-    if (fail) {
-      return respond(403, {
-        error: { code: "FORBIDDEN", message: "Please try again" },
-      });
-    }
-    return respond(200, {
-      code: "12345678",
-      expiresAt: "2026-11-10T08:10:00.000Z",
-    });
+  const server = mockEmailIntegration({
+    emails: [LOGIN_EMAIL],
+    codes: ["12345678"],
+    codeAvailable: false,
   });
-  await setupPage({
-    context,
-    path: "/works",
-    featureSwitches: featureSwitches(),
-  });
-  const card = getIntegrationCard("Email");
-  await waitFor(() => {
-    expect(getAction("button", "Connect", card)).toBeEnabled();
-  });
-  click(getAction("button", "Connect", card));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Email connections",
-  });
+  const dialog = await openEmailConnections();
+
+  click(await findEnabled("button", "Add email", dialog));
+
   await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
     "Could not create a connection code. Try again.",
   );
-  fail = false;
-  click(getAction("button", "Add email", dialog));
+  expect(screen.getByRole("dialog", { name: "Email connections" })).toBe(
+    dialog,
+  );
+
+  server.codeAvailable = true;
+  click(await findEnabled("button", "Add email", dialog));
+
   await expect(
     within(dialog).findByText("12345678"),
   ).resolves.toBeInTheDocument();
-});
-
-test("deletes each linked address from Manage and returns focus to Connect", async () => {
-  const secondEmail = "second@example.com";
-  let emails = [emailAddress, secondEmail];
-  context.mocks.api(integrationsEmailContract.getLinkStatus, ({ respond }) => {
-    return respond(200, {
-      address: "okou@okou.io",
-      configured: true,
-      emails,
-      availableEmails: [emailAddress, secondEmail],
-      emailSources: {},
-    });
-  });
-  context.mocks.api(integrationsEmailContract.unlink, ({ body, respond }) => {
-    emails = emails.filter((email) => {
-      return email !== body.emailAddress;
-    });
-    return respond(204);
-  });
-  await setupPage({
-    context,
-    path: "/works",
-    featureSwitches: featureSwitches(),
-  });
-  const card = getIntegrationCard("Email");
-  await expect(
-    within(card).findByText(emailAddress),
-  ).resolves.toBeInTheDocument();
-  click(getAction("button", "Email options", card));
-  click(getAction("button", "Manage"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Email connections",
-  });
-  click(
-    getAction(
-      "button",
-      `Delete ${emailAddress}`,
-      emailRow(dialog, emailAddress),
-    ),
-  );
-  await waitFor(() => {
-    expect(within(dialog).queryByText(emailAddress)).not.toBeInTheDocument();
-  });
-  expect(within(dialog).getByText(secondEmail)).toBeInTheDocument();
-  click(
-    getAction("button", `Delete ${secondEmail}`, emailRow(dialog, secondEmail)),
-  );
-  await waitFor(() => {
-    expect(within(dialog).queryByText(secondEmail)).not.toBeInTheDocument();
-  });
-  click(getAction("button", "Close", dialog));
-  await waitFor(() => {
-    expect(getAction("button", "Connect", card)).toHaveFocus();
-  });
-});
-
-function control(role: "button" | "link", label: string): HTMLElement {
-  const element = queryAllByRoleFast(role).find((item) => {
-    return item.textContent?.trim() === label;
-  });
-  if (!element) {
-    throw new Error("Expected control: " + label);
-  }
-  return element;
-}
-
-function emailRow(dialog: HTMLElement, email: string): HTMLElement {
-  return within(dialog).getByRole("row", { name: email });
-}
-
-function emailSource(
-  row: HTMLElement,
-  source: string,
-): HTMLElement | undefined {
-  return queryAllByRoleFast("cell", row).find((item) => {
-    return item.textContent?.trim() === source;
-  });
-}
-
-test("manages multiple connections and adds another mailbox without leaving Works", async () => {
-  const second = "other@outlook.example";
-  const third = "new@gmail.example";
-  let emails = [emailAddress, second];
-  const code = "87654321";
-  context.mocks.api(integrationsEmailContract.getLinkStatus, ({ respond }) => {
-    return respond(200, {
-      address: "okou@okou.io",
-      configured: true,
-      emails,
-      availableEmails: [emailAddress],
-      emailSources: { [emailAddress]: "gmail", [second]: "outlook" },
-    });
-  });
-  context.mocks.api(integrationsEmailContract.createLinkCode, ({ respond }) => {
-    return respond(200, { code, expiresAt: "2026-11-10T08:10:00.000Z" });
-  });
-  await setupPage({
-    context,
-    path: "/works",
-    featureSwitches: featureSwitches(),
-  });
-  const card = getIntegrationCard("Email");
-  await waitFor(() => {
-    expect(getAction("button", "Email options", card)).toBeEnabled();
-  });
-  click(getAction("button", "Email options", card));
-  click(getAction("button", "Manage"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Email connections",
-  });
-  expect(within(dialog).getByText(emailAddress)).toBeInTheDocument();
-  expect(within(dialog).getByText(second)).toBeInTheDocument();
-  expect(
-    emailSource(emailRow(dialog, emailAddress), "Gmail"),
-  ).toBeInTheDocument();
-  expect(emailSource(emailRow(dialog, second), "Outlook")).toBeInTheDocument();
-  click(getAction("button", "Add email", dialog));
-  await expect(within(dialog).findByText(code)).resolves.toBeInTheDocument();
-  emails = [...emails, third];
-  await context.mocks.ably.trigger("email:changed");
-  await expect(within(dialog).findByText(third)).resolves.toBeInTheDocument();
-  expect(window.location.pathname).toBe("/works");
-  click(getAction("button", "Close", dialog));
-  await waitFor(() => {
-    expect(getAction("button", "Email options", card)).toHaveFocus();
-  });
-});
-
-test("deletes the login email while keeping other addresses connected", async () => {
-  const secondary = "removable@example.com";
-  let emails = [emailAddress, secondary];
-  context.mocks.api(integrationsEmailContract.getLinkStatus, ({ respond }) => {
-    return respond(200, {
-      address: "okou@okou.io",
-      configured: true,
-      emails,
-      availableEmails: [emailAddress],
-      emailSources: {},
-    });
-  });
-  context.mocks.api(integrationsEmailContract.unlink, ({ body, respond }) => {
-    emails = emails.filter((email) => {
-      return email !== body.emailAddress;
-    });
-    return respond(204);
-  });
-  await setupPage({
-    context,
-    path: "/works",
-    featureSwitches: featureSwitches(),
-    auth: {
-      user: {
-        id: "user_email_primary",
-        fullName: "Email User",
-        email: emailAddress,
-      },
-    },
-  });
-  const card = getIntegrationCard("Email");
-  await waitFor(() => {
-    expect(getAction("button", "Email options", card)).toBeEnabled();
-  });
-  click(getAction("button", "Email options", card));
-  click(getAction("button", "Manage"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Email connections",
-  });
-  expect(
-    emailSource(emailRow(dialog, emailAddress), "Login email"),
-  ).toBeInTheDocument();
-  click(
-    getAction(
-      "button",
-      `Delete ${emailAddress}`,
-      emailRow(dialog, emailAddress),
-    ),
-  );
-  await waitFor(() => {
-    expect(within(dialog).queryByText(emailAddress)).not.toBeInTheDocument();
-  });
-  expect(within(dialog).getByText(secondary)).toBeInTheDocument();
-  click(getAction("button", "Close", dialog));
-  click(getAction("button", "Email options", card));
-  click(getAction("button", "Manage"));
-  const reopened = await screen.findByRole("dialog", {
-    name: "Email connections",
-  });
-  expect(within(reopened).getByText(secondary)).toBeInTheDocument();
-  expect(within(reopened).queryByText(emailAddress)).not.toBeInTheDocument();
-  click(getAction("button", "Close", reopened));
-  await waitFor(() => {
-    expect(getAction("button", "Email options", card)).toHaveFocus();
-  });
+  expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument();
 });

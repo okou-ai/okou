@@ -1,890 +1,245 @@
-import {
-  artifactReferencePath,
-  artifactReferencesContract,
-} from "@okouai/api-contracts/contracts/artifact-references";
-import type {
-  ArtifactCatalogListQuery,
-  ArtifactDetail,
-} from "@okouai/api-contracts/contracts/artifact-catalog";
-import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-import { screen, waitFor, within } from "@testing-library/react";
+import { test, expect } from "vitest";
+import { screen, within, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test, vi } from "vitest";
-
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import {
-  testContext,
-  warmMermaidParser,
-} from "../../../signals/__tests__/test-helpers.ts";
-import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
-import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
+import { HttpResponse } from "msw";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { assistantRow, conversation } from "./attachment-preview-boundaries.ts";
+import { findAction } from "./connector-integrations-test-helpers.ts";
 import {
   artifactSummary,
-  artifactRun,
-  buttonNamed,
-  fileArtifactDetail,
   hostedSiteArtifactDetail,
-  imageArtifactDetail,
+  fileArtifactDetail,
   mockArtifactConversation,
-  openResourceArtifact,
   NAVIGATION_ARTIFACT_THREAD_ID,
+  openResourceArtifact,
 } from "./chat-navigation-artifact-test-helpers.ts";
-
+import { findNamedMenuItem } from "./chat-attachment-test-helpers.ts";
 const context = testContext();
-
-const EMPTY_CSV_ID = "a0000000-0000-4000-a000-000000000930";
-const UNAVAILABLE_CSV_ID = "a0000000-0000-4000-a000-000000000931";
-const MARKDOWN_ID = "a0000000-0000-4000-a000-000000000932";
-const HOSTED_SITE_ID = "a0000000-0000-4000-a000-000000000933";
-const IMAGE_ID = "a0000000-0000-4000-a000-000000000934";
-const THREAD_FILE_ID = "a0000000-0000-4000-a000-000000000935";
-const DELETED_ID = "a0000000-0000-4000-a000-000000000936";
-
-const EMPTY_CSV_FILE_ID = "f0000000-0000-4000-a000-000000000930";
-const UNAVAILABLE_CSV_FILE_ID = "f0000000-0000-4000-a000-000000000931";
-const MARKDOWN_FILE_ID = "f0000000-0000-4000-a000-000000000932";
-const HOSTED_SITE_RECORD_ID = "f0000000-0000-4000-a000-000000000933";
-const IMAGE_FILE_ID = "f0000000-0000-4000-a000-000000000934";
-
-const EMPTY_CSV_URL = "https://files.example.test/empty.csv";
-const UNAVAILABLE_CSV_URL = "https://files.example.test/unavailable.csv";
-const MARKDOWN_URL = "https://files.example.test/architecture.md";
-const HOSTED_SITE_URL = "https://launch-site.example.test/";
-const IMAGE_URL = "https://files.example.test/launch-graphic.png";
-
-function useWideScreen(): void {
-  context.mocks.browser.matchMedia((query) => {
-    return (
-      query === SIDEBAR_DESKTOP_MEDIA_QUERY || query === "(min-width: 1280px)"
-    );
-  });
-}
-
-function artifactList(): HTMLElement {
-  return screen.getByTestId("thread-sidebar-artifacts");
-}
-
-function artifactPreview(): HTMLElement {
-  return screen.getByTestId("artifact-sidebar");
-}
-
-function resourcesControl(): HTMLElement {
-  return buttonNamed("Artifacts and chats");
-}
-
-function menuItemNamed(name: string): HTMLElement {
-  const item = queryAllByRoleFast("menuitem").find((candidate) => {
-    return candidate.textContent?.trim() === name;
-  });
-  if (!item) {
-    throw new Error(`Expected menu item ${name}`);
-  }
-  return item;
-}
-
-function officeFileEvents(
-  fileId: string,
-  filename: string,
-  contentType: string,
-): MockChatEventInput[] {
-  return [
-    {
-      id: `message-${fileId}`,
-      role: "user",
-      content: "Review this Office document",
-      fileParts: [
-        {
-          type: "file",
-          fileId,
-          filenameSnapshot: filename,
-          contentType,
-        },
-      ],
-      runId: "office-preview-run",
-      seqId: 1,
-      createdAt: "2026-09-01T12:00:00.000Z",
-    },
-    {
-      id: `message-${fileId}-completed`,
-      role: "assistant",
-      content: null,
-      runId: "office-preview-run",
-      runLifecycleEvent: "completed",
-      seqId: 2,
-      createdAt: "2026-09-01T12:00:01.000Z",
-    },
-  ];
-}
-
-async function setupGeneratedFilePreview(
-  filename: string,
-  contentType: string,
-  url = `https://cdn.vm7.io/artifacts/tests/office/${filename}`,
-): Promise<string> {
-  mockArtifactConversation(context, {
-    catalog: [],
-    artifactRuns: () => {
-      return [
-        artifactRun({
-          contentType,
-          fileId: `file-${filename}`,
-          filename,
-          url,
-        }),
-      ];
-    },
-    chatEvents: [
-      {
-        id: `message-${filename}`,
-        role: "assistant",
-        content: `![${filename}](${url})`,
-        runId: "navigation-artifact-run",
-        seqId: 1,
-        createdAt: "2026-09-01T12:00:00.000Z",
-      },
-      {
-        id: `message-${filename}-completed`,
-        role: "assistant",
-        content: null,
-        runId: "navigation-artifact-run",
-        runLifecycleEvent: "completed",
-        seqId: 2,
-        createdAt: "2026-09-01T12:00:01.000Z",
-      },
-    ],
-  });
-  await setupPage({
-    context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-  return url;
-}
-
-function expectOfficeViewerUrl(frame: HTMLElement, sourceUrl: string): void {
-  const frameUrl = frame.getAttribute("src");
-  if (!frameUrl) {
-    throw new Error("Office preview iframe has no source URL");
-  }
-  const parsed = new URL(frameUrl);
-  expect(parsed.origin).toBe("https://view.officeapps.live.com");
-  expect(parsed.pathname).toBe("/op/embed.aspx");
-  expect(parsed.searchParams.get("src")).toBe(sourceUrl);
-}
-
-function expectOfficeViewerFocusable(frame: HTMLElement): void {
-  // JSDOM does not transfer focus into an iframe through keyboard or pointer
-  // simulation, so exercise the iframe's browser focus boundary directly.
-  frame.focus();
-  expect(frame).toHaveFocus();
-}
-
-warmMermaidParser();
-
-test("Keep attachment cards closed until the user selects one", async () => {
-  useWideScreen();
-  mockArtifactConversation(context, {
-    catalog: [],
-    activeRunIds: ["navigation-running-work"],
-    chatEvents: [
-      {
-        id: "navigation-completed-user",
-        role: "user",
-        content: "Create the completed report",
-        runId: "navigation-completed-work",
-        seqId: 1,
-        createdAt: "2026-09-01T12:00:00.000Z",
-      },
-      {
-        id: "navigation-completed-artifact",
-        role: "assistant",
-        content: "![completed.pdf](/f/navigation/completed/completed.pdf)",
-        runId: "navigation-completed-work",
-        runEventId: "completed-artifact-event",
-        sequenceNumber: 1,
-        seqId: 2,
-        createdAt: "2026-09-01T12:00:01.000Z",
-      },
-      {
-        id: "navigation-completed-marker",
-        eventType: "run.completed",
-        content: null,
-        runId: "navigation-completed-work",
-        seqId: 3,
-        createdAt: "2026-09-01T12:00:01.500Z",
-      },
-      {
-        id: "navigation-running-user",
-        role: "user",
-        content: "Create the running report",
-        runId: "navigation-running-work",
-        seqId: 4,
-        createdAt: "2026-09-01T12:00:02.000Z",
-      },
-      {
-        id: "navigation-running-artifact",
-        role: "assistant",
-        content: "![running.pdf](/f/navigation/running/running.pdf)",
-        runId: "navigation-running-work",
-        runEventId: "running-artifact-event",
-        sequenceNumber: 1,
-        seqId: 5,
-        createdAt: "2026-09-01T12:00:03.000Z",
-      },
-    ],
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-
-  await waitFor(() => {
-    const cards = document.querySelectorAll(
-      'a[data-testid="attachment-preview-pdf"]',
-    );
-    expect(cards).toHaveLength(2);
-    expect(cards[0]).toHaveAccessibleName("Open pdf preview for completed.pdf");
-    expect(cards[1]).toHaveAccessibleName("Open pdf preview for running.pdf");
-    expect(cards[0]).toBeVisible();
-    expect(cards[1]).toBeVisible();
-  });
-
-  expect(
-    document.querySelector('[data-testid="artifact-sidebar"]'),
-  ).not.toBeInTheDocument();
-  expect(
-    document.querySelector('[data-testid="thread-sidebar-artifacts"]'),
-  ).not.toBeInTheDocument();
-});
-
-test("Preview a DOCX attachment in the dialog and split view", async () => {
-  const filename = "release-plan.docx";
-  const url = await setupGeneratedFilePreview(
-    filename,
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  );
-
-  click(await screen.findByLabelText(`Preview ${filename}`));
-
-  const dialog = await screen.findByTestId("attachment-lightbox");
-  const dialogFrame = await within(dialog).findByTitle(`${filename} preview`);
-  expect(dialogFrame).toBeVisible();
-  expectOfficeViewerUrl(dialogFrame, url);
-  expectOfficeViewerFocusable(dialogFrame);
-  click(buttonNamed("Open in split view", dialog));
-
-  const splitView = await screen.findByTestId("artifact-sidebar");
-  const splitFrame = await within(splitView).findByTitle(`${filename} preview`);
-  expect(splitFrame).toBeVisible();
-  expectOfficeViewerUrl(splitFrame, url);
-  expectOfficeViewerFocusable(splitFrame);
-});
-
-test("Preview a PPTX attachment in the dialog and split view", async () => {
-  const filename = "quarterly-review.pptx";
-  const url = await setupGeneratedFilePreview(
-    filename,
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  );
-
-  click(await screen.findByLabelText(`Preview ${filename}`));
-
-  const dialog = await screen.findByTestId("attachment-lightbox");
-  const dialogFrame = await within(dialog).findByTitle(`${filename} preview`);
-  expect(dialogFrame).toBeVisible();
-  expectOfficeViewerUrl(dialogFrame, url);
-  expectOfficeViewerFocusable(dialogFrame);
-  click(buttonNamed("Open in split view", dialog));
-
-  const splitView = await screen.findByTestId("artifact-sidebar");
-  const splitFrame = await within(splitView).findByTitle(`${filename} preview`);
-  expect(splitFrame).toBeVisible();
-  expectOfficeViewerUrl(splitFrame, url);
-  expectOfficeViewerFocusable(splitFrame);
-});
-
-test("Preview an XLSX attachment in the dialog and split view", async () => {
-  const filename = "launch-budget.xlsx";
-  const url = await setupGeneratedFilePreview(
-    filename,
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  );
-
-  click(await screen.findByLabelText(`Preview ${filename}`));
-
-  const dialog = await screen.findByTestId("attachment-lightbox");
-  const dialogFrame = await within(dialog).findByTitle(`${filename} preview`);
-  expect(dialogFrame).toBeVisible();
-  expectOfficeViewerUrl(dialogFrame, url);
-  click(buttonNamed("Open in split view", dialog));
-
-  const splitView = await screen.findByTestId("artifact-sidebar");
-  const splitFrame = await within(splitView).findByTitle(`${filename} preview`);
-  expect(splitFrame).toBeVisible();
-  expectOfficeViewerUrl(splitFrame, url);
-});
-
-test("Use a public URL for a private Office attachment preview", async () => {
-  const fileId = "office-private-file";
-  const filename = "private-plan.docx";
-  const contentType =
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-  const privateUrl = `https://storage.example.test/${filename}?signature=test`;
-  const publicUrl = `https://cdn.vm7.io/artifacts/tests/office/${filename}`;
-  context.mocks.api(webFilesContract.fileUrl, ({ query, respond }) => {
-    expect(query.file_id).toBe(fileId);
-    return respond(200, {
-      downloadUrl: new URL("?download=1", privateUrl).href,
-      url: privateUrl,
-      publicUrl,
-      expiresAt: "2099-01-01T00:00:00.000Z",
-    });
-  });
-  mockArtifactConversation(context, {
-    catalog: [],
-    chatEvents: officeFileEvents(fileId, filename, contentType),
-  });
-  await setupPage({
-    context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-
-  click(await screen.findByLabelText(`Preview ${filename}`));
-
-  const dialog = await screen.findByTestId("attachment-lightbox");
-  const frame = await within(dialog).findByTitle(`${filename} preview`);
-  expectOfficeViewerUrl(frame, publicUrl);
-  expect(frame.getAttribute("src")).not.toContain(privateUrl);
-});
-
-test("Render a generated private image and offer sharing by default", async () => {
-  const filename = "private-image.png";
-  const fileId = "f0000000-0000-4000-a000-000000000938";
-  const resourceUrl =
-    "https://private-r2.example/private-image.png?signature=image";
-  context.mocks.api(
-    artifactReferencesContract.resolve,
-    ({ params, respond }) => {
-      expect(params.reference).toBe(
-        artifactReferencePath(fileId, filename).slice("/artifacts/".length),
-      );
-      return respond(200, {
-        downloadUrl: new URL("?download=1", resourceUrl).href,
-        url: resourceUrl,
-        expiresAt: "2099-01-01T00:00:00Z",
-        filename,
-        contentType: "image/png",
-        target: { kind: "file", id: fileId },
-      });
-    },
-  );
-  await setupGeneratedFilePreview(
-    filename,
-    "image/png",
-    artifactReferencePath(fileId, filename),
-  );
-  const embedded = await screen.findByAltText(filename);
-  expect(embedded).toHaveAttribute("src", resourceUrl);
-  click(embedded);
-  const dialog = await screen.findByTestId("attachment-lightbox");
-  expect(
-    within(dialog).getByTestId("attachment-lightbox-image"),
-  ).toHaveAttribute("src", resourceUrl);
-  expect(within(dialog).getByLabelText(/^share$/i)).toBeVisible();
-});
-
 test.each([
-  ["https://a.okou.io", "a1b2c3d4e5"],
-  ["https://files.sites.vm7.io", "a".repeat(24)],
-])(
-  "public images use a protected thumbnail and open the original on %s/%s",
-  async (origin, token) => {
-    const filename = "shared-image.png";
-    const url = `${origin}/${token}.png`;
-    await setupGeneratedFilePreview(filename, "image/png", url);
-    const image = await screen.findByAltText(filename);
-    expect(image).toHaveAttribute(
-      "src",
-      `${url}?thumbnail=1&width=800&height=720&fit=scale-down&quality=85`,
-    );
-    click(image);
+  ["chat-navigation-artifact-sidebar-002", "docx"],
+  ["chat-navigation-artifact-sidebar-003", "pptx"],
+  ["chat-navigation-artifact-sidebar-004", "xlsx"],
+] as const)(
+  "%s preserves the Office viewer source when moving the generated file to the sidebar",
+  async (_id, ext) => {
+    const url = "https://cdn.okou.io/artifacts/field/outputs/brief." + ext;
+    await conversation(context, {
+      chatEvents: [assistantRow("[Generated brief](" + url + ")")],
+    });
+    click(await findAction("link", "Generated brief"));
     const dialog = await screen.findByTestId("attachment-lightbox");
-    expect(
-      within(dialog).getByTestId("attachment-lightbox-image"),
-    ).toHaveAttribute("src", url);
+    async function check(surface: HTMLElement) {
+      const frame = await within(surface).findByTitle(
+        "brief." + ext + " preview",
+      );
+      expect(frame).toBeVisible();
+      const viewer = new URL(frame.getAttribute("src")!);
+      expect(viewer.origin + viewer.pathname).toBe(
+        "https://view.officeapps.live.com/op/embed.aspx",
+      );
+      expect(viewer.searchParams.get("src")).toBe(url);
+      expect(frame.tagName).toBe("IFRAME");
+      expect(
+        Number(frame.getAttribute("tabindex") ?? "0"),
+      ).toBeGreaterThanOrEqual(0);
+      expect(frame.closest("[inert]")).toBeNull();
+      frame.focus();
+      expect(frame).toHaveFocus();
+    }
+    await check(dialog);
+    click(await findAction("button", "Open in split view", dialog));
+    await check(await screen.findByTestId("artifact-sidebar"));
+    expect(dialog).not.toBeInTheDocument();
   },
 );
-
-test("Explain empty and unavailable CSV previews", async () => {
-  useWideScreen();
-  const empty = artifactSummary(EMPTY_CSV_ID, "file", "Empty export.csv");
-  const unavailable = artifactSummary(
-    UNAVAILABLE_CSV_ID,
-    "file",
-    "Unavailable export.csv",
-  );
-  const details = new Map<string, ArtifactDetail>([
-    [
-      EMPTY_CSV_ID,
-      fileArtifactDetail(empty, {
-        contentType: "text/csv",
-        fileId: EMPTY_CSV_FILE_ID,
-        filename: "empty.csv",
-        url: EMPTY_CSV_URL,
-      }),
-    ],
-    [
-      UNAVAILABLE_CSV_ID,
-      fileArtifactDetail(unavailable, {
-        contentType: "text/csv",
-        fileId: UNAVAILABLE_CSV_FILE_ID,
-        filename: "unavailable.csv",
-        url: UNAVAILABLE_CSV_URL,
-      }),
-    ],
-  ]);
-  context.mocks.http.get(EMPTY_CSV_URL, () => {
-    return new Response("", { status: 200 });
+test("chat-navigation-artifact-sidebar-007 the embedded thumbnail transforms the public image but opens its original", async () => {
+  const url = "https://a.okou.io/a1b2c3d4e5.png";
+  await conversation(context, {
+    chatEvents: [assistantRow("![Lookout](" + url + ")")],
   });
-  context.mocks.http.get(UNAVAILABLE_CSV_URL, () => {
-    return new Response("Preview source unavailable", { status: 503 });
+  const img = await screen.findByAltText("Lookout");
+  const source = new URL(img.getAttribute("src")!);
+  expect(source.origin + source.pathname).toBe(url);
+  expect(Object.fromEntries(source.searchParams)).toMatchObject({
+    thumbnail: "1",
+    width: "800",
+    height: "720",
+    fit: "scale-down",
+    quality: "85",
   });
-  mockArtifactConversation(context, {
-    catalog: [empty, unavailable],
-    details,
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-
-  await openResourceArtifact("Empty export.csv");
+  fireEvent.load(img);
+  click(img);
+  const dialog = await screen.findByTestId("attachment-lightbox");
   await waitFor(() => {
-    expect(within(artifactPreview()).getByText("Empty CSV.")).toBeVisible();
-  });
-
-  click(buttonNamed("Back to all artifacts", artifactPreview()));
-  await waitFor(() => {
-    expect(
-      buttonNamed("Preview Unavailable export.csv", artifactList()),
-    ).toBeVisible();
-  });
-  click(buttonNamed("Preview Unavailable export.csv", artifactList()));
-  await waitFor(() => {
-    expect(
-      within(artifactPreview()).getByText("CSV preview unavailable."),
-    ).toBeVisible();
+    return expect(dialog.querySelector("img")).toHaveAttribute("src", url);
   });
 });
-
-test("Expand diagram", async () => {
-  const browser = context.mocks.browser.blobDownload();
-  vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(
-    1600,
-  );
-  vi.spyOn(HTMLImageElement.prototype, "naturalHeight", "get").mockReturnValue(
-    900,
-  );
-  useWideScreen();
-  const summary = artifactSummary(MARKDOWN_ID, "file", "Architecture notes.md");
-  context.mocks.http.get(MARKDOWN_URL, () => {
-    return new Response(
-      "# Deployment flow\n\n```mermaid\nflowchart LR\n  Build --> Deploy\n```",
-      {
-        status: 200,
-        headers: { "Content-Type": "text/markdown" },
-      },
-    );
+const launchUrl = "https://summit.okou.app/";
+const title = "Launch dashboard";
+async function loadCatalog(mobile = false) {
+  const item = artifactSummary(crypto.randomUUID(), "hosted-site", title);
+  const details = hostedSiteArtifactDetail(item, {
+    slug: "summit",
+    siteId: crypto.randomUUID(),
+    url: launchUrl,
+  });
+  if (mobile) {
+    context.mocks.browser.matchMedia((q) => {
+      return q.includes("standalone") || q.includes("max-width");
+    });
+  }
+  context.mocks.api(hostContract.sitePreview, ({ respond }) => {
+    return respond(200, { url: launchUrl, expiresAt: null });
   });
   mockArtifactConversation(context, {
-    catalog: [summary],
-    details: new Map([
-      [
-        MARKDOWN_ID,
-        fileArtifactDetail(summary, {
-          contentType: "text/markdown",
-          fileId: MARKDOWN_FILE_ID,
-          filename: "architecture.md",
-          url: MARKDOWN_URL,
-        }),
-      ],
-    ]),
+    catalog: [item],
+    details: new Map([[item.id, details]]),
   });
-
   await setupPage({
     context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
+    path: "/chats/" + NAVIGATION_ARTIFACT_THREAD_ID,
+    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: true },
   });
-
-  await openResourceArtifact("Architecture notes.md");
-  await waitFor(() => {
-    expect(buttonNamed("Expand diagram", artifactPreview())).toBeEnabled();
-    expect(
-      artifactPreview().querySelector('[data-mermaid-status="rendered"]'),
-    ).toBeVisible();
-  });
-
-  const inlineUrl = within(artifactPreview())
-    .getByRole("img", { name: "Diagram" })
-    .getAttribute("src");
-  if (!inlineUrl) {
-    throw new Error("Expected the Markdown diagram image URL");
-  }
-  const inlineSvg = await browser.blobForUrl(inlineUrl)?.text();
-  click(buttonNamed("Enter fullscreen", artifactPreview()));
-  await waitFor(() => {
-    return expect(
-      buttonNamed("Exit fullscreen", artifactPreview()),
-    ).toBeInTheDocument();
-  });
-  click(within(artifactPreview()).getByText("Diagram source"));
-  const trigger = buttonNamed("Expand diagram", artifactPreview());
-  click(trigger);
-  const diagram = await screen.findByTestId("artifact-diagram-lightbox");
-  const expanded = await within(diagram).findByAltText("diagram.svg");
-  const expandedUrl = expanded.getAttribute("src");
-  expect(
-    within(artifactPreview()).getByText("Deployment flow"),
-  ).toBeInTheDocument();
-  expect(expandedUrl).not.toBe(inlineUrl);
-  expect(browser.revokedUrls).not.toContain(inlineUrl);
-  expect(browser.revokedUrls).not.toContain(expandedUrl);
-  if (!expandedUrl) {
-    throw new Error("Expected the expanded diagram image URL");
-  }
-  await expect(browser.blobForUrl(expandedUrl)?.text()).resolves.toBe(
-    inlineSvg,
-  );
-  click(buttonNamed("Close", diagram));
-  await waitFor(() => {
-    return expect(
-      screen.queryByTestId("artifact-diagram-lightbox"),
-    ).not.toBeInTheDocument();
-  });
-  expect(buttonNamed("Exit fullscreen", artifactPreview())).toBeInTheDocument();
-  expect(
-    within(artifactPreview()).getByText("Diagram source").closest("details"),
-  ).toHaveAttribute("open");
-  expect(trigger).toHaveFocus();
-  expect(browser.revokedUrls).toContain(expandedUrl);
-  expect(browser.revokedUrls).not.toContain(inlineUrl);
-  await userEvent.keyboard("{Escape}");
-  expect(within(artifactPreview()).getByRole("document")).toHaveFocus();
-  expect(buttonNamed("Exit fullscreen", artifactPreview())).toBeInTheDocument();
-});
-
-test("Preview site", async () => {
-  useWideScreen();
-  const summary = artifactSummary(HOSTED_SITE_ID, "hosted-site", "Launch site");
-  mockArtifactConversation(context, {
-    catalog: [summary],
-    details: new Map([
-      [
-        HOSTED_SITE_ID,
-        hostedSiteArtifactDetail(summary, {
-          siteId: HOSTED_SITE_RECORD_ID,
-          slug: "launch-site",
-          url: HOSTED_SITE_URL,
-        }),
-      ],
-    ]),
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-
-  await openResourceArtifact("Launch site");
-  await screen.findByTitle("Launch site preview");
-  click(buttonNamed("Back to all artifacts", artifactPreview()));
-  await screen.findByTestId("thread-sidebar-artifacts");
-  click(buttonNamed("Enter fullscreen", artifactList()));
-  await waitFor(() => {
-    expect(buttonNamed("Exit fullscreen", artifactList())).toBeInTheDocument();
-    expect(
-      buttonNamed("Preview Launch site", artifactList()),
-    ).toBeInTheDocument();
-  });
-  click(buttonNamed("Exit fullscreen", artifactList()));
-  await waitFor(() => {
-    expect(buttonNamed("Enter fullscreen", artifactList())).toBeInTheDocument();
-  });
-  click(buttonNamed("Preview Launch site", artifactList()));
-
-  await waitFor(() => {
-    const frame = artifactPreview().querySelector(
-      '[data-testid="artifact-sidebar-body-html"]',
-    );
-    expect(frame).toBeInstanceOf(HTMLIFrameElement);
+}
+test("chat-navigation-artifact-sidebar-011 fullscreen and list navigation keep the hosted site address", async () => {
+  await loadCatalog();
+  await openResourceArtifact(title);
+  async function preview() {
+    const side = await screen.findByTestId("artifact-sidebar");
+    const frame = await within(side).findByTitle(title + " preview");
     expect(frame).toBeVisible();
-    expect(frame).toHaveAttribute("src", HOSTED_SITE_URL);
-    expect(frame).toHaveAccessibleName("Launch site preview");
-  });
-
-  click(buttonNamed("Enter fullscreen", artifactPreview()));
+    expect(frame.getAttribute("src")).toBe(launchUrl);
+    return side;
+  }
+  const side = await preview();
+  click(await findAction("button", "Back to all artifacts", side));
+  const list = await screen.findByTestId("thread-sidebar-fullscreen-toggle");
+  click(list);
+  await expect(findAction("button", "Exit fullscreen")).resolves.toBeVisible();
+  click(list);
+  click((await screen.findByText(title)).closest("button")!);
+  const reopened = await preview();
+  click(await findAction("button", "Enter fullscreen", reopened));
+  await preview();
+  click(await findAction("button", "Exit fullscreen", reopened));
+  await preview();
+  click(await findAction("button", "More artifact actions", reopened));
+  click(await findNamedMenuItem("Close preview menu"));
   await waitFor(() => {
-    expect(buttonNamed("Exit fullscreen", artifactPreview())).toBeVisible();
-    expect(screen.getByTitle("Launch site preview")).toHaveAttribute(
-      "src",
-      HOSTED_SITE_URL,
-    );
+    return expect(reopened).not.toBeInTheDocument();
   });
-  click(buttonNamed("Exit fullscreen", artifactPreview()));
-  await waitFor(() => {
-    expect(buttonNamed("Enter fullscreen", artifactPreview())).toBeVisible();
-    expect(screen.getByTitle("Launch site preview")).toHaveAttribute(
-      "src",
-      HOSTED_SITE_URL,
-    );
-  });
-  click(buttonNamed("Enter fullscreen", artifactPreview()));
-  await waitFor(() => {
-    expect(buttonNamed("Exit fullscreen", artifactPreview())).toBeVisible();
-  });
-  click(buttonNamed("More artifact actions", artifactPreview()));
-  click(
-    await waitFor(() => {
-      return menuItemNamed("Close preview menu");
-    }),
-  );
-  await waitFor(() => {
-    expect(screen.queryByTitle("Launch site preview")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
-    expect(resourcesControl()).toBeVisible();
-  });
+  await expect(
+    findAction("button", "Artifacts and chats"),
+  ).resolves.toBeVisible();
 });
-
-test("Image zoom reset", async () => {
-  vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(
-    1600,
-  );
-  vi.spyOn(HTMLImageElement.prototype, "naturalHeight", "get").mockReturnValue(
-    900,
-  );
-  useWideScreen();
-  const summary = artifactSummary(IMAGE_ID, "image", "Launch graphic");
-  mockArtifactConversation(context, {
-    catalog: [summary],
-    details: new Map([
-      [
-        IMAGE_ID,
-        imageArtifactDetail(summary, {
-          fileId: IMAGE_FILE_ID,
-          filename: "launch-graphic.png",
-          url: IMAGE_URL,
-        }),
-      ],
-    ]),
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-
-  await openResourceArtifact("Launch graphic");
-
+test("chat-navigation-artifact-sidebar-013 a standalone mobile reader follows Back to chats from the site", async () => {
+  await loadCatalog(true);
+  await openResourceArtifact(title);
+  const side = await screen.findByTestId("artifact-sidebar");
   await waitFor(() => {
-    expect(
-      within(artifactPreview()).getByAltText("launch-graphic.png"),
-    ).toBeVisible();
-    expect(buttonNamed("Zoom in", artifactPreview())).toBeVisible();
-    expect(buttonNamed("Zoom out", artifactPreview())).toBeVisible();
-    expect(buttonNamed("Reset zoom", artifactPreview())).toBeVisible();
-    expect(
-      within(artifactPreview()).getByTestId(
-        "artifact-sidebar-image-zoom-level",
-      ),
-    ).toHaveTextContent("100%");
+    return expect(side.querySelector("iframe")?.src).toBe(launchUrl);
   });
-
-  click(buttonNamed("Zoom in", artifactPreview()));
+  const back = await findAction("link", "Back to chats");
+  const destination = new URL(back.getAttribute("href")!, location.href);
+  click(back);
   await waitFor(() => {
-    expect(
-      within(artifactPreview()).getByTestId(
-        "artifact-sidebar-image-zoom-level",
-      ),
-    ).toHaveTextContent("112%");
+    return expect(location.pathname).toBe(destination.pathname);
   });
-
-  click(buttonNamed("Enter fullscreen", artifactPreview()));
   await waitFor(() => {
-    expect(
-      buttonNamed("Exit fullscreen", artifactPreview()),
-    ).toBeInTheDocument();
-    expect(
-      within(artifactPreview()).getByTestId(
-        "artifact-sidebar-image-zoom-level",
-      ),
-    ).toHaveTextContent("100%");
+    return expect(side).not.toBeInTheDocument();
   });
-
-  click(buttonNamed("Exit fullscreen", artifactPreview()));
-  await waitFor(() => {
-    expect(
-      buttonNamed("Enter fullscreen", artifactPreview()),
-    ).toBeInTheDocument();
-    expect(
-      within(artifactPreview()).getByTestId(
-        "artifact-sidebar-image-zoom-level",
-      ),
-    ).toHaveTextContent("100%");
-  });
-
-  click(buttonNamed("Zoom in", artifactPreview()));
-  await waitFor(() => {
-    expect(
-      within(artifactPreview()).getByTestId(
-        "artifact-sidebar-image-zoom-level",
-      ),
-    ).toHaveTextContent("112%");
-  });
-
-  click(buttonNamed("Reset zoom", artifactPreview()));
-  await waitFor(() => {
-    expect(
-      within(artifactPreview()).getByTestId(
-        "artifact-sidebar-image-zoom-level",
-      ),
-    ).toHaveTextContent("100%");
-  });
+  expect(screen.queryByTitle(/Launch dashboard preview/i)).toBeNull();
+  await expect(
+    screen.findByRole("navigation", { name: "Main navigation" }),
+  ).resolves.toBeVisible();
 });
-
-test("Leave the mobile artifact pane through the chat list", async () => {
-  context.mocks.browser.matchMedia((query) => {
-    return query === "(display-mode: standalone)";
-  });
-  const summary = artifactSummary(HOSTED_SITE_ID, "hosted-site", "Launch site");
-  mockArtifactConversation(context, {
-    catalog: [summary],
-    details: new Map([
-      [
-        HOSTED_SITE_ID,
-        hostedSiteArtifactDetail(summary, {
-          siteId: HOSTED_SITE_RECORD_ID,
-          slug: "launch-site",
-          url: HOSTED_SITE_URL,
-        }),
-      ],
-    ]),
-  });
-  await setupPage({
-    context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-  await openResourceArtifact("Launch site");
-  await waitFor(() => {
-    expect(screen.getByTitle("Launch site preview")).toBeVisible();
-    expect(
-      screen.getByRole("navigation", { name: "Main navigation" }),
-    ).toBeVisible();
-    expect(screen.getByLabelText("Back to chats")).toBeVisible();
-  });
-  const backToChats = screen.getByLabelText("Back to chats");
-  const chatsPath = backToChats.getAttribute("href");
-  click(backToChats);
-  await waitFor(() => {
-    expect(window.location.pathname).toBe(chatsPath);
-    expect(screen.queryByTitle("Launch site preview")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("navigation", { name: "Main navigation" }),
-    ).toBeVisible();
-  });
-});
-
-test("Show artifacts that belong to the current thread", async () => {
-  useWideScreen();
-  const summary = artifactSummary(
-    THREAD_FILE_ID,
+test("chat-navigation-artifact-sidebar-014 the resources dialog lists the release notes for this thread", async () => {
+  const item = artifactSummary(crypto.randomUUID(), "file", "Release notes");
+  const other = artifactSummary(
+    crypto.randomUUID(),
     "file",
-    "Thread release notes.txt",
+    "Earlier project notes",
   );
-  const listQueries: ArtifactCatalogListQuery[] = [];
-  mockArtifactConversation(context, {
-    catalog: [summary],
-    onCatalogList: (query) => {
-      listQueries.push(query);
-    },
+  mockArtifactConversation(context, { catalog: [] });
+  context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
+    return respond(200, {
+      artifacts:
+        query.chatThreadId === NAVIGATION_ARTIFACT_THREAD_ID ? [item] : [other],
+      nextCursor: null,
+    });
   });
-
-  await setupPage({
-    context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-
-  await waitFor(() => {
-    expect(resourcesControl()).toBeVisible();
-  });
-  click(resourcesControl());
-
-  const resources = await screen.findByRole("dialog", {
+  await setupPage({ context, path: "/chats/" + NAVIGATION_ARTIFACT_THREAD_ID });
+  click(await findAction("button", "Artifacts and chats"));
+  const list = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
-  await waitFor(() => {
-    expect(resources).toBeVisible();
-    expect(
-      within(resources).getByText("Thread release notes.txt"),
-    ).toBeVisible();
-    expect(listQueries).toContainEqual(
-      expect.objectContaining({
-        chatThreadId: NAVIGATION_ARTIFACT_THREAD_ID,
-      }),
+  await expect(within(list).findByText(item.title)).resolves.toBeVisible();
+  expect(list).not.toHaveTextContent(other.title);
+});
+test("chat-navigation-artifact-sidebar-010 an expanded diagram owns its image while fullscreen keeps the source open", async () => {
+  const browser = context.mocks.browser.blobDownload(),
+    url = "https://cdn.okou.io/artifacts/field/document/deployment.md";
+  const item = artifactSummary(crypto.randomUUID(), "file", "Deployment flow");
+  const file = fileArtifactDetail(item, {
+    fileId: crypto.randomUUID(),
+    filename: "deployment.md",
+    contentType: "text/markdown",
+    url,
+  });
+  mockArtifactConversation(context, {
+    catalog: [item],
+    details: new Map([[item.id, file]]),
+  });
+  context.mocks.http.get(url, () => {
+    return HttpResponse.text(
+      "# Deployment flow\n\n```mermaid\nflowchart TD\nBuild-->Release\n```",
     );
   });
-});
-
-test("Refresh the artifact list when a preview is unavailable", async () => {
-  useWideScreen();
-  const summary = artifactSummary(DELETED_ID, "file", "Deleted report.txt");
-  const catalog = [summary];
-  mockArtifactConversation(context, {
-    catalog,
-    details: new Map([[DELETED_ID, null]]),
-  });
-
   await setupPage({
     context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
+    path: "/chats/" + NAVIGATION_ARTIFACT_THREAD_ID,
+    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: true },
   });
-
-  await openResourceArtifact("Deleted report.txt");
-
-  await waitFor(() => {
-    const unavailable = screen.getByTestId(
-      "thread-sidebar-artifact-unavailable",
-    );
-    expect(
-      within(unavailable).getByText("This artifact is no longer available."),
-    ).toBeVisible();
-    expect(buttonNamed("Back to artifacts", unavailable)).toBeVisible();
-  });
-
-  catalog.pop();
-  click(
-    buttonNamed(
-      "Back to artifacts",
-      screen.getByTestId("thread-sidebar-artifact-unavailable"),
-    ),
+  await openResourceArtifact(item.title);
+  const side = await screen.findByTestId("artifact-sidebar");
+  click(await findAction("button", "Enter fullscreen", side));
+  click(await within(side).findByText("Diagram source"));
+  const source = side.querySelector("details")!;
+  expect(source.open).toBeTruthy();
+  const inline = await within(side).findByRole("img", { name: "Diagram" });
+  const original = inline.getAttribute("src")!;
+  const expand = await findAction("button", "Expand diagram", side);
+  click(expand);
+  const layer = await screen.findByTestId("artifact-diagram-lightbox");
+  const image = await within(layer).findByRole("img");
+  const enlarged = image.getAttribute("src")!;
+  expect(enlarged).not.toBe(original);
+  const svg = browser.blobForUrl(original);
+  expect(svg).toBeTruthy();
+  await expect(browser.blobForUrl(enlarged)?.text()).resolves.toBe(
+    await svg!.text(),
   );
-  const gallery = await screen.findByTestId("thread-sidebar-artifacts");
+  click(await findAction("button", "Close", layer));
+  await waitFor(() => {
+    return expect(browser.revokedUrls).toContain(enlarged);
+  });
+  expect(browser.revokedUrls).not.toContain(original);
+  await waitFor(() => {
+    return expect(expand).toHaveFocus();
+  });
+  expect(source.open).toBeTruthy();
   await expect(
-    within(gallery).findByRole("heading", { name: "No artifacts found" }),
-  ).resolves.toBeInTheDocument();
+    findAction("button", "Exit fullscreen", side),
+  ).resolves.toBeVisible();
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    return expect(within(side).getByRole("document")).toHaveFocus();
+  });
+  await expect(
+    findAction("button", "Exit fullscreen", side),
+  ).resolves.toBeVisible();
 });

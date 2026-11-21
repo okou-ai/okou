@@ -1,64 +1,56 @@
 import {
-  customConnectorByIdContract,
   customConnectorsContract,
+  customConnectorByIdContract,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  customConnector,
-  getConnectorAction,
-  getConnectorCard,
-  mockCustomConnectorStory,
-} from "./connector-page-test-helpers.ts";
-
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
+import { customConnector } from "./connector-page-test-helpers.ts";
 const context = testContext();
-
-test("A completed deletion preserves a newer connector draft", async () => {
-  const connector = customConnector({ displayName: "First API" });
-  mockCustomConnectorStory(context, [{ connector }]);
-  let deleted = false;
-  const started = context.mocks.deferred<void>();
-  const response = context.mocks.deferred<void>();
+const path = "/connectors?scope=custom";
+test("custom-connector-delete-lifecycle-001 a late delete result updates the directory while preserving the new form", async () => {
+  const first = customConnector({ displayName: "First API" });
+  let entries = [first];
+  const release = context.mocks.deferred<void>();
+  const received = context.mocks.deferred<void>();
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    return respond(200, { connectors: deleted ? [] : [connector] });
+    return respond(200, { connectors: entries });
   });
-  context.mocks.api(customConnectorByIdContract.delete, async ({ respond }) => {
-    started.resolve();
-    await response.promise;
-    deleted = true;
-    return respond(204);
-  });
-  await setupPage({ context, path: "/connectors?scope=custom" });
+  context.mocks.api(
+    customConnectorByIdContract.delete,
+    async ({ params, respond }) => {
+      received.resolve();
+      await release.promise;
+      entries = entries.filter((item) => {
+        return item.id !== params.id;
+      });
+      return respond(204);
+    },
+  );
+  await setupPage({ context, path });
+  await screen.findByText("First API");
+  click(await findFastControl("button", "More options"));
+  click(await screen.findByText("Delete", { selector: '[role="menuitem"]' }));
+  const confirmation = await screen.findByRole("dialog");
+  click(await findFastControl("button", "Delete", confirmation));
+  await received.promise;
+  await userEvent.keyboard("{Escape}");
   await waitFor(() => {
-    return expect(getConnectorCard("First API")).toBeInTheDocument();
+    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-  click(getConnectorAction("button", "More options"));
-  const menu = await screen.findByRole("menu");
-  click(getConnectorAction("menuitem", "Delete", menu));
-  const deletion = await screen.findByRole("dialog", {
-    name: "Delete First API?",
-  });
-  click(getConnectorAction("button", "Delete", deletion));
-  await started.promise;
-  click(getConnectorAction("button", "Close", deletion));
-  await waitFor(() => {
-    return expect(deletion).not.toBeInTheDocument();
-  });
-  click(getConnectorAction("button", "New custom connector"));
-  const draft = await screen.findByRole("dialog", {
+  click(await findFastControl("button", "New custom connector"));
+  const next = await screen.findByRole("dialog", {
     name: "New custom connector",
   });
-  await fill(within(draft).getByLabelText("Display name"), "Second API draft");
-  response.resolve();
+  const field = within(next).getByPlaceholderText("Acme API");
+  await fill(field, "Second API draft");
+  release.resolve();
   await screen.findByText(
     "Add an HTTP API or MCP server for your organization to use.",
   );
-  await expect(
-    screen.findByRole("dialog", { name: "New custom connector" }),
-  ).resolves.toBeInTheDocument();
-  expect(within(draft).getByLabelText("Display name")).toHaveValue(
-    "Second API draft",
-  );
+  expect(next).toBeInTheDocument();
+  expect(field).toHaveValue("Second API draft");
 });

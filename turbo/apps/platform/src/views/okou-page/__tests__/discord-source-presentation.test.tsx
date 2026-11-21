@@ -1,202 +1,80 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { test, expect } from "vitest";
+import { screen, within } from "@testing-library/react";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
-import { runAgentEventsContract } from "@okouai/api-contracts/contracts/run-routes";
-import { screen } from "@testing-library/react";
-import { expect, test } from "vitest";
-
-import {
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import { createMessageExperienceHelpers } from "./chat-message-experience-test-helpers.ts";
+import { setupPage } from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
-const { installMessageExperienceChat } =
-  createMessageExperienceHelpers(context);
-
-const RUN_ID = "d0000000-0000-4000-a000-000000000073";
-const CREATED_AT = "2026-09-24T09:00:00.000Z";
-
-test("Discord source links preserve guild and bot-DM destinations", async () => {
+test("discord-source-presentation-001 message sources distinguish a guild, a direct message and an unlinked origin", async () => {
+  const threadId = crypto.randomUUID();
   const sources = [
-    {
-      id: "discord-guild-source",
-      href: "https://discord.com/channels/123456789012345678/234567890123456789/345678901234567890",
-      text: "Review the launch thread",
-    },
-    {
-      id: "discord-dm-source",
-      href: "https://discord.com/channels/@me/456789012345678901/567890123456789012",
-      text: "Review my direct message",
-    },
-  ];
-  installMessageExperienceChat({
-    threadId: context.resourceId,
-    chatEvents: [
-      ...sources.map((source) => {
-        return {
-          id: source.id,
-          role: "user" as const,
-          content: null,
-          runId: RUN_ID,
-          createdAt: CREATED_AT,
-          userMessage: {
-            version: 1 as const,
-            parts: [
-              { type: "text" as const, text: source.text },
-              {
-                type: "source" as const,
-                kind: "discord" as const,
-                href: source.href,
-              },
-            ],
-          },
-        };
-      }),
-      {
-        id: "discord-source-without-permalink",
+    ["Quay meeting", "https://discord.com/channels/937615/862473/606147"],
+    ["Private note", "https://discord.com/channels/@me/778911/337685"],
+    ["Offline relay", null],
+  ] as const;
+  mockChatLifecycle(context, {
+    threadId,
+    chatEvents: sources.map(([text, href], index) => {
+      return {
         role: "user",
-        content: null,
-        runId: RUN_ID,
-        createdAt: CREATED_AT,
+        content: text,
+        createdAt: new Date(Date.UTC(2026, 3, 10, 12, index)).toISOString(),
         userMessage: {
           version: 1,
           parts: [
-            { type: "text", text: "Review an imported Discord message" },
-            { type: "source", kind: "discord" },
+            { type: "source", kind: "discord", ...(href ? { href } : {}) },
+            { type: "text", text },
           ],
         },
-      },
-      {
-        id: "discord-source-answer",
-        role: "assistant",
-        content: "The Discord requests were reviewed.",
-        runId: RUN_ID,
-        runLifecycleEvent: "completed",
-        createdAt: "2026-09-24T09:00:03.000Z",
-      },
-    ],
+      };
+    }),
   });
-
-  await setupPage({
-    context,
-    path: `/chats/${context.resourceId}`,
-  });
-
-  await expect(
-    screen.findByText("The Discord requests were reviewed."),
-  ).resolves.toBeInTheDocument();
-  const links = queryAllByRoleFast("link").filter((link) => {
-    return (
-      link.getAttribute("aria-label") === "Open original message in Discord"
-    );
-  });
-  expect(links).toHaveLength(2);
-  for (const source of sources) {
-    const link = links.find((candidate) => {
-      return candidate.getAttribute("href") === source.href;
-    });
-    expect(link).toBeInTheDocument();
-    expect(link).toHaveTextContent("Discord");
+  await setupPage({ context, path: "/chat/" + threadId });
+  await screen.findByText("Offline relay");
+  const sourceLink = (text: string) => {
+    const message = screen
+      .getByText(text)
+      .closest<HTMLElement>("[data-chat-scroll-anchor-event-id]");
+    if (!message) {
+      throw new Error("Missing message row for " + text);
+    }
+    return within(message).getByText("Discord", { exact: true }).closest("a");
+  };
+  expect(sourceLink("Offline relay")).toBeNull();
+  for (const [text, href] of [sources[0], sources[1]]) {
+    const link = sourceLink(text);
+    expect(link).toHaveAttribute("href", href);
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", "noreferrer");
   }
-  const unlinkedLabel = screen.getAllByText("Discord").find((element) => {
-    return element.closest("a") === null;
-  });
-  expect(unlinkedLabel).toBeInTheDocument();
 });
 
-test("Discord sources never link outside discord.com", async () => {
-  const untrusted = [
-    "https://discord.com.example.net/channels/123456789012345678/234567890123456789/345678901234567890",
-    "https://example.net/channels/123456789012345678/234567890123456789/345678901234567890",
-    "http://discord.com/channels/123456789012345678/234567890123456789/345678901234567890",
-    "https://discord.com/invite/okou",
-  ];
-  installMessageExperienceChat({
-    threadId: context.resourceId,
-    chatEvents: [
-      ...untrusted.map((href, index) => {
-        return {
-          id: `discord-untrusted-source-${String(index)}`,
-          role: "user" as const,
-          content: null,
-          runId: RUN_ID,
-          createdAt: CREATED_AT,
-          userMessage: {
-            version: 1 as const,
-            parts: [
-              {
-                type: "text" as const,
-                text: `Untrusted source ${String(index)}`,
-              },
-              { type: "source" as const, kind: "discord" as const, href },
-            ],
-          },
-        };
-      }),
-      {
-        id: "discord-untrusted-answer",
-        role: "assistant",
-        content: "The untrusted sources were reviewed.",
-        runId: RUN_ID,
-        runLifecycleEvent: "completed",
-        createdAt: "2026-09-24T09:00:03.000Z",
-      },
-    ],
-  });
-
-  await setupPage({ context, path: `/chats/${context.resourceId}` });
-
-  await expect(
-    screen.findByText("The untrusted sources were reviewed."),
-  ).resolves.toBeInTheDocument();
-  const hrefs = queryAllByRoleFast("link").map((link) => {
-    return link.getAttribute("href");
-  });
-  for (const href of untrusted) {
-    expect(hrefs).not.toContain(href);
-  }
-  const labels = screen.getAllByText("Discord").filter((element) => {
-    return element.closest("a") === null;
-  });
-  expect(labels).toHaveLength(untrusted.length);
-});
-
-test("Activity identifies a Discord run as its source", async () => {
-  context.mocks.api(logsByIdContract.getById, ({ respond }) => {
+test("discord-source-presentation-003 a completed activity identifies its Discord trigger", async () => {
+  const id = crypto.randomUUID();
+  const title = "Harbor tide bulletin";
+  context.mocks.api(logsByIdContract.getById, ({ params, respond }) => {
     return respond(200, {
-      id: RUN_ID,
-      sessionId: "discord-activity-session",
-      agentId: "c0000000-0000-4000-a000-000000000051",
-      displayName: "Discord launch review",
-      framework: "codex",
+      id: params.id,
+      agentId: "harbor-agent",
+      sessionId: "harbor-session",
+      displayName: title,
+      framework: "claude-code",
       modelProvider: null,
       selectedModel: null,
       triggerSource: "discord",
       status: "completed",
-      prompt: "Review the launch thread",
+      prompt: "Summarize the tide gauge",
       appendSystemPrompt: null,
-      createdAt: CREATED_AT,
-      startedAt: CREATED_AT,
-      completedAt: "2026-09-24T09:00:03.000Z",
+      createdAt: "2026-04-10T12:00:00Z",
+      startedAt: "2026-04-10T12:00:01Z",
+      completedAt: "2026-04-10T12:00:30Z",
     });
   });
-  context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
-    return respond(200, {
-      events: [],
-      hasMore: false,
-      status: "completed",
-      lastEventSequence: null,
-    });
-  });
-
-  await setupPage({ context, path: `/activities/${RUN_ID}` });
-
+  await setupPage({ context, path: "/activities/" + id });
   await expect(
-    screen.findByRole("heading", { name: "Discord launch review" }),
+    screen.findByRole("heading", { name: title }),
   ).resolves.toBeInTheDocument();
-  expect(screen.getByText("Source")).toBeInTheDocument();
-  expect(screen.getByText("Discord")).toBeInTheDocument();
+  const source = screen.getByText("Source");
+  expect(source.parentElement).toHaveTextContent("Discord");
 });

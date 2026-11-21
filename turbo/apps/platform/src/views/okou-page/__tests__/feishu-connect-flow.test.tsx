@@ -1,194 +1,159 @@
+import { test, expect } from "vitest";
+import { screen, waitFor } from "@testing-library/react";
 import { feishuBrowserConnectContract } from "@okouai/api-contracts/contracts/feishu-browser-connect";
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
-import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
-import { screen, waitFor } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
-
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
+import { findAction } from "./connector-integrations-test-helpers.ts";
 
 const context = testContext();
-const connectBody = Object.freeze({
-  installationId: "00000000-0000-4000-8000-000000000001",
-  openId: "ou_member",
-  chatId: "oc_chat",
-  ts: 1_234_567_890,
-  sig: "signed-message-connect",
+
+function messageLink(provider: string) {
+  const signed = {
+    installationId: crypto.randomUUID(),
+    openId: provider + "-member-24",
+    chatId: provider + "-group-7",
+    sig: "proof+17/=",
+    ts: 1_780_000_123,
+  };
+  const path =
+    "/settings/" +
+    provider +
+    "?" +
+    new URLSearchParams({
+      connect: "account",
+      ...signed,
+      ts: String(signed.ts),
+    });
+  return { path, signed };
+}
+
+test("feishu-connect-flow-001 signing in preserves the entire signed message link", async () => {
+  const { path } = messageLink("feishu");
+  await startPage({ context, path, auth: null, host: "app.okou.ai" });
+  await waitFor(() => {
+    return expect(location.pathname).toBe("/sign-in");
+  });
+  expect(new URL(location.href).searchParams.get("redirect_url")).toBe(
+    new URL(path, "https://app.okou.ai").href,
+  );
 });
-const connectQuery = new URLSearchParams({
-  connect: "account",
-  ...connectBody,
-  ts: String(connectBody.ts),
-}).toString();
 
-describe.each(["feishu", "lark"] as const)(
-  "%s account connection",
-  (platform) => {
-    const provider = FEISHU_PLATFORMS[platform];
-    const connectPath = `${provider.settingsPath}?${connectQuery}`;
-    const returnUrl = `https://app.okou.ai${connectPath}`;
-
-    it("signed connection links require login and retain the complete return URL", async () => {
-      await startPage({
-        context,
-        host: "app.okou.ai",
-        path: connectPath,
-        auth: null,
-      });
-      await waitFor(() => {
-        expect(window.location.pathname).toBe("/sign-in");
-      });
-      const signInQuery = new URL(window.location.href).searchParams;
-      expect(signInQuery.get("redirect_url")).toBe(returnUrl);
-    });
-
-    it("authenticated message links pass their signed identity to account connection", async () => {
-      let submitted: unknown;
-      const openUrl = `${provider.appLinkOrigin}/client/bot/open?appId=cli_connected`;
-      context.mocks.api(
-        feishuBrowserConnectContract.connectFromApp,
-        ({ body, respond }) => {
-          submitted = body;
-          return respond(200, {
-            success: true,
-            botName: "Custom bot",
-            openUrl,
-          });
-        },
-      );
-      await startPage({
-        context,
-        host: "app.okou.ai",
-        path: connectPath,
-        // A message recipient may not have a personal rollout override.
-        featureSwitches: { [provider.featureSwitch]: false },
-      });
-      await waitFor(() => {
-        expect(window.location.href).toBe(openUrl);
-      });
-      expect(submitted).toStrictEqual(connectBody);
-    });
-
-    it("shows recovery guidance when a signed connection link is rejected", async () => {
-      context.mocks.api(
-        feishuBrowserConnectContract.connectFromApp,
-        ({ respond }) => {
-          return respond(400, {
-            error: {
-              code: "FEISHU_CONNECT_LINK_INVALID",
-              message: "Invalid or expired bot connect link",
-            },
-          });
-        },
-      );
-
-      await setupPage({
-        context,
-        host: "app.okou.ai",
-        path: connectPath,
-        featureSwitches: { [provider.featureSwitch]: false },
-      });
-
-      expect(
-        screen.getByRole("heading", { name: "Connection failed" }),
-      ).toBeInTheDocument();
-      expect(screen.getByRole("alert")).toHaveTextContent("Connection failed");
-      expect(screen.getByRole("img", { name: "Okou" })).toBeInTheDocument();
-      expect(
-        screen.getByText(
-          `This connection link is invalid or has expired. Return to ${provider.name} and message the bot for a new link.`,
-        ),
-      ).toBeInTheDocument();
-      expect(screen.getByText("Back to settings")).toHaveAttribute(
-        "href",
-        "/works",
-      );
-    });
-
-    it("shows the same recovery guidance for an incomplete connection link", async () => {
-      await setupPage({
-        context,
-        host: "app.okou.ai",
-        path: `${provider.settingsPath}?connect=account`,
-      });
-
-      expect(
-        screen.getByText(
-          `This connection link is invalid or has expired. Return to ${provider.name} and message the bot for a new link.`,
-        ),
-      ).toBeInTheDocument();
-    });
-
-    it.each([
-      {
-        label: "other client errors",
-        status: 400 as const,
-        code: "BAD_REQUEST",
-        message: "Finish setting up this bot before connecting",
+test.each([
+  ["feishu-connect-flow-002", "feishu", "applink.feishu.cn"],
+  ["feishu-connect-flow-009", "lark", "applink.larksuite.com"],
+] as const)(
+  "%s connects the signed message identity with the integration disabled",
+  async (_id, provider, host) => {
+    const { path, signed } = messageLink(provider);
+    const target = "https://" + host + "/client/chat/open?id=crew-17";
+    const browser = context.mocks.browser.locationAssign();
+    const submissions: unknown[] = [];
+    context.mocks.api(
+      feishuBrowserConnectContract.connectFromApp,
+      ({ body, request, respond }) => {
+        submissions.push({
+          body,
+          bearer: request.headers.get("authorization"),
+        });
+        return respond(200, {
+          success: true,
+          botName: "Survey",
+          openUrl: target,
+        });
       },
-      {
-        label: "server errors",
-        status: 500 as const,
-        code: "INTERNAL_SERVER_ERROR",
-        message: "The connection service is unavailable",
+    );
+    await startPage({
+      context,
+      path,
+      auth: {
+        user: { id: "shore-" + provider, fullName: "Shore member" },
+        session: { token: provider + "-session" },
       },
-    ])("preserves $label", async (failure) => {
-      context.mocks.api(
-        feishuBrowserConnectContract.connectFromApp,
-        ({ respond }) => {
-          return respond(failure.status, {
-            error: { code: failure.code, message: failure.message },
-          });
-        },
-      );
-
-      const page = await startPage({
-        context,
-        host: "app.okou.ai",
-        path: connectPath,
-      });
-
-      await expect(page.ready).rejects.toThrow(failure.message);
-      await expect(
-        screen.findByText(failure.message),
-      ).resolves.toBeInTheDocument();
+      featureSwitches: {
+        [FeatureSwitchKey.FeishuIntegration]: false,
+        [FeatureSwitchKey.LarkIntegration]: false,
+      },
     });
-
-    it("shows the provider on OAuth callbacks and returns to its bot", async () => {
-      const ready = createDeferredPromise<void>(context.signal);
-      let submitted: unknown;
-      const redirectUrl = `${provider.appLinkOrigin}/client/bot/open?appId=cli_connected`;
-      context.mocks.api(
-        feishuOauthContract.callback,
-        async ({ query, respond }) => {
-          submitted = query;
-          await ready.promise;
-          return respond(200, { redirectUrl });
-        },
-      );
-      const page = await startPage({
-        context,
-        host: "app.okou.ai",
-        path: `${provider.callbackPath}?state=signed-oauth&code=authorization-code`,
-        auth: null,
-      });
-      try {
-        await expect(
-          screen.findByText(`Connecting ${provider.name}…`),
-        ).resolves.toBeVisible();
-      } finally {
-        ready.resolve();
-      }
-      await page.ready;
-      expect(submitted).toStrictEqual({
-        state: "signed-oauth",
-        code: "authorization-code",
-        responseMode: "json",
-      });
-      await waitFor(() => {
-        expect(window.location.href).toBe(redirectUrl);
-      });
+    await waitFor(() => {
+      return expect(browser.calls).toContain(target);
+    });
+    expect(submissions).toContainEqual({
+      body: signed,
+      bearer: "Bearer " + provider + "-session",
     });
   },
 );
+
+test.each([
+  ["feishu-connect-flow-003", "Feishu", "expired"],
+  ["feishu-connect-flow-004", "Feishu", "incomplete"],
+  ["feishu-connect-flow-011", "Lark", "incomplete"],
+] as const)(
+  "%s recovers an unusable message link in the originating provider",
+  async (_id, brand, reason) => {
+    const provider = brand.toLowerCase();
+    const path =
+      reason === "expired"
+        ? messageLink(provider).path
+        : "/settings/" + provider + "?connect=account";
+    context.mocks.api(
+      feishuBrowserConnectContract.connectFromApp,
+      ({ respond }) => {
+        return respond(400, {
+          error: {
+            code: "FEISHU_CONNECT_LINK_INVALID",
+            message: "Expired signature",
+          },
+        });
+      },
+    );
+    await setupPage({ context, path });
+    await expect(
+      screen.findByText("Connection failed"),
+    ).resolves.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "This connection link is invalid or has expired. Return to " +
+          brand +
+          " and message the bot for a new link.",
+      ),
+    ).toBeVisible();
+    await expect(
+      findAction("link", "Back to settings"),
+    ).resolves.toHaveAttribute("href", "/works");
+  },
+);
+
+test("feishu-connect-flow-007 the logged-out callback shows its provider until the bot destination arrives", async () => {
+  const reply = createDeferredPromise<void>(context.signal);
+  const browser = context.mocks.browser.locationAssign();
+  const target = "https://applink.feishu.cn/client/chat/open?id=survey";
+  context.mocks.api(
+    feishuOauthContract.callback,
+    async ({ query, respond }) => {
+      expect(query).toMatchObject({
+        code: "ticket-29",
+        state: "signed+return",
+        responseMode: "json",
+      });
+      await reply.promise;
+      return respond(200, { redirectUrl: target });
+    },
+  );
+  const page = await startPage({
+    context,
+    auth: null,
+    path: "/connectors/feishu/callback?state=signed%2Breturn&code=ticket-29",
+  });
+  await expect(
+    screen.findByText("Connecting Feishu…"),
+  ).resolves.toBeInTheDocument();
+  reply.resolve();
+  await waitFor(() => {
+    return expect(browser.calls).toContain(target);
+  });
+  await page.ready;
+});

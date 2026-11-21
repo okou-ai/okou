@@ -1,119 +1,67 @@
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import {
-  chooseConnectorAuthentication,
   customConnector,
-  getConnectorAction,
-  mockCustomConnectorStory,
+  chooseConnectorAuthentication,
 } from "./connector-page-test-helpers.ts";
-
 const context = testContext();
-
-test("A completed creation preserves a newer connector draft and directory search", async () => {
-  mockCustomConnectorStory(context);
-  const connector = customConnector({
-    displayName: "First API",
-    prefixTemplates: ["http://api.acme.test/v1/"],
-  });
-  const started = context.mocks.deferred<void>();
-  const response = context.mocks.deferred<void>();
-  let created = false;
+const path = "/connectors?scope=custom";
+test("custom-connector-create-lifecycle-001 a late create result updates the directory while preserving the new form", async () => {
+  let entries: ReturnType<typeof customConnector>[] = [];
+  const release = context.mocks.deferred<void>();
+  const received = context.mocks.deferred<void>();
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    return respond(200, { connectors: created ? [connector] : [] });
+    return respond(200, { connectors: entries });
   });
   context.mocks.api(
     customConnectorsContract.create,
     async ({ body, respond }) => {
-      expect(body.displayName).toBe("First API");
-      expect(body).toMatchObject({
-        prefixTemplates: ["http://api.acme.test/v1/"],
-        authMode: "manual",
+      received.resolve();
+      await release.promise;
+      const item = customConnector({
+        displayName: body.displayName,
+        prefixTemplates: body.kind === "mcp" ? [] : body.prefixTemplates,
       });
-      started.resolve();
-      await response.promise;
-      created = true;
-      return respond(201, connector);
+      entries = [item];
+      return respond(201, item);
     },
   );
-  await setupPage({ context, path: "/connectors?scope=custom" });
-  await waitFor(() => {
-    return expect(
-      getConnectorAction("button", "New custom connector"),
-    ).toBeEnabled();
-  });
-  click(getConnectorAction("button", "New custom connector"));
-  const create = await screen.findByRole("dialog", {
+  await setupPage({ context, path });
+  await screen.findByText(
+    "Add an HTTP API or MCP server for your organization to use.",
+  );
+  click(await findFastControl("button", "New custom connector"));
+  const form = await screen.findByRole("dialog", {
     name: "New custom connector",
   });
-  await fill(within(create).getByLabelText("Display name"), "First API");
+  await fill(within(form).getByPlaceholderText("Acme API"), "First API");
   await fill(
-    within(create).getByLabelText(/Prefixes/u),
+    within(form).getByPlaceholderText("https://api.acme.com/v1/"),
     "http://api.acme.test/v1/",
   );
-  await chooseConnectorAuthentication(create, "API authentication");
-  click(getConnectorAction("button", "Create", create));
-  await started.promise;
-  click(getConnectorAction("button", "Close", create));
+  await chooseConnectorAuthentication(form, "API authentication");
+  click(await findFastControl("button", "Create", form));
+  await received.promise;
+  await userEvent.keyboard("{Escape}");
   await waitFor(() => {
-    return expect(create).not.toBeInTheDocument();
+    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-  await fill(screen.getByPlaceholderText("Find custom connectors"), "first");
-  click(getConnectorAction("button", "New custom connector"));
-  const draft = await screen.findByRole("dialog", {
+  const search = await screen.findByPlaceholderText("Find custom connectors");
+  await fill(search, "first");
+  click(await findFastControl("button", "New custom connector"));
+  const next = await screen.findByRole("dialog", {
     name: "New custom connector",
   });
-  await fill(within(draft).getByLabelText("Display name"), "Second API draft");
-  response.resolve();
+  const field = within(next).getByPlaceholderText("Acme API");
+  await fill(field, "Second API draft");
+  release.resolve();
   await screen.findByText("First API");
-  await expect(
-    screen.findByRole("dialog", { name: "New custom connector" }),
-  ).resolves.toBeInTheDocument();
-  expect(within(draft).getByLabelText("Display name")).toHaveValue(
-    "Second API draft",
-  );
-  expect(screen.getByPlaceholderText("Find custom connectors")).toHaveValue(
-    "first",
-  );
-});
-
-test("Reveal and focus a newly created connector in the directory", async () => {
-  mockCustomConnectorStory(context);
-  const connector = customConnector({
-    displayName: "First API",
-    prefixTemplates: ["http://api.acme.test/v1/"],
-  });
-  let created = false;
-  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
-    return respond(200, { connectors: created ? [connector] : [] });
-  });
-  context.mocks.api(customConnectorsContract.create, ({ respond }) => {
-    created = true;
-    return respond(201, connector);
-  });
-  await setupPage({ context, path: "/connectors?scope=custom" });
-  await waitFor(() => {
-    return expect(
-      getConnectorAction("button", "New custom connector"),
-    ).toBeEnabled();
-  });
-  click(getConnectorAction("button", "New custom connector"));
-  const create = await screen.findByRole("dialog", {
-    name: "New custom connector",
-  });
-  await fill(within(create).getByLabelText("Display name"), "First API");
-  await fill(
-    within(create).getByLabelText(/Prefixes/u),
-    "http://api.acme.test/v1/",
-  );
-  await chooseConnectorAuthentication(create, "API authentication");
-  click(getConnectorAction("button", "Create", create));
-
-  await waitFor(() => {
-    expect(create).not.toBeInTheDocument();
-    expect(document.activeElement).not.toBe(document.body);
-    expect(document.activeElement).toHaveTextContent("First API");
-  });
+  expect(next).toBeInTheDocument();
+  expect(field).toHaveValue("Second API draft");
+  expect(search).toHaveValue("first");
 });

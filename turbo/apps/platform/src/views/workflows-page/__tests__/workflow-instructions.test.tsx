@@ -1,199 +1,85 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { workflowsDetailContract } from "@okouai/api-contracts/contracts/workflows";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import {
-  workflowsDetailContract,
-  type WorkflowDetailResponse,
-  type WorkflowUpdateRequest,
-} from "@okouai/api-contracts/contracts/workflows";
 import { expect, test } from "vitest";
-
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { setupPage, click, fill } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { findAction } from "../../okou-page/__tests__/connector-integrations-test-helpers.ts";
+import { salesWorkflow, serveWorkflows } from "./workflow-boundary.ts";
 
 const context = testContext();
-const WORKFLOW_ID = "d0000000-0000-4000-a000-000000000098";
-
-function workflow(): WorkflowDetailResponse {
-  return {
-    id: WORKFLOW_ID,
-    agentId: "c0000000-0000-4000-a000-000000000001",
-    agentName: "research-bot",
-    agentDisplayName: "Research Bot",
-    name: "release-review",
-    displayName: "Release Review",
-    description: "Review release risks.",
-    visibility: "private",
-    official: null,
-    ownerUserId: "test-user-123",
-    canManage: true,
-    canPublish: false,
-    importSource: null,
-    createdByUserId: "test-user-123",
-    updatedByUserId: "test-user-123",
-    createdAt: "2026-10-01T00:00:00.000Z",
-    updatedAt: "2026-10-01T00:00:00.000Z",
-    instruction: "Review release notes",
-    files: [{ path: "notes.md", size: 20 }],
-    fileContents: [{ path: "notes.md", content: "Review release notes" }],
-    automations: [],
-  };
-}
 
 test.each([
-  { name: "instructions", query: "", label: "Workflow instruction" },
-  {
-    name: "Markdown file",
-    query: "?file=notes.md",
-    label: "Workflow file content",
-  },
+  ["workflow-instructions-003", "Workflow instruction", ""],
+  ["workflow-instructions-004", "Workflow file content", "?file=notes.md"],
 ])(
-  "Opening $name and undoing an edit leave the content saved",
-  async ({ query, label }) => {
-    const content = "# Release risks\n\n* Verify **every source**";
-    context.mocks.api(workflowsDetailContract.get, ({ respond }) => {
-      return respond(200, {
-        ...workflow(),
-        instruction: content,
-        fileContents: [{ path: "notes.md", content }],
-      });
+  "%s preserves the editable draft after a conflict and saves it on retry",
+  async (_id, label, query) => {
+    const work = salesWorkflow(context);
+    serveWorkflows(context, () => {
+      return [work];
     });
-    await setupPage({
-      context,
-      path: `/workflows/${WORKFLOW_ID}/instructions${query}`,
-    });
-    const editor = await screen.findByLabelText(label);
-    const user = userEvent.setup({ delay: null });
-    await user.click(editor);
-    expect(editor).toHaveFocus();
-    expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();
-    const savedText = editor.textContent;
-
-    await fill(editor, "Unsaved release draft");
-    await screen.findByTestId("unsaved-bar");
-    await user.keyboard("{Control>}z{/Control}");
-
-    await waitFor(() => {
-      expect(editor.textContent).toBe(savedText);
-    });
-    expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();
-  },
-);
-
-test.each([
-  { name: "instructions", query: "", label: "Workflow instruction" },
-  {
-    name: "Markdown file",
-    query: "?file=notes.md",
-    label: "Workflow file content",
-  },
-])(
-  "Retain the $name draft on failure and clear it only after a successful save",
-  async ({ query, label }) => {
-    let detail = workflow();
-    let rejectSave = true;
-    const submitted: WorkflowUpdateRequest[] = [];
-    context.mocks.api(workflowsDetailContract.get, ({ respond }) => {
-      return respond(200, detail);
-    });
+    let conflict = true;
+    const value = "Verify the Q4 figures";
     context.mocks.api(workflowsDetailContract.update, ({ body, respond }) => {
-      submitted.push(body);
-      if (rejectSave) {
+      if (conflict) {
         return respond(409, {
-          error: { code: "CONFLICT", message: "Workflow changed; try again" },
+          error: { code: "CONFLICT", message: "Revision conflict" },
         });
       }
-      detail = {
-        ...detail,
-        ...(body.instruction !== undefined
-          ? { instruction: body.instruction }
-          : {}),
-        ...(body.files !== undefined
-          ? {
-              files: body.files.map((file) => {
-                return { path: file.path, size: file.content.length };
-              }),
-              fileContents: body.files,
-            }
-          : {}),
-      };
-      return respond(200, detail);
+      if (query) {
+        work.fileContents = body.files ?? [];
+      } else {
+        work.instruction = body.instruction ?? null;
+      }
+      return respond(200, work);
     });
     await setupPage({
       context,
-      path: `/workflows/${WORKFLOW_ID}/instructions${query}`,
+      path: "/workflows/" + work.id + "/instructions" + query,
     });
-    await fill(await screen.findByLabelText(label), "Saved release review");
-    click(screen.getByTestId("save-button"));
-
-    await expect(
-      screen.findByText("Workflow changed; try again"),
-    ).resolves.toBeInTheDocument();
-    expect(screen.getByLabelText(label)).toHaveTextContent(
-      "Saved release review",
-    );
-    expect(screen.getByTestId("unsaved-bar")).toBeInTheDocument();
-    expect(screen.getByTestId("save-button")).toBeEnabled();
-
-    rejectSave = false;
-    click(screen.getByTestId("save-button"));
+    await fill(await screen.findByLabelText(label), value);
+    await screen.findByText("You have unsaved changes");
+    click(await findAction("button", "Save"));
+    await screen.findByText("Revision conflict");
+    expect(screen.getByLabelText(label)).toHaveTextContent(value);
+    expect(screen.getByText("You have unsaved changes")).toBeVisible();
+    const retry = await findAction("button", "Save");
+    expect(retry).toBeEnabled();
+    conflict = false;
+    click(retry);
     await waitFor(() => {
-      expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();
-      expect(screen.getByLabelText(label)).toHaveTextContent(
-        "Saved release review",
-      );
+      return expect(screen.queryByText("You have unsaved changes")).toBeNull();
     });
-    expect(submitted.at(-1)).toStrictEqual(
-      query
-        ? { files: [{ path: "notes.md", content: "Saved release review" }] }
-        : { instruction: "Saved release review" },
-    );
+    expect(screen.getByLabelText(label)).toHaveTextContent(value);
+    const persisted = query
+      ? work.fileContents?.find((file) => {
+          return file.path === "notes.md";
+        })?.content
+      : work.instruction;
+    expect(persisted).toBe(value);
   },
 );
 
-test.each([
-  { name: "instructions", query: "", label: "Workflow instruction" },
-  {
-    name: "Markdown file",
-    query: "?file=notes.md",
-    label: "Workflow file content",
-  },
-])(
-  "Discard restores $name and clears the discarded undo history",
-  async ({ query, label }) => {
-    context.mocks.api(workflowsDetailContract.get, ({ respond }) => {
-      return respond(200, workflow());
-    });
-    await setupPage({
-      context,
-      path: `/workflows/${WORKFLOW_ID}/instructions${query}`,
-    });
-    const editor = await screen.findByLabelText(label);
-    await fill(editor, "Unsaved release draft");
-    const unsavedBar = await screen.findByTestId("unsaved-bar");
-
-    click(within(unsavedBar).getByTestId("discard-button"));
-
-    await waitFor(() => {
-      expect(screen.getByLabelText(label)).toHaveTextContent(
-        "Review release notes",
-      );
-    });
-    expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();
-
-    const user = userEvent.setup({ delay: null });
-    await user.click(screen.getByLabelText(label));
-    await user.keyboard("{Control>}z{/Control}");
-    expect(screen.getByLabelText(label)).toHaveTextContent(
-      "Review release notes",
-    );
-    expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();
-
-    await fill(screen.getByLabelText(label), "Another release draft");
-    await expect(
-      screen.findByTestId("unsaved-bar"),
-    ).resolves.toBeInTheDocument();
-    expect(screen.getByLabelText(label)).toHaveTextContent(
-      "Another release draft",
-    );
-  },
-);
+test("workflow-instructions-006 a discarded notes edit cannot be restored by undo", async () => {
+  const work = salesWorkflow(context);
+  serveWorkflows(context, () => {
+    return [work];
+  });
+  await setupPage({
+    context,
+    path: "/workflows/" + work.id + "/instructions?file=notes.md",
+  });
+  const label = "Workflow file content";
+  await fill(await screen.findByLabelText(label), "Unpublished notes");
+  click(await findAction("button", "Discard"));
+  await screen.findByText("Keep notes");
+  await userEvent.click(screen.getByLabelText(label));
+  await userEvent.keyboard("{Control>}z{/Control}");
+  expect(screen.getByLabelText(label)).toHaveTextContent("Keep notes");
+  expect(screen.queryByText("You have unsaved changes")).toBeNull();
+  await fill(screen.getByLabelText(label), "Replacement notes");
+  await expect(
+    screen.findByText("You have unsaved changes"),
+  ).resolves.toBeVisible();
+});

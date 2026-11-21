@@ -1,335 +1,224 @@
-import { selectDesktopHeaderAction } from "./chat-header-test-helpers.ts";
-import { screen, waitFor, within } from "@testing-library/react";
-import { expect, test } from "vitest";
-import { mailContract } from "@okouai/api-contracts/contracts/mail";
-import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
+import {
+  chatThreadMetadataContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
-
+import { mailContract } from "@okouai/api-contracts/contracts/mail";
+import userEvent from "@testing-library/user-event";
+import { screen, waitFor, within } from "@testing-library/react";
+import { test, expect } from "vitest";
 import {
   click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  continuityThread,
-  installContinuityWorkspace,
-} from "./chat-continuity-test-helpers.ts";
-import { fastButton } from "./chat-list-test-helpers.ts";
-
-const context = testContext();
-const threads = [
-  continuityThread(76, 1, "Previous header"),
-  continuityThread(76, 2, "Destination header"),
-] as const;
-const [previous, destination] = threads;
-
-function pane(threadId: string) {
-  const element = document.querySelector<HTMLElement>(
-    `[data-chat-thread-container-id="${threadId}"]`,
+  mockChatThreadSnapshotResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
+import { AGENT_ID } from "./chat-lifecycle-test-helpers.ts";
+import {
+  findLink,
+  findButton,
+  queryButton,
+  createChatRunFixtures,
+  RUN_PATH,
+  RUN_THREAD_ID,
+} from "./chat-run-test-fixtures.ts";
+const context = testContext(),
+  nextTitle = "Customs worksheet",
+  firstTitle = "Dispatch brief";
+function mailbox(desktop = true, cached = true) {
+  const id = crypto.randomUUID();
+  context.mocks.browser.matchMedia((q) => {
+    return desktop && q.startsWith("(min-width:");
+  });
+  const runId = crypto.randomUUID();
+  const service = createChatRunFixtures(context).installRunChat({
+    threadTitle: firstTitle,
+    chatEvents: [
+      {
+        id: crypto.randomUUID(),
+        runId,
+        role: "assistant",
+        seqId: 1,
+        content:
+          "[Continue to worksheet](https://app.okou.ai/chats/" + id + ")",
+        createdAt: "2026-10-01T09:00:00Z",
+      },
+    ],
+  });
+  service.setThreadList(
+    [
+      { id: RUN_THREAD_ID, title: firstTitle },
+      ...(cached ? [{ id, title: nextTitle }] : []),
+    ].map((t) => {
+      return {
+        ...t,
+        agent: { id: AGENT_ID, avatarUrl: null },
+        createdAt: "2026-10-01T09:00:00Z",
+        updatedAt: "2026-10-02T09:00:00Z",
+      };
+    }),
   );
-  if (!element) {
-    throw new Error(`Missing chat pane ${threadId}`);
-  }
-  return element;
+  return id;
 }
-
-function menuItem(name: string, container: ParentNode) {
-  const item = queryAllByRoleFast("menuitem", container).find((candidate) => {
-    return candidate.textContent?.trim() === name;
-  });
-  if (!item) {
-    throw new Error(`Missing menu item ${name}`);
-  }
-  return item;
+async function enter() {
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
 }
-
-async function navigate(threadId: string, desktop = true) {
-  if (!desktop) {
-    click(screen.getByLabelText("Back to chats"));
-  }
-  const link = await waitFor(() => {
-    const found = document.querySelector<HTMLAnchorElement>(
-      `a[data-sidebar-chat-thread-id="${threadId}"]`,
-    );
-    if (!found) {
-      throw new Error(`Missing chat navigation ${threadId}`);
-    }
-    return found;
+async function choose(name: string, scope?: HTMLElement) {
+  const trigger = scope
+    ? queryButton("More actions", scope)
+    : await findButton("More actions");
+  click(trigger!);
+  const menu = await screen.findByRole("menu");
+  const item = queryAllByRoleFast("menuitem", menu).find((el) => {
+    return el.textContent?.trim() === name;
   });
-  click(link);
-  await waitFor(() => {
-    expect(pane(threadId)).toBeInTheDocument();
+  expect(item).toBeDefined();
+  click(item!);
+}
+function header(title: string) {
+  return waitFor(() => {
+    const el = screen
+      .getAllByTestId("chat-thread-header-title")
+      .find((n) => {
+        return n.textContent === title;
+      })
+      ?.closest("header");
+    expect(el).toBeVisible();
+    return el!;
   });
 }
-
-async function closeMailList(list: HTMLElement) {
-  click(fastButton("Close emails", list));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: "Emails" })).toBeNull();
+test("chat-header-loading-002 empty mail and automation panels explain what will appear", async () => {
+  mailbox();
+  context.mocks.api(mailContract.listThreadMail, ({ respond }) => {
+    return respond(200, { mails: [] });
   });
-}
-
-async function openAutomations(desktop: boolean, container: ParentNode) {
-  if (desktop) {
-    await selectDesktopHeaderAction("Automations", container);
-  } else {
-    click(fastButton("More actions"));
-    click(menuItem("Automations", await screen.findByRole("menu")));
-  }
-  return await screen.findByRole("complementary", { name: "Automations" });
-}
-
-async function setupHeaders({
-  desktop = true,
-  mailThreads = [previous.id],
-  automationThreads = [previous.id],
-  mailGates = new Map<string, Promise<void>>(),
-  automationGates = new Map<string, Promise<void>>(),
-  mailFailures = new Set<string>(),
-  automationFailures = new Set<string>(),
-  path = `/chats/${previous.id}`,
-} = {}) {
-  context.mocks.browser.matchMedia(desktop);
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 76,
-    threads,
-    chatEventRows: [],
-  });
-  context.mocks.api(
-    mailContract.listThreadMail,
-    async ({ params, respond }) => {
-      await mailGates.get(params.threadId);
-      if (mailFailures.has(params.threadId)) {
-        return respond(403, {
-          error: { code: "FORBIDDEN", message: "Header mail request failed" },
-        });
-      }
-      return respond(200, {
-        mails: mailThreads.includes(params.threadId)
-          ? [
-              {
-                mailDraftId: "e0000000-0000-4000-a000-000000000976",
-                status: "draft",
-                subject: "Current header mail",
-                from: "sender@example.com",
-                createdAt: "2026-10-20T10:00:00.000Z",
-              },
-            ]
-          : [],
-      });
-    },
-  );
   context.mocks.api(
     workflowAutomationsContract.listForChatThread,
-    async ({ params, respond }) => {
-      await automationGates.get(params.threadId);
-      if (automationFailures.has(params.threadId)) {
-        return respond(403, {
-          error: {
-            code: "FORBIDDEN",
-            message: "Header automation request failed",
-          },
-        });
-      }
-      return respond(
-        200,
-        automationThreads.includes(params.threadId)
-          ? [
-              {
-                id: "a0000000-0000-4000-a000-000000000976",
-                ownerUserId: "header-owner",
-                enabled: true,
-                chatThreadId: params.threadId,
-                nextRunAt: null,
-                lastRunAt: null,
-                official: null,
-                kind: "schedule",
-                schedule: { type: "loop", intervalSeconds: 7200 },
-                scheduleSummary: "Every two hours",
-                workflow: {
-                  id: "a0000000-0000-4000-a000-000000000977",
-                  agentId: "c0000000-0000-4000-a000-000000000001",
-                  name: "header-schedule",
-                  displayName: "Header schedule",
-                  description: null,
-                },
-              },
-            ]
-          : [],
-      );
+    ({ respond }) => {
+      return respond(200, []);
     },
   );
-  await setupPage({
-    context,
-    path,
-    ...workspace.pageOptions,
-  });
-  await waitFor(() => {
-    expect(fastButton("Share messages")).toHaveAttribute(
-      "aria-disabled",
-      "false",
-    );
-  });
-}
-
-test("Keep every desktop header action for a chat without mail or automations", async () => {
-  await setupHeaders({ mailThreads: [], automationThreads: [] });
-  const group = fastButton("Share messages", pane(previous.id)).parentElement;
-  if (!group) {
-    throw new Error("Header action group is missing");
-  }
+  await enter();
+  const origin = await header(firstTitle);
+  await choose("Manage emails", origin);
+  const mail = await screen.findByRole("dialog", { name: "Emails" });
+  const view = within(mail);
+  await expect(view.findByText("No emails yet")).resolves.toBeInTheDocument();
   expect(
-    queryAllByRoleFast("button", group).map((button) => {
-      return button.getAttribute("aria-label");
-    }),
-  ).toStrictEqual(["Share messages", "Artifacts and chats", "More actions"]);
+    view.getByText(
+      "Email drafts and sent emails from this chat will show up here.",
+    ),
+  ).toBeVisible();
+  expect(view.queryByPlaceholderText("Search by subject or sender")).toBeNull();
+  click(queryButton("Close emails", mail)!);
+  await choose("Automations", origin);
+  const panel = await screen.findByRole("complementary", {
+    name: "Automations",
+  });
+  await expect(
+    within(panel).findByText("No automations yet"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(panel).getByText(
+      "Automations that run in this chat will show up here.",
+    ),
+  ).toBeVisible();
 });
-
-test.each([true, false])(
-  "Open mail and automation empty states in a chat with neither (desktop=%s)",
-  async (desktop) => {
-    await setupHeaders({ desktop, mailThreads: [], automationThreads: [] });
-    const header = desktop ? pane(previous.id) : document;
-
-    if (desktop) {
-      await selectDesktopHeaderAction("Manage emails", header);
-    } else {
-      click(fastButton("Manage emails", header));
-    }
-    const list = await screen.findByRole("dialog", { name: "Emails" });
-    await expect(
-      within(list).findByText("No emails yet"),
-    ).resolves.toBeInTheDocument();
-    expect(
-      within(list).getByText(
-        "Email drafts and sent emails from this chat will show up here.",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      within(list).queryByRole("textbox", {
-        name: "Search by subject or sender",
+test("chat-header-loading-005 the previous header keeps all actions focusable while the next chat is pending", async () => {
+  const next = mailbox(true, false),
+    gate = context.mocks.deferred<void>();
+  await enter();
+  const old = await header(firstTitle);
+  const opened = await findLink("Continue to worksheet");
+  const details = {
+    id: next,
+    agentId: AGENT_ID,
+    title: nextTitle,
+    archived: false,
+    muted: false,
+    modelSettings: {},
+    serviceTier: null,
+    selectedModel: null,
+    computerUseHostId: null,
+    cloudBrowserEnabled: false,
+    pinnedAt: null,
+  };
+  context.mocks.api(
+    chatThreadMetadataContract.get,
+    async ({ params, respond }) => {
+      if (params.id !== next) {
+        return respond(404, {
+          error: { code: "NOT_FOUND", message: "Unknown chat" },
+        });
+      }
+      await gate.promise;
+      return respond(200, details);
+    },
+  );
+  context.mocks.api(chatThreadsContract.events, async ({ respond }) => {
+    await gate.promise;
+    return respond(200, { events: [], hasMore: false });
+  });
+  context.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
+    await gate.promise;
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: [
+          {
+            ...details,
+            createdAt: "2026-10-02T09:00:00Z",
+            updatedAt: "2026-10-02T09:00:00Z",
+            sortAt: "2026-10-02T09:00:00Z",
+          },
+        ],
+        latestEventId: null,
+        latestSeqId: null,
       }),
-    ).toBeNull();
-    await closeMailList(list);
-
-    const sidebar = await openAutomations(desktop, header);
-    await expect(
-      within(sidebar).findByText("No automations yet"),
-    ).resolves.toBeInTheDocument();
-    expect(
-      within(sidebar).getByText(
-        "Automations that run in this chat will show up here.",
-      ),
-    ).toBeInTheDocument();
-  },
-);
-
-test("Open the destination's loading lists as soon as its pane replaces the previous chat", async () => {
-  const mail = context.mocks.deferred<void>();
-  const automations = context.mocks.deferred<void>();
-  await setupHeaders({
-    mailThreads: [destination.id],
-    automationThreads: [destination.id],
-    mailGates: new Map([[destination.id, mail.promise]]),
-    automationGates: new Map([[destination.id, automations.promise]]),
-  });
-  await navigate(destination.id);
-  const header = pane(destination.id);
-  await selectDesktopHeaderAction("Manage emails", header);
-  const list = await screen.findByRole("dialog", { name: "Emails" });
-  await within(list).findByRole("status", { name: "Loading emails" });
-  // The first load shows placeholders, not search, filters or a count.
-  const heading = within(list).getByRole("heading", { name: "Emails" });
-  expect(heading).toHaveTextContent(/^Emails$/);
-  expect(
-    within(list).queryByPlaceholderText("Search by subject or sender"),
-  ).toBeNull();
-  mail.resolve();
-  await expect(
-    within(list).findByText("Current header mail"),
-  ).resolves.toBeInTheDocument();
-  expect(heading).toHaveTextContent(/^Emails1$/);
-  expect(
-    within(list).getByPlaceholderText("Search by subject or sender"),
-  ).toBeInTheDocument();
-  await closeMailList(list);
-
-  const sidebar = await openAutomations(true, header);
-  automations.resolve();
-  await expect(
-    within(sidebar).findByText("Header schedule"),
-  ).resolves.toBeInTheDocument();
-});
-
-test("Mark every header button as settling while the previous chat is still on screen", async () => {
-  const serviceWorker = context.mocks.browser.serviceWorker();
-  await setupHeaders();
-  const names = ["Share messages", "Artifacts and chats", "More actions"];
-  for (const name of names) {
-    expect(fastButton(name, pane(previous.id))).toHaveAttribute(
-      "aria-busy",
-      "false",
     );
+  });
+  const actions = queryAllByRoleFast("button", old).filter((el) => {
+    return el.hasAttribute("aria-busy");
+  });
+  expect(
+    actions
+      .map((el) => {
+        return el.getAttribute("aria-label");
+      })
+      .sort(),
+  ).toStrictEqual(["Artifacts and chats", "More actions", "Share messages"]);
+  for (const action of actions) {
+    expect(action).toHaveAttribute("aria-busy", "false");
   }
-  // A chat outside the list resolves its details first, so the previous
-  // chat's header briefly stays on screen while the route asks for another.
-  const pending = continuityThread(76, 3, "Pending header");
-  const detailsRequested = context.mocks.deferred<void>();
-  const details = context.mocks.deferred<void>();
-  context.mocks.api(chatThreadMetadataContract.get, async ({ respond }) => {
-    detailsRequested.resolve();
-    await details.promise;
-    return respond(404, {
-      error: {
-        code: "CHAT_THREAD_NOT_FOUND",
-        message: "Chat thread not found",
-      },
-    });
-  });
-  serviceWorker.dispatchMessage({
-    type: "NOTIFICATION_CLICK",
-    url: `/chats/${pending.id}`,
-  });
-  await detailsRequested.promise;
-  // Settling buttons stay focusable (aria-disabled, not disabled) and busy;
-  // Base UI's disabled Button takes no presses.
+  click(opened);
   await waitFor(() => {
-    for (const name of names) {
-      const button = fastButton(name, pane(previous.id));
-      expect(button).toHaveAttribute("aria-disabled", "true");
-      expect(button).toHaveAttribute("aria-busy", "true");
-      expect(button).not.toHaveAttribute("disabled");
+    expect(location.pathname).toBe("/chats/" + next);
+    for (const action of actions) {
+      expect(action).toHaveAttribute("aria-busy", "true");
+      expect(action).toHaveAttribute("aria-disabled", "true");
+      expect(action).not.toHaveAttribute("disabled");
+      expect(action).toBeEnabled();
     }
+    expect(within(old).getByText(firstTitle)).toBeVisible();
   });
-  details.resolve();
+  for (const action of actions) {
+    action.focus();
+    expect(action).toHaveFocus();
+  }
+  gate.resolve();
+  await header(nextTitle);
 });
-
-test("Show failed first mail and automation reads instead of empty states", async () => {
-  await setupHeaders({
-    mailFailures: new Set([previous.id]),
-    automationFailures: new Set([previous.id]),
-  });
-  const header = pane(previous.id);
-
-  await selectDesktopHeaderAction("Manage emails", header);
-  const list = await screen.findByRole("dialog", { name: "Emails" });
-  await expect(
-    within(list).findByText("Unable to load emails"),
-  ).resolves.toBeInTheDocument();
-  expect(within(list).queryByText("No emails yet")).toBeNull();
-  await closeMailList(list);
-
-  const sidebar = await openAutomations(true, header);
-  await expect(
-    within(sidebar).findByText("Could not load automations"),
-  ).resolves.toBeInTheDocument();
-  expect(within(sidebar).queryByText("No automations yet")).toBeNull();
-});
-
-test("Open the destination's browser from the mobile menu after navigating", async () => {
-  context.mocks.api(browserContract.get, ({ respond }) => {
+test("chat-header-loading-007 the mobile destination opens its own cloud browser pane", async () => {
+  const next = mailbox(false);
+  const lookup = context.mocks.deferred<void>();
+  context.mocks.api(browserContract.get, async ({ params, respond }) => {
+    if (params.threadId === next) {
+      await lookup.promise;
+    }
     return respond(404, {
       error: {
         code: "BROWSER_NOT_FOUND",
@@ -337,46 +226,65 @@ test("Open the destination's browser from the mobile menu after navigating", asy
       },
     });
   });
-  await setupHeaders({ desktop: false });
-  await navigate(destination.id, false);
-  click(fastButton("More actions"));
-  const browserItem = menuItem("Open browser", await screen.findByRole("menu"));
-  expect(browserItem).not.toHaveAttribute("aria-disabled", "true");
-  click(browserItem);
-  const sidebar = await screen.findByRole("complementary", {
+  await enter();
+  const mobileLink = await findLink("Continue to worksheet");
+  click(mobileLink);
+  await waitFor(() => {
+    return expect(location.pathname).toBe("/chats/" + next);
+  });
+  await choose("Open browser");
+  const panel = await screen.findByRole("complementary", {
     name: "Cloud browser",
   });
-  const pageLink = queryAllByRoleFast("link", sidebar).find((link) => {
-    return (
-      link.getAttribute("aria-label") === "Open this browser in a new page"
-    );
+  lookup.resolve();
+  await within(panel).findByText("Browser not live");
+  const link = await waitFor(() => {
+    const a = queryAllByRoleFast("link", panel).find((el) => {
+      return (
+        el.getAttribute("aria-label") === "Open this browser in a new page"
+      );
+    });
+    expect(a).toHaveAttribute("href", "/browsers/" + next);
+    return a!;
   });
-  expect(pageLink).toHaveAttribute("href", `/browsers/${destination.id}`);
+  expect(link).toBeVisible();
 });
-
-test("Let each pane open its own chat's mail", async () => {
-  await setupHeaders({
-    mailThreads: [destination.id],
-    automationThreads: [],
-    path: `/chats/${previous.id}?sidebar=${destination.id}`,
+test("chat-header-loading-008 each open chat pane opens the mail for its own thread", async () => {
+  const next = mailbox();
+  context.mocks.api(mailContract.listThreadMail, ({ params, respond }) => {
+    return respond(200, {
+      mails:
+        params.threadId === next
+          ? [
+              {
+                mailDraftId: crypto.randomUUID(),
+                status: "sent",
+                subject: "Customs declaration receipt",
+                from: "broker@example.com",
+                createdAt: "2026-10-01T09:00:00Z",
+              },
+            ]
+          : [],
+    });
   });
-  await waitFor(() => {
-    expect(fastButton("Share messages", pane(destination.id))).toHaveAttribute(
-      "aria-disabled",
-      "false",
-    );
-  });
-
-  await selectDesktopHeaderAction("Manage emails", pane(previous.id));
-  const primaryList = await screen.findByRole("dialog", { name: "Emails" });
+  await enter();
+  const first = await header(firstTitle);
+  const user = userEvent.setup({ delay: null });
+  await user.keyboard("{Alt>}");
+  await user.click(await findLink(nextTitle));
+  await user.keyboard("{/Alt}");
+  const second = await header(nextTitle);
+  expect(first).toBeVisible();
+  expect(second).toBeVisible();
+  await choose("Manage emails", first);
+  const empty = await screen.findByRole("dialog", { name: "Emails" });
   await expect(
-    within(primaryList).findByText("No emails yet"),
+    within(empty).findByText("No emails yet"),
   ).resolves.toBeInTheDocument();
-  await closeMailList(primaryList);
-
-  await selectDesktopHeaderAction("Manage emails", pane(destination.id));
-  const secondaryList = await screen.findByRole("dialog", { name: "Emails" });
+  click(queryButton("Close emails", empty)!);
+  await choose("Manage emails", second);
+  const inbox = await screen.findByRole("dialog", { name: "Emails" });
   await expect(
-    within(secondaryList).findByText("Current header mail"),
+    within(inbox).findByText("Customs declaration receipt"),
   ).resolves.toBeInTheDocument();
 });

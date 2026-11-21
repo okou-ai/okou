@@ -1,121 +1,84 @@
-import { larkConnectContract } from "@okouai/api-contracts/contracts/feishu-connect";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor } from "@testing-library/react";
-import { expect, test } from "vitest";
-import {
-  click,
-  fill,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { test, expect } from "vitest";
+import { screen } from "@testing-library/react";
+import { click, fill } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { findAction } from "./connector-integrations-test-helpers.ts";
 import {
-  getAction,
-  findAction,
-  mockFeishu,
-} from "./connector-integrations-test-helpers.ts";
+  visitProvider,
+  botWorkspace,
+  providerContract,
+} from "./provider-bot-fixtures.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 
 const context = testContext();
 
-function settingsLink() {
-  const link = queryAllByRoleFast("link").find((item) => {
-    return item.getAttribute("href") === "/settings/lark";
+test("integrations-lark-001 the Lark guide verifies its own app credentials before asking for encryption", async () => {
+  botWorkspace(context, "lark", true, () => {
+    return [];
   });
-  if (!link) {
-    throw new Error("Expected Lark settings link");
-  }
-  return link;
-}
-
-test("Lark has an independent integration card and guided setup", async () => {
-  mockFeishu(context, {}, "lark");
-  await setupPage({
-    context,
-    path: "/works",
-    featureSwitches: {
-      [FeatureSwitchKey.LarkIntegration]: true,
-      [FeatureSwitchKey.FeishuIntegration]: false,
+  context.mocks.api(
+    providerContract("lark").checkAppId,
+    ({ query, respond }) => {
+      return query.appId === "cli_lark"
+        ? respond(200, { available: true })
+        : respond(409, {
+            error: { code: "CONFLICT", message: "Unrecognized app" },
+          });
     },
-  });
-  click(await waitFor(settingsLink));
-  await expect(screen.findByText("Lark bots")).resolves.toBeInTheDocument();
-  click(await screen.findByText("Add bot"));
+  );
+  await visitProvider(context, "lark", "/works");
+  const link = await screen.findByTestId("lark-setup-button");
+  expect(link).toHaveAttribute("href", "/settings/lark");
+  expect(screen.queryByTestId("feishu-setup-button")).toBeNull();
+  click(link);
+  await expect(
+    screen.findByRole("heading", { name: "Lark bots" }),
+  ).resolves.toBeInTheDocument();
+  click(await findAction("link", "Add bot"));
   await expect(
     screen.findByText("Create an Agent app"),
   ).resolves.toBeInTheDocument();
-  const consoleLink = getAction("link", "Lark developer console");
-  expect(consoleLink).toHaveAttribute(
-    "href",
-    "https://open.larksuite.com/page/launcher?from=backend_oneclick",
-  );
-  expect(getAction("link", "Download the optional Okou icon")).toHaveAttribute(
-    "download",
-    "okou-lark-app-icon.png",
-  );
+  expect(
+    document.querySelector(
+      'a[href="https://open.larksuite.com/page/launcher?from=backend_oneclick"]',
+    ),
+  ).toBeVisible();
+  await expect(
+    findAction("link", "Download the optional Okou icon"),
+  ).resolves.toHaveAttribute("download", "okou-lark-app-icon.png");
   click(await findAction("button", "Next"));
-  await expect(screen.findByLabelText("App ID")).resolves.toBeInTheDocument();
-  expect(screen.getByLabelText("App Secret")).toBeInTheDocument();
-  let checkedAppId: string | undefined;
-  context.mocks.api(larkConnectContract.checkAppId, ({ query, respond }) => {
-    checkedAppId = query.appId;
-    return respond(200, { available: true });
-  });
-  await fill(screen.getByLabelText("App ID"), "cli_lark");
-  await fill(screen.getByLabelText("App Secret"), "lark-test-secret");
+  await fill(
+    screen.getByLabelText("App ID", { selector: "input" }),
+    "cli_lark",
+  );
+  await fill(
+    screen.getByLabelText("App Secret", { selector: "input" }),
+    "lark-credential",
+  );
   click(await findAction("button", "Next"));
   await expect(
-    screen.findByLabelText("Encrypt Key"),
+    screen.findByLabelText("Encrypt Key", { selector: "input" }),
   ).resolves.toBeInTheDocument();
-  expect(checkedAppId).toBe("cli_lark");
 });
 
-test("enabling Feishu does not expose Lark", async () => {
-  mockFeishu(context, {}, "lark");
-  await setupPage({
-    context,
-    path: "/works",
-    featureSwitches: {
-      [FeatureSwitchKey.FeishuIntegration]: true,
-      [FeatureSwitchKey.LarkIntegration]: false,
-    },
+test("integrations-lark-003 the empty installation account loads on the Lark bot list", async () => {
+  const status = createDeferredPromise<void>(context.signal);
+  botWorkspace(context, "lark", true, () => {
+    if (!status.settled()) {
+      status.resolve();
+    }
+    return [];
   });
-  await expect(screen.findByText("Feishu")).resolves.toBeInTheDocument();
-  expect(
-    queryAllByRoleFast("link").some((item) => {
-      return item.getAttribute("href") === "/settings/lark";
-    }),
-  ).toBeFalsy();
-});
-
-test("the Lark settings page reads only Lark installations", async () => {
-  mockFeishu(context, {}, "lark");
-  let requestedLark = false;
-  context.mocks.api(larkConnectContract.getStatus, ({ respond }) => {
-    requestedLark = true;
-    return respond(200, {
-      platform: "lark",
-      isAdmin: true,
-      isInstalled: false,
-      isConnected: false,
-      appId: null,
-      callbackUrl: null,
-      callbackVerified: false,
-      messageReceived: false,
-      tenantKey: null,
-      tenantName: null,
-      defaultAgentId: null,
-      defaultAgentName: "Okou",
-      installations: [],
-    });
-  });
-  await setupPage({
-    context,
-    path: "/settings/lark",
-    featureSwitches: {
-      [FeatureSwitchKey.LarkIntegration]: true,
-      [FeatureSwitchKey.FeishuIntegration]: false,
-    },
-  });
-  await expect(screen.findByText("Lark bots")).resolves.toBeInTheDocument();
-  expect(requestedLark).toBeTruthy();
+  await visitProvider(context, "lark", "/settings/lark");
+  await status.promise;
+  await expect(
+    screen.findByText("No Lark bots yet"),
+  ).resolves.toBeInTheDocument();
+  await expect(
+    screen.findByRole("heading", { name: "Lark bots" }),
+  ).resolves.toBeInTheDocument();
+  await expect(findAction("link", "Add bot")).resolves.toHaveAttribute(
+    "href",
+    "/settings/lark/setup",
+  );
 });

@@ -1,168 +1,141 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { screen } from "@testing-library/react";
+import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
+import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
+
+import { fill } from "../../../__tests__/page-helper.ts";
+import { changeChatIndicators } from "../../../mocks/mock-helpers.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
+import { setupPage } from "./chat-lifecycle-test-helpers.ts";
 import {
-  chatThreadActivitySummaryContract,
-  type ActivitySummaryResponse,
-} from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
-import { setupPage } from "../../../__tests__/page-helper.ts";
-import { mockNow } from "../../../lib/time.ts";
-import { createDeferredPromise } from "../../../signals/utils.ts";
-import {
+  assistantEvent,
   completedEvent,
+  createChatRunFixtures,
   findButton,
   promptEvent,
   publishRunUpdate,
+  queryButton,
   readyChat,
   RUN_PATH,
-  createChatRunFixtures,
+  RUN_THREAD_ID,
 } from "./chat-run-test-fixtures.ts";
 
 const context = testContext();
 const { installRunChat } = createChatRunFixtures(context);
 
-const RUN_ID = "d0000000-0000-4000-a000-000000000841";
-const NEXT_RUN_ID = "d0000000-0000-4000-a000-000000000842";
-const PREPARATION = "Preparing the launch checklist";
-const ACTIVITY = "Checking the release evidence";
+const RUN_ID = "a0000000-0000-4000-a000-000000000611";
+const SUMMARY = "Preparing the launch checklist.";
 
-function summary(
-  overrides: Partial<ActivitySummaryResponse> = {},
-): ActivitySummaryResponse {
-  return {
+function finishedExchange(): MockChatEventInput[] {
+  const earlierRunId = "a0000000-0000-4000-a000-000000000610";
+  return [
+    promptEvent({
+      id: "notes-request",
+      runId: earlierRunId,
+      seqId: 1,
+      text: "Gather the launch notes",
+    }),
+    assistantEvent({
+      id: "notes-answer",
+      runId: earlierRunId,
+      seqId: 2,
+      text: "Launch notes gathered",
+    }),
+    completedEvent({ id: "notes-complete", runId: earlierRunId, seqId: 3 }),
+  ];
+}
+
+function checklistPrompt(): MockChatEventInput {
+  return promptEvent({
+    id: "checklist-request",
     runId: RUN_ID,
-    messages: [{ id: PREPARATION, text: PREPARATION }],
-    status: "available",
-    ...overrides,
+    seqId: 4,
+    text: "Prepare the launch checklist",
+  });
+}
+
+function summaryFor(runId: string) {
+  return {
+    runId,
+    messages: [{ id: "summary-1", text: SUMMARY }],
+    status: "available" as const,
   };
 }
 
-function installActiveRun() {
-  mockNow(new Date("2026-09-09T08:00:00.000Z"), context.signal);
-  const events = [
-    promptEvent({
-      id: "activity-prompt",
-      runId: RUN_ID,
-      seqId: 1,
-      text: "Prepare a launch checklist",
-    }),
-  ];
-  installRunChat({ chatEvents: events, activeRunIds: [RUN_ID, NEXT_RUN_ID] });
-  return events;
-}
-
 test("A chat event starts demand for the newly active run", async () => {
-  const events: ReturnType<typeof promptEvent>[] = [];
-  installRunChat({ chatEvents: events, activeRunIds: [RUN_ID] });
+  const chatEvents = finishedExchange();
+  installRunChat({ chatEvents, activeRunIds: [RUN_ID] });
+  const summaryRequest: { latest: { thread: string; run: string } | null } = {
+    latest: null,
+  };
   context.mocks.api(
     chatThreadActivitySummaryContract.summarize,
-    ({ respond }) => {
-      return respond(200, summary());
+    ({ params, body, respond }) => {
+      summaryRequest.latest = { thread: params.id, run: body.runId };
+      return respond(200, summaryFor(body.runId));
     },
   );
-
   await setupPage({ context, path: RUN_PATH });
   await readyChat();
+  await expect(
+    screen.findByText("Launch notes gathered"),
+  ).resolves.toBeInTheDocument();
 
-  events.push(
-    promptEvent({
-      id: "event-driven-prompt",
-      runId: RUN_ID,
-      seqId: 1,
-      text: "Start the release review",
-    }),
-  );
+  chatEvents.push(checklistPrompt());
   publishRunUpdate();
 
-  await expect(screen.findByText(PREPARATION)).resolves.toBeVisible();
+  await expect(screen.findByText(SUMMARY)).resolves.toBeInTheDocument();
+  expect(summaryRequest.latest).toStrictEqual({
+    thread: RUN_THREAD_ID,
+    run: RUN_ID,
+  });
 });
 
 test("A completed run cannot revive the previous indicator", async () => {
-  const events = installActiveRun();
-  const firstRequestStarted = createDeferredPromise<void>(context.signal);
-  const oldRunResponse = createDeferredPromise<void>(context.signal);
+  const chatEvents = [...finishedExchange(), checklistPrompt()];
+  const activeRunIds = [RUN_ID];
+  installRunChat({ chatEvents, activeRunIds });
+  const requested = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  const answered = context.mocks.deferred<void>();
   context.mocks.api(
     chatThreadActivitySummaryContract.summarize,
     async ({ body, respond }) => {
-      if (!firstRequestStarted.settled()) {
-        firstRequestStarted.resolve(undefined);
-      }
-      await oldRunResponse.promise;
-      return respond(200, summary({ runId: body.runId }));
+      requested.resolve();
+      await release.promise;
+      answered.resolve();
+      return respond(200, summaryFor(body.runId));
     },
   );
-
   await setupPage({ context, path: RUN_PATH });
-  await firstRequestStarted.promise;
+  await readyChat();
+  await requested.promise;
+  await expect(screen.findByText("Thinking...")).resolves.toBeInTheDocument();
 
-  events.push(completedEvent({ id: "completed", runId: RUN_ID, seqId: 3 }));
-  publishRunUpdate();
-  oldRunResponse.resolve(undefined);
-
-  await expect(findButton("Send")).resolves.toBeVisible();
-  expect(screen.queryByLabelText(PREPARATION)).not.toBeInTheDocument();
-  expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
-});
-
-test("A 403 response clears the displayed summary", async () => {
-  installActiveRun();
-  let forbidden = false;
-  context.mocks.api(
-    chatThreadActivitySummaryContract.summarize,
-    ({ respond }) => {
-      if (!forbidden) {
-        return respond(200, summary());
-      }
-      return respond(403, {
-        error: { message: "Unavailable", code: "FORBIDDEN" },
-      });
-    },
-  );
-
-  await setupPage({ context, path: RUN_PATH });
-  await expect(screen.findByText(PREPARATION)).resolves.toBeVisible();
-
-  forbidden = true;
-  await expect(screen.findByText("Thinking...")).resolves.toBeVisible();
-  expect(screen.queryByText(PREPARATION)).not.toBeInTheDocument();
-});
-
-test("A replacement run shows its own summary once it arrives", async () => {
-  const events = installActiveRun();
-  const nextRunResponse = createDeferredPromise<void>(context.signal);
-  context.mocks.api(
-    chatThreadActivitySummaryContract.summarize,
-    async ({ body, respond }) => {
-      if (body.runId === RUN_ID) {
-        return respond(200, summary());
-      }
-      await nextRunResponse.promise;
-      return respond(
-        200,
-        summary({
-          runId: NEXT_RUN_ID,
-          messages: [{ id: ACTIVITY, text: ACTIVITY }],
-        }),
-      );
-    },
-  );
-
-  await setupPage({ context, path: RUN_PATH });
-  await expect(screen.findByText(PREPARATION)).resolves.toBeVisible();
-
-  events.push(
-    promptEvent({
-      id: "replacement",
-      runId: NEXT_RUN_ID,
-      seqId: 2,
-      text: "Prepare another checklist",
+  chatEvents.push(
+    assistantEvent({
+      id: "checklist-answer",
+      runId: RUN_ID,
+      seqId: 5,
+      text: "Launch checklist prepared",
     }),
+    completedEvent({ id: "checklist-complete", runId: RUN_ID, seqId: 6 }),
   );
+  activeRunIds.splice(0);
   publishRunUpdate();
+  changeChatIndicators();
+  await expect(findButton("Send")).resolves.toBeVisible();
+  release.resolve();
+  await answered.promise;
 
-  // The indicators keep the last resolved summary until the replacement
-  // run's request returns.
-  nextRunResponse.resolve(undefined);
-  await expect(screen.findByText(ACTIVITY)).resolves.toBeVisible();
-  expect(screen.queryByText(PREPARATION)).not.toBeInTheDocument();
+  // The next draft is typed after the late summary has been answered.
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  await fill(composer, "Share the checklist");
+  await waitFor(() => {
+    expect(queryButton("Send")).toBeEnabled();
+  });
+  expect(screen.getByText("Launch checklist prepared")).toBeInTheDocument();
+  expect(screen.queryByText(SUMMARY)).not.toBeInTheDocument();
+  expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
+  expect(queryButton("Send")).toBeVisible();
 });

@@ -1,9 +1,11 @@
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
-import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  sharedThreadsContract,
+  type SharedMessage,
+} from "@okouai/api-contracts/contracts/shared-threads";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-
-import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { click } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   getLinkByName,
@@ -12,235 +14,178 @@ import {
 } from "./shared-thread-test-helpers.ts";
 
 const context = testContext();
-const FILE_ID = "f0000000-0000-4000-a000-000000000941";
-const IMAGE = "https://app.okou.ai/artifacts/snapimage1.png#detail";
-const HTML = "https://app.okou.ai/artifacts/snaphtml01.html#slide-2";
-const VIDEO = "https://app.okou.ai/artifacts/snapvideo1.mp4";
-const AUDIO = "https://app.okou.ai/artifacts/snapaudio1.mp3";
-const PDF = "https://app.okou.ai/artifacts/snappdf001.pdf";
-const R2_ORIGIN = `https://${"a".repeat(32)}.r2.cloudflarestorage.com`;
-const IMAGE_URL = `${R2_ORIGIN}/snapshots/photo.png?X-Amz-Signature=image`;
-const HTML_URL = `https://ps-${"a".repeat(48)}.okou.app/`;
-const VIDEO_URL = `${R2_ORIGIN}/snapshots/video.mp4?X-Amz-Signature=video`;
+const host = "app.okou.ai";
+function snapshot(extension: string, fragment = "") {
+  return `https://${host}/artifacts/coastal023.${extension}${fragment}`;
+}
+function bytes(extension: string) {
+  return `https://media.example.test/archive/coast.${extension}?grant=temporary`;
+}
+function conversation(messages: SharedMessage[]) {
+  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+    return respond(200, sharedThread({ title: "Coastal survey", messages }));
+  });
+}
 
-function mockSnapshotResources() {
+test("shared-thread-private-artifacts-001 opens snapshot media while preserving the author's linked message", async () => {
+  const mime = new Map([
+    ["png", "image/png"],
+    ["html", "text/html"],
+    ["mp4", "video/mp4"],
+    ["mp3", "audio/mpeg"],
+    ["pdf", "application/pdf"],
+  ]);
   context.mocks.api(
     artifactReferencesContract.resolve,
-    ({ params, request, respond }) => {
-      expect(request.headers.get("authorization")).toBeNull();
-      const resources = {
-        "snapimage1.png": {
-          url: IMAGE_URL,
-          filename: "photo.png",
-          contentType: "image/png",
-          kind: "file",
-        },
-        "snaphtml01.html": {
-          url: HTML_URL,
-          filename: "index.html",
-          contentType: "text/html",
-          kind: "html",
-        },
-        "snapvideo1.mp4": {
-          url: VIDEO_URL,
-          filename: "video.mp4",
-          contentType: "video/mp4",
-          kind: "file",
-        },
-        "snapaudio1.mp3": {
-          url: `${R2_ORIGIN}/snapshots/audio.mp3?X-Amz-Signature=audio`,
-          filename: "audio.mp3",
-          contentType: "audio/mpeg",
-          kind: "file",
-        },
-        "snappdf001.pdf": {
-          url: `${R2_ORIGIN}/snapshots/brief.pdf?X-Amz-Signature=pdf`,
-          filename: "brief.pdf",
-          contentType: "application/pdf",
-          kind: "file",
-        },
-      } as const;
-      const resource = resources[params.reference as keyof typeof resources];
-      if (!resource) {
-        throw new Error(`Unexpected artifact reference: ${params.reference}`);
+    ({ params, respond }) => {
+      const [reference, extension = ""] = params.reference.split(".");
+      const contentType = mime.get(extension);
+      if (reference !== "coastal023" || !contentType) {
+        return respond(404, {
+          error: { code: "NOT_FOUND", message: "Unknown format" },
+        });
       }
       return respond(200, {
-        downloadUrl: new URL("?download=1", resource.url).href,
-        url: resource.url,
-        filename: resource.filename,
-        contentType: resource.contentType,
+        url: bytes(extension),
+        downloadUrl: bytes(extension) + "&attachment=1",
+        filename: "coast." + extension,
+        contentType,
         expiresAt: "2099-01-01T00:00:00Z",
+        target: {
+          kind: extension === "html" ? "html" : "file",
+          id: "40000000-0000-4000-9000-000000000023",
+        },
         sharedThreadSnapshot: true,
-        target: { kind: resource.kind, id: FILE_ID },
       });
     },
   );
-}
-
-test("anonymous conversation snapshots preview temporary bytes and keep full stable links when copied", async () => {
-  const clipboard = context.mocks.browser.clipboardWriteText();
   const content = [
-    `![Launch screenshot](${IMAGE})`,
-    `![Launch slides](${HTML})`,
-    `![Launch video](${VIDEO})`,
-    `![Launch audio](${AUDIO})`,
-    `![Launch brief](${PDF})`,
-    `[Download the brief](${PDF})`,
+    `![Tide line](${snapshot("png", "#detail")})`,
+    `![Survey slides](${snapshot("html", "#slide-3")})`,
+    `![Field video](${snapshot("mp4")})`,
+    `![Field recording](${snapshot("mp3")})`,
+    `![Survey report](${snapshot("pdf", "#page=2")})`,
+    `[Download image](${snapshot("png", "#detail")})`,
   ].join("\n\n");
-  mockSnapshotResources();
-  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
-    return respond(
-      200,
-      sharedThread({
-        messages: [{ messageIndex: 0, role: "assistant", content }],
-      }),
-    );
-  });
-
-  await setupSharedThreadPage(context, { host: "app.okou.ai" });
-
-  const image = await screen.findByRole("img", { name: "Launch screenshot" });
-  expect(image).toHaveAttribute(
-    "src",
-    `https://a.okou.io/cdn-cgi/image/width=800,height=720,fit=scale-down,format=auto,quality=85,metadata=none/${IMAGE_URL}#detail`,
+  conversation([{ role: "assistant", messageIndex: 0, content }]);
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  await setupSharedThreadPage(context, { host });
+  const image = await screen.findByAltText("Tide line");
+  expect(image).toHaveAttribute("src", bytes("png") + "#detail");
+  expect(image.closest("a")).toHaveAttribute(
+    "href",
+    snapshot("png", "#detail"),
   );
-  fireEvent.load(image);
-  expect(image.closest("a")).toHaveAttribute("href", IMAGE);
-  const html = screen.getByTestId("markdown-artifact-preview-html");
-  expect(html).toHaveAttribute("href", HTML);
-  await expect(
-    within(html).findByTestId("attachment-preview-html-viewport"),
-  ).resolves.toBeInTheDocument();
-  expect(html.querySelector("iframe")).toHaveAttribute(
-    "src",
-    `${HTML_URL}#slide-2`,
+  const slides = await screen.findByTitle("Survey slides preview");
+  expect(slides).toHaveAttribute("src", bytes("html") + "#slide-3");
+  expect(slides.closest("a")).toHaveAttribute(
+    "href",
+    snapshot("html", "#slide-3"),
   );
-  const video = screen.getByTestId("markdown-artifact-preview-video");
-  expect(video).toHaveAttribute("type", "button");
+  expect(getLinkByName("Download image")).toHaveAttribute(
+    "href",
+    snapshot("png", "#detail"),
+  );
+  const film = await screen.findByLabelText("Preview Field video");
   await waitFor(() => {
-    expect(video.querySelector("video")).toHaveAttribute(
+    expect(film.querySelector("video")).toHaveAttribute(
       "src",
-      `${VIDEO_URL}#t=0.001`,
+      bytes("mp4") + "#t=0.001",
     );
   });
-  expect(screen.getByTestId("markdown-artifact-preview-audio")).toHaveAttribute(
-    "href",
-    AUDIO,
-  );
-  expect(screen.getByTestId("markdown-artifact-preview-pdf")).toHaveAttribute(
-    "href",
-    PDF,
-  );
-  expect(getLinkByName("Download the brief")).toHaveAttribute("href", PDF);
-  expect(html.closest("p")).toBeNull();
-
-  const copy = queryAllByRoleFast("button").find((button) => {
-    return button.getAttribute("aria-label") === "Copy message";
-  });
-  if (!copy) {
-    throw new Error("Missing copy message action");
-  }
-  click(copy);
-  await waitFor(() => {
-    expect(clipboard.writes).toStrictEqual([content]);
-  });
-});
-
-test("anonymous prompt attachments load snapshot thumbnails while opening the stable reference", async () => {
-  mockSnapshotResources();
-  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
-    return respond(
-      200,
-      sharedThread({
-        messages: [
-          {
-            messageIndex: 0,
-            role: "user",
-            content: "Use these materials",
-            attachments: [
-              {
-                filename: "photo.png",
-                contentType: "image/png",
-                size: 42,
-                url: IMAGE,
-              },
-              {
-                filename: "brief.pdf",
-                contentType: "application/pdf",
-                size: 80,
-                url: PDF,
-              },
-            ],
-          },
-        ],
-      }),
+  for (const [label, ext, fragment, selector] of [
+    ["Field recording", "mp3", "", "audio"],
+    ["Survey report", "pdf", "#page=2", "iframe"],
+  ] as const) {
+    const cardTitle = screen.getByText(label);
+    expect(cardTitle.closest("a")).toHaveAttribute(
+      "href",
+      snapshot(ext, fragment),
     );
-  });
-
-  await setupSharedThreadPage(context, { host: "app.okou.ai" });
-
-  const image = await screen.findByRole("img", { name: "photo.png" });
-  expect(image).toHaveAttribute(
-    "src",
-    `https://a.okou.io/cdn-cgi/image/width=480,height=320,fit=scale-down,format=auto,quality=85,metadata=none/${IMAGE_URL}#detail`,
-  );
-  expect(screen.getByLabelText("photo.png")).toHaveAttribute("href", IMAGE);
-  expect(screen.getByLabelText("brief.pdf")).toHaveAttribute("href", PDF);
-});
-
-test.each([403] as const)(
-  "denied or revoked snapshots show unavailable previews without loading the reference as bytes: %s",
-  async (status) => {
-    context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
-      return respond(status, {
-        error: { code: "NOT_FOUND", message: "Artifact unavailable" },
-      });
-    });
-    context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
-      return respond(
-        200,
-        sharedThread({
-          messages: [
-            {
-              messageIndex: 0,
-              role: "assistant",
-              content: `![Screenshot](${IMAGE})\n\n![Slides](${HTML})`,
-            },
-            {
-              messageIndex: 1,
-              role: "user",
-              content: "Check the screenshot",
-              attachments: [
-                {
-                  filename: "photo.png",
-                  contentType: "image/png",
-                  size: 42,
-                  url: IMAGE,
-                },
-              ],
-            },
-          ],
-        }),
+    click(cardTitle);
+    const dialog = await screen.findByRole("dialog", { name: label });
+    await waitFor(() => {
+      expect(dialog.querySelector(selector)).toHaveAttribute(
+        "src",
+        bytes(ext) + fragment,
       );
     });
-
-    await setupSharedThreadPage(context, { host: "app.okou.ai" });
-
+    click(within(dialog).getByLabelText("Close"));
     await waitFor(() => {
-      expect(screen.getAllByRole("status")).toHaveLength(3);
+      expect(dialog).not.toBeInTheDocument();
     });
-    expect(
-      screen.queryByRole("img", { name: "Screenshot" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("img", { name: "photo.png" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByTitle("Site preview for Slides"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByTestId("markdown-artifact-preview-html"),
-    ).toHaveAttribute("href", HTML);
-    expect(screen.getByLabelText("photo.png")).toHaveAttribute("href", IMAGE);
-  },
-);
+  }
+  click(screen.getByLabelText("Copy message"));
+  await waitFor(() => {
+    expect(clipboard.writes).toContain(content);
+  });
+});
+
+test("shared-thread-private-artifacts-003 renders three denied resources without embedding their reference URLs", async () => {
+  const html = snapshot("html", "#slide-3");
+  const photo = snapshot("png", "#detail");
+  const attachment = snapshot("jpeg");
+  conversation([
+    {
+      role: "user",
+      messageIndex: 0,
+      content: "Survey evidence",
+      attachments: [
+        {
+          filename: "survey-mark.jpeg",
+          contentType: "image/jpeg",
+          size: 1024,
+          url: attachment,
+        },
+      ],
+    },
+    {
+      role: "assistant",
+      messageIndex: 1,
+      content: `![Tide line](${photo})\n\n![Survey slides](${html})`,
+    },
+  ]);
+  const denials = [photo, html, attachment].map((url) => {
+    return {
+      reference: new URL(url).pathname.split("/").pop(),
+      response: context.mocks.deferred<void>(),
+    };
+  });
+  context.mocks.api(
+    artifactReferencesContract.resolve,
+    async ({ params, respond }) => {
+      const denial = denials.find(({ reference }) => {
+        return reference === params.reference;
+      });
+      if (!denial) {
+        throw new Error("Unexpected shared reference: " + params.reference);
+      }
+      await denial.response.promise;
+      return respond(403, {
+        error: { code: "FORBIDDEN", message: "Snapshot access denied" },
+      });
+    },
+  );
+  await setupSharedThreadPage(context, { host });
+  for (const [index, denial] of denials.entries()) {
+    denial.response.resolve();
+    await waitFor(() => {
+      const unavailable = screen.getAllByRole("status").filter((element) => {
+        return (
+          element.textContent?.trim() === "You can’t view this artifact" ||
+          element.getAttribute("aria-label") === "You can’t view this artifact"
+        );
+      });
+      expect(unavailable).toHaveLength(index + 1);
+    });
+  }
+  expect(screen.queryByAltText("Tide line")).not.toBeInTheDocument();
+  expect(screen.queryByAltText("survey-mark.jpeg")).not.toBeInTheDocument();
+  expect(screen.queryByTitle("Survey slides preview")).not.toBeInTheDocument();
+  expect(document.querySelector("iframe")).toBeNull();
+  expect(getLinkByName("survey-mark.jpeg")).toHaveAttribute("href", attachment);
+  expect(document.querySelector(`a[href="${html}"]`)).toBeInTheDocument();
+  for (const stable of [photo, html, attachment]) {
+    expect(document.querySelector(`[src="${stable}"]`)).toBeNull();
+  }
+});

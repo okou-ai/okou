@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+
 import { expect, vi } from "vitest";
 
 import {
@@ -111,7 +112,6 @@ export function prepareDefaultAgent(
   targetContext: TestContext,
   avatarUrl: string | null = null,
 ): void {
-  targetContext.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   targetContext.mocks.data.agents([
     {
       agentId: AGENT_ID,
@@ -126,10 +126,9 @@ export function prepareDefaultAgent(
 }
 
 export function prepareAgents(targetContext: TestContext): AgentResponse[] {
-  targetContext.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   const agents: AgentResponse[] = [
     {
-      isDefaultAgent: true,
+      isDefaultAgent: false,
       agentId: AGENT_ID,
       ownerId: "test-user-123",
       displayName: "Nova",
@@ -167,7 +166,7 @@ export function prepareAgents(targetContext: TestContext): AgentResponse[] {
       [SUPPORT_AGENT_ID]: "Support Agent",
     };
     return respond(200, {
-      isDefaultAgent: params.id === AGENT_ID,
+      isDefaultAgent: false,
       agentId: params.id,
       ownerId: "test-user-123",
       description: null,
@@ -388,10 +387,49 @@ export function sidebar(): HTMLElement {
   return screen.getByTestId("chat-list-column");
 }
 
+export function pinnedAgentLink(
+  container: HTMLElement,
+  name: string,
+): HTMLAnchorElement {
+  const link = queryAllByRoleFast("link", container).find((candidate) => {
+    return candidate.textContent?.trim() === name;
+  });
+  if (!(link instanceof HTMLAnchorElement)) {
+    throw new Error(`${name} pinned agent link not found`);
+  }
+  return link;
+}
+
 export function setupSidebarPage(
   options: Parameters<typeof setupPage>[0],
 ): Promise<void> {
   return setupPage(options);
+}
+
+export function pinnedAgentNames(container: HTMLElement): string[] {
+  return within(container)
+    .getAllByTestId("pinned-agent-card")
+    .map((card) => {
+      return card.textContent?.trim() ?? "";
+    });
+}
+
+export function commandItemByText(
+  container: HTMLElement,
+  text: string,
+): HTMLElement {
+  const item = within(container)
+    .getAllByRole("option")
+    .find((candidate) => {
+      return candidate.textContent
+        ?.replace(/\s+/g, " ")
+        .trim()
+        .startsWith(text);
+    });
+  if (!item) {
+    throw new Error(`${text} command item not found`);
+  }
+  return item;
 }
 
 /**
@@ -459,41 +497,6 @@ export function createDataTransferStub(
   } as unknown as DataTransferStub;
 }
 
-/** Supplies explicit pixel geometry for title intent in layout-free happy-dom. */
-export function mockSidebarTitleLayout(
-  layouts: Readonly<
-    Record<string, { readonly textWidth: number; readonly clipWidth: number }>
-  >,
-): void {
-  const original = HTMLElement.prototype.getBoundingClientRect;
-  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
-    function (this: HTMLElement): DOMRect {
-      const clip = this.closest<HTMLElement>(
-        '[data-slot="sidebar-thread-title"]',
-      );
-      const layout = layouts[clip?.textContent ?? ""];
-      if (clip && layout) {
-        if (this === clip) {
-          return new DOMRect(0, 0, layout.clipWidth, 20);
-        }
-        if (this === clip.firstElementChild) {
-          return new DOMRect(0, 0, layout.textWidth, 20);
-        }
-      }
-      return original.call(this);
-    },
-  );
-}
-
-/** The DOM-to-CSS reveal boundary inside the semantic thread link. */
-export function titleRevealClip(link: HTMLElement): HTMLElement {
-  const clip = link.querySelector<HTMLElement>("[data-title-reveal]");
-  if (!clip) {
-    throw new Error("Thread title reveal clip not found");
-  }
-  return clip;
-}
-
 export function threadRowByTitle(
   title: string,
   container: HTMLElement = sidebar(),
@@ -535,6 +538,18 @@ export function visibleThreadTitles(
       .trim();
     return title && expected.has(title) ? [title] : [];
   });
+}
+
+export function agentRowByName(
+  container: HTMLElement,
+  name: string,
+): HTMLElement {
+  const text = within(container).getByText(name);
+  const row = text.closest(".group");
+  if (!(row instanceof HTMLElement)) {
+    throw new Error(`${name} agent row not found`);
+  }
+  return row;
 }
 
 export function openThreadMenu(title: string): void {

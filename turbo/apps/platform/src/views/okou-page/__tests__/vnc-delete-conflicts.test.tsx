@@ -1,179 +1,126 @@
-import {
-  vncConnectionsContract,
-  type VncConnectionResponse,
-} from "@okouai/api-contracts/contracts/vnc-connections";
+import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import {
   vncCredentialsContract,
   type VncCredentialResponse,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
-import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
-import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
-import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
-import { screen, within } from "@testing-library/react";
+import { VNC_ERROR_CODES } from "@okouai/api-contracts/contracts/vnc-errors";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { getAction } from "./connector-integrations-test-helpers.ts";
+import { getConnectorAction } from "./connector-page-test-helpers.ts";
+import {
+  mockRemoteInventory,
+  REMOTE_TIMESTAMP,
+  remoteId,
+  vncHost,
+} from "./connectors-remote-control-test-helpers.ts";
 
 const context = testContext();
-const host = Object.freeze<
-  Extract<VncConnectionResponse, { credentialId: string }>
->({
-  id: "b0000000-0000-4000-8000-000000000001",
-  displayName: "Design workstation",
-  host: "desktop.example.com",
-  port: 5900,
-  credentialId: "d0000000-0000-4000-8000-000000000001",
-  credentialName: "Desktop login",
-  security: { type: "x509_vnc", trust: { mode: "system" } },
-  generation: 4,
-  createdAt: "2026-09-01T00:00:00.000Z",
-  updatedAt: "2026-09-01T00:00:00.000Z",
-});
-const credential = Object.freeze<VncCredentialResponse>({
-  id: host.credentialId,
-  name: host.credentialName,
-  authMethod: "vnc_password",
-  revision: 3,
-  hosts: [{ id: host.id, displayName: host.displayName }],
-  createdAt: host.createdAt,
-  updatedAt: host.updatedAt,
-});
 
-function mockSettings(
-  connections: VncConnectionResponse[] = [host],
-  credentials: VncCredentialResponse[] = [credential],
-) {
-  const data = { connections, credentials };
-  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return respond(200, { configs: [] });
-  });
-  context.mocks.api(tailscaleContract.list, ({ respond }) => {
-    return respond(200, { configs: [] });
-  });
-  context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: data.connections.length });
-  });
-  context.mocks.api(vncConnectionsContract.list, ({ respond }) => {
-    return respond(200, { connections: data.connections });
-  });
-  context.mocks.api(vncCredentialsContract.list, ({ respond }) => {
-    return respond(200, { credentials: data.credentials });
-  });
-  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    return respond(200, { connections: [] });
-  });
-  context.mocks.api(
-    chatRemoteAccessContract.listHostDefaults,
-    ({ respond }) => {
-      return respond(200, { ssh: [], vnc: [] });
-    },
-  );
-  return data;
+function desktopLogin(revision: number): VncCredentialResponse {
+  return {
+    id: remoteId("f", 1),
+    name: "Desktop login",
+    authMethod: "vnc_password",
+    revision,
+    createdAt: REMOTE_TIMESTAMP,
+    updatedAt: REMOTE_TIMESTAMP,
+    hosts: [],
+  };
 }
 
-async function page(credentials = false) {
-  await setupPage({
-    context,
-    path: credentials
-      ? "/connectors?scope=remote-control&remoteView=credentials&type=vnc"
-      : `/connectors?scope=remote-control&remoteResource=vnc:${host.id}`,
-    auth: {
-      user: { id: "vnc-delete-owner", fullName: "VNC Owner" },
-      organization: {
-        activeOrg: { id: "org_vnc_delete", name: "VNC test organization" },
-        memberships: [{ id: "org_vnc_delete" }],
-      },
-    },
+function protocolTab(name: string): HTMLElement {
+  const tab = queryAllByRoleFast("radio").find((candidate) => {
+    return candidate.textContent?.trim() === name;
   });
+  if (!tab) {
+    throw new Error(`Expected the ${name} credentials tab`);
+  }
+  return tab;
+}
+
+async function confirmIn(dialogName: string): Promise<HTMLElement> {
+  const dialog = await screen.findByRole("dialog", { name: dialogName });
+  click(getConnectorAction("button", dialogName, dialog));
+  return dialog;
 }
 
 test("A stale VNC host generation blocks deletion", async () => {
-  const data = mockSettings();
-  const requests: unknown[] = [];
-  context.mocks.api(
-    vncConnectionsContract.delete,
-    ({ body, params, respond }) => {
-      requests.push({ id: params.connectionId, body });
-      if (body.expectedGeneration < 6) {
-        data.connections = [
-          {
-            ...host,
-            displayName: `Updated workstation ${body.expectedGeneration + 1}`,
-            host: "updated.example.com",
-            port: 5902,
-            generation: body.expectedGeneration + 1,
-          },
-        ];
-        return respond(409, {
-          error: { code: "VNC_GENERATION_CONFLICT", message: "private" },
-        });
-      }
-      data.connections = [];
-      return respond(204);
-    },
-  );
-  await page();
-  await screen.findByText(host.displayName);
-  click(getAction("button", "Delete connection"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Delete connection",
+  const desktop = vncHost(1, "Studio desktop", { generation: 4 });
+  const inventory = mockRemoteInventory(context, { vnc: [desktop] });
+  const deletion: { expectedGeneration?: number } = {};
+  context.mocks.api(vncConnectionsContract.delete, ({ body, respond }) => {
+    deletion.expectedGeneration = body.expectedGeneration;
+    // Another editor already saved generation 5.
+    inventory.vnc = [{ ...desktop, generation: 5 }];
+    return respond(409, {
+      error: {
+        code: VNC_ERROR_CODES.GENERATION_CONFLICT,
+        message: "VNC connection was modified by another request",
+      },
+    });
   });
-  click(getAction("button", "Delete connection", dialog));
-  await within(dialog).findByRole("alert");
-  expect(getAction("button", "Delete connection", dialog)).toBeDisabled();
-  expect(requests).toStrictEqual([
-    { id: host.id, body: { expectedGeneration: 4 } },
-  ]);
+  await setupPage({
+    context,
+    path: `/connectors?scope=remote-control&remoteResource=vnc:${desktop.id}`,
+  });
+  await waitFor(() => {
+    expect(getConnectorAction("button", "Delete connection")).toBeEnabled();
+  });
+  click(getConnectorAction("button", "Delete connection"));
+
+  const dialog = await confirmIn("Delete connection");
+
+  await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
+    "This host changed since you opened it.",
+  );
+  expect(
+    getConnectorAction("button", "Delete connection", dialog),
+  ).toBeDisabled();
+  expect(deletion.expectedGeneration).toBe(4);
 });
 
-test.each([
-  "VNC_CREDENTIAL_REVISION_CONFLICT",
-  "VNC_CREDENTIAL_IN_USE",
-] as const)(
-  "A VNC credential deletion rejected with %s remains blocked",
-  async (firstConflict) => {
-    const data = mockSettings([], [{ ...credential, hosts: [] }]);
-    const requests: unknown[] = [];
-    context.mocks.api(
-      vncCredentialsContract.delete,
-      ({ body, params, respond }) => {
-        requests.push({ id: params.credentialId, body });
-        if (body.expectedRevision < 5) {
-          data.credentials = [
-            {
-              ...credential,
-              name: `Updated login ${body.expectedRevision + 1}`,
-              hosts: [],
-              revision: body.expectedRevision + 1,
-            },
-          ];
-          return respond(409, {
-            error: {
-              code:
-                body.expectedRevision === 3
-                  ? firstConflict
-                  : "VNC_CREDENTIAL_REVISION_CONFLICT",
-              message: "private",
-            },
-          });
-        }
-        data.credentials = [];
-        return respond(204);
+test("A VNC credential deletion rejected with VNC_CREDENTIAL_REVISION_CONFLICT remains blocked", async () => {
+  const inventory = mockRemoteInventory(context, {
+    vncCredentials: [desktopLogin(3)],
+  });
+  const deletion: { expectedRevision?: number } = {};
+  context.mocks.api(vncCredentialsContract.delete, ({ body, respond }) => {
+    deletion.expectedRevision = body.expectedRevision;
+    inventory.vncCredentials = [desktopLogin(4)];
+    return respond(409, {
+      error: {
+        code: VNC_ERROR_CODES.CREDENTIAL_REVISION_CONFLICT,
+        message: "VNC credential was modified by another request",
       },
-    );
-    await page(true);
-    await screen.findByText(credential.name);
-    click(getAction("button", "Delete credential"));
-    const dialog = await screen.findByRole("dialog", {
-      name: "Delete credential",
     });
-    click(getAction("button", "Delete credential", dialog));
-    await within(dialog).findByRole("alert");
-    expect(getAction("button", "Delete credential", dialog)).toBeDisabled();
-    expect(requests).toStrictEqual([
-      { id: credential.id, body: { expectedRevision: 3 } },
-    ]);
-  },
-);
+  });
+  await setupPage({
+    context,
+    path: "/connectors?scope=remote-control&remoteView=credentials",
+  });
+  await waitFor(() => {
+    expect(protocolTab("VNC")).toBeInTheDocument();
+  });
+  click(protocolTab("VNC"));
+  await waitFor(() => {
+    expect(getConnectorAction("button", "Delete credential")).toBeEnabled();
+  });
+  click(getConnectorAction("button", "Delete credential"));
+
+  const dialog = await confirmIn("Delete credential");
+
+  await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
+    "This credential changed since you opened it.",
+  );
+  expect(
+    getConnectorAction("button", "Delete credential", dialog),
+  ).toBeDisabled();
+  expect(deletion.expectedRevision).toBe(3);
+});

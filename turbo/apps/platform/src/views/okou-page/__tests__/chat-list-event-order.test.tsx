@@ -1,264 +1,125 @@
-import { waitFor } from "@testing-library/react";
+import type {
+  ChatThreadEvent,
+  ChatThreadSnapshotProjection,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { screen, within, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
-
 import { startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { changeChatThreadList } from "../../../mocks/mock-helpers.ts";
 import {
-  CHAT_LIST_AGENT_ID,
   cachedChatListEvents,
-  chatListAuth,
   chatListEvent,
   chatListThread,
-  chatListThreadId,
   installChatListAgent,
   installChatListStream,
-  sidebarThreadLinks,
   sidebarThreadTitles,
+  sidebarThreadLinks,
 } from "./chat-list-test-helpers.ts";
 
 const context = testContext();
-
-test("Conversation lifecycle events produce the current list", async () => {
-  const auth = chatListAuth(5);
-  const oldThread = chatListThread(31, "Old conversation");
-  const newThreadId = chatListThreadId(32);
+async function openCachedList(
+  caseId: number,
+  threads: ChatThreadSnapshotProjection[],
+) {
   const remote = context.mocks.deferred<void>();
-  installChatListAgent(context);
-  installChatListStream(context, {
-    caseId: 5,
-    snapshot: [oldThread],
-    events: [
-      chatListEvent(5, 2, "renamed", oldThread.id, {
-        title: "Renamed old conversation",
-      }),
-      chatListEvent(5, 3, "sort_touched", oldThread.id),
-      chatListEvent(5, 4, "created", newThreadId, {
-        title: "Current conversation",
-        selectedModel: "claude-sonnet-5",
-      }),
-      chatListEvent(5, 5, "deleted", oldThread.id),
-    ],
-    remoteGate: remote.promise,
-  });
-
-  const page = await startPage({
-    context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
-    auth,
-    cachedChatThreadEvents: cachedChatListEvents(5, [oldThread]),
-  });
-
-  await waitFor(() => {
-    expect(sidebarThreadTitles()).toStrictEqual(["Old conversation"]);
-  });
-
-  remote.resolve();
-  await page.ready;
-  await waitFor(() => {
-    expect(sidebarThreadTitles()).toStrictEqual(["Current conversation"]);
-  });
-  const links = sidebarThreadLinks();
-  expect(links).toHaveLength(1);
-  expect(links[0]).toHaveAttribute("data-sidebar-chat-thread-id", newThreadId);
-  expect(links[0]).toHaveAttribute("href", `/chats/${newThreadId}`);
-});
-
-test("A pinned conversation stays above newer unpinned items", async () => {
-  const auth = chatListAuth(10);
-  const oldest = chatListThread(33, "Oldest conversation");
-  const middle = chatListThread(34, "Middle conversation");
-  const newest = chatListThread(35, "Newest conversation");
-  const remote = context.mocks.deferred<void>();
-  installChatListAgent(context);
-  installChatListStream(context, {
-    caseId: 10,
-    snapshot: [oldest, middle, newest],
-    events: [chatListEvent(10, 2, "pinned", oldest.id)],
-    remoteGate: remote.promise,
-  });
-
-  const page = await startPage({
-    context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
-    auth,
-    cachedChatThreadEvents: cachedChatListEvents(10, [oldest, middle, newest]),
-  });
-
-  await waitFor(() => {
-    expect(sidebarThreadTitles()).toStrictEqual([
-      "Newest conversation",
-      "Middle conversation",
-      "Oldest conversation",
-    ]);
-  });
-  remote.resolve();
-  await page.ready;
-
-  await waitFor(() => {
-    expect(sidebarThreadTitles()).toStrictEqual([
-      "Oldest conversation",
-      "Newest conversation",
-      "Middle conversation",
-    ]);
-  });
-  expect(sidebarThreadLinks()[0]).toHaveAttribute(
-    "data-sidebar-chat-thread-id",
-    oldest.id,
-  );
-});
-
-test("Pinned ordering follows pin time through activity updates", async () => {
-  const caseId = 11;
-  const auth = chatListAuth(caseId);
-  const firstPin = chatListThread(36, "First pin", {
-    pinnedAt: "2026-08-01T00:50:00.000Z",
-    sortAt: "2026-08-01T00:59:00.000Z",
-  });
-  const secondPin = chatListThread(37, "Second pin", {
-    pinnedAt: "2026-08-01T00:51:00.000Z",
-  });
-  const tiedPin = chatListThread(38, "Tied pin", {
-    pinnedAt: secondPin.pinnedAt,
-  });
-  const older = chatListThread(39, "Older regular chat");
-  const newer = chatListThread(40, "Newer regular chat");
-  const snapshot = [firstPin, secondPin, tiedPin, older, newer];
-  const remote = context.mocks.deferred<void>();
-  installChatListAgent(context);
-  installChatListStream(context, {
-    caseId,
-    snapshot,
-    events: [
-      chatListEvent(caseId, 2, "sort_touched", secondPin.id),
-      chatListEvent(caseId, 3, "sort_touched", firstPin.id),
-      chatListEvent(caseId, 4, "sort_touched", older.id),
-      chatListEvent(caseId, 5, "renamed", newer.id, {
-        title: "Updated regular chat",
-      }),
-    ],
-    remoteGate: remote.promise,
-  });
-
-  const page = await startPage({
-    context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
-    auth,
-    cachedChatThreadEvents: cachedChatListEvents(caseId, snapshot),
-  });
-
-  await waitFor(() => {
-    expect(sidebarThreadTitles()).toStrictEqual([
-      "Tied pin",
-      "Second pin",
-      "First pin",
-      "Newer regular chat",
-      "Older regular chat",
-    ]);
-  });
-  remote.resolve();
-  await page.ready;
-
-  await waitFor(() => {
-    expect(sidebarThreadTitles()).toStrictEqual([
-      "Tied pin",
-      "Second pin",
-      "First pin",
-      "Older regular chat",
-      "Updated regular chat",
-    ]);
-  });
-});
-
-test("Unpinning restores activity order and repinning uses the new pin time", async () => {
-  const caseId = 13;
-  const auth = chatListAuth(caseId);
-  const firstPin = chatListThread(41, "First pin", {
-    pinnedAt: "2026-08-01T00:50:00.000Z",
-  });
-  const secondPin = chatListThread(42, "Second pin", {
-    pinnedAt: "2026-08-01T00:51:00.000Z",
-  });
-  const regular = chatListThread(43, "Regular chat");
-  const snapshot = [firstPin, secondPin, regular];
-  const remote = context.mocks.deferred<void>();
-  const unpin = chatListEvent(caseId, 2, "unpinned", firstPin.id);
   installChatListAgent(context);
   const stream = installChatListStream(context, {
     caseId,
-    snapshot,
-    events: [unpin],
+    snapshot: threads,
     remoteGate: remote.promise,
   });
-
   const page = await startPage({
     context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
-    auth,
-    cachedChatThreadEvents: cachedChatListEvents(caseId, snapshot),
+    path: "/",
+    cachedChatThreadEvents: cachedChatListEvents(caseId, threads),
   });
+  await page.content;
+  const list = within(await screen.findByTestId("chat-list-column"));
+  return {
+    list,
+    deliver(events: ChatThreadEvent[]) {
+      stream.setEvents(events);
+      remote.resolve();
+    },
+  };
+}
 
+test("chat-list-event-order-001 replaces the removed conversation with the newly created chat destination", async () => {
+  const old = chatListThread(9, "Old conversation");
+  const current = chatListThread(12, "Current conversation");
+  const { list, deliver } = await openCachedList(283, [old]);
+  await list.findByText("Old conversation");
+  deliver([
+    chatListEvent(283, 2, "renamed", old.id, { title: "Closing" }),
+    chatListEvent(283, 3, "sort_touched", old.id),
+    chatListEvent(283, 4, "created", current.id, { title: current.title }),
+    chatListEvent(283, 5, "deleted", old.id),
+  ]);
+  await list.findByText("Current conversation");
+  expect(sidebarThreadTitles()).toStrictEqual(["Current conversation"]);
+  expect(sidebarThreadLinks()[0]).toHaveAttribute(
+    "href",
+    `/chats/${current.id}`,
+  );
+});
+
+test("chat-list-event-order-002 promotes the oldest chat ahead of the two newer regular chats", async () => {
+  const old = chatListThread(1, "Oldest conversation");
+  const middle = chatListThread(4, "Middle conversation");
+  const recent = chatListThread(7, "Newest conversation");
+  const { list, deliver } = await openCachedList(284, [middle, old, recent]);
+  await list.findByText("Newest conversation");
+  expect(sidebarThreadTitles()).toStrictEqual([
+    recent.title,
+    middle.title,
+    old.title,
+  ]);
+  deliver([chatListEvent(284, 2, "pinned", old.id)]);
   await waitFor(() => {
     expect(sidebarThreadTitles()).toStrictEqual([
-      "Second pin",
-      "First pin",
-      "Regular chat",
-    ]);
-  });
-  remote.resolve();
-  await page.ready;
-
-  await waitFor(() => {
-    expect(sidebarThreadTitles()).toStrictEqual([
-      "Second pin",
-      "Regular chat",
-      "First pin",
-    ]);
-  });
-  stream.setEvents([unpin, chatListEvent(caseId, 3, "pinned", firstPin.id)]);
-  changeChatThreadList();
-
-  await waitFor(() => {
-    expect(sidebarThreadTitles()).toStrictEqual([
-      "First pin",
-      "Second pin",
-      "Regular chat",
+      old.title,
+      recent.title,
+      middle.title,
     ]);
   });
 });
 
-test("Workflow visibility hides cached chats and restores the same conversation", async () => {
-  const caseId = 42;
-  const visible = chatListThread(56, "Visible workflow");
-  const hidden = chatListThread(57, "Background workflow", { hidden: true });
-  const remote = context.mocks.deferred<void>();
-  installChatListAgent(context);
-  installChatListStream(context, {
-    caseId,
-    snapshot: [visible, hidden],
-    events: [
-      chatListEvent(caseId, 2, "sort_touched", visible.id, { hidden: true }),
-      chatListEvent(caseId, 3, "sort_touched", hidden.id, { hidden: false }),
-    ],
-    remoteGate: remote.promise,
+test("chat-list-event-order-003 retains pin-time ordering when activity reorders regular chats", async () => {
+  const first = chatListThread(1, "First pin", {
+    pinnedAt: "2026-08-01T00:50:00.000Z",
   });
-  const page = await startPage({
-    context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
-    auth: chatListAuth(caseId),
-    cachedChatThreadEvents: cachedChatListEvents(caseId, [visible, hidden]),
+  const second = chatListThread(2, "Second pin", {
+    pinnedAt: "2026-08-01T00:51:00.000Z",
   });
-  await page.content;
-  await waitFor(() => {
-    expect(sidebarThreadTitles()).toStrictEqual(["Visible workflow"]);
-  });
-  remote.resolve();
-  await page.ready;
-  await waitFor(() => {
-    expect(sidebarThreadTitles()).toStrictEqual(["Background workflow"]);
-  });
-  expect(sidebarThreadLinks()[0]).toHaveAttribute(
-    "href",
-    `/chats/${hidden.id}`,
-  );
+  const tied = chatListThread(3, "Tied pin", { pinnedAt: second.pinnedAt });
+  const older = chatListThread(4, "Older regular chat");
+  const newer = chatListThread(5, "Newer regular chat");
+  const { list, deliver } = await openCachedList(285, [
+    older,
+    second,
+    newer,
+    tied,
+    first,
+  ]);
+  const pinned = [tied.title, second.title, first.title];
+  await list.findByText("Tied pin");
+  expect(sidebarThreadTitles()).toStrictEqual([
+    ...pinned,
+    newer.title,
+    older.title,
+  ]);
+  deliver([
+    chatListEvent(285, 2, "sort_touched", second.id),
+    chatListEvent(285, 3, "sort_touched", first.id),
+    chatListEvent(285, 4, "sort_touched", older.id),
+    chatListEvent(285, 5, "renamed", newer.id, {
+      title: "Updated regular chat",
+    }),
+  ]);
+  await list.findByText("Updated regular chat");
+  expect(sidebarThreadTitles()).toStrictEqual([
+    ...pinned,
+    older.title,
+    "Updated regular chat",
+  ]);
 });

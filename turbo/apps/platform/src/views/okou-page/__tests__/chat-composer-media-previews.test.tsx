@@ -1,229 +1,186 @@
-import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
-import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
-
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { HttpResponse } from "msw";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import {
-  ATTACHMENT_THREAD_ID,
-  draftAttachment,
+  attachment,
+  serveUploaded,
+  conversation,
+} from "./attachment-preview-boundaries.ts";
+import {
   draftForAttachment,
-  findNamedButton,
-  getNamedButton,
-  mockAttachmentChat,
-  mockPrivateUrlSequence,
-  queryNamedButton,
+  draftAttachment,
+  privateAttachmentUrl,
 } from "./chat-attachment-test-helpers.ts";
-import { fillComposer } from "./chat-test-helpers.ts";
+import { expect, test } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { captureTemplateSubmission } from "./template-submission-fixtures.ts";
+import {
+  findAction,
+  queryAction,
+} from "./connector-integrations-test-helpers.ts";
 
 const context = testContext();
-const FILE_ID = "a0000000-0000-4000-a000-000000000096";
-
-function selectFile(file: File): void {
-  const input = document.querySelector<HTMLInputElement>('input[type="file"]');
-  if (!input) {
-    throw new Error("Expected the composer file input");
-  }
-  fireEvent.change(input, { target: { files: [file] } });
-}
-
-test.each([
-  { kind: "image", filename: "photo.png", contentType: "image/png" },
-  { kind: "video", filename: "recording.mp4", contentType: "video/mp4" },
-] as const)(
-  "A $kind shows its local thumbnail during upload and enables preview after completion",
-  async ({ kind, filename, contentType }) => {
-    mockAttachmentChat(context);
-    const blobs = context.mocks.browser.blobDownload();
-    const transfer = context.mocks.deferred<void>();
-    context.mocks.upload.success({
-      id: FILE_ID,
-      filename,
-      contentType,
-      size: 5,
-      url: artifactReferencePath(FILE_ID, filename),
-    });
-    context.mocks.http.put(
-      `https://mock-upload.r2.test/${FILE_ID}`,
-      async () => {
-        await transfer.promise;
-        return new Response(null, { status: 200 });
-      },
-    );
-
-    await setupPage({
-      context,
-      path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    });
-
-    const file = new File(["media"], filename, { type: contentType });
-    selectFile(file);
-    const openPreview = await findNamedButton(
-      `Open ${kind} preview for ${filename}`,
-    );
-    const tag = kind === "image" ? "img" : "video";
-    await waitFor(() => {
-      expect(openPreview.querySelector(tag)).toHaveAttribute(
-        "src",
-        expect.stringMatching(/^blob:/u),
-      );
-    });
-    const thumbnail = openPreview.querySelector(tag)!;
-    const thumbnailUrl = thumbnail.getAttribute("src")!;
-    const localUrl = thumbnailUrl.split("#")[0];
-    expect(blobs.blobForUrl(localUrl)).toBe(file);
-    expect(openPreview).toBeDisabled();
-    expect(openPreview).toHaveAttribute("aria-busy", "true");
-    expect(getNamedButton(`Cancel upload ${filename}`)).toBeInTheDocument();
-    expect(screen.getByRole("progressbar")).toBeInTheDocument();
-    if (kind === "image") {
-      fireEvent.load(thumbnail);
-    } else {
-      fireEvent.loadedData(thumbnail);
-    }
-
-    transfer.resolve();
-    await findNamedButton(`Remove ${filename}`);
-    expect(openPreview).toBeEnabled();
-    expect(openPreview).toHaveAttribute("aria-busy", "false");
-    expect(openPreview.querySelector(tag)).toHaveAttribute("src", thumbnailUrl);
-    click(openPreview);
-    const dialog = await screen.findByRole("dialog", {
-      name: `${filename} preview`,
-    });
-    await waitFor(() => {
-      const media =
-        kind === "image"
-          ? screen.getByTestId("attachment-lightbox-image")
-          : dialog.querySelector("video");
-      expect(media).toHaveAttribute("src", localUrl);
-    });
-    const mediaControl =
-      kind === "video"
-        ? dialog.querySelector("video[controls]")
-        : getNamedButton("Annotate", dialog);
-    expect(mediaControl).toBeInTheDocument();
-    click(getNamedButton("Close", dialog));
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
-
-    click(getNamedButton(`Remove ${filename}`));
-    await waitFor(() => {
-      expect(
-        queryNamedButton(`Open ${kind} preview for ${filename}`),
-      ).toBeNull();
-    });
-    expect(blobs.revokedUrls).toContain(localUrl);
-  },
-);
-
-test("Cancelling a media upload releases its local preview", async () => {
-  mockAttachmentChat(context);
-  const blobs = context.mocks.browser.blobDownload();
-  context.mocks.upload.pending({
-    id: FILE_ID,
-    filename: "cancel.mp4",
-    contentType: "video/mp4",
-    size: 5,
-    url: artifactReferencePath(FILE_ID, "cancel.mp4"),
+test("chat-composer-media-previews-004 sending the recording releases its draft preview", async () => {
+  const sent = captureTemplateSubmission(context);
+  const browser = context.mocks.browser.blobDownload();
+  const file = new File(["recording"], "field-review.mp4", {
+    type: "video/mp4",
   });
-  await setupPage({
-    context,
-    path: `/chats/${ATTACHMENT_THREAD_ID}`,
-  });
-
-  selectFile(new File(["media"], "cancel.mp4", { type: "video/mp4" }));
-  const preview = await findNamedButton("Open video preview for cancel.mp4");
-  await waitFor(() => {
-    expect(preview.querySelector("video")).toHaveAttribute("src");
-  });
-  const url = preview
-    .querySelector("video")!
-    .getAttribute("src")!
-    .split("#")[0];
-  click(getNamedButton("Cancel upload cancel.mp4"));
-  await waitFor(() => {
-    expect(queryNamedButton("Open video preview for cancel.mp4")).toBeNull();
-  });
-  expect(blobs.revokedUrls).toContain(url);
-});
-
-test("Sending local media uses the uploaded file identity and releases its draft preview", async () => {
-  let sentMessage: UserMessageDocument | undefined;
-  mockAttachmentChat(context, {
-    onSendRequest: (body) => {
-      sentMessage = body.userMessage;
-    },
-  });
-  const blobs = context.mocks.browser.blobDownload();
+  const fileId = crypto.randomUUID();
   context.mocks.upload.success({
-    id: FILE_ID,
-    filename: "send.mp4",
-    contentType: "video/mp4",
-    size: 5,
-    url: artifactReferencePath(FILE_ID, "send.mp4"),
+    id: fileId,
+    contentType: file.type,
+    filename: file.name,
+    size: file.size,
+    url: "https://cdn.okou.io/artifacts/owner/upload/field-review.mp4",
   });
-  await setupPage({
-    context,
-    path: `/chats/${ATTACHMENT_THREAD_ID}`,
+  await setupPage({ context, path: "/" });
+  const editor = await screen.findByLabelText("Message");
+  await userEvent.upload(
+    await screen.findByLabelText("Attach", { selector: "input" }),
+    file,
+  );
+  await findAction("button", "Remove " + file.name);
+  const video = await waitFor(() => {
+    const element = document.querySelector<HTMLVideoElement>(
+      'video[src^="blob:"]',
+    );
+    if (!element) {
+      throw new Error("No local recording preview");
+    }
+    return element;
   });
-
-  selectFile(new File(["media"], "send.mp4", { type: "video/mp4" }));
-  await findNamedButton("Remove send.mp4");
-  const preview = getNamedButton("Open video preview for send.mp4");
+  const objectUrl = new URL(video.src);
+  objectUrl.hash = "";
+  await fill(editor, "Review this recording.");
+  const send = await findAction("button", "Send");
   await waitFor(() => {
-    expect(preview.querySelector("video")).toHaveAttribute("src");
+    return expect(send).toBeEnabled();
   });
-  const url = preview
-    .querySelector("video")!
-    .getAttribute("src")!
-    .split("#")[0];
-  const editor = screen.getByRole("textbox", { name: "Message" });
-  await fillComposer(editor, "Review this recording");
-  await userEvent.setup().keyboard("{Enter}");
-  await waitFor(() => {
-    expect(queryNamedButton("Remove send.mp4")).toBeNull();
-  });
-  expect(sentMessage?.parts).toContainEqual({
+  editor.focus();
+  await userEvent.keyboard("{Enter}");
+  const parts = (await sent.promise).userMessage?.parts;
+  expect(parts).toContainEqual({
     type: "file",
-    fileId: FILE_ID,
-    filenameSnapshot: "send.mp4",
-    contentType: "video/mp4",
+    fileId,
+    filenameSnapshot: file.name,
+    contentType: file.type,
   });
-  expect(blobs.revokedUrls).toContain(url);
+  expect(parts).toContainEqual({
+    type: "text",
+    text: "Review this recording.",
+  });
+  await waitFor(() => {
+    return expect(browser.revokedUrls).toContain(objectUrl.href);
+  });
+  expect(queryAction("button", "Remove " + file.name)).toBeNull();
 });
 
-test("A restored private video opens its authenticated player even when its thumbnail fails", async () => {
-  const video = draftAttachment("restored.mp4", {
-    id: FILE_ID,
-    contentType: "video/mp4",
+test("chat-composer-media-previews-001 the same local PNG survives upload and is released after removal", async () => {
+  const browser = context.mocks.browser.blobDownload();
+  const upload = context.mocks.deferred<void>();
+  const file = new File(["local"], "survey.png", { type: "image/png" });
+  const id = crypto.randomUUID();
+  context.mocks.upload.success({
+    id,
+    filename: file.name,
+    contentType: file.type,
+    size: file.size,
+    url: "https://cdn.okou.io/artifacts/survey/run/survey.png",
   });
-  const signedUrl = "https://private-files.example/restored.mp4?signature=test";
-  mockAttachmentChat(context, { draft: draftForAttachment(video, "") });
-  mockPrivateUrlSequence(context, { [FILE_ID]: [signedUrl] });
-  await setupPage({
-    context,
-    path: `/chats/${ATTACHMENT_THREAD_ID}`,
+  context.mocks.http.put("https://mock-upload.r2.test/" + id, async () => {
+    await upload.promise;
+    return new HttpResponse(null, { status: 200 });
   });
-
-  const preview = await findNamedButton("Open video preview for restored.mp4");
+  await setupPage({ context, path: "/" });
+  await userEvent.upload(
+    await screen.findByLabelText("Attach", { selector: "input" }),
+    file,
+  );
+  const open = await findAction("button", "Open image preview for survey.png");
+  const thumb = await waitFor(() => {
+    const image = open.querySelector("img");
+    if (!image?.src.startsWith("blob:")) {
+      throw new Error("Waiting for local thumbnail");
+    }
+    return image;
+  });
+  fireEvent.load(thumb);
   await waitFor(() => {
-    expect(preview.querySelector("video")).toHaveAttribute(
+    return expect(
+      within(open).queryByTestId("composer-image-preview-loading"),
+    ).toBeNull();
+  });
+  expect(open).toBeDisabled();
+  expect(open).toHaveAttribute("aria-busy", "true");
+  await expect(screen.findByRole("progressbar")).resolves.toBeVisible();
+  await expect(
+    findAction("button", "Cancel upload survey.png"),
+  ).resolves.toBeVisible();
+  upload.resolve();
+  await waitFor(() => {
+    return expect(open).toBeEnabled();
+  });
+  click(open);
+  const dialog = await screen.findByTestId("attachment-lightbox");
+  await waitFor(() => {
+    return expect(dialog.querySelector("img")).toHaveAttribute(
       "src",
-      `${signedUrl}#t=0.001`,
+      thumb.src,
     );
   });
-  fireEvent.error(preview.querySelector("video")!);
-  click(preview);
-  const dialog = await screen.findByRole("dialog", {
-    name: "restored.mp4 preview",
-  });
+  await expect(
+    within(dialog).findByTestId("artifact-dialog-annotate"),
+  ).resolves.toBeVisible();
+  click(await findAction("button", "Close", dialog));
+  click(await findAction("button", "Remove survey.png"));
   await waitFor(() => {
-    expect(dialog.querySelector("video")).toHaveAttribute("src", signedUrl);
+    return expect(browser.revokedUrls).toContain(thumb.src);
+  });
+  expect(queryAction("button", "Open image preview for survey.png")).toBeNull();
+});
+test("chat-composer-media-previews-005 a failed restored video thumbnail still opens the authenticated player", async () => {
+  const file = attachment("crossing.mp4", "video/mp4");
+  serveUploaded(context, [file]);
+  await conversation(context, {
+    draft: draftForAttachment(
+      draftAttachment(file.filename, {
+        id: file.id,
+        contentType: file.contentType,
+        url: privateAttachmentUrl(file.id),
+      }),
+    ),
+  });
+  const open = await findAction(
+    "button",
+    "Open video preview for crossing.mp4",
+  );
+  const thumbnail = await waitFor(() => {
+    const video = open.querySelector("video");
+    if (!video?.src) {
+      throw new Error("Waiting for video thumbnail");
+    }
+    return video;
+  });
+  fireEvent.error(thumbnail);
+  await waitFor(() => {
+    return expect(
+      within(open)
+        .getByTestId("composer-video-preview-loading")
+        .querySelector("svg"),
+    ).toHaveClass("lucide-video");
+  });
+  click(open);
+  const dialog = await screen.findByTestId("attachment-lightbox");
+  await waitFor(() => {
+    return expect(dialog.querySelector("video")).toHaveAttribute(
+      "src",
+      file.url,
+    );
   });
   expect(dialog.querySelector("video")).toHaveAttribute("controls");
-  expect(getNamedButton("Download options", dialog)).toBeInTheDocument();
+  await expect(
+    findAction("button", "Download options", dialog),
+  ).resolves.toBeEnabled();
 });

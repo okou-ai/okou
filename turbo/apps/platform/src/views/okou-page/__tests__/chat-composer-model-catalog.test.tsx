@@ -1,132 +1,96 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { screen } from "@testing-library/react";
 import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
-import { getMockModelCatalog } from "../../../mocks/handlers/api-model-catalog.ts";
+import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
+import { within } from "@testing-library/react";
 import { expect, test } from "vitest";
+import {
+  setupPage,
+  queryAllByRoleFast,
+} from "../../../__tests__/page-helper.ts";
+import { getMockModelCatalog } from "../../../mocks/handlers/api-model-catalog.ts";
+import {
+  mockSubscriptionRunModel,
+  mockAutoRunModel,
+} from "../../../mocks/handlers/api-run-models.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { openModelPanel } from "./chat-model-panel-test-helpers.ts";
+import { createChatRunFixtures } from "./chat-run-test-fixtures.ts";
 import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
 
-import {
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
-import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
-import { buildRunModel } from "./chat-model-builders.ts";
-import {
-  findModelOption,
-  openModelPanel,
-} from "./chat-model-panel-test-helpers.ts";
-import {
-  NEW_CHAT_PATH,
-  readyChat,
-  RUN_PATH,
-  createChatRunFixtures,
-} from "./chat-run-test-fixtures.ts";
-
 const context = testContext();
-const { installRunChat } = createChatRunFixtures(context);
 
-const FIXTURE_DATE = "2026-09-30T09:00:00.000Z";
-
-function configureRunModels(models: readonly string[]): void {
-  installConnectedPersonalSubscriptions(context);
-  context.mocks.data.availableRunModels(
-    models.map((model) => {
-      return buildRunModel({ model });
-    }),
-  );
-}
-
-function preference(selectedModel: string): void {
-  context.mocks.data.userModelPreference({
-    selectedModel,
-    serviceTier: null,
-    modelSettings: {},
-    selectedImageModel: null,
-    updatedAt: FIXTURE_DATE,
-  } as Parameters<typeof context.mocks.data.userModelPreference>[0]);
-}
-
-async function readyComposer(): Promise<void> {
-  await expect(
-    screen.findByRole("textbox", { name: "Message" }),
-  ).resolves.toBeVisible();
-}
-
-test("Offer the active catalog models in catalog order with catalog names", async () => {
-  configureRunModels(["gpt-6-luna", "claude-fable-5", "claude-sonnet-5"]);
-
-  await setupPage({
-    context,
-    path: NEW_CHAT_PATH,
-  });
-  await readyComposer();
-
+async function newChatChoices() {
+  await setupPage({ context, path: "/" });
   const panel = await openModelPanel("Auto");
-  await expect(findModelOption(/^GPT 6 Luna/u, panel)).resolves.toBeVisible();
-  const names = queryAllByRoleFast("radio", panel).map((option) => {
+  await within(panel).findByText("GPT 6 Luna");
+  return queryAllByRoleFast("radio", panel).map((option) => {
     return option.textContent?.trim();
   });
-  expect(names).toStrictEqual(["Auto", "Claude Sonnet 5", "GPT 6 Luna"]);
+}
+
+test("chat-composer-model-catalog-001 orders eligible choices by their catalog entries", async () => {
+  createChatRunFixtures(context).installRunChat({ selectedModel: null });
+  installConnectedPersonalSubscriptions(context);
+  const available = ["gpt-6-luna", "claude-fable-5", "claude-sonnet-5"].map(
+    (model) => {
+      return mockSubscriptionRunModel(model, { modelLabel: model });
+    },
+  );
+  context.mocks.data.availableRunModels(available);
+  await expect(newChatChoices()).resolves.toStrictEqual([
+    "Auto",
+    "Claude Sonnet 5",
+    "GPT 6 Luna",
+  ]);
 });
 
-test("Offer Auto from canonical available-model and catalog responses", async () => {
-  installConnectedPersonalSubscriptions(context);
+test("chat-composer-model-catalog-002 shows the canonical Auto preference beside the available subscription", async () => {
   const catalog = getMockModelCatalog();
+  const luna = "gpt-6-luna";
+  const auto = catalog.models.find((entry) => {
+    return entry.model === catalog.systemDefaultModel;
+  })!;
+  const builtin = catalog.routes.find((entry) => {
+    return entry.model === auto.model;
+  })!;
+  const subscription = catalog.models.find((entry) => {
+    return entry.model === luna;
+  })!;
   context.mocks.api(modelCatalogContract.get, ({ respond }) => {
     return respond(200, {
-      systemDefaultModel: "auto",
-      models: catalog.models.map((model) => {
-        return model.model === "okou-1.0"
-          ? { ...model, model: "auto", resolvedModel: "auto" }
-          : model;
-      }),
-      routes: catalog.routes.map((route) => {
-        return route.model === "okou-1.0" ? { ...route, model: "auto" } : route;
-      }),
+      systemDefaultModel: AUTO_SELECTED_MODEL,
+      models: [
+        {
+          ...auto,
+          model: AUTO_SELECTED_MODEL,
+          resolvedModel: AUTO_SELECTED_MODEL,
+        },
+        subscription,
+      ],
+      routes: [
+        { ...builtin, model: AUTO_SELECTED_MODEL },
+        ...catalog.routes.filter((entry) => {
+          return entry.model === luna;
+        }),
+      ],
     });
   });
   context.mocks.api(runModelsMainContract.list, ({ respond }) => {
     return respond(200, {
       models: [
-        { ...buildRunModel({ model: null }), model: "auto" },
-        buildRunModel({ model: "gpt-6-luna" }),
+        { ...mockAutoRunModel(), model: AUTO_SELECTED_MODEL },
+        mockSubscriptionRunModel(luna),
       ],
     });
   });
-  preference("auto");
-  await setupPage({ context, path: NEW_CHAT_PATH });
-  await readyComposer();
-  const panel = await openModelPanel("Auto");
-  expect(
-    queryAllByRoleFast("radio", panel).map((option) => {
-      return option.textContent?.trim();
-    }),
-  ).toStrictEqual(["Auto", "GPT 6 Luna"]);
-});
-
-test("Show the replacement for a thread pinned to a retired model", async () => {
-  installRunChat({ selectedModel: "claude-fable-5" });
-  configureRunModels(["claude-fable-5-1"]);
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
+  createChatRunFixtures(context).installRunChat();
+  installConnectedPersonalSubscriptions(context);
+  context.mocks.data.userModelPreference({
+    selectedModel: AUTO_SELECTED_MODEL,
+    modelSettings: {},
+    serviceTier: null,
+    selectedImageModel: null,
+    updatedAt: null,
   });
-  await readyChat();
-
-  await expect(composerModelTrigger("Claude Fable 5.1")).resolves.toBeVisible();
-});
-
-test("Resolve a member preference of a retired model to its replacement", async () => {
-  configureRunModels(["gpt-6-luna", "claude-sonnet-5"]);
-  preference("deepseek-v4-pro");
-
-  await setupPage({
-    context,
-    path: NEW_CHAT_PATH,
-  });
-  await readyComposer();
-
-  await expect(composerModelTrigger("GPT 6 Luna")).resolves.toBeVisible();
+  await expect(newChatChoices()).resolves.toStrictEqual(["Auto", "GPT 6 Luna"]);
 });

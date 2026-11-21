@@ -1,50 +1,40 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
+import {
+  chatRemoteAccessContract,
+  type RemoteHostDefault,
+} from "@okouai/api-contracts/contracts/chat-remote-access";
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
-import { act, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
-import { findFastControl } from "./chat-message-experience-test-helpers.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  SCOUT_THREAD_ID,
   createComposerConnectorHelpers,
+  SCOUT_THREAD_ID,
 } from "./chat-composer-connectors-test-helpers.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
+import { remoteId } from "./connectors-remote-control-test-helpers.ts";
 
 const context = testContext();
 const { installComposerConnectorFixture } =
   createComposerConnectorHelpers(context);
 
-test("Reopening the composer refreshes a renamed SSH host while preserving default access", async () => {
-  const orgId = "org_cloudflare_chat";
-  const privateHost = {
-    connectionId: "b0000000-0000-4000-8000-000000000001",
-    displayName: "Private server",
-    defaultEnabled: true,
-  };
-  const directHost = {
-    connectionId: "b0000000-0000-4000-8000-000000000002",
-    displayName: "Direct server",
-    defaultEnabled: false,
-  };
-  let currentPrivateHost = privateHost;
-  installComposerConnectorFixture({ threadId: SCOUT_THREAD_ID });
-  context.mocks.data.org({ id: orgId, name: "Engineering", role: "member" });
+/** The owner's SSH hosts and their chat defaults as the API reports them. */
+function mockSshDefaults(hosts: { current: RemoteHostDefault[] }): void {
   context.mocks.api(remotesContract.overview, ({ respond }) => {
     return respond(200, {
       computerUseHosts: [],
       cloudBrowserAvailable: true,
       cloudBrowserEnabledByDefault: true,
-      sshHosts: [currentPrivateHost, directHost],
+      sshHosts: hosts.current,
       vncHosts: [],
     });
   });
   context.mocks.api(
     chatRemoteAccessContract.listThreadAccess,
     ({ respond }) => {
-      const hosts = [currentPrivateHost, directHost];
       return respond(200, {
-        ssh: hosts.map((host) => {
+        ssh: hosts.current.map((host) => {
           return {
             ...host,
             overrideEnabled: null,
@@ -56,60 +46,68 @@ test("Reopening the composer refreshes a renamed SSH host while preserving defau
       });
     },
   );
-  await setupPage({
-    context,
-    path: `/chats/${SCOUT_THREAD_ID}`,
-    auth: {
-      user: { id: "chat-owner", fullName: "Chat Owner" },
-      organization: {
-        activeOrg: { id: orgId, name: "Engineering" },
-        memberships: [{ id: orgId }],
+}
+
+async function openRemoteAccess(): Promise<HTMLElement> {
+  click(await findFastControl("button", "Connectors"));
+  click(await findFastControl("button", /^Remote access/));
+  return await screen.findByRole("dialog", { name: "Remote access" });
+}
+
+test("Reopening the composer refreshes a renamed SSH host while preserving default access", async () => {
+  installComposerConnectorFixture({ threadId: SCOUT_THREAD_ID });
+  const hosts = {
+    current: [
+      {
+        connectionId: remoteId("b", 1),
+        displayName: "Private server",
+        defaultEnabled: true,
       },
-    },
-    featureSwitches: {},
-  });
-  const menuTrigger = await findFastControl("button", "Connectors");
-  click(menuTrigger);
-  const remoteAccess = await screen.findByText("Remote access");
-  await waitFor(() => {
-    expect(remoteAccess.closest("button")).toHaveTextContent("1 enabled");
-  });
-  click(remoteAccess);
+      {
+        connectionId: remoteId("b", 2),
+        displayName: "Direct server",
+        defaultEnabled: false,
+      },
+    ],
+  };
+  mockSshDefaults(hosts);
+  await setupPage({ context, path: `/chats/${SCOUT_THREAD_ID}` });
+  click(await findFastControl("button", "Connectors"));
   await expect(
-    screen.findByRole("combobox", { name: "SSH Private server" }),
-  ).resolves.toHaveTextContent("Default (On)");
+    findFastControl("button", "Remote access1 enabled"),
+  ).resolves.toBeInTheDocument();
+  click(await findFastControl("button", /^Remote access/));
+  const first = await screen.findByRole("dialog", { name: "Remote access" });
   expect(
-    screen.getByRole("combobox", { name: "SSH Direct server" }),
-  ).toHaveTextContent("Default (Off)");
-  const settings = screen.getByRole("dialog", { name: "Remote access" });
-  click(await findFastControl("button", "Close", settings));
+    within(first).getByRole("combobox", { name: "SSH Private server" }),
+  ).toHaveTextContent("Default (On)");
+  click(await findFastControl("button", "Close", first));
   await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: "Remote access" })).toBeNull();
+    expect(first).not.toBeInTheDocument();
   });
 
-  // A fresh settings session reads the authoritative renamed host.
-  currentPrivateHost = {
-    ...privateHost,
-    displayName: "Renamed private server",
-  };
-  await act(() => {
-    return context.mocks.ably.trigger("cloudflare-access:changed", { orgId });
+  hosts.current = [
+    { ...hosts.current[0], displayName: "Renamed private server" },
+    hosts.current[1],
+  ];
+  context.mocks.ably.trigger("cloudflare-access:changed", {
+    orgId: "org_default",
   });
-  click(menuTrigger);
-  const refreshedRemoteAccess = await screen.findByText("Remote access");
-  await waitFor(() => {
-    expect(refreshedRemoteAccess.closest("button")).toHaveTextContent(
-      "1 enabled",
-    );
-  });
-  click(refreshedRemoteAccess);
+
+  const reopened = await openRemoteAccess();
+
   await expect(
-    screen.findByRole("combobox", { name: "SSH Renamed private server" }),
+    within(reopened).findByRole("combobox", {
+      name: "SSH Renamed private server",
+    }),
   ).resolves.toHaveTextContent("Default (On)");
   expect(
-    screen.getByRole("combobox", { name: "SSH Direct server" }),
+    within(reopened).getByRole("combobox", { name: "SSH Direct server" }),
   ).toHaveTextContent("Default (Off)");
   expect(
-    screen.queryByRole("combobox", { name: "SSH Private server" }),
-  ).toBeNull();
+    within(reopened).queryByRole("combobox", { name: "SSH Private server" }),
+  ).not.toBeInTheDocument();
+  expect(
+    within(reopened).queryByText("Private server"),
+  ).not.toBeInTheDocument();
 });

@@ -1,404 +1,207 @@
+import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import userEvent from "@testing-library/user-event";
-import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import {
-  artifactReferencePath,
-  artifactReferencesContract,
-} from "@okouai/api-contracts/contracts/artifact-references";
-import {
-  chatThreadArtifactsContract,
-  type ChatThreadArtifactFile,
-} from "@okouai/api-contracts/contracts/chat-threads";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { mockChatLifecycle } from "./chat-test-helpers.ts";
-import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
+import {
+  ATTACHMENT_THREAD_ID,
+  findNamedLink,
+  getNamedButton,
+  mockAttachmentChat,
+  queryNamedButton,
+} from "./chat-attachment-test-helpers.ts";
 
 const context = testContext();
-const THREAD_ID = "b0000000-0000-4000-a000-000000000050";
 
-function artifactFile(
-  url: string,
-  overrides: Partial<ChatThreadArtifactFile>,
-): ChatThreadArtifactFile {
-  return {
-    id: "artifact-image",
-    filename: "image.png",
-    contentType: "image/png",
-    size: 1024,
-    url,
-    createdAt: "2026-03-10T00:00:01Z",
-    googleDriveSync: { status: "not_synced" },
-    ...overrides,
-  };
-}
-
-function queryButtonByName(
-  name: string,
-  container: ParentNode = document.body,
-): HTMLElement | undefined {
-  return queryAllByRoleFast("button", container).find((candidate) => {
-    return (
-      candidate.textContent?.trim() === name ||
-      candidate.getAttribute("aria-label") === name
-    );
+function twoImageChat() {
+  const names = ["quay.png", "harbor.png"];
+  mockAttachmentChat(context, {
+    chatEvents: [
+      {
+        role: "user",
+        content: "Inspect both stations",
+        createdAt: "2026-03-10T01:00:00Z",
+        fileParts: names.map((filename) => {
+          return {
+            type: "file",
+            filenameSnapshot: filename,
+            fileId: filename,
+            contentType: "image/png",
+          };
+        }),
+      },
+    ],
   });
 }
 
-function getButtonByName(
-  name: string,
-  container: ParentNode = document.body,
-): HTMLElement {
-  const button = queryButtonByName(name, container);
-  if (!button) {
-    throw new Error(`Expected button named "${name}"`);
-  }
-  return button;
-}
-
-function wheelImage(image: HTMLElement, init: WheelEventInit): void {
-  const event = new WheelEvent("wheel", {
-    ...init,
-    bubbles: true,
-    cancelable: true,
+async function openFirstPhoto() {
+  await setupPage({
+    context,
+    path: "/chats/" + ATTACHMENT_THREAD_ID,
+    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: false },
   });
-  // Happy-dom's WheelEvent omits the MouseEvent fields emitted by browsers.
-  Object.defineProperties(event, {
-    ctrlKey: { value: init.ctrlKey ?? false },
-    metaKey: { value: init.metaKey ?? false },
-    clientX: { value: 0 },
-    clientY: { value: 0 },
-  });
-  fireEvent(image, event);
+  click(await findNamedLink("Preview quay.png"));
+  return await screen.findByRole("dialog");
 }
 
-function getLightboxImage(): HTMLImageElement {
-  const image = screen.getByTestId("attachment-lightbox-image");
-  if (!(image instanceof HTMLImageElement)) {
-    throw new Error("Expected the lightbox image");
-  }
-  return image;
-}
-
-function setImageDimensions(
-  image: HTMLImageElement,
-  naturalWidth: number,
-  naturalHeight: number,
-): void {
-  Object.defineProperties(image, {
-    naturalHeight: { configurable: true, value: naturalHeight },
-    naturalWidth: { configurable: true, value: naturalWidth },
-  });
-}
-
-async function finishLightboxImageDecode(
-  image: HTMLImageElement,
-  resolveDecode: () => void,
-): Promise<void> {
-  resolveDecode();
-  await waitFor(() => {
-    expect(image).toBeVisible();
-  });
-}
-
-async function openImageViewer(deferFirstDecode: boolean) {
-  const firstImageUrl =
-    "https://cdn.vm7.io/artifacts/test/body-image-split-navigation/first.png";
-  const secondImageUrl =
-    "https://cdn.vm7.io/artifacts/test/body-image-split-navigation/second.png";
-  const secondImageId = "f0000000-0000-4000-a000-000000000050";
-  const secondImageReference = artifactReferencePath(
-    secondImageId,
-    "second.png",
-  );
-  const secondUrlReady = context.mocks.deferred<void>();
-  const firstDecode = context.mocks.deferred<void>();
-  const secondDecode = context.mocks.deferred<void>();
-  context.mocks.api(artifactReferencesContract.resolve, async ({ respond }) => {
-    await secondUrlReady.promise;
+test("artifact-image-viewer-001 waits for decoded pixels despite knowing the first photo's size", async () => {
+  twoImageChat();
+  context.mocks.api(webFilesContract.fileUrl, ({ query, respond }) => {
+    const url = "https://media.example.test/stations/" + query.file_id;
     return respond(200, {
-      downloadUrl: new URL("?download=1", secondImageUrl).href,
-      url: secondImageUrl,
-      filename: "second.png",
-      contentType: "image/png",
-      expiresAt: "2026-09-21T00:00:00.000Z",
-      target: { kind: "file", id: secondImageId },
+      url,
+      downloadUrl: url,
+      expiresAt: "2099-01-01T00:00:00Z",
+      publicUrl: null,
+    });
+  });
+  const decoded = context.mocks.deferred<void>();
+  vi.spyOn(HTMLImageElement.prototype, "decode").mockImplementation(function (
+    this: HTMLImageElement,
+  ) {
+    return this.alt === "quay.png" && this.closest('[role="dialog"]')
+      ? decoded.promise
+      : Promise.resolve();
+  });
+  const viewer = await openFirstPhoto();
+  const picture = await within(viewer).findByAltText("quay.png");
+  Object.defineProperties(picture, {
+    naturalWidth: { configurable: true, value: 1280 },
+    naturalHeight: { configurable: true, value: 960 },
+  });
+  fireEvent.load(picture);
+  expect(picture).not.toBeVisible();
+  const loading = within(viewer).getByRole("status", {
+    name: "Loading artifacts",
+  });
+  expect(loading).toBeVisible();
+  decoded.resolve();
+  await waitFor(() => {
+    return expect(picture).toBeVisible();
+  });
+  expect(loading).not.toBeInTheDocument();
+  expect(queryNamedButton("Previous image artifact", viewer)).toBeNull();
+  expect(getNamedButton("Next image artifact", viewer)).toBeEnabled();
+});
+
+test("artifact-image-viewer-002 keeps keyboard focus through the next photo's URL and decoding", async () => {
+  twoImageChat();
+  const secondUrl = context.mocks.deferred<void>();
+  const secondDecode = context.mocks.deferred<void>();
+  context.mocks.api(webFilesContract.fileUrl, async ({ query, respond }) => {
+    if (query.file_id === "harbor.png") {
+      await secondUrl.promise;
+    }
+    const url = "https://media.example.test/photos/" + query.file_id;
+    return respond(200, {
+      url,
+      downloadUrl: url,
+      expiresAt: "2099-01-01T00:00:00Z",
+      publicUrl: null,
     });
   });
   vi.spyOn(HTMLImageElement.prototype, "decode").mockImplementation(function (
     this: HTMLImageElement,
   ) {
-    if (this.src === firstImageUrl) {
-      return deferFirstDecode ? firstDecode.promise : Promise.resolve();
-    }
-    if (this.src === secondImageUrl) {
-      return secondDecode.promise;
-    }
-    return Promise.resolve();
+    return this.alt === "harbor.png" && this.closest('[role="dialog"]')
+      ? secondDecode.promise
+      : Promise.resolve();
   });
-  const runId = "run-body-image-split-navigation";
-  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
+  const viewer = await openFirstPhoto();
+  const first = await within(viewer).findByAltText("quay.png");
+  await waitFor(() => {
+    return expect(first).toBeVisible();
+  });
+  const user = userEvent.setup({ delay: null });
+  await user.click(
+    within(viewer).getByRole("group", { name: "quay.png preview" }),
+  );
+  await user.keyboard("{ArrowRight}");
+  const next = await within(viewer).findByRole("group", {
+    name: "harbor.png preview",
+  });
+  expect(next).toHaveFocus();
+  expect(within(viewer).queryByAltText("quay.png")).not.toBeInTheDocument();
+  expect(
+    within(next).getByRole("status", { name: "Loading artifacts" }),
+  ).toBeVisible();
+  secondUrl.resolve();
+  const photo = await within(next).findByAltText("harbor.png");
+  expect(photo).toHaveAttribute(
+    "src",
+    "https://media.example.test/photos/harbor.png",
+  );
+  expect(photo).not.toBeVisible();
+  secondDecode.resolve();
+  await waitFor(() => {
+    return expect(photo).toBeVisible();
+  });
+  expect(within(next).queryByRole("status")).not.toBeInTheDocument();
+  expect(next).toHaveFocus();
+});
+
+test("artifact-image-viewer-003 applies continuous lightbox zoom for buttons and modified wheel gestures", async () => {
+  twoImageChat();
+  context.mocks.api(webFilesContract.fileUrl, ({ query, respond }) => {
+    const url = "https://media.example.test/photos/" + query.file_id;
     return respond(200, {
-      runs: [
-        {
-          runId,
-          files: [
-            artifactFile(firstImageUrl, {
-              id: "artifact-body-split-first-image",
-              filename: "first.png",
-            }),
-            artifactFile(secondImageReference, {
-              id: secondImageId,
-              filename: "second.png",
-            }),
-          ],
-        },
-      ],
+      url,
+      downloadUrl: url,
+      expiresAt: "2099-01-01T00:00:00Z",
+      publicUrl: null,
     });
   });
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(404, {
-      error: {
-        code: "BROWSER_NOT_FOUND",
-        message: "Managed browser not found",
-      },
+  const viewer = await openFirstPhoto();
+  const photo = await within(viewer).findByAltText("quay.png");
+  const zoom = within(viewer);
+  await expect(zoom.findByText("100%")).resolves.toBeInTheDocument();
+  const increase = getNamedButton("Zoom in", viewer);
+  const decrease = getNamedButton("Zoom out", viewer);
+  const reset = getNamedButton("Reset zoom", viewer);
+  click(increase);
+  expect(zoom.getByText("112%")).toBeInTheDocument();
+  click(decrease);
+  expect(zoom.getByText("100%")).toBeInTheDocument();
+  const wheel = (deltaY: number, opts: WheelEventInit = { ctrlKey: true }) => {
+    // Happy DOM lacks WheelEvent. Preserve the pointer modifiers and wheel units.
+    const event = new MouseEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      ...opts,
     });
-  });
-  mockChatLifecycle(context, {
-    threadId: THREAD_ID,
-    chatEvents: [
-      {
-        id: "msg-body-image-split-label",
-        role: "assistant",
-        content: "Generated images:",
-        runId,
-        runEventId: "event:0",
-        sequenceNumber: 0,
-        createdAt: "2026-03-10T00:00:00Z",
-      },
-      {
-        id: "msg-body-image-split-first",
-        role: "assistant",
-        content: `1. ![first.png](${firstImageUrl})`,
-        runId,
-        runEventId: "event:1",
-        sequenceNumber: 1,
-        createdAt: "2026-03-10T00:00:01Z",
-      },
-      {
-        id: "msg-body-image-split-second",
-        role: "assistant",
-        content: `2. ![second.png](${secondImageReference})`,
-        runId,
-        runEventId: "event:2",
-        sequenceNumber: 2,
-        createdAt: "2026-03-10T00:00:02Z",
-      },
-    ],
-  });
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-  const expandHistory = await waitFor(() => {
-    return getButtonByName("Expand work history");
-  });
-  click(expandHistory);
-  const firstImage = await screen.findByAltText("first.png");
-  const previewButton = firstImage.closest<HTMLElement>("button");
-  if (!previewButton) {
-    throw new Error("Expected the first generated image to open a preview");
-  }
-  fireEvent.load(firstImage);
-  click(previewButton);
-  await waitFor(() => {
-    const image = getLightboxImage();
-    expect(image).toHaveAttribute("alt", "first.png");
-    expect(image).toHaveAttribute("src", firstImageUrl);
-  });
-  const dialog = screen.getByRole("dialog", { name: "first.png preview" });
-  await waitFor(() => {
-    expect(
-      within(dialog).getByRole("group", { name: "first.png preview" }),
-    ).toHaveFocus();
-  });
-  const firstLightboxImage = getLightboxImage();
-  return {
-    dialog,
-    firstLightboxImage,
-    firstDecode,
-    secondUrlReady,
-    secondDecode,
-    secondImageUrl,
+    Object.defineProperties(event, {
+      deltaX: { value: 0 },
+      deltaY: { value: deltaY },
+      deltaMode: { value: opts.deltaMode ?? 0 },
+    });
+    fireEvent(photo, event);
   };
-}
-
-test("The image viewer waits for the preview image to decode", async () => {
-  const { firstLightboxImage, firstDecode } = await openImageViewer(true);
-  expect(firstLightboxImage).not.toBeVisible();
-  expect(
-    screen.getByRole("status", { name: "Loading artifacts" }),
-  ).toBeVisible();
-  setImageDimensions(firstLightboxImage, 1600, 900);
-  expect(firstLightboxImage).not.toBeVisible();
-  await finishLightboxImageDecode(firstLightboxImage, () => {
-    return firstDecode.resolve();
-  });
-  expect(
-    screen.queryByRole("status", { name: "Loading artifacts" }),
-  ).toBeNull();
-  expect(queryButtonByName("Previous image artifact")).toBeUndefined();
-  expect(getButtonByName("Next image artifact")).toBeEnabled();
+  wheel(-1);
+  expect(zoom.getByText("101%")).toBeInTheDocument();
+  for (let i = 1; i < 20; i++) {
+    wheel(-1);
+  }
+  expect(zoom.getByText("120%")).toBeInTheDocument();
+  for (const [delta, opts, level] of [
+    [-20, { ctrlKey: true }, "120%"],
+    [-16, { metaKey: true }, "115%"],
+    [-1, { ctrlKey: true, deltaMode: 1 }, "115%"],
+    [0, { ctrlKey: true }, "100%"],
+    [-20, {}, "100%"],
+  ] as const) {
+    click(reset);
+    wheel(delta, opts);
+    expect(zoom.getByText(level)).toBeInTheDocument();
+  }
+  wheel(2000);
+  expect(zoom.getByText("10%")).toBeInTheDocument();
+  expect(decrease).toBeDisabled();
+  wheel(-2000);
+  expect(increase).toBeDisabled();
+  expect(zoom.getByText("300%")).toBeInTheDocument();
+  click(reset);
+  expect(zoom.getByText("100%")).toBeInTheDocument();
 });
-
-test("The image viewer resolves and decodes the next image during keyboard navigation", async () => {
-  const {
-    dialog,
-    firstLightboxImage,
-    secondUrlReady,
-    secondDecode,
-    secondImageUrl,
-  } = await openImageViewer(false);
-  await waitFor(() => {
-    expect(firstLightboxImage).toBeVisible();
-  });
-  expect(getButtonByName("Next image artifact")).toBeEnabled();
-  await userEvent.setup({ delay: null }).keyboard("{ArrowRight}");
-  await waitFor(() => {
-    expect(
-      within(dialog).getByRole("status", { name: "Loading artifacts" }),
-    ).toBeVisible();
-  });
-  expect(firstLightboxImage).not.toBeInTheDocument();
-  expect(dialog).toHaveAccessibleName("second.png preview");
-  expect(within(dialog).getByRole("group")).toHaveFocus();
-  secondUrlReady.resolve();
-  await waitFor(() => {
-    const image = getLightboxImage();
-    expect(image).toHaveAttribute("src", secondImageUrl);
-  });
-  const secondLightboxImage = getLightboxImage();
-  expect(secondLightboxImage).not.toBeVisible();
-  expect(
-    screen.getByRole("status", { name: "Loading artifacts" }),
-  ).toBeVisible();
-  setImageDimensions(secondLightboxImage, 1200, 1200);
-  expect(secondLightboxImage).not.toBeVisible();
-  await finishLightboxImageDecode(secondLightboxImage, () => {
-    return secondDecode.resolve();
-  });
-  expect(within(dialog).getByRole("group")).toHaveFocus();
-  expect(
-    screen.queryByRole("status", { name: "Loading artifacts" }),
-  ).toBeNull();
-});
-
-test.each(["lightbox", "sidebar", "fullscreen"] as const)(
-  "Image gestures use the approved continuous zoom in the %s",
-  async (surface) => {
-    context.mocks.browser.matchMedia((query) => {
-      return (
-        query === SIDEBAR_DESKTOP_MEDIA_QUERY || query === "(min-width: 1280px)"
-      );
-    });
-    const { dialog } = await openImageViewer(false);
-    let preview = dialog;
-    if (surface !== "lightbox") {
-      click(getButtonByName("Open in split view", dialog));
-      preview = await screen.findByTestId("artifact-sidebar");
-      if (surface === "fullscreen") {
-        click(getButtonByName("Enter fullscreen", preview));
-        await waitFor(() => {
-          return getButtonByName("Exit fullscreen", preview);
-        });
-      }
-    }
-    const image = await within(preview).findByTestId(
-      surface === "lightbox"
-        ? "attachment-lightbox-image"
-        : "artifact-sidebar-body-image",
-    );
-    const zoom = await within(preview).findByTestId(
-      surface === "lightbox"
-        ? "artifact-dialog-image-zoom-level"
-        : "artifact-sidebar-image-zoom-level",
-    );
-    await waitFor(() => {
-      expect(image).toBeVisible();
-      expect(zoom).toHaveTextContent("100%");
-    });
-
-    // Buttons keep their existing discrete step, independently of gestures.
-    click(getButtonByName("Zoom in", preview));
-    await waitFor(() => {
-      expect(zoom).toHaveTextContent("112%");
-    });
-    click(getButtonByName("Zoom out", preview));
-    await waitFor(() => {
-      expect(zoom).toHaveTextContent("100%");
-    });
-
-    wheelImage(image, { ctrlKey: true, deltaY: -1 });
-    await waitFor(() => {
-      expect(zoom).toHaveTextContent("101%");
-    });
-    wheelImage(image, { ctrlKey: true, deltaY: 1 });
-    await waitFor(() => {
-      expect(zoom).toHaveTextContent("100%");
-    });
-
-    // Equal total movement must produce the same zoom despite event frequency.
-    for (let index = 0; index < 20; index++) {
-      wheelImage(image, { ctrlKey: true, deltaY: -1 });
-    }
-    await waitFor(() => {
-      expect(zoom).toHaveTextContent("120%");
-    });
-    click(getButtonByName("Reset zoom", preview));
-    wheelImage(image, { ctrlKey: true, deltaY: -20 });
-    await waitFor(() => {
-      expect(zoom).toHaveTextContent("120%");
-    });
-    wheelImage(image, { ctrlKey: true, deltaY: 20 });
-    await waitFor(() => {
-      expect(zoom).toHaveTextContent("100%");
-    });
-
-    // A line-mode event is normalized to the same 16-pixel movement.
-    wheelImage(image, { ctrlKey: true, deltaY: -16 });
-    await waitFor(() => {
-      expect(zoom).toHaveTextContent("115%");
-    });
-    click(getButtonByName("Reset zoom", preview));
-    wheelImage(image, { ctrlKey: true, deltaY: -1, deltaMode: 1 });
-    await waitFor(() => {
-      expect(zoom).toHaveTextContent("115%");
-    });
-    click(getButtonByName("Reset zoom", preview));
-
-    wheelImage(image, { ctrlKey: true, deltaY: 0 });
-    wheelImage(image, { deltaY: -20 });
-    expect(zoom).toHaveTextContent("100%");
-    wheelImage(image, { metaKey: true, deltaY: -16 });
-    await waitFor(() => {
-      expect(zoom).toHaveTextContent("115%");
-    });
-
-    wheelImage(image, { ctrlKey: true, deltaY: 100_000 });
-    await waitFor(() => {
-      expect(zoom).toHaveTextContent("10%");
-      expect(getButtonByName("Zoom out", preview)).toBeDisabled();
-    });
-    wheelImage(image, { ctrlKey: true, deltaY: -100_000 });
-    await waitFor(() => {
-      expect(getButtonByName("Zoom in", preview)).toBeDisabled();
-    });
-    click(getButtonByName("Reset zoom", preview));
-    await waitFor(() => {
-      expect(zoom).toHaveTextContent("100%");
-    });
-  },
-);

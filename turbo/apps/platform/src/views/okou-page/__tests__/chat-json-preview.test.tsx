@@ -1,109 +1,106 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  buttonNamed,
-  mockArtifactConversation,
-  NAVIGATION_ARTIFACT_THREAD_ID,
-} from "./chat-navigation-artifact-test-helpers.ts";
+  ATTACHMENT_THREAD_ID,
+  findNamedButton,
+  getNamedButton,
+  mockAttachmentChat,
+} from "./chat-attachment-test-helpers.ts";
 
 const context = testContext();
-const FILE_URL = "https://files.example.test/json-preview.json";
-
-async function openAttachment(options: {
-  readonly source: string;
-  readonly sidebar?: boolean;
-  readonly response?: ResponseInit;
-}) {
-  context.mocks.api(webFilesContract.fileUrl, ({ respond }) => {
+async function preview(filename: string, body: string, totalBytes?: number) {
+  const id = "export-" + filename;
+  const url = "https://files.example.org/private/" + filename;
+  context.mocks.api(webFilesContract.fileUrl, ({ query, respond }) => {
+    if (query.file_id !== id) {
+      return respond(404, {
+        error: { code: "FILE_NOT_FOUND", message: "Unknown export" },
+      });
+    }
     return respond(200, {
-      downloadUrl: new URL("?download=1", FILE_URL).href,
-      url: FILE_URL,
+      url,
+      downloadUrl: url + "?download=1",
+      expiresAt: "2099-01-01T00:00:00Z",
       publicUrl: null,
-      expiresAt: "2099-01-01T00:00:00.000Z",
     });
   });
-  context.mocks.http.get(FILE_URL, () => {
-    return HttpResponse.text(options.source, options.response);
+  context.mocks.http.get(url, () => {
+    return new HttpResponse(body, {
+      status: totalBytes === undefined ? 200 : 206,
+      headers: {
+        "Content-Type": "application/json",
+        ...(totalBytes === undefined
+          ? {}
+          : { "Content-Range": `bytes 0-${body.length - 1}/${totalBytes}` }),
+      },
+    });
   });
-  mockArtifactConversation(context, {
-    catalog: [],
+  mockAttachmentChat(context, {
     chatEvents: [
       {
-        id: "json-user-message",
-        createdAt: "2026-09-01T12:00:00.000Z",
         role: "user",
-        content: "Review this JSON",
-        fileParts: [
-          {
-            type: "file",
-            fileId: "json-upload-file",
-            filenameSnapshot: "review.json",
-            contentType: "application/json",
-          },
-        ],
-        runId: "json-upload-run",
-        seqId: 1,
-      },
-      {
-        id: "json-completed",
-        createdAt: "2026-09-01T12:00:01.000Z",
-        role: "assistant",
         content: null,
-        runId: "json-upload-run",
-        runLifecycleEvent: "completed",
-        seqId: 2,
+        createdAt: "2026-10-09T11:00:00Z",
+        userMessage: {
+          version: 1,
+          parts: [
+            { type: "text", text: "Inspect export" },
+            {
+              type: "file",
+              fileId: id,
+              filenameSnapshot: filename,
+              contentType: "application/json",
+            },
+          ],
+        },
       },
     ],
   });
   await setupPage({
     context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
-    featureSwitches: {
-      [FeatureSwitchKey.ArtifactSidebarPreview]: options.sidebar ?? true,
-    },
+    path: "/chats/" + ATTACHMENT_THREAD_ID,
+    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: true },
   });
-  click(await screen.findByLabelText("Open json preview for review.json"));
-  return screen.findByTestId(
-    options.sidebar === false ? "attachment-lightbox" : "artifact-sidebar",
-  );
+  const turn = (await screen.findByText("Inspect export")).closest<HTMLElement>(
+    "[data-role=user]",
+  )!;
+  click(within(turn).getByText(filename));
+  const panel = await screen.findByTestId("artifact-sidebar");
+  return await within(panel).findByTestId("json-preview");
 }
 
-test.each([true, false])(
-  "A private chat JSON attachment uses the tree with sidebar=%s",
-  async (sidebar) => {
-    const source = '{"items":[{"id":9223372036854775807}],"empty":{}}';
-    const preview = await openAttachment({ source, sidebar });
-    const tree = await within(preview).findByTestId("json-preview");
-    click(buttonNamed('Expand "items"', tree));
-    click(buttonNamed("Expand [0]", tree));
-    expect(within(tree).getByText("9223372036854775807")).toBeInTheDocument();
-    expect(within(tree).getByText("{}")).toBeInTheDocument();
-    click(buttonNamed("Source", tree));
-    expect(tree.querySelector("pre")?.textContent).toBe(source);
-  },
-);
-
-test("A ranged attachment cannot present a complete-looking JSON prefix as a full tree", async () => {
-  const source = '{"looks":"complete"}';
-  const preview = await openAttachment({
-    source,
-    response: {
-      status: 206,
-      headers: {
-        "Content-Range": `bytes 0-${String(source.length - 1)}/100000`,
-      },
-    },
-  });
-  const tree = await within(preview).findByTestId("json-preview");
-  expect(buttonNamed("Tree", tree)).toBeDisabled();
-  expect(within(tree).getByRole("status")).toHaveTextContent(
-    "Only part of this file is loaded",
+test("chat-json-preview-001 reads the nested ledger number and empty object, then the original private file", async () => {
+  const body =
+    '{\n  "items": [{"ledger":9223372036854775807,"overrides":{}}]\n}';
+  const viewer = await preview("balances.json", body);
+  click(await findNamedButton('Expand "items"', viewer));
+  click(await findNamedButton("Expand [0]", viewer));
+  const ledger = await within(viewer).findByText('"ledger"');
+  expect(ledger.parentElement).toHaveTextContent(
+    '"ledger": 9223372036854775807',
   );
-  expect(tree.querySelector("pre")?.textContent).toBe(source);
+  expect(
+    within(viewer).getByText('"overrides"').parentElement,
+  ).toHaveTextContent('"overrides": {}');
+  click(getNamedButton("Source", viewer));
+  const source = await within(viewer).findByText((_, element) => {
+    return element?.tagName === "PRE" && element.textContent === body;
+  });
+  expect(source).toBeInTheDocument();
+});
+
+test("chat-json-preview-003 discloses a partial response even when the received export parses", async () => {
+  const prefix = '{"account":"reserve","closed":true}';
+  const viewer = await preview("reserve.json", prefix, 8400);
+  const notice = await within(viewer).findByRole("status");
+  expect(notice).toHaveTextContent("Only part of this file is loaded");
+  expect(getNamedButton("Tree", viewer)).toBeDisabled();
+  expect(
+    within(viewer).getByText(prefix, { selector: "pre" }),
+  ).toBeInTheDocument();
 });

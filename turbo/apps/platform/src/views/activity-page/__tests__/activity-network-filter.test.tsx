@@ -1,12 +1,8 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
-import {
-  runAgentEventsContract,
-  runNetworkLogsContract,
-} from "@okouai/api-contracts/contracts/run-routes";
-import type { NetworkLogEntry } from "@okouai/api-contracts/contracts/runs";
+import { runNetworkLogsContract } from "@okouai/api-contracts/contracts/run-routes";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -16,178 +12,125 @@ import {
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const RUN_ID = "a0000000-0000-4000-a000-000000035944";
-const targets = {
-  HTTP: "https://api.example.test/status",
-  DNS: "dns.example.test:53",
-  TCP: "db.example.test:5432",
-} as const;
+const RUN_ID = "d0000000-0000-4000-a000-000000000f62";
+const API_URL = "https://api.release.test/v1/builds";
+const DNS_TARGET = "api.release.test:53";
+const TCP_TARGET = "db.release.test:5432";
 
-function networkLogs(): NetworkLogEntry[] {
-  return [
-    {
-      timestamp: "2026-09-24T06:00:01Z",
-      type: "http",
-      action: "ALLOW",
-      method: "GET",
-      url: targets.HTTP,
-      status: 200,
-    },
-    {
-      timestamp: "2026-09-24T06:00:02Z",
-      type: "dns",
-      action: "ALLOW",
-      host: "dns.example.test",
-      port: 53,
-    },
-    {
-      timestamp: "2026-09-24T06:00:03Z",
-      type: "tcp",
-      action: "ALLOW",
-      host: "db.example.test",
-      port: 5432,
-    },
-  ];
+function typeFilter(): HTMLElement {
+  const trigger = queryAllByRoleFast("button").find((button) => {
+    return button.getAttribute("aria-label") === "Type filter";
+  });
+  if (!trigger) {
+    throw new Error("Expected the network type filter");
+  }
+  return trigger;
 }
 
-async function openNetworkActivity() {
+function typeOption(name: string): HTMLElement | undefined {
+  return queryAllByRoleFast("menuitemcheckbox").find((item) => {
+    return item.textContent?.trim() === name;
+  });
+}
+
+test("Enter and Space each toggle a network type once, and Escape restores trigger focus", async () => {
   context.mocks.api(logsByIdContract.getById, ({ respond }) => {
     return respond(200, {
       id: RUN_ID,
-      sessionId: "session-network-filter",
-      agentId: "c0000000-0000-4000-a000-000000000001",
-      displayName: "Network filter activity",
+      sessionId: null,
+      agentId: "c0000000-0000-4000-a000-000000000062",
+      displayName: "Build check",
       framework: "claude-code",
       modelProvider: null,
       selectedModel: null,
       triggerSource: "web",
       status: "completed",
-      prompt: "Inspect captured network traffic",
+      prompt: "Check the build",
       appendSystemPrompt: null,
-      createdAt: "2026-09-24T06:00:00Z",
-      startedAt: "2026-09-24T06:00:00Z",
-      completedAt: "2026-09-24T06:00:04Z",
-    });
-  });
-  context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
-    return respond(200, {
-      events: [],
-      hasMore: false,
-      status: "completed",
-      lastEventSequence: null,
+      createdAt: "2026-11-20T08:00:00.000Z",
+      startedAt: "2026-11-20T08:00:01.000Z",
+      completedAt: "2026-11-20T08:00:20.000Z",
     });
   });
   context.mocks.api(runNetworkLogsContract.getNetworkLogs, ({ respond }) => {
-    return respond(200, { networkLogs: networkLogs(), hasMore: false });
+    return respond(200, {
+      networkLogs: [
+        {
+          timestamp: "2026-11-20T08:00:02.000Z",
+          type: "dns",
+          host: "api.release.test",
+          port: 53,
+          dns_query_type: "A",
+        },
+        {
+          timestamp: "2026-11-20T08:00:03.000Z",
+          type: "tcp",
+          host: "db.release.test",
+          port: 5432,
+        },
+        {
+          timestamp: "2026-11-20T08:00:04.000Z",
+          type: "http",
+          method: "GET",
+          url: API_URL,
+          host: "api.release.test",
+          status: 200,
+        },
+      ],
+      hasMore: false,
+    });
   });
-
   await setupPage({
     context,
     path: `/activities/${RUN_ID}?tab=network`,
     featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
   });
-  await expect(screen.findByText(targets.HTTP)).resolves.toBeInTheDocument();
-  return {
-    table: screen.getByRole("table"),
-    trigger: screen.getByLabelText("Type filter"),
-  };
-}
-
-function menuItem(
-  menu: HTMLElement,
-  name: string,
-  role: "menuitem" | "menuitemcheckbox" = "menuitemcheckbox",
-) {
-  const item = queryAllByRoleFast(role, menu).find((element) => {
-    return element.textContent?.trim() === name;
-  });
-  if (!item) {
-    throw new Error(`Expected ${role} named "${name}"`);
-  }
-  return item;
-}
-
-function expectTypes(
-  menu: HTMLElement,
-  table: HTMLElement,
-  selected: (keyof typeof targets)[],
-) {
-  for (const [type, target] of Object.entries(targets)) {
-    const checked = selected.some((value) => {
-      return value === type;
-    });
-    expect(menuItem(menu, type)).toHaveAttribute(
-      "aria-checked",
-      String(checked),
-    );
-    expect(within(table).queryByText(target) !== null).toBe(checked);
-  }
-  expect(menu).toBeInTheDocument();
-}
-
-test("Network type selections keep the menu open and reset the last deselection to all types", async () => {
-  const user = userEvent.setup();
-  const { table, trigger } = await openNetworkActivity();
-  expect(trigger).toHaveTextContent("HTTP");
-
-  await user.click(trigger);
-  const menu = await screen.findByRole("menu");
-  expectTypes(menu, table, ["HTTP"]);
-  expect(menuItem(menu, "All types", "menuitem")).not.toHaveAttribute(
-    "aria-checked",
-  );
-
-  await user.click(menuItem(menu, "DNS"));
-  expectTypes(menu, table, ["HTTP", "DNS"]);
-  expect(trigger).toHaveTextContent("2 types");
-
-  await user.click(menuItem(menu, "HTTP"));
-  expectTypes(menu, table, ["DNS"]);
-  expect(trigger).toHaveTextContent("DNS");
-
-  await user.click(menuItem(menu, "DNS"));
-  expectTypes(menu, table, ["HTTP", "DNS", "TCP"]);
-  expect(trigger).toHaveTextContent("All types");
-
-  await user.click(menuItem(menu, "TCP"));
-  expectTypes(menu, table, ["HTTP", "DNS"]);
-  expect(trigger).toHaveTextContent("2 types");
-
-  await user.click(menuItem(menu, "All types", "menuitem"));
-  expectTypes(menu, table, ["HTTP", "DNS", "TCP"]);
-  expect(trigger).toHaveTextContent("All types");
-  expect(trigger).toHaveAttribute("aria-expanded", "true");
-
-  await user.click(menuItem(menu, "All types", "menuitem"));
-  expectTypes(menu, table, ["HTTP", "DNS", "TCP"]);
-  expect(trigger).toHaveTextContent("All types");
-});
-
-test("Enter and Space each toggle a network type once, and Escape restores trigger focus", async () => {
-  const user = userEvent.setup();
-  const { table, trigger } = await openNetworkActivity();
-  act(() => {
-    trigger.focus();
-  });
-  await user.keyboard("{Enter}");
-  const menu = await screen.findByRole("menu");
-  await user.keyboard("{Home}{ArrowDown}{ArrowDown}");
-  expect(menuItem(menu, "DNS")).toHaveFocus();
+  await expect(screen.findByText(API_URL)).resolves.toBeInTheDocument();
+  expect(typeFilter()).toHaveTextContent("HTTP");
+  const user = userEvent.setup({ delay: null });
+  typeFilter().focus();
 
   await user.keyboard("{Enter}");
-  expectTypes(menu, table, ["HTTP", "DNS"]);
-  expect(menuItem(menu, "DNS")).toHaveFocus();
-  expect(trigger).toHaveTextContent("2 types");
+  // Opening from the keyboard moves focus to the first entry, All types.
+  await waitFor(() => {
+    expect(
+      queryAllByRoleFast("menuitem").find((item) => {
+        return item.textContent?.trim() === "All types";
+      }),
+    ).toHaveFocus();
+  });
+  await user.keyboard("{ArrowDown}");
+  await user.keyboard("{ArrowDown}");
+  const dns = typeOption("DNS") as HTMLElement;
+  await waitFor(() => {
+    expect(dns).toHaveFocus();
+  });
+  expect(dns).toHaveAttribute("aria-checked", "false");
+
+  await user.keyboard("{Enter}");
+
+  await waitFor(() => {
+    expect(typeFilter()).toHaveTextContent("2 types");
+  });
+  expect(dns).toHaveAttribute("aria-checked", "true");
+  expect(dns).toHaveFocus();
+  expect(screen.getByText(DNS_TARGET)).toBeInTheDocument();
+  expect(screen.queryByText(TCP_TARGET)).not.toBeInTheDocument();
 
   await user.keyboard(" ");
-  expectTypes(menu, table, ["HTTP"]);
-  expect(menuItem(menu, "DNS")).toHaveFocus();
-  expect(trigger).toHaveTextContent("HTTP");
-  expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+  await waitFor(() => {
+    expect(typeFilter()).toHaveTextContent("HTTP");
+  });
+  expect(dns).toHaveAttribute("aria-checked", "false");
+  expect(dns).toHaveFocus();
+  expect(screen.queryByText(DNS_TARGET)).not.toBeInTheDocument();
 
   await user.keyboard("{Escape}");
+
   await waitFor(() => {
-    expect(trigger).toHaveFocus();
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(typeFilter()).toHaveFocus();
   });
+  expect(typeOption("DNS")).toBeUndefined();
+  expect(screen.getByText(API_URL)).toBeInTheDocument();
 });

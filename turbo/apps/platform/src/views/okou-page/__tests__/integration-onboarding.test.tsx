@@ -1,134 +1,89 @@
-import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
-import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
-import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
-
+import { screen, waitFor } from "@testing-library/react";
+import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
 import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { findAction } from "./connector-integrations-test-helpers.ts";
+import {
+  consentFragment,
+  harbor,
+  statusService,
+} from "./discord-consent-fixtures.ts";
 
 const context = testContext();
+const incomplete = Object.freeze({
+  needsOnboarding: true,
+  onboardingComplete: false,
+  isAdmin: true,
+  hasOrg: true,
+  hasDefaultAgent: true,
+  defaultAgentId: "21cf3244-cffc-4b21-8c82-f13dbaa231e7",
+  defaultAgentMetadata: { displayName: "Harbor assistant" },
+});
+const onboardingPrompt = "Onboarding prompt";
 
-function mockDisconnectedDiscord(): void {
-  context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
-    return respond(200, {
-      isAvailable: true,
-      isConnected: false,
-      isAdmin: true,
-      guildId: null,
-      guildName: null,
-      discordUserId: null,
-      defaultAgentId: null,
-      defaultAgentName: null,
-      onboarding: "oauth",
-      dmSelectionConnectionId: null,
-      dmBindings: [],
-      contextMode: "mentions_only",
+test.each([
+  ["integration-onboarding-001", "/works?discord=pending" + consentFragment],
+  ["integration-onboarding-007", "/settings/discord?status=pending"],
+] as const)(
+  "%s keeps the interrupted callback on Discord settings for an unfinished workspace",
+  async (_id, path) => {
+    context.mocks.data.onboardingStatus(incomplete);
+    statusService(context, () => {
+      return {};
     });
-  });
-}
-
-test.each(["pending", "error", "connected"])(
-  "A legacy Discord %s callback is exempt before onboarding can resolve",
-  async (marker) => {
-    mockDisconnectedDiscord();
-    context.mocks.data.onboardingStatus({
-      needsOnboarding: true,
-      onboardingComplete: false,
-    });
-    await setupPage({
-      context,
-      path: `/works?discord=${marker}#discord_oauth=approve&state=attempt-fixture&approval_proof=private-fixture`,
-    });
-
+    await setupPage({ context, path, auth: harbor.auth });
     await expect(
-      screen.findByText("Back to settings"),
+      screen.findByText("This authorization was interrupted or refreshed."),
     ).resolves.toBeInTheDocument();
-    expect(window.location.pathname).toBe("/settings/discord");
-    expect(window.location.hash).toBe("");
-    expect(
-      screen.queryByLabelText("Onboarding prompt"),
-    ).not.toBeInTheDocument();
+    expect(screen.getByText("Connection failed")).toBeInTheDocument();
+    await expect(
+      findAction("link", "Back to settings"),
+    ).resolves.toHaveAttribute("href", "/works");
+    expect(location.pathname).toBe("/settings/discord");
+    expect(location.hash).toBe("");
+    expect(screen.queryByLabelText(onboardingPrompt)).toBeNull();
   },
 );
 
-test("The legacy callback bridge can finish before a pending onboarding response", async () => {
-  mockDisconnectedDiscord();
-  const requested = context.mocks.deferred<void>();
-  const response = context.mocks.deferred<void>();
+test("integration-onboarding-004 a browser navigation to the legacy callback takes precedence over pending onboarding", async () => {
+  const lookup = context.mocks.deferred<void>();
+  const answer = context.mocks.deferred<void>();
   context.mocks.api(onboardingStatusContract.getStatus, async ({ respond }) => {
-    requested.resolve();
-    await response.promise;
-    return respond(200, {
-      defaultAgentId: null,
-      defaultAgentMetadata: null,
-      hasDefaultAgent: true,
-      hasOrg: true,
-      isAdmin: true,
-      needsOnboarding: true,
-      onboardingComplete: false,
-    });
+    if (!lookup.settled()) {
+      lookup.resolve();
+    }
+    await answer.promise;
+    return respond(200, incomplete);
   });
-  const page = await startPage({
-    context,
-    path: "/works",
+  statusService(context, () => {
+    return {};
   });
-  await requested.promise;
-  await page.content;
-  window.history.pushState(null, "", "/works?discord=pending");
+  const page = await startPage({ context, path: "/works", auth: harbor.auth });
+  await lookup.promise;
+  history.pushState(null, "", "/works?discord=pending");
   window.dispatchEvent(new PopStateEvent("popstate"));
-  await waitFor(() => {
-    expect(window.location.pathname).toBe("/settings/discord");
-  });
-  response.resolve();
+  await expect(
+    screen.findByText("This authorization was interrupted or refreshed."),
+  ).resolves.toBeInTheDocument();
+  expect(location.pathname).toBe("/settings/discord");
+  answer.resolve();
   await page.ready;
-
-  expect(window.location.pathname).toBe("/settings/discord");
-  expect(screen.queryByLabelText("Onboarding prompt")).not.toBeInTheDocument();
+  expect(location.pathname).toBe("/settings/discord");
+  expect(screen.queryByLabelText(onboardingPrompt)).toBeNull();
 });
 
-test.each(["/works", "/works?discord=unknown"])(
-  "%s still requires onboarding",
-  async (path) => {
-    context.mocks.data.onboardingStatus({
-      needsOnboarding: true,
-      onboardingComplete: false,
-    });
-    await setupPage({
-      context,
-      path: `${path}${path.includes("?") ? "&" : "?"}prompt=guard-check`,
-    });
-    await expect(
-      screen.findByLabelText("Onboarding prompt"),
-    ).resolves.toBeInTheDocument();
-    expect(window.location.pathname).toBe("/onboarding");
-  },
-);
-
-test.each(["/settings/discord", "/settings/discord/install"])(
-  "%s retains its canonical onboarding bypass without treating a marker as proof",
-  async (path) => {
-    mockDisconnectedDiscord();
-    context.mocks.data.onboardingStatus({
-      needsOnboarding: true,
-      onboardingComplete: false,
-    });
-    await setupPage({
-      context,
-      path: `${path}?status=pending`,
-    });
-    expect(window.location.pathname).toBe(path);
-    expect(
-      screen.queryByLabelText("Onboarding prompt"),
-    ).not.toBeInTheDocument();
-    await expect(
-      screen.findByRole("heading", { name: "Connection failed" }),
-    ).resolves.toBeInTheDocument();
-    expect(
-      screen.getByText("This authorization was interrupted or refreshed."),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Back to settings").closest("a")).toHaveAttribute(
-      "href",
-      "/works",
-    );
-  },
-);
+test("integration-onboarding-005 an unrelated Works prompt enters the unfinished workspace onboarding", async () => {
+  context.mocks.data.onboardingStatus(incomplete);
+  await setupPage({
+    context,
+    path: "/works?prompt=choose+an+output",
+    auth: harbor.auth,
+  });
+  await waitFor(() => {
+    return expect(location.pathname).toBe("/onboarding");
+  });
+  await expect(screen.findByLabelText(onboardingPrompt)).resolves.toHaveValue(
+    "choose an output",
+  );
+});

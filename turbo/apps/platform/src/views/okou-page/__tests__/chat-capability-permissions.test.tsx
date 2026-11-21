@@ -1,545 +1,440 @@
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   connectorPermissionsContract,
   type ApplyConnectorPermissions,
 } from "@okouai/api-contracts/contracts/connector-permissions";
+import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { expect, test } from "vitest";
+
 import {
   connectorPermissionsResponse,
   type ConnectorPermissionFixture,
 } from "../../../__tests__/connector-permissions.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  type PublicConnectorCatalogPermissionDetail,
-  connectorCatalogContract,
-} from "@okouai/api-contracts/contracts/connector-catalog";
-import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { screen, waitFor, within } from "@testing-library/react";
-import { expect, test } from "vitest";
-
 import {
   click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { mockNow } from "../../../lib/time.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { permissionMetadata } from "./chat-capability-connector-test-helpers.ts";
 import {
+  CAPABILITY_AGENT_ID,
   completedConversation,
-  type CapturedChatSend,
+  createChatCapabilityHelpers,
   readyChat,
   RUN_PATH,
-  createChatCapabilityHelpers,
+  RUN_THREAD_ID,
 } from "./chat-capability-test-helpers.ts";
-import {
-  permissionActionUrl,
-  permissionMetadata,
-} from "./chat-capability-connector-test-helpers.ts";
 
 const context = testContext();
 const { installCapabilityChat } = createChatCapabilityHelpers(context);
+const NOW = "2026-11-20T08:00:00.000Z";
+const RECORDS = "records-service";
+const REPORTS = "reports-service";
+const ASSISTANT_TEXT = "I need connector access to prepare the summary.";
 
-function installActionConversation(args: {
-  readonly lines: readonly string[];
-  readonly sends?: CapturedChatSend[];
-}): void {
-  installCapabilityChat({
-    events: completedConversation(args.lines.join("\n\n")),
-    onSend(send) {
-      args.sends?.push(send);
-    },
-  });
-}
+type GrantWrite = ApplyConnectorPermissions["grants"][number];
 
-function normalizedText(element: HTMLElement): string {
-  return element.textContent?.replace(/\s+/gu, " ").trim() ?? "";
-}
-
-function queryButton(
-  name: string,
-  container: ParentNode = document.body,
-): HTMLElement | null {
-  return (
-    queryAllByRoleFast("button", container).find((element) => {
-      return (
-        element.getAttribute("aria-label") === name ||
-        normalizedText(element) === name
-      );
-    }) ?? null
-  );
-}
-
-function getButton(
-  name: string,
-  container: ParentNode = document.body,
-): HTMLElement {
-  const button = queryButton(name, container);
-  if (!button) {
-    throw new Error(`${name} button was not available`);
-  }
-  return button;
-}
-
-function sentPrompts(sends: readonly CapturedChatSend[]): string[] {
-  return sends.map((send) => {
-    return send.prompt;
-  });
-}
-
-function activeGrant(args: {
-  readonly connectorSlug: ConnectorSlug;
+function permissionLink(args: {
+  readonly connectorSlug: string;
   readonly permission: string;
-  readonly action: "allow" | "deny";
-  readonly expiresAt?: string | null;
-}): ConnectorPermissionFixture {
-  return {
-    connectorSlug: args.connectorSlug,
-    permission: args.permission,
-    action: args.action,
-    expiresAt: args.expiresAt ?? null,
-  };
-}
-
-function permissionCard(description: string): HTMLElement {
-  const text = screen.getByText(description);
-  const card = text.closest<HTMLElement>(
-    '[data-testid="permission-action-card"]',
+  readonly action?: "allow" | "deny";
+  readonly expiresIn?: string;
+  readonly callbackPrompt?: string;
+}): string {
+  const url = new URL(
+    `/agents/${CAPABILITY_AGENT_ID}/permissions`,
+    "https://app.okou.ai",
   );
-  if (!card) {
-    throw new Error(`Permission card ${description} was not available`);
+  url.searchParams.set("connectorSlug", args.connectorSlug);
+  url.searchParams.set("permission", args.permission);
+  url.searchParams.set("action", args.action ?? "allow");
+  if (args.expiresIn) {
+    url.searchParams.set("expiresIn", args.expiresIn);
   }
-  return card;
+  if (args.callbackPrompt) {
+    url.searchParams.set("callbackPrompt", args.callbackPrompt);
+    url.searchParams.set("threadId", RUN_THREAD_ID);
+  }
+  return url.href;
 }
 
-function installPermissionMetadata(
-  lookup: (
-    slug: ConnectorSlug,
-  ) => PublicConnectorCatalogPermissionDetail | null,
+function mockConnectorPermissions(
+  connectorSlug: string,
+  label: string,
+  permissions: readonly string[],
 ): void {
   context.mocks.api(
     connectorCatalogContract.permissions,
     ({ params, respond }) => {
-      const metadata = lookup(params.connectorSlug);
-      return metadata
-        ? respond(200, { permissions: metadata })
-        : respond(404, {
-            error: {
-              code: "NOT_FOUND",
-              message: "Permission metadata not found",
-            },
-          });
+      if (params.connectorSlug !== connectorSlug) {
+        return respond(404, {
+          error: { code: "NOT_FOUND", message: "Connector not found" },
+        });
+      }
+      return respond(200, {
+        permissions: permissionMetadata({ connectorSlug, label, permissions }),
+      });
     },
   );
 }
 
-test("Expose the full permission scope on the card itself", async () => {
-  const connectorSlug = "scope-service";
-  const permission = "meeting:read:list_meetings";
-  installPermissionMetadata((slug) => {
-    return slug === connectorSlug
-      ? permissionMetadata({
-          connectorSlug,
-          label: "Scope Service",
-          permissions: [permission],
-        })
-      : null;
-  });
+function grantExpiry(write: GrantWrite): string | null {
+  const hours = { "1h": 1, "24h": 24, "7d": 168 } as const;
+  if (write.action === "deny" || write.expiresIn === "always") {
+    return null;
+  }
+  const duration = hours[write.expiresIn ?? "1h"];
+  return new Date(Date.parse(NOW) + duration * 3_600_000).toISOString();
+}
+
+interface GrantServer {
+  grants: ConnectorPermissionFixture[];
+  readable: boolean;
+  writable: boolean;
+  /** The latest write for each permission. */
+  writes: Record<string, GrantWrite>;
+  /** Writes for these permissions wait until the test releases them. */
+  holds: Map<string, Promise<void>>;
+}
+
+/** The member's saved grants for the connectors on the page. */
+function mockGrantServer(
+  initial: readonly ConnectorPermissionFixture[] = [],
+): GrantServer {
+  const server: GrantServer = {
+    grants: [...initial],
+    readable: true,
+    writable: true,
+    writes: {},
+    holds: new Map(),
+  };
   context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
-    return respond(200, connectorPermissionsResponse(query, []));
-  });
-  installActionConversation({
-    lines: [permissionActionUrl({ connectorSlug, permission })],
-  });
-
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-
-  await readyChat();
-  const card = await screen.findByTestId("permission-action-card");
-  await waitFor(() => {
-    expect(getButton("Confirm", card)).toBeEnabled();
-  });
-  expect(within(card).getByText("Scope Service permissions")).toHaveTextContent(
-    "Scope Service permissions",
-  );
-  expect(within(card).getByText(`Allow ${permission}`)).toHaveTextContent(
-    `Allow ${permission}`,
-  );
-});
-
-test("Fail closed on permission load and save errors", async () => {
-  const connectorSlug = "recovery-service";
-  const connectorPermission = "records.read";
-  const sends: CapturedChatSend[] = [];
-  const permission = permissionMetadata({
-    connectorSlug,
-    label: "Recovery Service",
-    permissions: [connectorPermission],
-  });
-  let permissionServiceAvailable = false;
-  installPermissionMetadata((slug) => {
-    return slug === connectorSlug ? permission : null;
-  });
-  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
-    if (!permissionServiceAvailable) {
-      throw new TypeError("Permission service temporarily unavailable");
-    }
-    return respond(200, connectorPermissionsResponse(query, []));
-  });
-  context.mocks.api(connectorPermissionsContract.apply, ({ respond }) => {
-    return respond(500, {
-      error: { code: "SAVE_FAILED", message: "Permission save failed" },
-    });
-  });
-  installActionConversation({
-    lines: [
-      permissionActionUrl({
-        connectorSlug,
-        permission: connectorPermission,
-      }),
-    ],
-    sends,
-  });
-
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-
-  await readyChat();
-  const card = await screen.findByTestId("permission-action-card");
-  await expect(
-    within(card).findByText("Couldn't load permission status"),
-  ).resolves.toBeVisible();
-  expect(queryButton("Confirm", card)).not.toBeInTheDocument();
-  expect(sends).toHaveLength(0);
-
-  permissionServiceAvailable = true;
-  context.mocks.ably.trigger("connectorPermissionUpdated");
-  const confirm = await waitFor(() => {
-    return getButton("Confirm", card);
-  });
-  expect(confirm).toBeEnabled();
-  expect(sends).toHaveLength(0);
-
-  click(confirm);
-  const updateFailure = await within(card).findByText(
-    "Couldn't update permissions",
-  );
-  expect(updateFailure).toBeVisible();
-  expect(sends).toHaveLength(0);
-  expect(
-    within(card).queryByText("Permissions updated"),
-  ).not.toBeInTheDocument();
-});
-
-test("Hide confirmation when connector permission details are invalid", async () => {
-  const forbiddenSlug = "forbidden-service";
-  const incompleteSlug = "incomplete-service";
-  context.mocks.api(
-    connectorCatalogContract.permissions,
-    ({ params, respond }) => {
-      if (params.connectorSlug === forbiddenSlug) {
-        return respond(403, {
-          error: { code: "FORBIDDEN", message: "Permission details forbidden" },
-        });
-      }
-      return respond(200, {
-        permissions: permissionMetadata({
-          connectorSlug: incompleteSlug,
-          label: "Incomplete Service",
-          permissions: ["known.operation"],
-        }),
+    if (!server.readable) {
+      return respond(403, {
+        error: { code: "FORBIDDEN", message: "Permission status unavailable" },
       });
-    },
-  );
-  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
-    return respond(200, connectorPermissionsResponse(query, []));
-  });
-  installActionConversation({
-    lines: [
-      permissionActionUrl({
-        connectorSlug: forbiddenSlug,
-        permission: "records.read",
-      }),
-      permissionActionUrl({
-        connectorSlug: incompleteSlug,
-        permission: "missing.operation",
-      }),
-    ],
-  });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  const loadFailure = await screen.findByText(
-    "Couldn't load permission status",
-  );
-  const unknownPermission = await screen.findByText("Unknown permission");
-  const forbiddenCard = loadFailure.closest<HTMLElement>(
-    '[data-testid="permission-action-card"]',
-  );
-  const incompleteCard = unknownPermission.closest<HTMLElement>(
-    '[data-testid="permission-action-card"]',
-  );
-  expect(forbiddenCard).not.toBeNull();
-  expect(incompleteCard).not.toBeNull();
-  expect(queryButton("Confirm", forbiddenCard!)).not.toBeInTheDocument();
-  expect(queryButton("Confirm", incompleteCard!)).not.toBeInTheDocument();
-});
-
-test("Reflect current connector permission decisions", async () => {
-  const connectorSlug = "decision-service";
-  let grants: ConnectorPermissionFixture[] = [
-    activeGrant({
-      connectorSlug,
-      permission: "records.read",
-      action: "allow",
-      expiresAt: "2027-08-01T09:00:00.000Z",
-    }),
-    activeGrant({
-      connectorSlug,
-      permission: "records.write",
-      action: "deny",
-    }),
-    activeGrant({
-      connectorSlug,
-      permission: "records.archive",
-      action: "allow",
-      expiresAt: "2025-08-01T09:00:00.000Z",
-    }),
-  ];
-  installPermissionMetadata((slug) => {
-    return slug === connectorSlug
-      ? permissionMetadata({
-          connectorSlug,
-          label: "Decision Service",
-          permissions: ["records.read", "records.write", "records.archive"],
-        })
-      : null;
-  });
-  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
-    return respond(200, connectorPermissionsResponse(query, grants));
-  });
-  installActionConversation({
-    lines: [
-      permissionActionUrl({
-        connectorSlug,
-        permission: "records.read",
-      }),
-      permissionActionUrl({
-        connectorSlug,
-        permission: "records.write",
-        action: "deny",
-      }),
-      permissionActionUrl({
-        connectorSlug,
-        permission: "records.archive",
-      }),
-    ],
-  });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  const allowCard = permissionCard("Allow records.read");
-  const denyCard = permissionCard("Deny records.write");
-  const expiredCard = permissionCard("Allow records.archive");
-  const allowed = await within(allowCard).findByText("Already allowed");
-  expect(allowed).toBeVisible();
-  expect(within(denyCard).getByText("Already denied")).toBeVisible();
-  expect(within(expiredCard).getByText("Expired")).toBeVisible();
-  expect(getButton("Confirm", expiredCard)).toBeEnabled();
-
-  grants = [
-    ...grants.filter((grant) => {
-      return grant.permission !== "records.archive";
-    }),
-    activeGrant({
-      connectorSlug,
-      permission: "records.archive",
-      action: "allow",
-      expiresAt: "2027-08-01T09:00:00.000Z",
-    }),
-  ];
-  context.mocks.ably.trigger("connectorPermissionUpdated");
-
-  const externallyAllowed =
-    await within(expiredCard).findByText("Already allowed");
-  expect(externallyAllowed).toBeVisible();
-  expect(queryButton("Confirm", expiredCard)).not.toBeInTheDocument();
-});
-
-test("Permission cards keep the full operation pending and expose callback failure", async () => {
-  const connectorSlug = "callback-service";
-  const permission = "reports.read";
-  const callbackStarted = context.mocks.deferred<void>();
-  const callbackResponse = context.mocks.deferred<void>();
-  let grants: ConnectorPermissionFixture[] = [];
-  installPermissionMetadata((slug) => {
-    return slug === connectorSlug
-      ? permissionMetadata({
-          connectorSlug,
-          label: "Callback Service",
-          permissions: [permission],
-        })
-      : null;
-  });
-  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
-    return respond(200, connectorPermissionsResponse(query, grants));
-  });
-  context.mocks.api(connectorPermissionsContract.apply, ({ body, respond }) => {
-    grants = [activeGrant({ connectorSlug, permission, action: "allow" })];
-    return respond(200, connectorPermissionsResponse(body.target, grants));
-  });
-  installActionConversation({
-    lines: [
-      permissionActionUrl({
-        connectorSlug,
-        permission,
-        callbackPrompt: "Continue the report",
-      }),
-    ],
-  });
-  context.mocks.api(chatEventsContract.send, async ({ respond }) => {
-    callbackStarted.resolve(undefined);
-    await callbackResponse.promise;
-    return respond(500, {
-      error: { code: "INTERNAL_SERVER_ERROR", message: "Chat unavailable" },
-    });
-  });
-  await setupPage({ context, path: RUN_PATH });
-  await readyChat();
-  const card = await screen.findByTestId("permission-action-card");
-  await waitFor(() => {
-    expect(getButton("Confirm", card)).toBeEnabled();
-  });
-
-  click(getButton("Confirm", card));
-
-  await callbackStarted.promise;
-  await waitFor(() => {
-    expect(getButton("Saving...", card)).toBeDisabled();
-  });
-  expect(
-    within(card).queryByText("Permissions updated"),
-  ).not.toBeInTheDocument();
-  callbackResponse.resolve(undefined);
-  await expect(
-    within(card).findByText("Couldn't update permissions"),
-  ).resolves.toBeInTheDocument();
-});
-
-test("Review and confirm connector permissions individually", async () => {
-  const connectorSlug = "cloud-records";
-  const sends: CapturedChatSend[] = [];
-  const applyRequests: ApplyConnectorPermissions[] = [];
-  const followupGate = context.mocks.deferred<void>();
-  let grants: ConnectorPermissionFixture[] = [];
-  installPermissionMetadata((slug) => {
-    return slug === connectorSlug
-      ? permissionMetadata({
-          connectorSlug,
-          label: "Cloud Records",
-          permissions: ["reports.read", "reference.read", "exports.run"],
-        })
-      : null;
-  });
-  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
-    return respond(200, connectorPermissionsResponse(query, grants));
+    }
+    return respond(200, connectorPermissionsResponse(query, server.grants));
   });
   context.mocks.api(
     connectorPermissionsContract.apply,
     async ({ body, respond }) => {
-      applyRequests.push(body);
-      const requested = body.grants[0]!;
-      if (requested.permission === "exports.run") {
-        await followupGate.promise;
+      if (body.target.kind !== "builtin") {
+        throw new Error("Expected a built-in connector target");
       }
-      const applied = activeGrant({
-        connectorSlug,
-        permission: requested.permission,
-        action: requested.action,
-        expiresAt:
-          requested.action === "allow" ? "2027-08-01T09:00:00.000Z" : null,
-      });
-      grants = [
-        ...grants.filter((grant) => {
-          return grant.permission !== requested.permission;
+      const { connectorSlug } = body.target;
+      for (const write of body.grants) {
+        server.writes[write.permission] = write;
+        await server.holds.get(write.permission);
+      }
+      if (!server.writable) {
+        return respond(403, {
+          error: { code: "FORBIDDEN", message: "Permission update rejected" },
+        });
+      }
+      server.grants = [
+        ...server.grants.filter((grant) => {
+          return !body.grants.some((write) => {
+            return (
+              grant.connectorSlug === connectorSlug &&
+              write.permission === grant.permission
+            );
+          });
         }),
-        applied,
+        ...body.grants.map((write) => {
+          return {
+            connectorSlug,
+            permission: write.permission,
+            action: write.action,
+            expiresAt: grantExpiry(write),
+          };
+        }),
       ];
-      return respond(200, connectorPermissionsResponse(body.target, [applied]));
+      return respond(
+        200,
+        connectorPermissionsResponse(body.target, server.grants),
+      );
     },
   );
-  installActionConversation({
-    lines: [
-      permissionActionUrl({
-        connectorSlug,
-        permission: "reports.read",
-        expiresIn: "7d",
-      }),
-      permissionActionUrl({
-        connectorSlug,
-        permission: "__unknown__",
-      }),
-      permissionActionUrl({
-        connectorSlug,
-        permission: "reference.read",
-        action: "deny",
-      }),
-      permissionActionUrl({
-        connectorSlug,
-        permission: "exports.run",
-        callbackPrompt: "Continue after export access",
-      }),
-    ],
-    sends,
+  return server;
+}
+
+async function openPermissionChat(links: readonly string[]): Promise<void> {
+  mockNow(new Date(NOW), context.signal);
+  installCapabilityChat({
+    events: completedConversation([ASSISTANT_TEXT, ...links].join("\n\n")),
   });
-
-  await setupPage({ context, path: RUN_PATH });
-
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
   await readyChat();
-  await screen.findAllByTestId("permission-action-card");
-  const reportsCard = permissionCard("Allow reports.read");
-  const unknownCard = permissionCard("Allow other endpoints");
-  const denyCard = permissionCard("Deny reference.read");
-  const exportCard = permissionCard("Allow exports.run");
+  await expect(screen.findByText(ASSISTANT_TEXT)).resolves.toBeInTheDocument();
+}
 
-  click(
-    within(reportsCard).getByRole("combobox", {
-      name: "Permission duration",
+async function findCard(request: string): Promise<HTMLElement> {
+  const description = await screen.findByText(request);
+  const card = description.closest<HTMLElement>(
+    '[data-testid="permission-action-card"]',
+  );
+  if (!card) {
+    throw new Error(`Expected the permission card for ${request}`);
+  }
+  return card;
+}
+
+function cardButton(card: HTMLElement, name: string): HTMLElement | undefined {
+  return queryAllByRoleFast("button", card).find((candidate) => {
+    return candidate.textContent?.trim() === name;
+  });
+}
+
+async function confirm(card: HTMLElement): Promise<void> {
+  const button = await waitFor(() => {
+    const found = cardButton(card, "Confirm");
+    expect(found).toBeEnabled();
+    return found as HTMLElement;
+  });
+  click(button);
+}
+
+test("Fail closed on permission load and save errors", async () => {
+  const followUp = "Records access is ready. Continue the summary.";
+  const server = mockGrantServer();
+  server.readable = false;
+  server.writable = false;
+  mockConnectorPermissions(RECORDS, "Records Service", ["records.read"]);
+  await openPermissionChat([
+    permissionLink({
+      connectorSlug: RECORDS,
+      permission: "records.read",
+      callbackPrompt: followUp,
     }),
-  );
-  click(await screen.findByRole("option", { name: "24 hours" }));
-  click(getButton("Confirm", reportsCard));
-  const reportsUpdated = await within(reportsCard).findByText(
-    "Permissions updated",
-  );
-  expect(reportsUpdated).toBeVisible();
-  expect(applyRequests[0]).toMatchObject({
-    target: { kind: "builtin", connectorSlug },
-    grants: [{ permission: "reports.read", action: "allow", expiresIn: "24h" }],
-  });
-  expect(getButton("Confirm", unknownCard)).toBeEnabled();
+  ]);
+  const card = await findCard("Allow records.read");
 
-  click(getButton("Confirm", unknownCard));
-  const unknownUpdated = await within(unknownCard).findByText(
-    "Permissions updated",
-  );
-  expect(unknownUpdated).toBeVisible();
-  expect(applyRequests[1]).toMatchObject({
-    grants: [{ permission: "__unknown__", action: "allow" }],
-  });
+  await expect(
+    within(card).findByText("Couldn't load permission status"),
+  ).resolves.toBeInTheDocument();
+  expect(cardButton(card, "Confirm")).toBeUndefined();
+  expect(screen.queryByText(followUp)).not.toBeInTheDocument();
 
-  click(getButton("Confirm", denyCard));
-  const denied = await within(denyCard).findByText("Permission denied");
-  expect(denied).toBeVisible();
-  expect(applyRequests[2]).toMatchObject({
-    grants: [{ permission: "reference.read", action: "deny" }],
-  });
+  // The permission service recovers and announces fresh permission status.
+  server.readable = true;
+  context.mocks.ably.trigger("connectorPermissionUpdated");
+  await confirm(card);
 
-  click(getButton("Confirm", exportCard));
-  const saving = await waitFor(() => {
-    return getButton("Saving...", exportCard);
+  await expect(
+    within(card).findByText("Couldn't update permissions"),
+  ).resolves.toBeInTheDocument();
+  expect(within(card).queryByText("Permissions updated")).toBeNull();
+  expect(screen.queryByText(followUp)).not.toBeInTheDocument();
+});
+
+test("Reflect current connector permission decisions", async () => {
+  const server = mockGrantServer([
+    {
+      connectorSlug: RECORDS,
+      permission: "records.read",
+      action: "allow",
+      expiresAt: "2027-06-01T00:00:00.000Z",
+    },
+    {
+      connectorSlug: RECORDS,
+      permission: "records.write",
+      action: "deny",
+      expiresAt: null,
+    },
+    {
+      connectorSlug: RECORDS,
+      permission: "records.archive",
+      action: "allow",
+      expiresAt: "2025-06-01T00:00:00.000Z",
+    },
+  ]);
+  mockConnectorPermissions(RECORDS, "Records Service", [
+    "records.read",
+    "records.write",
+    "records.archive",
+  ]);
+  await openPermissionChat([
+    permissionLink({ connectorSlug: RECORDS, permission: "records.read" }),
+    permissionLink({
+      connectorSlug: RECORDS,
+      permission: "records.write",
+      action: "deny",
+    }),
+    permissionLink({ connectorSlug: RECORDS, permission: "records.archive" }),
+  ]);
+
+  const read = await findCard("Allow records.read");
+  await expect(
+    within(read).findByText("Already allowed"),
+  ).resolves.toBeInTheDocument();
+  expect(cardButton(read, "Confirm")).toBeUndefined();
+  const write = await findCard("Deny records.write");
+  await expect(
+    within(write).findByText("Already denied"),
+  ).resolves.toBeInTheDocument();
+  const archive = await findCard("Allow records.archive");
+  await expect(
+    within(archive).findByText("Expired"),
+  ).resolves.toBeInTheDocument();
+  expect(cardButton(archive, "Confirm")).toBeEnabled();
+
+  // Another tab allows the archive permission until 2027.
+  server.grants = server.grants.map((grant) => {
+    return grant.permission === "records.archive"
+      ? { ...grant, expiresAt: "2027-06-01T00:00:00.000Z" }
+      : grant;
   });
-  expect(saving).toBeDisabled();
-  expect(sends).toHaveLength(0);
-  followupGate.resolve(undefined);
+  context.mocks.ably.trigger("connectorPermissionUpdated");
+
+  await expect(
+    within(archive).findByText("Already allowed"),
+  ).resolves.toBeInTheDocument();
+  expect(cardButton(archive, "Confirm")).toBeUndefined();
+});
+
+test("Permission cards keep the full operation pending and expose callback failure", async () => {
+  const followUp = "Reports access is ready. Continue the summary.";
+  mockGrantServer();
+  mockConnectorPermissions(REPORTS, "Reports Service", ["reports.read"]);
+  await openPermissionChat([
+    permissionLink({
+      connectorSlug: REPORTS,
+      permission: "reports.read",
+      callbackPrompt: followUp,
+    }),
+  ]);
+  const continuation: { prompt?: string } = {};
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(chatEventsContract.send, async ({ body, respond }) => {
+    continuation.prompt = body.prompt;
+    await release.promise;
+    return respond(503, {
+      error: { code: "SERVICE_UNAVAILABLE", message: "Run dispatch busy" },
+    });
+  });
+  const card = await findCard("Allow reports.read");
+
+  await confirm(card);
+
+  // The grant is saved and the follow-up chat request is now pending.
   await waitFor(() => {
-    expect(sentPrompts(sends)).toStrictEqual(["Continue after export access"]);
+    expect(continuation.prompt).toBe(followUp);
+  });
+  expect(cardButton(card, "Saving...")).toBeDisabled();
+  expect(within(card).queryByText("Permissions updated")).toBeNull();
+
+  release.resolve();
+
+  await expect(
+    within(card).findByText("Couldn't update permissions"),
+  ).resolves.toBeInTheDocument();
+  expect(within(card).queryByText("Permissions updated")).toBeNull();
+});
+
+test("Review and confirm connector permissions individually", async () => {
+  const followUp = "Exports are allowed. Continue the report.";
+  const server = mockGrantServer();
+  const exportHold = context.mocks.deferred<void>();
+  server.holds.set("exports.run", exportHold.promise);
+  mockConnectorPermissions(REPORTS, "Reports Service", [
+    "reports.read",
+    "reference.read",
+    "exports.run",
+  ]);
+  await openPermissionChat([
+    permissionLink({
+      connectorSlug: REPORTS,
+      permission: "reports.read",
+      expiresIn: "7d",
+    }),
+    permissionLink({
+      connectorSlug: REPORTS,
+      permission: UNKNOWN_PERMISSION_GRANT,
+    }),
+    permissionLink({
+      connectorSlug: REPORTS,
+      permission: "reference.read",
+      action: "deny",
+    }),
+    permissionLink({
+      connectorSlug: REPORTS,
+      permission: "exports.run",
+      callbackPrompt: followUp,
+    }),
+  ]);
+
+  const reports = await findCard("Allow reports.read");
+  const duration = await within(reports).findByRole("combobox", {
+    name: "Permission duration",
+  });
+  expect(duration).toHaveTextContent("7 days");
+  const user = userEvent.setup({ delay: null });
+  await user.click(duration);
+  const day = await waitFor(() => {
+    const option = queryAllByRoleFast("option").find((candidate) => {
+      return candidate.textContent?.trim() === "24 hours";
+    });
+    if (!option) {
+      throw new Error("Expected the 24 hours option");
+    }
+    return option;
+  });
+  await user.click(day);
+  await waitFor(() => {
+    expect(duration).toHaveTextContent("24 hours");
+  });
+  await confirm(reports);
+  await expect(
+    within(reports).findByText("Permissions updated"),
+  ).resolves.toBeInTheDocument();
+
+  const unknown = await findCard("Allow other endpoints");
+  await confirm(unknown);
+  await expect(
+    within(unknown).findByText("Permissions updated"),
+  ).resolves.toBeInTheDocument();
+
+  const reference = await findCard("Deny reference.read");
+  await confirm(reference);
+  await expect(
+    within(reference).findByText("Permission denied"),
+  ).resolves.toBeInTheDocument();
+
+  const exportsCard = await findCard("Allow exports.run");
+  await confirm(exportsCard);
+  await waitFor(() => {
+    expect(cardButton(exportsCard, "Saving...")).toBeDisabled();
+  });
+  expect(screen.queryByText(followUp)).not.toBeInTheDocument();
+
+  exportHold.resolve();
+
+  await expect(screen.findByText(followUp)).resolves.toBeInTheDocument();
+  await expect(
+    within(exportsCard).findByText("Permissions updated"),
+  ).resolves.toBeInTheDocument();
+  expect(server.writes).toStrictEqual({
+    "reports.read": {
+      permission: "reports.read",
+      action: "allow",
+      expiresIn: "24h",
+    },
+    [UNKNOWN_PERMISSION_GRANT]: {
+      permission: UNKNOWN_PERMISSION_GRANT,
+      action: "allow",
+      expiresIn: "1h",
+    },
+    "reference.read": { permission: "reference.read", action: "deny" },
+    "exports.run": {
+      permission: "exports.run",
+      action: "allow",
+      expiresIn: "1h",
+    },
   });
 });

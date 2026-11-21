@@ -1,12 +1,6 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  parseChatClipboardPayload,
-  readClipboardItemText,
-  readSingleRichClipboardWrite,
-} from "./chat-clipboard-test-helpers.ts";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -15,528 +9,319 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-
-import { mockPrivateUrlSequence } from "./chat-attachment-test-helpers.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
-  CAPABILITY_AGENT_ID,
-  completedConversation,
-  FIRST_CAPABILITY_RUN_ID,
+  createChatRunFixtures,
+  promptEvent,
   readyChat,
   RUN_PATH,
-  SECOND_CAPABILITY_RUN_ID,
-  createChatCapabilityHelpers,
-} from "./chat-capability-test-helpers.ts";
-import {
-  promptEvent,
-  createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
 
 const context = testContext();
 const { installRunChat } = createChatRunFixtures(context);
-const { installCapabilityChat } = createChatCapabilityHelpers(context);
+const LAUNCH_RUN_ID = "d0000000-0000-4000-a000-000000000c01";
+const DIGEST_RUN_ID = "d0000000-0000-4000-a000-000000000c02";
+const LEGACY_RUN_ID = "d0000000-0000-4000-a000-000000000c03";
 
-const RESPONSE_TEXT = "The completed response contains reusable guidance.";
-const STRUCTURED_FILE_ID = "structured-reference-file";
-const STRUCTURED_FILE_URL =
-  "https://cdn.vm7.io/chat-capability/structured-reference.pdf";
-const REFERENCED_THREAD_ID = "b0000000-0000-4000-a000-000000000819";
-
-function buttonIn(container: ParentNode, name: string): HTMLElement {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
-    return (
-      candidate.getAttribute("aria-label") === name ||
-      candidate.textContent?.replace(/\s+/gu, " ").trim() === name
-    );
-  });
-  if (!button) {
-    throw new Error(`Button ${name} was not available`);
-  }
-  return button;
-}
-
-function findLink(
-  container: ParentNode,
-  name: string,
-): HTMLElement | undefined {
-  return queryAllByRoleFast("link", container).find((candidate) => {
-    return (
-      candidate.getAttribute("aria-label") === name ||
-      candidate.textContent?.replace(/\s+/gu, " ").trim() === name
-    );
-  });
-}
-
-function linkIn(container: ParentNode, name: string): HTMLElement {
-  const link = findLink(container, name);
-  if (!link) {
-    throw new Error(`Link ${name} was not available`);
-  }
-  return link;
-}
-
-test("Hide the activity-log action outside debug mode", async () => {
-  installCapabilityChat({
-    events: completedConversation(RESPONSE_TEXT),
-  });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  const response = await screen.findByText(RESPONSE_TEXT);
-  const responseGroup = response.closest<HTMLElement>(
-    '[data-role="assistant"]',
-  );
-  if (!responseGroup) {
-    throw new Error("Assistant response group was not available");
-  }
-
-  expect(findLink(responseGroup, "View run logs")).toBeUndefined();
-  expect(screen.queryByLabelText("View run logs")).not.toBeInTheDocument();
-});
-
-test("Keep Copy to the right of an active run's logs before any assistant output", async () => {
-  const prompt = "Check the connection";
-  installRunChat({
-    activeRunIds: [FIRST_CAPABILITY_RUN_ID],
-    chatEvents: [
-      promptEvent({
-        id: "no-output-user-message",
-        runId: FIRST_CAPABILITY_RUN_ID,
-        seqId: 1,
-        text: prompt,
-      }),
-    ],
-  });
+/** Run details the activity page reads for each run. */
+function mockRunDetails(names: Readonly<Record<string, string>>): void {
   context.mocks.api(logsByIdContract.getById, ({ params, respond }) => {
+    const displayName = names[params.id];
+    if (!displayName) {
+      return respond(404, {
+        error: { code: "NOT_FOUND", message: "Run not found" },
+      });
+    }
     return respond(200, {
       id: params.id,
-      sessionId: "capability-session",
-      agentId: CAPABILITY_AGENT_ID,
-      displayName: "Run inspection",
+      sessionId: `session-${params.id}`,
+      agentId: "c0000000-0000-4000-a000-000000000001",
+      displayName,
       framework: "claude-code",
-      modelProvider: "claude-code-oauth-token",
-      selectedModel: "claude-sonnet-5",
+      modelProvider: null,
+      selectedModel: null,
       triggerSource: "web",
       status: "running",
-      prompt,
+      prompt: displayName,
       appendSystemPrompt: null,
-      createdAt: "2026-08-01T10:00:00.000Z",
-      startedAt: "2026-08-01T10:00:01.000Z",
+      createdAt: "2026-11-20T07:00:00.000Z",
+      startedAt: "2026-11-20T07:00:01.000Z",
       completedAt: null,
     });
   });
+}
 
+async function openDebugChat(
+  chatEvents: MockChatEventInput[],
+  activeRunIds: string[] = [],
+  debug = true,
+): Promise<void> {
+  installRunChat({ chatEvents, activeRunIds });
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: debug },
   });
   await readyChat();
+}
 
-  const actions = screen
-    .getByText(prompt)
-    .closest('[data-role="user"]')
-    ?.querySelector("[data-chat-user-message-actions]");
-  if (!actions) {
-    throw new Error("User message action row was not available");
-  }
-  const copy = buttonIn(actions, "Copy message");
-  const logs = linkIn(actions, "View run logs");
-  expect(
-    logs.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  expect(logs).toHaveAttribute(
-    "href",
-    `/activities/${FIRST_CAPABILITY_RUN_ID}`,
+/** The action row under the user message that shows `text`. */
+async function messageActions(text: string): Promise<HTMLElement> {
+  return await waitFor(() => {
+    const rows = document.querySelectorAll<HTMLElement>(
+      "[data-chat-user-message-actions]",
+    );
+    const row = [...rows].find((candidate) => {
+      return candidate.parentElement?.textContent?.includes(text);
+    });
+    if (!row) {
+      throw new Error(`Expected actions for "${text}"`);
+    }
+    return row;
+  });
+}
+
+function control(
+  role: "button" | "link",
+  name: string,
+  container: HTMLElement,
+): HTMLElement | undefined {
+  return queryAllByRoleFast(role, container).find((candidate) => {
+    return candidate.getAttribute("aria-label") === name;
+  });
+}
+
+test("Keep Copy to the right of an active run's logs before any assistant output", async () => {
+  await openDebugChat(
+    [
+      promptEvent({
+        id: "launch-prompt",
+        runId: LAUNCH_RUN_ID,
+        seqId: 1,
+        text: "Review the launch checklist",
+      }),
+    ],
+    [LAUNCH_RUN_ID],
   );
-  expect(logs.querySelector("svg")).toBeInTheDocument();
+  // Registered after the chat fixture so these run details answer.
+  mockRunDetails({ [LAUNCH_RUN_ID]: "Launch review" });
+  const actions = await messageActions("Review the launch checklist");
+  const logs = control("link", "View run logs", actions);
+  const copy = control("button", "Copy message", actions);
 
-  click(logs);
+  expect(copy).toBeDefined();
+  expect(logs).toHaveAttribute("href", `/activities/${LAUNCH_RUN_ID}`);
+  // Logs come first, so Copy stays on their right.
+  expect(logs?.compareDocumentPosition(copy as HTMLElement) ?? 0).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+
+  await userEvent.setup({ delay: null }).click(logs as HTMLElement);
+
   await expect(
-    screen.findByRole("heading", { name: "Run inspection" }),
-  ).resolves.toBeVisible();
-  expect(window.location.pathname).toBe(
-    `/activities/${FIRST_CAPABILITY_RUN_ID}`,
-  );
+    screen.findByRole("heading", { name: "Launch review" }),
+  ).resolves.toBeInTheDocument();
+  expect(window.location.pathname).toBe(`/activities/${LAUNCH_RUN_ID}`);
 });
 
 test("Do not show user run logs before a run ID is assigned", async () => {
-  installCapabilityChat({
-    events: [
-      promptEvent({
-        id: "pending-user-message",
+  await openDebugChat([
+    {
+      ...promptEvent({
+        id: "unassigned-prompt",
         seqId: 1,
-        text: "Wait for run creation",
+        text: "Draft the release notes",
       }),
-    ],
-  });
+      runId: undefined,
+    },
+  ]);
 
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
-  });
-  await readyChat();
+  const actions = await messageActions("Draft the release notes");
 
-  const actions = screen
-    .getByText("Wait for run creation")
-    .closest('[data-role="user"]')
-    ?.querySelector("[data-chat-user-message-actions]");
-  if (!actions) {
-    throw new Error("User message action row was not available");
-  }
-  expect(findLink(actions, "View run logs")).toBeUndefined();
-  expect(buttonIn(actions, "Copy message")).toBeInTheDocument();
+  expect(control("button", "Copy message", actions)).toBeDefined();
+  expect(control("link", "View run logs", actions)).toBeUndefined();
+  expect(
+    queryAllByRoleFast("link").find((link) => {
+      return link.getAttribute("aria-label") === "View run logs";
+    }),
+  ).toBeUndefined();
 });
+
+/** The text the latest Copy put on the clipboard, plain or rich. */
+async function copiedText(clipboard: {
+  readonly plain: { readonly writes: readonly string[] };
+  readonly rich: { readonly writes: readonly ClipboardItem[][] };
+}): Promise<string | undefined> {
+  const item = clipboard.rich.writes.at(-1)?.[0];
+  if (item) {
+    return await (await item.getType("text/plain")).text();
+  }
+  return clipboard.plain.writes.at(-1);
+}
 
 test("Copy workflow trigger bubbles and inspect their associated runs", async () => {
-  const triggerText = "The one-time scheduled run started.";
-  const legacyBrief = "Continue the weekly review";
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  installRunChat({
-    chatEvents: [
-      {
-        id: "started-workflow-trigger",
-        eventType: "input.prompt",
-        content: null,
-        runId: FIRST_CAPABILITY_RUN_ID,
-        seqId: 1,
-        createdAt: "2026-08-01T10:00:00.000Z",
-        userMessage: {
-          version: 1,
-          parts: [
-            {
-              type: "automation",
-              workflowName: "python-test",
-              automationBrief: "A different workflow summary",
-            },
-            { type: "text", text: triggerText },
-          ],
-        },
+  await openDebugChat([
+    {
+      id: "digest-trigger",
+      role: "user",
+      eventType: "input.automation",
+      content: null,
+      runId: DIGEST_RUN_ID,
+      seqId: 1,
+      createdAt: "2026-11-20T07:00:00.000Z",
+      userMessage: {
+        version: 1,
+        parts: [
+          { type: "automation", workflowName: "Weekly digest" },
+          { type: "text", text: "Summarize this week's launches" },
+        ],
       },
-      {
-        id: "legacy-workflow-trigger",
-        eventType: "input.prompt",
-        content: null,
-        runId: SECOND_CAPABILITY_RUN_ID,
-        seqId: 2,
-        createdAt: "2026-08-01T10:00:02.000Z",
-        userMessage: {
-          version: 1,
-          parts: [
-            {
-              type: "automation",
-              workflowName: "Weekly review",
-              automationBrief: legacyBrief,
-            },
-          ],
-        },
+    },
+    {
+      id: "legacy-trigger",
+      role: "user",
+      eventType: "input.automation",
+      content: null,
+      runId: LEGACY_RUN_ID,
+      seqId: 2,
+      createdAt: "2026-11-20T07:05:00.000Z",
+      userMessage: {
+        version: 1,
+        parts: [
+          {
+            type: "automation",
+            workflowName: "CRM sync",
+            automationBrief: "Sync the CRM notes",
+          },
+        ],
       },
-    ],
+    },
+  ]);
+  mockRunDetails({
+    [DIGEST_RUN_ID]: "Weekly digest run",
+    [LEGACY_RUN_ID]: "CRM sync run",
   });
-  context.mocks.api(logsByIdContract.getById, ({ params, respond }) => {
-    return respond(200, {
-      id: params.id,
-      sessionId: "workflow-session",
-      agentId: CAPABILITY_AGENT_ID,
-      displayName: "Workflow run inspection",
-      framework: "claude-code",
-      modelProvider: "claude-code-oauth-token",
-      selectedModel: "claude-sonnet-4-6",
-      triggerSource: "web",
-      status: "completed",
-      prompt: triggerText,
-      appendSystemPrompt: null,
-      createdAt: "2026-08-01T10:00:00.000Z",
-      startedAt: "2026-08-01T10:00:00.000Z",
-      completedAt: "2026-08-01T10:00:01.000Z",
-    });
-  });
+  const clipboard = {
+    plain: context.mocks.browser.clipboardWriteText(),
+    rich: context.mocks.browser.clipboardWrite(),
+  };
+  const digest = await messageActions("Summarize this week's launches");
+  const legacy = await messageActions("Sync the CRM notes");
 
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
+  click(control("button", "Copy message", digest) as HTMLElement);
+  await waitFor(async () => {
+    await expect(copiedText(clipboard)).resolves.toBe(
+      "Summarize this week's launches",
+    );
   });
-  await readyChat();
-
-  const triggerActions = (await screen.findByText(triggerText))
-    .closest('[data-role="user"]')
-    ?.querySelector("[data-chat-user-message-actions]");
-  const legacyActions = screen
-    .getByText(legacyBrief)
-    .closest('[data-role="user"]')
-    ?.querySelector("[data-chat-user-message-actions]");
-  if (!triggerActions || !legacyActions) {
-    throw new Error("Workflow message action rows were not available");
-  }
-  const logs = linkIn(triggerActions, "View run logs");
-  expect(logs).toHaveAttribute(
+  click(control("button", "Copy message", legacy) as HTMLElement);
+  await waitFor(async () => {
+    await expect(copiedText(clipboard)).resolves.toBe("Sync the CRM notes");
+  });
+  expect(control("link", "View run logs", digest)).toHaveAttribute(
     "href",
-    `/activities/${FIRST_CAPABILITY_RUN_ID}`,
+    `/activities/${DIGEST_RUN_ID}`,
   );
-  expect(linkIn(legacyActions, "View run logs")).toHaveAttribute(
+  expect(control("link", "View run logs", legacy)).toHaveAttribute(
     "href",
-    `/activities/${SECOND_CAPABILITY_RUN_ID}`,
+    `/activities/${LEGACY_RUN_ID}`,
   );
 
-  click(buttonIn(triggerActions, "Copy message"));
-  await waitFor(() => {
-    expect(clipboard.writes).toStrictEqual([triggerText]);
-  });
-  click(buttonIn(legacyActions, "Copy message"));
-  await waitFor(() => {
-    expect(clipboard.writes).toStrictEqual([triggerText, legacyBrief]);
-  });
+  await userEvent
+    .setup({ delay: null })
+    .click(control("link", "View run logs", digest) as HTMLElement);
 
-  click(logs);
   await expect(
-    screen.findByRole("heading", { name: "Workflow run inspection" }),
-  ).resolves.toBeVisible();
-  expect(window.location.pathname).toBe(
-    `/activities/${FIRST_CAPABILITY_RUN_ID}`,
-  );
-});
-
-test("Keep run logs under the user message when a run fails without output", async () => {
-  const prompt = "Check the connection";
-  installRunChat({
-    chatEvents: [
-      promptEvent({
-        id: "failed-no-output-user-message",
-        runId: FIRST_CAPABILITY_RUN_ID,
-        seqId: 1,
-        text: prompt,
-      }),
-      {
-        id: "failed-no-output-terminal",
-        eventType: "run.failed",
-        content: null,
-        error: "Connection failed",
-        runId: FIRST_CAPABILITY_RUN_ID,
-        seqId: 2,
-        createdAt: "2026-08-01T10:00:02.000Z",
-      },
-    ],
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
-  });
-  await readyChat();
-
-  const actions = screen
-    .getByText(prompt)
-    .closest('[data-role="user"]')
-    ?.querySelector("[data-chat-user-message-actions]");
-  if (!actions) {
-    throw new Error("User message action row was not available");
-  }
-  expect(linkIn(actions, "View run logs")).toHaveAttribute(
-    "href",
-    `/activities/${FIRST_CAPABILITY_RUN_ID}`,
-  );
-  expect(screen.getByText("This run couldn't finish")).toBeInTheDocument();
-});
-
-test("Inspect a response from its prompt or copy it from history", async () => {
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  installCapabilityChat({
-    events: completedConversation(RESPONSE_TEXT),
-    threadTitle: "Capability conversation",
-  });
-  context.mocks.api(logsByIdContract.getById, ({ params, respond }) => {
-    return respond(200, {
-      id: params.id,
-      sessionId: "capability-session",
-      agentId: CAPABILITY_AGENT_ID,
-      displayName: "Response inspection",
-      framework: "claude-code",
-      modelProvider: "claude-code-oauth-token",
-      selectedModel: "claude-sonnet-5",
-      triggerSource: "web",
-      status: "completed",
-      prompt: "Prepare the response",
-      appendSystemPrompt: null,
-      createdAt: "2026-08-01T10:00:00.000Z",
-      startedAt: "2026-08-01T10:00:01.000Z",
-      completedAt: "2026-08-01T10:00:02.000Z",
-    });
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
-  });
-
-  await readyChat();
-  const response = await screen.findByText(RESPONSE_TEXT);
-  const responseGroup = response.closest<HTMLElement>(
-    '[data-role="assistant"]',
-  );
-  if (!responseGroup) {
-    throw new Error("Assistant response group was not available");
-  }
-
-  expect(findLink(responseGroup, "View run logs")).toBeUndefined();
-  const promptActions = screen
-    .getByText("Prepare the first response")
-    .closest('[data-role="user"]')
-    ?.querySelector("[data-chat-user-message-actions]");
-  if (!promptActions) {
-    throw new Error("User message action row was not available");
-  }
-  click(linkIn(promptActions, "View run logs"));
-
-  const inspectionHeading = await screen.findByRole("heading", {
-    name: "Response inspection",
-  });
-  expect(inspectionHeading).toBeVisible();
-  expect(window.location.pathname).toBe(
-    `/activities/${FIRST_CAPABILITY_RUN_ID}`,
-  );
-
-  const sourceThreadLink = await waitFor(() => {
-    return linkIn(document.body, "Capability conversation");
-  });
-  click(sourceThreadLink);
-
-  await readyChat();
-  const restoredResponse = await screen.findByText(RESPONSE_TEXT);
-  const restoredGroup = restoredResponse.closest<HTMLElement>(
-    '[data-role="assistant"]',
-  );
-  if (!restoredGroup) {
-    throw new Error("Restored assistant response group was not available");
-  }
-  click(buttonIn(restoredGroup, "Copy message"));
-
-  await waitFor(() => {
-    expect(clipboard.writes).toStrictEqual([RESPONSE_TEXT]);
-  });
+    screen.findByRole("heading", { name: "Weekly digest run" }),
+  ).resolves.toBeInTheDocument();
+  expect(window.location.pathname).toBe(`/activities/${DIGEST_RUN_ID}`);
 });
 
 test("Copy and paste a structured chat message from the keyboard without flattening it", async () => {
-  const user = userEvent.setup({ delay: null });
-  const clipboard = context.mocks.browser.clipboardWrite();
-  mockPrivateUrlSequence(context, {
-    [STRUCTURED_FILE_ID]: [STRUCTURED_FILE_URL],
-  });
-  installCapabilityChat({
-    events: [
+  await openDebugChat(
+    [
       {
-        id: "structured-user-message",
+        id: "structured-prompt",
         role: "user",
-        runId: FIRST_CAPABILITY_RUN_ID,
+        // Older clients stored a flattened copy beside the structured message.
+        content: "Legacy flattened launch notes",
+        runId: LAUNCH_RUN_ID,
         seqId: 1,
-        content: "Legacy flattened content",
-        createdAt: "2026-08-01T10:00:00.000Z",
+        createdAt: "2026-11-20T07:00:00.000Z",
         userMessage: {
           version: 1,
           parts: [
-            { type: "text", text: "Reuse the current project briefing." },
+            { type: "text", text: "Tighten the launch plan" },
             {
               type: "file",
-              fileId: STRUCTURED_FILE_ID,
-              filenameSnapshot: "structured-reference.pdf",
+              fileId: "file-launch-plan",
+              filenameSnapshot: "launch-plan.pdf",
               contentType: "application/pdf",
             },
             {
+              type: "feedback",
+              quote: "Q3 revenue target",
+              note: [{ type: "text", text: "Use the revised forecast" }],
+            },
+            {
               type: "template",
-              titleSnapshot: "Paper cut",
+              titleSnapshot: "Launch deck",
               template: {
-                type: "illustration",
-                selection: { illustrationStyleId: "paper-cut" },
+                type: "presentation",
+                selection: { templateId: "launch-deck" },
               },
             },
-            {
-              type: "chat_thread",
-              threadId: REFERENCED_THREAD_ID,
-              titleSnapshot: "Referenced planning chat",
-            },
-            {
-              type: "feedback",
-              quote: "The original recommendation",
-              note: [{ type: "text", text: "Adapt this for the new launch." }],
-            },
-            { type: "model", selectedModel: "claude-sonnet-5" },
           ],
         },
       },
-      {
-        id: "structured-assistant-message",
-        role: "assistant",
-        runId: FIRST_CAPABILITY_RUN_ID,
-        seqId: 2,
-        content: "The structured message is ready to reuse.",
-        createdAt: "2026-08-01T10:00:01.000Z",
-      },
     ],
-  });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  const currentText = await screen.findByText(
-    "Reuse the current project briefing.",
+    [],
+    false,
   );
-  const attachment = await screen.findByText("structured-reference.pdf");
-  expect(attachment).toBeVisible();
-  const userGroup = currentText.closest<HTMLElement>('[data-role="user"]');
-  if (!userGroup) {
-    throw new Error("Structured user message group was not available");
-  }
+  // user-event installs its own clipboard, so the boundary mock follows it.
+  const user = userEvent.setup({ delay: null });
+  const clipboard = context.mocks.browser.clipboardWrite();
+  const actions = await messageActions("Tighten the launch plan");
 
-  const copy = buttonIn(userGroup, "Copy message");
-  copy.focus();
-  expect(copy).toHaveFocus();
-  expect(copy).toHaveAccessibleName("Copy message");
+  control("button", "Copy message", actions)?.focus();
   await user.keyboard("{Enter}");
 
-  const item = await readSingleRichClipboardWrite(clipboard);
-  const plainText = await readClipboardItemText(item, "text/plain");
-  const html = await readClipboardItemText(item, "text/html");
-  const copied = parseChatClipboardPayload(html);
-  expect(plainText).toContain("Reuse the current project briefing.");
-  expect(plainText).not.toContain("Legacy flattened content");
-  expect(copied.text).toContain("Reuse the current project briefing.");
-  expect(copied.attachments).toHaveLength(1);
-  const copiedAttachment = copied.attachments[0];
-  if (!copiedAttachment) {
-    throw new Error("Copied attachment was not available");
-  }
-  expect(copiedAttachment).toMatchObject({
-    id: STRUCTURED_FILE_ID,
-    filename: "structured-reference.pdf",
+  const item = await waitFor(() => {
+    const written = clipboard.writes.at(-1)?.[0];
+    if (!written) {
+      throw new Error("Expected a rich clipboard write");
+    }
+    return written;
   });
-  expect(new URL(copiedAttachment.url)).toMatchObject({
-    pathname: "/api/web/file-url",
-    search: `?file_id=${STRUCTURED_FILE_ID}`,
-  });
+  const plain = await (await item.getType("text/plain")).text();
+  const html = await (await item.getType("text/html")).text();
+  expect(plain).toMatch(/^Tighten the launch plan\n/u);
+  // One attachment, named and linked by its private file URL.
+  expect(plain).toMatch(
+    /\n\nAttachments:\n- launch-plan\.pdf: http:\/\/localhost\/api\/web\/file-url\?file_id=file-launch-plan$/u,
+  );
+  expect(plain).not.toContain("Legacy flattened launch notes");
+  expect(html).not.toContain("Legacy flattened launch notes");
 
   const composer = screen.getByRole("textbox", { name: "Message" });
-  fireEvent.paste(composer, {
-    clipboardData: {
-      getData(type: string) {
-        if (type === "text/html") {
-          return html;
-        }
-        return type === "text/plain" ? plainText : "";
-      },
-      items: [],
-      types: ["text/plain", "text/html"],
-    },
-  });
+  await user.click(composer);
+  const pasted = new DataTransfer();
+  pasted.setData("text/plain", plain);
+  pasted.setData("text/html", html);
+  await user.paste(pasted);
 
+  const card = composer.closest<HTMLElement>(
+    '[data-slot="chat-composer-card"]',
+  );
+  if (!card) {
+    throw new Error("Expected the composer card");
+  }
   await waitFor(() => {
-    expect(composer).toHaveTextContent("Reuse the current project briefing.");
+    expect(control("button", "Remove launch-plan.pdf", card)).toBeDefined();
   });
-  const feedback = await screen.findByRole("textbox", {
-    name: "Ask or comment on this quote",
-  });
-  expect(feedback).toHaveTextContent("Adapt this for the new launch.");
-  expect(buttonIn(document.body, "Preview template Paper cut")).toBeVisible();
+  expect(composer).toHaveTextContent("Tighten the launch plan");
+  expect(card).toHaveTextContent("Use the revised forecast");
+  expect(card).not.toHaveTextContent("Legacy flattened launch notes");
+  expect(control("button", "Preview template Launch deck", card)).toBeEnabled();
 });

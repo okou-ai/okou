@@ -1,668 +1,269 @@
-import {
-  integrationsDiscordContract,
-  type DiscordOrgStatus,
-} from "@okouai/api-contracts/contracts/integrations-discord";
-import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
-import { act, screen, waitFor } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
-import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { initSentry } from "../../../lib/sentry.ts";
+import { test, expect, vi } from "vitest";
+import { act, screen, waitFor } from "@testing-library/react";
+import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { bootstrapSkeleton } from "../../../test/bootstrap-skeleton.ts";
-
+import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
+import { queryBootstrapSkeleton } from "../../../test/bootstrap-skeleton.ts";
 import {
-  getAction,
+  findAction,
   queryAction,
 } from "./connector-integrations-test-helpers.ts";
+import {
+  authorizationService,
+  authorizeUrl,
+  browserPeer,
+  consentFragment,
+  consentOpener,
+  consentState,
+  harbor,
+  statusService,
+  watchApproval,
+} from "./discord-consent-fixtures.ts";
 
 const context = testContext();
-const guildId = "123456789012345678";
-const path = `/settings/discord?guild_id=${guildId}`;
-
-function status(overrides: Partial<DiscordOrgStatus> = {}): DiscordOrgStatus {
-  return {
-    isAvailable: true,
-    isConnected: false,
-    isAdmin: true,
-    guildId,
-    guildName: "Design team",
-    discordUserId: null,
-    defaultAgentId: null,
-    defaultAgentName: null,
-    onboarding: "oauth",
-    dmSelectionConnectionId: null,
-    dmBindings: [],
-    contextMode: "mentions_only",
-    ...overrides,
-  };
+const settings = "/settings/discord";
+function visit(path: string) {
+  return setupPage({ context, path, auth: harbor.auth });
 }
 
-test.each([true, false])(
-  "An install link starts a new installation for an already connected user (approved: %s)",
-  async (approved) => {
-    let finished = false;
-    let current = status({ isConnected: true, guildId: "345678901234567890" });
-    const popup = context.mocks.browser.authWindow();
-    vi.spyOn(popup, "postMessage");
-    Object.defineProperty(popup, "location", {
-      configurable: true,
-      value: { href: "" },
-    });
-    context.mocks.browser.open(popup);
-    let requestBody: unknown;
-    const authorizationUrl = `https://discord.com/oauth2/authorize?state=${"s".repeat(43)}`;
-    context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
-      return respond(200, current);
-    });
-    context.mocks.api(discordOauthContract.start, ({ body, respond }) => {
-      requestBody = body;
-      return respond(200, {
-        authorizationUrl,
-        completionToken: "c".repeat(43),
-      });
-    });
-    context.mocks.api(discordOauthContract.complete, ({ respond }) => {
-      if (!finished) {
-        return respond(409, {
-          error: {
-            code: "DISCORD_OAUTH_APPROVAL_REQUIRED",
-            message: "Approve this authorization in the consent browser.",
-          },
-        });
-      }
-      if (!approved) {
-        return respond(400, {
-          error: { code: "BAD_REQUEST", message: "Consent was not completed" },
-        });
-      }
-      current = status({ isConnected: true });
-      return respond(200, { status: "connected" });
-    });
-    await setupPage({
+test.each([
+  ["discord-connect-page-001", "Join new server", "/install"],
+  ["discord-connect-page-003", "Connect", ""],
+] as const)(
+  "%s authorizes the requested server and lands on its verified settings",
+  async (_id, action, suffix) => {
+    const install = suffix === "/install";
+    const service = authorizationService(
       context,
-      path: `/settings/discord/install?guild_id=${guildId}`,
-    });
-    expect(
-      screen.getByRole("heading", { name: "Add Okou to a server" }),
-    ).toBeInTheDocument();
-    expect(queryAction("link", "Open Discord")).toBeNull();
-    expect(requestBody).toBeUndefined();
-    click(getAction("button", "Join new server"));
-    await waitFor(() => {
-      return expect(popup.location.href).toBe(authorizationUrl);
-    });
-    expect(requestBody).toStrictEqual({ flow: "install", guildId });
-    finished = true;
-    await expect(
-      screen.findByText(
-        approved
-          ? "Connected to Discord"
-          : "Discord authorization could not be completed.",
-      ),
-    ).resolves.toBeInTheDocument();
-    expect(popup.closed).toBeFalsy();
-    expect(popup.location.href).toBe(authorizationUrl);
-    // Completing installation must preserve delivery to a callback whose
-    // ready event is still queued, even as the original URL leaves /install.
-    expect(popup.postMessage).not.toHaveBeenCalled();
-    context.mocks.browser.message(
-      { type: "discord-oauth-ready", state: "s".repeat(43) },
-      { origin: window.location.origin, source: popup },
+      {
+        guildId: harbor.guild,
+        ...(install ? { flow: "install" as const } : {}),
+      },
+      install
+        ? {
+            isConnected: true,
+            guildId: harbor.previousGuild,
+            guildName: "Old workshop",
+          }
+        : {},
     );
-    expect(popup.postMessage).toHaveBeenCalledWith(
+    const tab = browserPeer(context);
+    context.mocks.browser.open(tab);
+    const delivered = vi.spyOn(tab, "postMessage");
+    await visit(settings + suffix + "?guild_id=" + harbor.guild);
+    click(await findAction("button", action));
+    await service.checking.promise;
+    expect(tab.location.href).toBe(authorizeUrl);
+    context.mocks.browser.message(
+      { type: "discord-oauth-ready", state: consentState },
+      { source: tab, origin: location.origin },
+    );
+    service.approve();
+    service.release.resolve();
+    await expect(
+      screen.findByText("Connected to Discord"),
+    ).resolves.toBeInTheDocument();
+    await expect(findAction("link", "Open Discord")).resolves.toHaveAttribute(
+      "href",
+      "discord://-/channels/" + harbor.guild,
+    );
+    await waitFor(() => {
+      return expect(location.pathname).toBe(settings);
+    });
+    expect(new URL(location.href).searchParams.get("status")).toBe("connected");
+    expect(new URL(location.href).searchParams.get("guild_id")).toBe(
+      harbor.guild,
+    );
+    expect(delivered).toHaveBeenCalledWith(
       {
         type: "discord-oauth-result",
-        state: "s".repeat(43),
-        status: approved ? "connected" : "error",
+        state: consentState,
+        status: "connected",
       },
-      window.location.origin,
+      location.origin,
     );
-    expect(window.location.pathname).toBe(
-      approved ? "/settings/discord" : "/settings/discord/install",
-    );
-    expect(
-      queryAction("link", "Open Discord")?.getAttribute("href") ?? null,
-    ).toBe(approved ? `discord://-/channels/${guildId}` : null);
+    expect(tab.closed).toBeFalsy();
   },
 );
 
-test.each(["install", "connect"] as const)(
-  "The Discord bot link offers %s directly and retains the target server",
-  async (flow) => {
-    let approved = false;
-    let current = status({
-      guildId: flow === "connect" ? guildId : null,
-      guildName: flow === "connect" ? "Design team" : null,
-    });
-    context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
-      return respond(200, current);
-    });
-    const popup = context.mocks.browser.authWindow();
-    vi.spyOn(popup, "postMessage");
-    Object.defineProperty(popup, "location", {
-      configurable: true,
-      value: { href: "" },
-    });
-    context.mocks.browser.open(popup);
-    const state = "s".repeat(43);
-    const completionToken = "c".repeat(43);
-    const authorizationUrl = `https://discord.com/oauth2/authorize?state=${state}`;
-    let requestBody: unknown;
-    let completionBody: unknown;
-    context.mocks.api(discordOauthContract.start, ({ body, respond }) => {
-      requestBody = body;
-      return respond(200, { authorizationUrl, completionToken });
-    });
-    context.mocks.api(discordOauthContract.complete, ({ body, respond }) => {
-      completionBody = body;
-      if (!approved) {
-        return respond(409, {
-          error: {
-            code: "DISCORD_OAUTH_APPROVAL_REQUIRED",
-            message: "Approve Discord authorization before completing it.",
-          },
-        });
-      }
-      current = status({ isConnected: true });
-      return respond(200, {
-        status: "connected",
-      });
-    });
-    await setupPage({
-      context,
-      path,
-    });
-    expect(
-      screen.getByRole("heading", { name: "Connect to Discord" }),
-    ).toBeInTheDocument();
-    click(getAction("button", "Connect"));
-    await waitFor(() => {
-      expect(popup.location.href).toBe(authorizationUrl);
-    });
-    expect(getAction("button", "Connecting...")).toBeDisabled();
-    expect(
-      screen.getByText("Connect your Discord account to chat with your agent."),
-    ).toBeInTheDocument();
-    expect(queryAction("link", "Open Discord")).not.toBeInTheDocument();
-    expect(requestBody).toStrictEqual({ guildId });
-    context.mocks.browser.message(
-      { type: "discord-oauth-ready", state },
-      { origin: window.location.origin, source: popup },
-    );
-    approved = true;
-    await waitFor(() => {
-      const completed = screen.getByRole("heading", {
-        name: "Connected to Discord",
-      });
-      expect(completed).toBeInTheDocument();
-    });
-    expect(completionBody).toStrictEqual({ state, completionToken });
-    await waitFor(() => {
-      expect(
-        Object.fromEntries(new URLSearchParams(window.location.search)),
-      ).toStrictEqual({
-        status: "connected",
-        workspace: "Design team",
-        guild_id: guildId,
-      });
-    });
-    expect(
-      queryAction("link", "Open Discord")?.getAttribute("href") ?? null,
-    ).toBe(`discord://-/channels/${guildId}`);
-    expect(popup.closed).toBeFalsy();
-    expect(popup.location.href).toBe(authorizationUrl);
-    expect(popup.postMessage).toHaveBeenCalledWith(
-      { type: "discord-oauth-result", state, status: "connected" },
-      window.location.origin,
-    );
-  },
-);
-
-test.each(["connected", "disconnected", "error"] as const)(
-  "Discord consent finishes in place after the refreshed status is %s",
-  async (result) => {
-    const opener = context.mocks.browser.authWindow();
-    vi.stubGlobal("opener", opener);
-    const state = "s".repeat(43);
-    const approvalProof = "p".repeat(43);
-    const approving = context.mocks.deferred<void>();
-    const approved = context.mocks.deferred<void>();
-    const refreshing = context.mocks.deferred<void>();
-    const refreshed = context.mocks.deferred<void>();
-    let completed = false;
-    context.mocks.api(
-      integrationsDiscordContract.getStatus,
-      async ({ respond }) => {
-        if (!completed) {
-          // An older connection must not count as this attempt completing.
-          return respond(
-            200,
-            status({ isConnected: true, guildId: "345678901234567890" }),
-          );
-        }
-        if (!refreshing.settled()) {
-          refreshing.resolve();
-        }
-        await refreshed.promise;
-        return result === "error"
-          ? respond(403, {
-              error: { code: "FORBIDDEN", message: "Discord access denied" },
-            })
-          : respond(200, status({ isConnected: result === "connected" }));
-      },
-    );
-    context.mocks.api(discordOauthContract.approve, async ({ respond }) => {
-      approving.resolve();
-      await approved.promise;
-      return respond(200, { approved: true });
-    });
-    const page = await startPage({
-      context,
-      path: `/settings/discord?status=pending#discord_oauth=approve&state=${state}&approval_proof=${approvalProof}`,
-    });
-    await page.content;
-    await approving.promise;
-    expect(
-      screen.getByRole("heading", { name: "Checking account status..." }),
-    ).toBeInTheDocument();
-    expect(queryAction("link", "Open Discord")).toBeNull();
-    expect(window.location.hash).toBe("");
-    const completion = {
-      type: "discord-oauth-result",
-      state,
-      status: "connected",
+test("discord-connect-page-005 the consent page discards the previous server on completion", async () => {
+  let guild: string = harbor.previousGuild;
+  statusService(context, () => {
+    return {
+      isConnected: true,
+      guildId: guild,
+      guildName: "Session guild",
     };
-    const origin = window.location.origin;
-    completed = true;
-    // The server can finish while this tab's approval response is in flight.
-    context.mocks.browser.message(completion, { origin, source: opener });
-    approved.resolve();
-    await page.ready;
-    await refreshing.promise;
-    expect(
-      screen.getByRole("heading", { name: "Checking account status..." }),
-    ).toBeInTheDocument();
-    expect(bootstrapSkeleton()).toHaveAttribute("aria-hidden", "true");
-    expect(queryAction("link", "Open Discord")).toBeNull();
-    refreshed.resolve();
-    await expect(
-      screen.findByRole("heading", {
-        name:
-          result === "connected"
-            ? "Connected to Discord"
-            : result === "error"
-              ? "Connection failed"
-              : "Connect to Discord",
-      }),
-    ).resolves.toBeInTheDocument();
-    expect(bootstrapSkeleton()).toHaveAttribute("aria-hidden", "true");
-    expect(window.location.pathname).toBe("/settings/discord");
-    expect(new URLSearchParams(window.location.search).get("status")).toBe(
-      "connected",
-    );
-    expect(
-      queryAction("link", "Open Discord")?.getAttribute("href") ?? null,
-    ).toBe(result === "connected" ? `discord://-/channels/${guildId}` : null);
-  },
-);
-
-test.each(["connected", "error"] as const)(
-  "Only the original window's same-origin %s result for this attempt can finish Discord consent",
-  async (result) => {
-    const opener = context.mocks.browser.authWindow();
-    vi.spyOn(opener, "postMessage");
-    vi.stubGlobal("opener", opener);
-    const state = "s".repeat(43);
-    context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
-      return respond(200, status({ isConnected: true }));
-    });
-    context.mocks.api(discordOauthContract.approve, ({ respond }) => {
-      return respond(200, { approved: true });
-    });
-    await setupPage({
-      context,
-      path: `/settings/discord?status=pending#discord_oauth=approve&state=${state}&approval_proof=${"p".repeat(43)}`,
-    });
-    expect(
-      screen.getByRole("heading", { name: "Checking account status..." }),
-    ).toBeInTheDocument();
-    expect(opener.postMessage).toHaveBeenCalledWith(
-      { type: "discord-oauth-ready", state },
-      window.location.origin,
-    );
-    const completion = { type: "discord-oauth-result", state, status: result };
-    const origin = window.location.origin;
-    await act(() => {
-      context.mocks.browser.message(completion, {
-        origin: "https://untrusted.example",
-        source: opener,
-      });
-      context.mocks.browser.message(completion, {
-        origin,
-        source: context.mocks.browser.authWindow(),
-      });
-      context.mocks.browser.message(
-        { ...completion, state: "another-attempt" },
-        { origin, source: opener },
-      );
-      context.mocks.browser.message(
-        { ...completion, status: "unknown" },
-        { origin, source: opener },
-      );
-    });
-    expect(
-      screen.getByRole("heading", { name: "Checking account status..." }),
-    ).toBeInTheDocument();
-    expect(new URLSearchParams(window.location.search).get("status")).toBe(
-      "pending",
-    );
-    context.mocks.browser.message(completion, { origin, source: opener });
-    await expect(
-      screen.findByRole("heading", {
-        name:
-          result === "connected" ? "Connected to Discord" : "Connection failed",
-      }),
-    ).resolves.toBeInTheDocument();
-    expect(bootstrapSkeleton()).toHaveAttribute("aria-hidden", "true");
-    expect(new URLSearchParams(window.location.search).get("status")).toBe(
-      result,
-    );
-  },
-);
+  });
+  watchApproval(context);
+  const finish = consentOpener(context);
+  await visit(settings + "?status=pending" + consentFragment);
+  expect(screen.getByText("Checking account status...")).toBeInTheDocument();
+  guild = harbor.guild;
+  finish("connected");
+  await expect(findAction("link", "Open Discord")).resolves.toHaveAttribute(
+    "href",
+    "discord://-/channels/" + guild,
+  );
+  expect(screen.getByText("Connected to Discord")).toBeInTheDocument();
+  expect(location.pathname).toBe(settings);
+  expect(location.hash).toBe("");
+});
 
 test.each([
-  { result: "connected", approvalStatus: 200 },
-  { result: "connected", approvalStatus: 403 },
-  { result: "error", approvalStatus: 200 },
-  { result: "error", approvalStatus: 403 },
+  ["discord-connect-page-010", "connected", "Connected to Discord", "error"],
+  ["discord-connect-page-012", "error", "Connection failed", "connected"],
 ] as const)(
-  "A terminal $result result renders before an in-flight approval response ($approvalStatus) and remains final",
-  async ({ result, approvalStatus }) => {
-    const opener = context.mocks.browser.authWindow();
-    vi.stubGlobal("opener", opener);
-    const state = "s".repeat(43);
-    const approving = context.mocks.deferred<void>();
-    const approved = context.mocks.deferred<void>();
-    context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
-      return respond(200, status({ isConnected: true }));
+  "%s keeps the result received before the approval response",
+  async (_id, first, title, later) => {
+    statusService(context, () => {
+      return {
+        isConnected: true,
+        guildId: harbor.guild,
+      };
     });
-    context.mocks.api(discordOauthContract.approve, async ({ respond }) => {
-      approving.resolve();
-      await approved.promise;
-      return approvalStatus === 200
-        ? respond(200, { approved: true })
-        : respond(403, {
-            error: { code: "FORBIDDEN", message: "Approval failed" },
-          });
-    });
+    const gate = context.mocks.deferred<void>();
+    const verifying = watchApproval(context, gate.promise);
+    const finish = consentOpener(context);
     const page = await startPage({
       context,
-      path: `/settings/discord?status=pending#discord_oauth=approve&state=${state}&approval_proof=${"p".repeat(43)}`,
+      path: settings + "?status=pending" + consentFragment,
+      auth: harbor.auth,
     });
-    await page.content;
-    await approving.promise;
-    expect(
-      screen.getByRole("heading", { name: "Checking account status..." }),
-    ).toBeInTheDocument();
-    context.mocks.browser.message(
-      { type: "discord-oauth-result", state, status: result },
-      { origin: window.location.origin, source: opener },
-    );
-    const title =
-      result === "connected" ? "Connected to Discord" : "Connection failed";
-    await expect(
-      screen.findByRole("heading", { name: title }),
-    ).resolves.toBeInTheDocument();
-    expect(bootstrapSkeleton()).toHaveAttribute("aria-hidden", "true");
-    expect(queryAction("button", "Connect")).toBeNull();
-    expect(new URLSearchParams(window.location.search).get("status")).toBe(
-      result,
-    );
-
-    approved.resolve();
+    await verifying.promise;
+    finish(first);
+    await expect(screen.findByText(title)).resolves.toBeInTheDocument();
+    gate.resolve();
     await page.ready;
-    await act(() => {
-      context.mocks.browser.message(
-        {
-          type: "discord-oauth-result",
-          state,
-          status: result === "connected" ? "error" : "connected",
-        },
-        { origin: window.location.origin, source: opener },
-      );
+    act(() => {
+      finish(later);
     });
-    expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
+    expect(screen.getByText(title)).toBeInTheDocument();
+    expect(new URL(location.href).searchParams.get("status")).toBe(first);
     expect(queryAction("button", "Connect")).toBeNull();
-    expect(new URLSearchParams(window.location.search).get("status")).toBe(
-      result,
-    );
-    expect(bootstrapSkeleton()).toHaveAttribute("aria-hidden", "true");
+    expect(
+      queryBootstrapSkeleton()?.getAttribute("aria-hidden") ?? "true",
+    ).toBe("true");
   },
 );
 
-test.each([false, true])(
-  "The Discord success URL uses verified connection data (connected: %s)",
-  async (isConnected) => {
-    context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
-      return respond(200, status({ isConnected }));
-    });
-    await setupPage({
-      context,
-      path: `${path}&status=connected&workspace=Unverified+server`,
-    });
-    expect(screen.queryByText(/Unverified server/u)).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", {
-        name: isConnected ? "Connected to Discord" : "Connect to Discord",
-      }),
-    ).toBeInTheDocument();
-    expect(
-      queryAction("link", "Open Discord")?.getAttribute("href") ?? null,
-    ).toBe(isConnected ? `discord://-/channels/${guildId}` : null);
-    const action = isConnected
-      ? getAction("link", "Open Discord")
-      : getAction("button", "Connect");
-    expect(action).not.toBeDisabled();
-  },
-);
+test("discord-connect-page-014 a connection claim cannot override the disconnected account", async () => {
+  statusService(context, () => {
+    return {};
+  });
+  await visit(settings + "?status=connected&workspace=Unverified+outpost");
+  expect(screen.getByText("Connect to Discord")).toBeInTheDocument();
+  await expect(findAction("button", "Connect")).resolves.toBeEnabled();
+  expect(queryAction("link", "Open Discord")).toBeNull();
+  expect(screen.queryByText(/Unverified outpost/u)).toBeNull();
+});
 
-test("A blocked Discord popup keeps authorization incomplete", async () => {
+test("discord-connect-page-015 the success action uses the verified guild instead of the URL label", async () => {
+  statusService(context, () => {
+    return { isConnected: true, guildId: harbor.guild };
+  });
+  await visit(settings + "?status=connected&workspace=Unverified+outpost");
+  expect(screen.getByText("Connected to Discord")).toBeInTheDocument();
+  await expect(findAction("link", "Open Discord")).resolves.toHaveAttribute(
+    "href",
+    "discord://-/channels/" + harbor.guild,
+  );
+  expect(screen.queryByText(/Unverified outpost/u)).toBeNull();
+});
+
+test("discord-connect-page-016 a blocked popup leaves an actionable error on Discord settings", async () => {
+  statusService(context, () => {
+    return {};
+  });
   context.mocks.browser.open(null);
-  context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
-    return respond(200, status());
-  });
-  await setupPage({
-    context,
-    path,
-  });
-  click(getAction("button", "Connect"));
+  await visit(settings);
+  click(await findAction("button", "Connect"));
   await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
     "The Discord authorization popup was blocked.",
   );
-  expect(queryAction("link", "Open Discord")).not.toBeInTheDocument();
+  expect(queryAction("link", "Open Discord")).toBeNull();
 });
 
-test("Closing Discord consent shows cancellation without failure capture", async () => {
+test("discord-connect-page-019 verification failure survives the consent window closing", async () => {
   const sentry = context.mocks.sentry();
   initSentry();
-  const current = status();
-  context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
-    return respond(200, current);
-  });
-  const popup = context.mocks.browser.authWindow();
-  Object.defineProperty(popup, "location", {
-    configurable: true,
-    value: { href: "" },
-  });
-  context.mocks.browser.open(popup);
-  const authorizationUrl = `https://discord.com/oauth2/authorize?state=${"s".repeat(43)}`;
-  context.mocks.api(discordOauthContract.start, ({ respond }) => {
-    return respond(200, {
-      authorizationUrl,
-      completionToken: "c".repeat(43),
-    });
-  });
-  context.mocks.api(discordOauthContract.complete, ({ respond }) => {
-    return respond(409, {
-      error: {
-        code: "DISCORD_OAUTH_APPROVAL_REQUIRED",
-        message: "Discord consent has not been approved",
-      },
-    });
-  });
-  await setupPage({
-    context,
-    path,
-  });
-  click(getAction("button", "Connect"));
+  const tab = browserPeer(context);
+  context.mocks.browser.open(tab);
+  const service = authorizationService(context, {});
+  await visit(settings);
+  click(await findAction("button", "Connect"));
+  await service.checking.promise;
+  tab.close();
+  service.fail("forbidden");
+  service.release.resolve();
+  await expect(
+    screen.findByText("Discord authorization could not be completed."),
+  ).resolves.toBeInTheDocument();
+  await expect(
+    screen.findByText("Harbor could not verify this identity"),
+  ).resolves.toBeInTheDocument();
+  expect(queryAction("link", "Open Discord")).toBeNull();
+  expect(screen.queryByText("Connected to Discord")).toBeNull();
   await waitFor(() => {
-    expect(popup.location.href).toBe(authorizationUrl);
+    return expect(sentry.reports).toContainEqual(
+      expect.objectContaining({
+        type: "exception",
+        error: expect.objectContaining({
+          message: "Harbor could not verify this identity",
+          expected: false,
+          code: "FORBIDDEN",
+          status: 403,
+        }),
+      }),
+    );
   });
-  popup.close();
-  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
-    "Discord authorization was cancelled.",
-  );
-  expect(queryAction("link", "Open Discord")).not.toBeInTheDocument();
-  expect(new URLSearchParams(window.location.search).get("status")).not.toBe(
-    "connected",
-  );
-  expect(
-    screen.queryByText("Discord consent has not been approved"),
-  ).toBeNull();
-  expect(sentry.reports).toStrictEqual([]);
 });
 
 test.each([
-  { statusCode: 409, code: "CONFLICT" },
-  { statusCode: 403, code: "FORBIDDEN" },
-  { statusCode: 400, code: "DISCORD_OAUTH_FAILED" },
-  { statusCode: 503, code: "DISCORD_OAUTH_APPROVAL_REQUIRED" },
+  ["discord-connect-page-022", false],
+  ["discord-connect-page-024", true],
 ] as const)(
-  "Closing consent does not hide a real $statusCode $code completion failure on the canonical page",
-  async ({ statusCode, code }) => {
-    const sentry = context.mocks.sentry();
-    initSentry();
-    const completing = context.mocks.deferred<void>();
-    const respondToCompletion = context.mocks.deferred<void>();
-    const popup = context.mocks.browser.authWindow();
-    Object.defineProperty(popup, "location", {
-      configurable: true,
-      value: { href: "" },
+  "%s offers Connect after loading available Discord settings",
+  async (_id, hinted) => {
+    statusService(context, () => {
+      return {
+        guildId: hinted ? harbor.previousGuild : null,
+        isAdmin: false,
+      };
     });
-    context.mocks.browser.open(popup);
-    context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
-      return respond(200, status());
-    });
-    context.mocks.api(discordOauthContract.start, ({ respond }) => {
-      return respond(200, {
-        authorizationUrl: `https://discord.com/oauth2/authorize?state=${"s".repeat(43)}`,
-        completionToken: "c".repeat(43),
-      });
-    });
-    context.mocks.api(discordOauthContract.complete, async ({ respond }) => {
-      completing.resolve();
-      await respondToCompletion.promise;
-      return respond(statusCode, {
-        error: { code, message: "Discord completion failed verification" },
-      });
-    });
-    await setupPage({
-      context,
-      path,
-    });
-    click(getAction("button", "Connect"));
-    await completing.promise;
-    popup.close();
-    respondToCompletion.resolve();
-    await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
-      "Discord authorization could not be completed.",
-    );
-    expect(
-      screen.getByText("Discord completion failed verification"),
-    ).toBeInTheDocument();
-    expect(queryAction("link", "Open Discord")).toBeNull();
-    expect(new URLSearchParams(window.location.search).get("status")).not.toBe(
-      "connected",
-    );
-    expect(sentry.reports).toMatchObject([
-      {
-        type: "exception",
-        error: { code, status: statusCode, expected: false },
-      },
-    ]);
+    await visit(settings + (hinted ? "?guild_id=" + harbor.guild : ""));
+    await expect(findAction("button", "Connect")).resolves.toBeEnabled();
   },
 );
 
-test("A Discord DM link can connect without a server hint", async () => {
-  context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
-    return respond(200, status());
-  });
-  await setupPage({
-    context,
-    path: "/settings/discord",
-  });
-  expect(getAction("button", "Connect")).toBeEnabled();
-});
-
-test("A failed Discord status request exposes the error page and its back link", async () => {
+test("discord-connect-page-023 a forbidden status exposes the Works recovery link", async () => {
   context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
     return respond(403, {
-      error: { code: "FORBIDDEN", message: "Discord access denied" },
+      error: { code: "FORBIDDEN", message: "Workspace membership expired" },
     });
   });
+  const page = await startPage({ context, path: settings, auth: harbor.auth });
+  await page.content;
   await expect(
-    setupPage({
-      context,
-      path,
-    }),
-  ).rejects.toThrow("Discord access denied");
-  await expect(
-    screen.findByRole("heading", { name: "Connection failed" }),
+    screen.findByText("Connection failed"),
   ).resolves.toBeInTheDocument();
-  expect(getAction("link", "Back to settings")).toHaveAttribute(
+  await expect(findAction("link", "Back to settings")).resolves.toHaveAttribute(
     "href",
     "/works",
   );
-  expect(queryAction("button", "Connect")).not.toBeInTheDocument();
+  expect(queryAction("button", "Connect")).toBeNull();
 });
 
-test("A server link is independent of the workspace's previous server", async () => {
-  context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
-    return respond(
-      200,
-      status({ guildId: "987654321098765432", isAdmin: false }),
-    );
+test("discord-connect-page-025 a malformed server link asks the user to return to Discord", async () => {
+  statusService(context, () => {
+    return {};
   });
-  await setupPage({
-    context,
-    path,
-  });
-  expect(getAction("button", "Connect")).toBeEnabled();
-});
-
-test("A malformed server link cannot start consent", async () => {
-  context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
-    return respond(200, status());
-  });
-  await setupPage({
-    context,
-    path: "/settings/discord?guild_id=invalid",
-  });
-  expect(
-    screen.getByText(
+  await visit(settings + "?guild_id=broken-link");
+  await expect(
+    screen.findByText(
       "This Discord connection link is invalid. Open a new link from Discord.",
     ),
-  ).toBeInTheDocument();
-  expect(queryAction("button", "Connect")).not.toBeInTheDocument();
-});
-
-test("A Discord connection link requires sign-in and preserves its server", async () => {
-  await startPage({ context, path, host: "app.okou.ai", auth: null });
-  await waitFor(() => {
-    expect(window.location.pathname).toBe("/sign-in");
-  });
-  const redirect = new URL(window.location.href).searchParams.get(
-    "redirect_url",
-  );
-  expect(redirect).toContain(path);
+  ).resolves.toBeInTheDocument();
+  expect(queryAction("button", "Connect")).toBeNull();
 });

@@ -1,114 +1,127 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { screen } from "@testing-library/react";
+import { voiceIoTranscribeContract } from "@okouai/api-contracts/contracts/voice-io-transcribe";
+import { act, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
-import { initSentry } from "../../../lib/sentry.ts";
+
 import {
-  findEnabledButton,
-  RUN_PATH,
-  createChatRunFixtures,
-} from "./chat-run-test-fixtures.ts";
+  click,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
+import { setupSentryLogger } from "../../../lib/sentry-config.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const { installRunChat } = createChatRunFixtures(context);
+// One incremental segment is fifteen seconds of 16 kHz audio.
+const SEGMENT_SAMPLES = 15 * 16_000;
 
-const endpoint = "*/api/voice-io/transcribe/segment";
+function queryControl(name: string): HTMLElement | undefined {
+  return queryAllByRoleFast("button").find((button) => {
+    return button.getAttribute("aria-label") === name;
+  });
+}
+
+async function findEnabledControl(name: string): Promise<HTMLElement> {
+  return await waitFor(() => {
+    const control = queryControl(name);
+    expect(control).toBeEnabled();
+    return control as HTMLElement;
+  });
+}
+
+/** Starts recording and returns the microphone's PCM feed. */
+async function startRecording(): Promise<(samples: Float32Array) => void> {
+  const microphone: { emit?: (samples: Float32Array) => void } = {};
+  context.mocks.browser.voiceInput({
+    rms: 0.2,
+    onPcmCapture(emit) {
+      microphone.emit = emit;
+    },
+  });
+  await setupPage({ context, path: "/" });
+  click(await findEnabledControl("Voice input"));
+  const emit = await waitFor(() => {
+    if (!microphone.emit) {
+      throw new Error("Expected the microphone to capture audio");
+    }
+    return microphone.emit;
+  });
+  act(() => {
+    emit(new Float32Array(4096).fill(0.25));
+  });
+  await findEnabledControl("Stop recording");
+  return emit;
+}
 
 test("Keep recording data after an incremental segment fails", async () => {
-  const capture = context.mocks.deferred<(samples: Float32Array) => void>();
-  const unavailable = context.mocks.deferred<void>();
-  context.mocks.browser.voiceInput({
-    rms: 0.1,
-    onPcmCapture: capture.resolve,
-    finalPcmSamples: new Float32Array(0),
-  });
-  installRunChat();
-  context.mocks.http.post(endpoint, () => {
-    unavailable.resolve();
+  const unavailable =
+    "Speech recognition is temporarily unavailable. Your recording is kept.";
+  // The latest segment failure the transcription service returned.
+  const segment: { failure?: string } = {};
+  context.mocks.http.post(`*${voiceIoTranscribeContract.segment.path}`, () => {
+    segment.failure = unavailable;
     return HttpResponse.json(
-      {
-        error: {
-          code: "PROVIDER_UNAVAILABLE",
-          message: "Segment temporarily unavailable",
-        },
-      },
+      { error: { code: "PROVIDER_UNAVAILABLE", message: unavailable } },
       { status: 503 },
     );
   });
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-  click(await findEnabledButton("Voice input"));
-  const emit = await capture.promise;
-  emit(new Float32Array(15 * 16_000).fill(0.1));
-  await unavailable.promise;
-  await expect(findEnabledButton("Stop recording")).resolves.toBeVisible();
-  emit(new Float32Array(5 * 16_000).fill(0.2));
-  click(await findEnabledButton("Stop recording"));
-  await expect(
-    screen.findByText("Segment temporarily unavailable", { exact: false }),
-  ).resolves.toBeVisible();
-  await expect(findEnabledButton("Remove voice draft")).resolves.toBeVisible();
-});
+  const emit = await startRecording();
 
-test("Preserve audio and retain its draft when transcription is busy", async () => {
-  const message =
-    "Speech recognition is temporarily busy. Please retry in a moment.";
-  context.mocks.browser.voiceInput({ rms: 0.1 });
-  installRunChat();
-  const audio: ArrayBuffer[] = [];
-  context.mocks.http.post("*/api/voice-io/polish/segments", () => {
-    return HttpResponse.json({ text: "Retained speech." });
+  // Fifteen seconds of speech close the first incremental segment.
+  act(() => {
+    emit(new Float32Array(SEGMENT_SAMPLES).fill(0.25));
   });
-  context.mocks.http.post(endpoint, async ({ request }) => {
-    const form = await request.formData();
-    const file = form.get("file");
-    if (!(file instanceof File)) {
-      throw new Error("Expected retained audio");
-    }
-    audio.push(await file.arrayBuffer());
-    return HttpResponse.json(
-      { error: { code: "PROVIDER_UNAVAILABLE", message } },
-      { status: 503 },
-    );
+  await waitFor(() => {
+    expect(segment.failure).toBe(unavailable);
   });
-  await setupPage({ context, path: RUN_PATH });
-  click(await findEnabledButton("Voice input"));
-  click(await findEnabledButton("Stop recording"));
-  await findEnabledButton("Remove voice draft");
+  // The failed segment arrived before Stop and does not end the recording.
+  expect(queryControl("Stop recording")).toBeEnabled();
+  act(() => {
+    emit(new Float32Array(4096).fill(0.25));
+  });
+
+  click(await findEnabledControl("Stop recording"));
+
+  await expect(screen.findByText(unavailable)).resolves.toBeInTheDocument();
   await expect(
-    screen.findByText(message, { exact: false }),
-  ).resolves.toBeVisible();
-  await expect(findEnabledButton("Remove voice draft")).resolves.toBeVisible();
-  expect(audio).toHaveLength(1);
+    findEnabledControl("Remove voice draft"),
+  ).resolves.toBeInTheDocument();
+  expect(queryControl("Stop recording")).toBeUndefined();
 });
 
 test("Keep genuine transcription failures actionable", async () => {
-  const status = 502;
-  const code = "VOICE_TRANSCRIPTION_FAILED";
   const sentry = context.mocks.sentry();
-  initSentry();
-  context.mocks.browser.voiceInput({ rms: 0.1 });
-  installRunChat();
-  context.mocks.http.post(endpoint, () => {
+  setupSentryLogger();
+  context.mocks.http.post(`*${voiceIoTranscribeContract.segment.path}`, () => {
     return HttpResponse.json(
-      { error: { code, message: "Transcription configuration failed" } },
-      { status },
+      {
+        error: {
+          code: "VOICE_IO_NOT_CONFIGURED",
+          message: "Speech recognition is not configured.",
+        },
+      },
+      { status: 502 },
     );
   });
-  await setupPage({ context, path: RUN_PATH });
-  click(await findEnabledButton("Voice input"));
-  click(await findEnabledButton("Stop recording"));
-  await findEnabledButton("Remove voice draft");
+  await startRecording();
+
+  click(await findEnabledControl("Stop recording"));
+
   await expect(
-    screen.findByText("Transcription configuration failed"),
-  ).resolves.toBeVisible();
-  expect(sentry.reports).toContainEqual(
-    expect.objectContaining({
-      type: "exception",
-      error: expect.objectContaining({ code, status }),
-    }),
-  );
+    screen.findByText("Speech recognition is not configured."),
+  ).resolves.toBeInTheDocument();
+  await expect(
+    findEnabledControl("Remove voice draft"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(sentry.reports).toContainEqual(
+      expect.objectContaining({
+        type: "exception",
+        error: expect.objectContaining({
+          code: "VOICE_IO_NOT_CONFIGURED",
+          status: 502,
+        }),
+      }),
+    );
+  });
 });

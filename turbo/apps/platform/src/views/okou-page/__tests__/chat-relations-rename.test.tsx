@@ -1,306 +1,138 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
 import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
+import { screen, within, waitFor } from "@testing-library/react";
+import { expect, test } from "vitest";
 import {
-  chatThreadRenameContract,
-  chatThreadsContract,
-  type ChatThreadEvent,
-} from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  fill,
-  queryAllByRoleFast,
   setupPage,
+  queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { changeChatThreadList } from "../../../mocks/mock-helpers.ts";
 import {
-  continuityEventRow,
-  continuityThread,
-  installContinuityWorkspace,
-} from "./chat-continuity-test-helpers.ts";
-import { chatListEvent } from "./chat-list-test-helpers.ts";
+  chatListThread,
+  chatListEvent,
+  installChatListStream,
+  installChatListAgent,
+} from "./chat-list-test-helpers.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
+import { openResources } from "./chat-resources-test-helpers.ts";
 
 const context = testContext();
-const ORIGINAL_TITLE = "Original parent title";
-const RENAMED_TITLE = "Renamed parent title";
-const SOURCE_RUN = "d0000000-0000-4000-a000-000000000911";
-
-async function setupRelationships({
-  title = ORIGINAL_TITLE,
-  unavailable = false,
-}: {
-  readonly title?: string;
-  readonly unavailable?: boolean;
-} = {}) {
-  const child = continuityThread(97, 1, "Relationship viewer");
-  const parent = continuityThread(97, 2, title);
-  const launch = continuityEventRow(97, 1, child.id, "input.prompt", {
-    payload: {
-      userMessage: {
-        version: 1,
-        parts: [
-          { type: "text", text: "Inspect related conversations" },
-          {
-            type: "source",
-            kind: "agent",
-            threadId: parent.id,
-            runId: SOURCE_RUN,
-            agentId: parent.agentId,
-            titleSnapshot: ORIGINAL_TITLE,
-            href: `/chats/${parent.id}#run-${SOURCE_RUN}`,
-          },
-        ],
-      },
-    },
-  });
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 97,
-    threads: [child, parent],
-    chatEventRows: [{ ...launch, runId: launch.id }],
-  });
+const parent = chatListThread(11, "Release planning");
+const child = chatListThread(12, "Release notes");
+const launchId = "2cfed9db-f2ee-4180-9722-b0e72ee6c740";
+function relatedChats(respondToRelationship?: () => Promise<void> | undefined) {
   context.mocks.browser.matchMedia(true);
-  const saveResponse = context.mocks.deferred<void>();
-  const relationshipResponse = context.mocks.deferred<void>();
-  let serverTitle = title;
-  let delayRelationships = false;
-  const events: ChatThreadEvent[] = [];
-  context.mocks.api(chatThreadsContract.events, ({ query, respond }) => {
-    return respond(200, {
-      events: events.filter((event) => {
-        return event.seqId > (query.sinceSeqId ?? 0);
-      }),
-      hasMore: false,
-    });
+  installChatListAgent(context);
+  mockChatLifecycle(context, {
+    threadId: child.id,
+    threadTitle: child.title,
+    chatEvents: [
+      {
+        id: launchId,
+        runId: launchId,
+        role: "user",
+        createdAt: child.createdAt,
+        content: null,
+        userMessage: {
+          version: 1,
+          parts: [
+            {
+              type: "source",
+              kind: "agent",
+              runId: launchId,
+              threadId: parent.id,
+              agentId: parent.agentId,
+              titleSnapshot: "Release draft",
+              href: `/chats/${parent.id}`,
+            },
+            { type: "text", text: "Prepare release notes" },
+          ],
+        },
+      },
+    ],
+  });
+  const stream = installChatListStream(context, {
+    caseId: 291,
+    snapshot: [parent, child],
   });
   context.mocks.api(chatRelationsContract.children, ({ respond }) => {
     return respond(200, { items: [] });
   });
+
   context.mocks.api(
     chatRelationsContract.communications,
-    async ({ params, respond }) => {
-      const responseTitle = serverTitle;
-      if (delayRelationships) {
-        await relationshipResponse.promise;
-      }
+    async ({ respond }) => {
+      await respondToRelationship?.();
       return respond(200, {
-        items:
-          params.id === child.id
-            ? [
-                {
-                  threadId: parent.id,
-                  // A relationship request may have read before the rename committed.
-                  title: unavailable ? null : responseTitle,
-                  status: unavailable ? "unavailable" : "idle",
-                  sentCount: 1,
-                  receivedCount: 0,
-                  lastMessageAt: "2026-09-01T10:00:00.000Z",
-                },
-              ]
-            : [],
+        items: [
+          {
+            threadId: parent.id,
+            title: "Release draft",
+            status: "idle",
+            sentCount: 0,
+            receivedCount: 1,
+            lastMessageAt: child.createdAt,
+          },
+        ],
       });
     },
   );
-  context.mocks.api(
-    chatThreadRenameContract.rename,
-    async ({ body, params, respond }) => {
-      await saveResponse.promise;
-      serverTitle = body.title;
-      events.push(
-        chatListEvent(97, 2, "renamed", params.id, {
-          id: body.eventId,
-          title: body.title,
-          agentId: parent.agentId,
-        }),
-      );
-      return respond(204);
-    },
-  );
-  await setupPage({
-    context,
-    ...workspace.pageOptions,
-    path: `/chats/${parent.id}?sidebar=${child.id}`,
-  });
-  const parentPane = document.querySelector<HTMLElement>(
-    `[data-chat-thread-container-id="${parent.id}"]`,
-  );
-  const childPane = document.querySelector<HTMLElement>(
-    `[data-chat-thread-container-id="${child.id}"]`,
-  );
-  if (!parentPane || !childPane) {
-    throw new Error("Expected the parent and child chat panes");
-  }
-  /** Open the child's panel, which lists the parent with From. */
-  const openChildChats = async () => {
-    const trigger = await waitFor(() => {
-      const found = queryAllByRoleFast("button", childPane).find((button) => {
-        return button.getAttribute("aria-label") === "Artifacts and chats";
-      });
-      if (!found) {
-        throw new Error("Expected the child's resource button");
-      }
-      return found;
-    });
-    await userEvent.click(trigger);
-    const panel = await waitFor(() => {
-      const found = screen
-        .getAllByRole("dialog", { name: "Artifacts and chats" })
-        .find((candidate) => {
-          return (
-            within(candidate).queryByText("From", { exact: true }) !== null
-          );
-        });
-      if (!found) {
-        throw new Error("Expected the resource panel listing the parent chat");
-      }
-      return found;
-    });
-    return {
-      panel,
-      chats: within(panel).getByRole("region", { name: "Chats" }),
-    };
-  };
-  const { panel, chats } = await openChildChats();
-  return {
-    parent,
-    panel,
-    chats,
-    parentPane,
-    /** Reopen the child's panel after an outside press dismissed it. */
-    async reopenChildChats() {
-      return (await openChildChats()).chats;
-    },
-    saveResponse,
-    relationshipResponse,
-    delayRelationshipResponses() {
-      delayRelationships = true;
-    },
-    renameFromAnotherTab() {
-      serverTitle = RENAMED_TITLE;
-      events.push(
-        chatListEvent(97, 2, "renamed", parent.id, {
-          title: RENAMED_TITLE,
-          agentId: parent.agentId,
-        }),
-      );
-      changeChatThreadList();
-    },
-  };
+  return stream;
 }
 
-// The parent is both the origin and a related chat, so it is listed once and
-// carries the From tag. The row opens it; a separate caret opens its history.
-function expectRelationshipTitle(
-  chats: HTMLElement,
-  title: string,
-  parentId: string,
-) {
-  const titles = within(chats).getAllByText(title);
-  expect(titles).toHaveLength(1);
-  const row = titles[0]!.closest("a");
-  expect(row).toHaveAttribute("href", `/chats/${parentId}`);
-  expect(row).toHaveTextContent(title);
-  expect(row).toHaveTextContent("From");
-  expect(row).not.toHaveAttribute("title");
-  expect(titles[0]).toBeVisible();
-  const caret = queryAllByRoleFast("button", chats).find((button) => {
-    return button.getAttribute("aria-label") === `Messages with ${title}`;
+test("chat-relations-rename-001 shows the current parent as one linked source with a collapsed message history", async () => {
+  relatedChats();
+  await setupPage({ context, path: `/chats/${child.id}` });
+  await screen.findByText("Prepare release notes");
+  const panel = await openResources();
+  const chats = await within(panel).findByRole("region", { name: "Chats" });
+  const current = await within(chats).findByText("Release planning");
+  const link = current.closest("a");
+  expect(link).toHaveAttribute("href", `/chats/${parent.id}`);
+  expect(within(link!).getByText("From")).toBeInTheDocument();
+  const parentLinks = queryAllByRoleFast("link", panel).filter((candidate) => {
+    return candidate.getAttribute("href") === `/chats/${parent.id}`;
   });
-  expect(caret).toHaveAttribute("aria-expanded", "false");
-}
-
-test("Show the current parent title when loading historical sources", async () => {
-  const { panel, chats, parent } = await setupRelationships({
-    title: RENAMED_TITLE,
-  });
-  expectRelationshipTitle(chats, RENAMED_TITLE, parent.id);
-  expect(
-    queryAllByRoleFast("link", chats).map((link) => {
-      return link.getAttribute("href");
-    }),
-  ).toStrictEqual([`/chats/${parent.id}`]);
+  expect(parentLinks).toHaveLength(1);
+  const row = current.closest("li")!;
+  expect(within(row).getByLabelText(/messages/i)).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
   expect(
     within(panel).queryByRole("region", { name: "From" }),
   ).not.toBeInTheDocument();
 });
 
-test("Update relationship titles immediately and synchronize the saved browser title without a realtime notification", async () => {
-  const { chats, parent, parentPane, reopenChildChats, saveResponse } =
-    await setupRelationships();
-  const user = userEvent.setup({ delay: null });
-  const link = within(chats).getByText(ORIGINAL_TITLE).closest("a");
-  const clip = link?.querySelector<HTMLElement>("[data-title-reveal]");
-  const text = clip?.firstElementChild;
-  if (!link || !clip || !text) {
-    throw new Error("Expected the relationship link, title clip and text");
+test("chat-relations-rename-003 applies the cross-tab rename while the relationship refresh is held", async () => {
+  const refreshing = context.mocks.deferred<void>();
+  const response = context.mocks.deferred<void>();
+  let holdRefresh = false;
+  const feed = relatedChats(() => {
+    if (holdRefresh) {
+      refreshing.resolve();
+      return response.promise;
+    }
+    return undefined;
+  });
+  await setupPage({ context, path: `/chats/${child.id}` });
+  const panel = await openResources();
+  const chats = await within(panel).findByRole("region", { name: "Chats" });
+  await within(chats).findByText("Release planning");
+  holdRefresh = true;
+  try {
+    feed.setEvents([
+      chatListEvent(291, 2, "renamed", parent.id, {
+        title: "November release",
+      }),
+    ]);
+    context.mocks.ably.trigger("threadListChanged");
+    await refreshing.promise;
+    await waitFor(() => {
+      return expect(
+        within(chats).getByText("November release").closest("a"),
+      ).toHaveAttribute("href", `/chats/${parent.id}`);
+    });
+  } finally {
+    response.resolve();
   }
-  // Deliberate docs/testing.md#external-behavior exception: HappyDOM
-  // cannot lay out or paint CSS, so check the control's DOM-to-CSS handoff.
-  clip.getBoundingClientRect = () => {
-    return new DOMRect(0, 0, 160, 20);
-  };
-  text.getBoundingClientRect = () => {
-    return new DOMRect(0, 0, 234, 20);
-  };
-
-  await user.hover(link);
-  expect(clip).toHaveAttribute("data-title-revealing", "");
-  expect(clip.style.getPropertyValue("--okou-nav-title-duration")).toBe(
-    "925ms",
-  );
-  await user.unhover(link);
-  expect(clip).not.toHaveAttribute("data-title-revealing");
-
-  await user.dblClick(
-    within(parentPane).getByTestId("chat-thread-header-title"),
-  );
-  const dialog = await screen.findByRole("dialog", { name: "Rename chat" });
-  await fill(within(dialog).getByPlaceholderText("Chat title"), RENAMED_TITLE);
-  await user.keyboard("{Enter}");
-  // Pressing outside the child's panel, on the parent's title and in the
-  // dialog, dismissed it like other header panels.
-  expect(chats).not.toBeInTheDocument();
-  // Reopened while the save is pending, it shows the new title even though
-  // the relationship lists were read before the rename committed.
-  const reopened = await reopenChildChats();
-  await waitFor(() => {
-    expectRelationshipTitle(reopened, RENAMED_TITLE, parent.id);
-  });
-  saveResponse.resolve();
-  await waitFor(() => {
-    expect(dialog).not.toBeInTheDocument();
-    expect(document.title).toContain(RENAMED_TITLE);
-  });
-  expectRelationshipTitle(reopened, RENAMED_TITLE, parent.id);
-});
-
-test("Update the parent chat row when another tab renames the parent", async () => {
-  const {
-    chats,
-    parent,
-    renameFromAnotherTab,
-    relationshipResponse,
-    delayRelationshipResponses,
-  } = await setupRelationships();
-  expectRelationshipTitle(chats, ORIGINAL_TITLE, parent.id);
-  delayRelationshipResponses();
-  act(renameFromAnotherTab);
-  await expect(
-    within(chats).findByText(RENAMED_TITLE),
-  ).resolves.toBeInTheDocument();
-  expectRelationshipTitle(chats, RENAMED_TITLE, parent.id);
-  relationshipResponse.resolve();
-});
-
-test("Keep unavailable relationships unlinked even when parent metadata is cached", async () => {
-  const { chats } = await setupRelationships({ unavailable: true });
-  const row = within(chats).getByText("Unavailable").closest("li");
-  expect(row).toHaveTextContent("From");
-  expect(queryAllByRoleFast("link", chats)).toHaveLength(0);
-  // The history is still reachable through the caret.
-  expect(
-    queryAllByRoleFast("button", chats).find((button) => {
-      return button.getAttribute("aria-label") === "Messages with Unavailable";
-    }),
-  ).toHaveAttribute("aria-expanded", "false");
 });

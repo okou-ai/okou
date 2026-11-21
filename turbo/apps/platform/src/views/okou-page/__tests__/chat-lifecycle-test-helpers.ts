@@ -54,16 +54,6 @@ export function buttonByText(
   return button;
 }
 
-export function buttonByLabel(label: string): HTMLElement {
-  const button = queryAllByRoleFast("button").find((candidate) => {
-    return candidate.getAttribute("aria-label") === label;
-  });
-  if (!button) {
-    throw new Error(`${label} button not found`);
-  }
-  return button;
-}
-
 export function chatScrollContainer(): HTMLElement {
   const element = document.querySelector("[data-scroll-container]");
   if (!(element instanceof HTMLElement)) {
