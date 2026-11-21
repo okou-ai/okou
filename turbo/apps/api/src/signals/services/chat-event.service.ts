@@ -247,7 +247,6 @@ interface ChatAgentRunDisplayContext {
   readonly agentRunContext?: {
     readonly sourceRunId: string;
     readonly sourceChatThreadId: string;
-    readonly sourceAgentId?: string;
   };
 }
 
@@ -420,8 +419,7 @@ type NewDisplayContext =
       readonly type: "agent_run";
       readonly id: string;
       readonly sourceChatThreadId: string;
-      readonly sourceAgentId?: string;
-    }
+      }
   | {
       readonly type: "slack";
       readonly workspaceId?: string;
