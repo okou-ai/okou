@@ -86,7 +86,7 @@ describe("Published member instructions in direct Runs", () => {
     });
   });
 
-  it("launches a member send with the personal instructions authorized before attachment verification", async () => {
+  it("captures the sending member’s current instructions at Run creation after attachment verification", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const bdd = createBddApi(context);
@@ -123,7 +123,7 @@ describe("Published member instructions in direct Runs", () => {
         ) {
           await bdd.updatePersonalInstructions(
             member,
-            "Instructions for subsequent Runs",
+            "Member instructions at Run creation",
           );
           await bdd.updateAgentMetadata(owned.actor, owned.agentId, {
             visibility: "private",
@@ -133,12 +133,12 @@ describe("Published member instructions in direct Runs", () => {
       });
       const { runId } = await chat.sendAndLaunch(member, {
         agentId: owned.agentId,
-        prompt: "Launch with the authorized Agent",
+        prompt: "Launch with my personal instructions",
         model: "gpt-6-luna",
         userMessage: {
           version: 1,
           parts: [
-            { type: "text", text: "Launch with the authorized Agent" },
+            { type: "text", text: "Launch with my personal instructions" },
             {
               type: "file",
               fileId,
@@ -156,7 +156,7 @@ describe("Published member instructions in direct Runs", () => {
         )
           .get("instructions.md")
           ?.toString(),
-      ).toBe("Instructions at send authorization");
+      ).toBe("Member instructions at Run creation");
     });
   });
 });

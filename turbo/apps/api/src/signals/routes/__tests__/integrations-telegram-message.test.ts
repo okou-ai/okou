@@ -414,7 +414,7 @@ describe("POST /api/integrations/telegram/message", () => {
     );
     expect(telegramBody).toStrictEqual({
       chat_id: chatId,
-      text: `Hello from this Run\n\n<i>Sent via API caller credential · Triggered by <a href="tg://user?id=${chatId}">Sender</a></i>`,
+      text: `Hello from this Run\n\n<i>Triggered by <a href="tg://user?id=${chatId}">Sender</a></i>`,
       parse_mode: "HTML",
     });
     expect(response.body).toStrictEqual({ ok: true, messageId: 325, chatId });

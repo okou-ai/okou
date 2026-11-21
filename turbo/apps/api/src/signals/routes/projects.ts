@@ -225,6 +225,7 @@ const threads$ = computed(async (get) => {
   const threads = rows.slice(0, q.limit).map((t) => {
     return chatThreadSnapshotProjectionSchema.parse({
       ...t,
+      agentId: t.agentId ?? undefined,
       sortAt: t.lastMessageAt.toISOString(),
       createdAt: t.createdAt.toISOString(),
       updatedAt: t.updatedAt.toISOString(),

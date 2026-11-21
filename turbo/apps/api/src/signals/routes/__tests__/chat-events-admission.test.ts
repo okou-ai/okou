@@ -374,7 +374,7 @@ describe("CHAT-02: web chat send and client ids", () => {
     );
   }, 90_000);
 
-  it("requires authentication and a default executor for new chats", async () => {
+  it("requires authentication and accepts a member without a default executor", async () => {
     const unauthenticated = await chat.requestSendEvent(
       null,
       { prompt: "hello" },
@@ -392,13 +392,12 @@ describe("CHAT-02: web chat send and client ids", () => {
     const missingDefault = await chat.requestSendEvent(
       actor,
       { agentId: agent.agentId, prompt: "hello" },
-      [404],
+      [201],
     );
-    expectApiError(missingDefault.body);
-    expect(missingDefault.body.error.code).toBe("NOT_FOUND");
+    expect(missingDefault.body).toHaveProperty("threadId");
   }, 30_000);
 
-  it("uses the stored executor for existing-thread sends", async () => {
+  it("authorizes existing-thread sends by owner and ignores the legacy executor", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     const threadAgent = await bdd.createAgent(actor, {
@@ -440,7 +439,7 @@ describe("CHAT-02: web chat send and client ids", () => {
     );
     await expect(
       chat.readThreadMetadata(actor, thread.id),
-    ).resolves.toMatchObject({ agentId: threadAgent.agentId });
+    ).resolves.not.toHaveProperty("agentId");
     const accepted = await chat.listThreadEvents(actor, thread.id);
     expect(userMessages(accepted.events)).toContainEqual(
       expect.objectContaining({ id: clientEventId, eventType: "input.prompt" }),

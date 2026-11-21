@@ -5763,7 +5763,7 @@ describe("INT-02: Telegram integration", () => {
     );
     expect(agentSend.body).toMatchObject({ ok: true });
     expect(sentMessages.at(-1)?.text).toBe(
-      `agent-initiated fast message\n\n<i>Sent via Okou · Triggered by <a href="tg://user?id=${telegramUserId}">BDD</a></i>`,
+      `agent-initiated fast message\n\n<i>Triggered by <a href="tg://user?id=${telegramUserId}">BDD</a></i>`,
     );
 
     sentMessages.length = 0;
