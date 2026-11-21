@@ -855,8 +855,14 @@ class ChatListRootTest {
             compose.onNodeWithText("Research").performTouchInput { longClick() }
             compose.onNodeWithText("Rename").performClick()
             compose.onNode(hasSetTextAction()).performTextReplacement("Field notes")
+            val beforeSave = System.currentTimeMillis()
             compose.onNodeWithText("Save").performClick()
             compose.waitUntil(10_000) { writes.size == 1 }
+            val operationId = UUID.fromString(writes.first())
+            val issuedAt = operationId.mostSignificantBits ushr 16
+            assertEquals(7, operationId.version())
+            assertEquals(2, operationId.variant())
+            assertTrue(issuedAt in beforeSave..System.currentTimeMillis())
             compose.onNodeWithText("Field notes").assertIsDisplayed()
         } finally {
             pending.countDown()

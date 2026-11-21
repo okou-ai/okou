@@ -1433,7 +1433,15 @@ class ChatListModel(
         val name = input.trim()
         if (name.length !in 1..120 || confirmedProjectRows.none { it.id == id && it.name != name })
             return
-        submitProjectRename(ProjectRename(id, name, newRowEventId()))
+        submitProjectRename(ProjectRename(id, name, newProjectOperationId()))
+    }
+
+    private fun newProjectOperationId(): String {
+        val random = UUID.randomUUID()
+        // The Project API uses the UUIDv7 timestamp to bound receipt retries.
+        val timestamp = wallMillis() shl 16
+        val versionAndRandom = 0x7000L or (random.mostSignificantBits and 0x0fffL)
+        return UUID(timestamp or versionAndRandom, random.leastSignificantBits).toString()
     }
 
     internal fun retryProjectRename(id: String) {
