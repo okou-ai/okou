@@ -1070,8 +1070,25 @@ describe("Email integration", () => {
         JSON.stringify(message.messageId),
       );
       expect(execution.appendSystemPrompt).toContain(
-        "Find the current email using its RFC Message-ID",
+        "Find a single exact match for the RFC Message-ID",
       );
+      const tokenName =
+        provider === "gmail" ? "GMAIL_TOKEN" : "OUTLOOK_MAIL_TOKEN";
+      expect(execution.appendSystemPrompt).toContain(tokenName);
+      expect(execution.environment).toHaveProperty(tokenName);
+      expect(execution.firewalls).toContainEqual({
+        kind: "builtin",
+        name: provider,
+        sourceId: mailbox.id,
+      });
+      if (provider === "outlook-mail") {
+        expect(execution.appendSystemPrompt).toContain(
+          "X-Okou-Connector-Intent: outlook-mail",
+        );
+        expect(execution.appendSystemPrompt).toContain(
+          'Prefer: IdType="ImmutableId"',
+        );
+      }
       expect(execution.appendSystemPrompt).toContain(
         `In-Reply-To: ${JSON.stringify(parentId)}`,
       );

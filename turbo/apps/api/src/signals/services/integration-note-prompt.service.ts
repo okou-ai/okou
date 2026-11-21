@@ -19,7 +19,6 @@ interface IntegrationNotePromptInputs {
   readonly larkEnabled: boolean;
   readonly whatsappEnabled: boolean;
   readonly agentPhoneChannel?: string | null;
-  readonly emailHasConnectedMailbox?: boolean;
 }
 
 /**
@@ -35,9 +34,6 @@ function privateArtifactFinalReplyLine(args: {
 }): string {
   return `- Private artifacts in the final reply: weigh this only while composing the final reply, never during the run. This upload guidance applies to replies in ${args.surface}. If the user continues the conversation in Web chat, deliver files there and do not continue uploading to ${args.surface} unless the user explicitly requests it. A private \`/artifacts/...\` address is not openable from ${args.surface}, so a link alone shows the user nothing. When you judge that ${args.surface} can display that kind of file — a hosted website or HTML page never qualifies — upload it with \`${args.uploadCommand}\` so the user has something they can open there. If you upload it, also keep the original private \`/artifacts/...\` address from before the upload in the final reply, not the address returned by \`${args.uploadCommand}\`, so the owner can open the original artifact after returning to the web app.`;
 }
-
-const EMAIL_CONNECTED_MAILBOX_NOTE =
-  "- Connected mailbox context: start with the received email and any included Email Message Context or Email Thread Context. If the task needs mailbox content and no lookup result is included, use the selected Gmail or Outlook Mail connector with its existing permissions. Find the current email using its RFC Message-ID (Gmail `rfc822msgid:` or Outlook `internetMessageId`), verify the exact match, and read earlier messages only from that provider conversation. Use the received email if the message or access is unavailable. Check HISTORY_STATUS, HISTORY_TRUNCATED and BODY_TRUNCATED when present before claiming completeness.";
 
 const EMAIL_INTEGRATION_NOTE_LINES = [
   "- Email workspace: `okou email status --json` shows this sender's workspace and switch targets; `okou email switch --workspace-id <id>` changes it; `okou email logout` disconnects this sender. Only change it when asked; after success end the turn because the server queues the confirmation email.",
@@ -56,9 +52,7 @@ function integrationNoteLines(
 ): readonly string[] {
   switch (args.triggerSource) {
     case "email": {
-      return args.emailHasConnectedMailbox
-        ? [...EMAIL_INTEGRATION_NOTE_LINES, EMAIL_CONNECTED_MAILBOX_NOTE]
-        : EMAIL_INTEGRATION_NOTE_LINES;
+      return EMAIL_INTEGRATION_NOTE_LINES;
     }
     case "web":
     case "agent": {
@@ -191,12 +185,10 @@ export function resolveIntegrationNotePrompt(args: {
   readonly triggerSource: TriggerSource;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly agentPhoneChannel?: string | null;
-  readonly emailHasConnectedMailbox?: boolean;
 }): string {
   return buildIntegrationNotePrompt({
     triggerSource: args.triggerSource,
     agentPhoneChannel: args.agentPhoneChannel,
-    emailHasConnectedMailbox: args.emailHasConnectedMailbox,
     whatsappEnabled: isFeatureEnabled(
       FeatureSwitchKey.WhatsappIntegration,
       args.featureSwitchContext,

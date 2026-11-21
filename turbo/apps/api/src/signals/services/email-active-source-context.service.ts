@@ -197,7 +197,6 @@ export const loadActiveEmailIntegrationContext$ = command(
       resolveIntegrationNotePrompt({
         triggerSource: "email",
         featureSwitchContext: args.featureSwitchContext,
-        emailHasConnectedMailbox: mailboxes.length > 0,
       }),
       mailboxes,
       messageContext,
