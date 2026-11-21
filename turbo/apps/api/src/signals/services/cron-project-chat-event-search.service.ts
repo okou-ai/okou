@@ -589,7 +589,7 @@ function searchProjectionCandidateSource(batchSize: number): SQL {
     .orderBy(asc(chatThreads.id))
     .limit(batchSize);
   // Only narrow sequence/watermark metadata is scanned for tail membership;
-  // thread and Agent rows are fetched after pending IDs have been found.
+  // thread rows are fetched after pending IDs have been found.
   const tailIds = query
     .select({ chatThreadId: chatEventSequences.chatThreadId })
     .from(chatEventSequences)

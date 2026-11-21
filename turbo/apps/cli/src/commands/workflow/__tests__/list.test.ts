@@ -31,6 +31,11 @@ describe("okou workflow list command", () => {
 
   beforeEach(() => {
     server.use(
+      http.get("*/api/agents", () => {
+        return HttpResponse.json([{ agentId: AGENT_ID, isDefaultAgent: true }]);
+      }),
+    );
+    server.use(
       http.get(
         "http://localhost:3000/api/workflows/:workflowId/owner-profile",
         ownerProfileRequest,
@@ -88,10 +93,10 @@ describe("okou workflow list command", () => {
 
       const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
       expect(logCalls).toContain("code-review");
-      expect(logCalls).toContain("AGENT NAME");
-      expect(logCalls).toContain("AGENT ID");
-      expect(logCalls).toContain("My Agent");
-      expect(logCalls).toContain(AGENT_ID);
+      expect(logCalls).not.toContain("AGENT NAME");
+      expect(logCalls).not.toContain("AGENT ID");
+      expect(logCalls).not.toContain("My Agent");
+      expect(logCalls).not.toContain(AGENT_ID);
       expect(logCalls).toContain("private");
       expect(logCalls).toContain("deploy");
     });
@@ -144,7 +149,7 @@ describe("okou workflow list command", () => {
       expect(logCalls).not.toContain("internal-test-morning-brief");
     });
 
-    it("should pass agentId query when --agent is provided", async () => {
+    it("sends the current workspace scope to the API", async () => {
       let capturedUrl: string | undefined;
       server.use(
         http.get("http://localhost:3000/api/workflows", ({ request }) => {
@@ -153,7 +158,7 @@ describe("okou workflow list command", () => {
         }),
       );
 
-      await listCommand.parseAsync(["node", "cli", "--agent", AGENT_ID]);
+      await listCommand.parseAsync(["node", "cli"]);
 
       expect(capturedUrl).toContain(`agentId=${AGENT_ID}`);
     });

@@ -1,5 +1,5 @@
 {
-  "id": "4b6bdf7a-a977-400e-8107-df385ae74bd9",
+  "id": "71c5986b-47ba-4adc-94f7-a305221c41bc",
   "prevId": "eaea47ea-e58d-4b9e-ae73-144b87bb767c",
   "version": "7",
   "dialect": "postgresql",
@@ -3343,12 +3343,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "connection_id": {
           "name": "connection_id",
           "type": "uuid",
@@ -6322,12 +6316,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         },
         "role": {
           "name": "role",
@@ -11354,12 +11342,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         },
         "redirect_uri": {
           "name": "redirect_uri",
@@ -20115,12 +20097,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "scope": {
           "name": "scope",
           "type": "varchar(16)",
@@ -20179,21 +20155,7 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "link_wallet_oauth_attempts_agent_id_agents_id_fk": {
-          "name": "link_wallet_oauth_attempts_agent_id_agents_id_fk",
-          "tableFrom": "link_wallet_oauth_attempts",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -20227,7 +20189,7 @@
           "name": "agent_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "connection_id": {
           "name": "connection_id",
@@ -20401,33 +20363,6 @@
           ],
           "isUnique": false,
           "where": "\"link_wallet_spends\".\"approval_thread_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_link_wallet_spends_member_intent": {
-          "name": "idx_link_wallet_spends_member_intent",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "intent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -38358,7 +38293,8 @@
         "sort_touched",
         "archived",
         "unarchived",
-        "project_updated"
+        "project_updated",
+        "agent_reassigned"
       ]
     },
     "public.connector_external_code_session_status": {

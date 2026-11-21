@@ -51,7 +51,6 @@ export const connectorOauthStates = pgTable(
     authMethod: varchar("auth_method", { length: 50 }).notNull(),
     userId: text("user_id").notNull(),
     orgId: text("org_id").notNull(),
-    agentId: uuid("agent_id"),
     redirectUri: text("redirect_uri").notNull(),
     authorizationUrl: text("authorization_url"),
     oauthRequestedScopes: text("oauth_requested_scopes"),

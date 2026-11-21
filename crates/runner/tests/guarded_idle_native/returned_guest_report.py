@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """Require six actual returned-Guest stages, late custody and joined cleanup."""
 
-import argparse
 import hashlib
-import json
 import pathlib
 
 import create_cancellation_report as create
@@ -159,6 +157,4 @@ def validate(directory):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("directory", type=pathlib.Path)
-    print(json.dumps(validate(parser.parse_args().directory), indent=2))
+    report.run_cli(validate, __doc__)

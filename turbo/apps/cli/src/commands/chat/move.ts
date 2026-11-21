@@ -7,7 +7,7 @@ import { isUuid } from "../../lib/utils/uuid";
 import { resolveChatThreadId } from "./shared";
 export const moveCommand = new Command("move")
   .description(
-    "Join, move, or leave a Project without changing Agent or history",
+    "Join, move, or leave a Project without changing execution context or history",
   )
   .option("--thread-id <id>", "Conversation to move")
   .option("--project-id <id>", "Destination Project")

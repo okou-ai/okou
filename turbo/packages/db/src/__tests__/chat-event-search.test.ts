@@ -22,7 +22,6 @@ describe("chat event search projection schema", () => {
       "run_id",
       "user_id",
       "org_id",
-      "agent_id",
       "role",
       "created_at",
       "text",

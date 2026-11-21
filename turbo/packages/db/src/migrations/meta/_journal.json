@@ -3659,22 +3659,36 @@
     {
       "idx": 1601,
       "version": "7",
-      "when": 1795210655967,
-      "tag": "1601_member_wallet_spend_intent",
+      "when": 1795210327730,
+      "tag": "1601_preserve_chat_thread_reassignment_kind",
       "breakpoints": true
     },
     {
       "idx": 1602,
       "version": "7",
-      "when": 1795211330416,
-      "tag": "1602_member_run_provenance",
+      "when": 1795210374026,
+      "tag": "1602_retire_chat_thread_reassigned_agent_id",
       "breakpoints": true
     },
     {
       "idx": 1603,
       "version": "7",
+      "when": 1795210655967,
+      "tag": "1603_member_wallet_spend_intent",
+      "breakpoints": true
+    },
+    {
+      "idx": 1604,
+      "version": "7",
+      "when": 1795211330416,
+      "tag": "1604_member_run_provenance",
+      "breakpoints": true
+    },
+    {
+      "idx": 1605,
+      "version": "7",
       "when": 1795213062931,
-      "tag": "1603_browser_user_action_member",
+      "tag": "1605_browser_user_action_member",
       "breakpoints": true
     }
   ]

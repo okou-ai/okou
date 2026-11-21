@@ -1,6 +1,6 @@
 {
-  "id": "6fa563d2-fbf2-43c4-9aa4-a822d47d490d",
-  "prevId": "6e9c3a47-1fcb-4b61-9cd2-16274ad4d04a",
+  "id": "4b6bdf7a-a977-400e-8107-df385ae74bd9",
+  "prevId": "ab997e8a-2abd-4d07-9c8d-f661bfcb62ba",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3343,12 +3343,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "connection_id": {
           "name": "connection_id",
           "type": "uuid",
@@ -5251,7 +5245,7 @@
           "name": "agent_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "chat_thread_id": {
           "name": "chat_thread_id",
@@ -5730,7 +5724,7 @@
           "name": "source_agent_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "source_user_id": {
           "name": "source_user_id",
@@ -6322,12 +6316,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         },
         "role": {
           "name": "role",
@@ -8396,12 +8384,6 @@
         },
         "agent_id": {
           "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reassigned_agent_id": {
-          "name": "reassigned_agent_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -11354,12 +11336,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         },
         "redirect_uri": {
           "name": "redirect_uri",
@@ -20115,12 +20091,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "scope": {
           "name": "scope",
           "type": "varchar(16)",
@@ -20179,21 +20149,7 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "link_wallet_oauth_attempts_agent_id_agents_id_fk": {
-          "name": "link_wallet_oauth_attempts_agent_id_agents_id_fk",
-          "tableFrom": "link_wallet_oauth_attempts",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -38358,7 +38314,8 @@
         "sort_touched",
         "archived",
         "unarchived",
-        "project_updated"
+        "project_updated",
+        "agent_reassigned"
       ]
     },
     "public.connector_external_code_session_status": {

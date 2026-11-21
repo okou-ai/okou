@@ -38,7 +38,6 @@ interface ChatThreadEventAppend {
   readonly orgId?: string | null;
   readonly chatThreadId: string;
   readonly agentId?: string;
-  readonly reassignedAgentId?: string;
   readonly eventId?: string;
   readonly title?: string | null;
   readonly pinOrder?: string | null;
@@ -234,7 +233,6 @@ type ChatThreadEventRow = {
   readonly projectId: string | null;
   readonly chatThreadId: string;
   readonly agentId: string | null;
-  readonly reassignedAgentId: string | null;
   readonly title: string | null;
   readonly pinOrder: string | null;
   readonly muted: boolean | null;
@@ -258,7 +256,6 @@ const chatThreadEventSelection = Object.freeze({
     chatThreadEvents.agentId,
     chatThreadEvents.orgId,
   ),
-  reassignedAgentId: chatThreadEvents.reassignedAgentId,
   title: chatThreadEvents.title,
   pinOrder: chatThreadEvents.pinOrder,
   muted: chatThreadEvents.muted,
@@ -282,7 +279,6 @@ const pageChatThreadEventSelection = Object.freeze({
     pageChatThreadEvent.agentId,
     pageChatThreadEvent.orgId,
   ),
-  reassignedAgentId: pageChatThreadEvent.reassignedAgentId,
   title: pageChatThreadEvent.title,
   pinOrder: pageChatThreadEvent.pinOrder,
   muted: pageChatThreadEvent.muted,
@@ -308,6 +304,7 @@ function toApiChatThreadEvent(row: ChatThreadEventRow): ChatThreadEvent {
     seqId: row.seqId,
     chatThreadId: row.chatThreadId,
     ...(row.agentId ? { agentId: row.agentId } : {}),
+    ...(row.kind === "agent_reassigned" && row.agentId ? { reassignedAgentId: row.agentId } : {}),
     title: row.title,
     pinOrder: row.pinOrder,
     ...(row.muted === null ? {} : { muted: row.muted }),
@@ -331,7 +328,10 @@ function toApiChatThreadEvent(row: ChatThreadEventRow): ChatThreadEvent {
   if (row.kind === "project_updated" || row.kind === "created") {
     return { ...event, kind: row.kind, projectId: row.projectId };
   }
-  return { ...event, kind: row.kind };
+  return {
+    ...event,
+    kind: row.kind === "agent_reassigned" ? "sort_touched" : row.kind,
+  };
 }
 
 function chatThreadEventRowsAfterCursor(args: {

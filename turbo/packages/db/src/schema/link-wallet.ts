@@ -66,13 +66,6 @@ export const linkWalletOAuthAttempts = pgTable(
       .default("pending"),
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
-    // Legacy scope, or optional initiating-agent provenance for shared consent.
-    agentId: uuid("agent_id").references(
-      () => {
-        return agents.id;
-      },
-      { onDelete: "cascade" },
-    ),
     // Old API writers retain agent consent during a rolling deployment.
     scope: varchar("scope", { length: 16 })
       .$type<"agent" | "workspace_user">()

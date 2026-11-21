@@ -97,20 +97,6 @@ describe("okou search --source slack", () => {
       const output = mockConsoleLog.mock.calls.flat().join("\n");
       expect(output).toContain("https://api.slack.com/methods/search.messages");
     });
-
-    it("notes that CLI-local flags are ignored for this source", async () => {
-      await searchCommand.parseAsync([
-        "node",
-        "cli",
-        "hello",
-        "--source",
-        "slack",
-      ]);
-
-      const output = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(output).toContain("--agent");
-      expect(output).toContain("ignored");
-    });
   });
 
   describe("keyword substitution", () => {
@@ -167,22 +153,6 @@ describe("okou search --source slack", () => {
       const second = mockConsoleLog.mock.calls.flat().join("\n");
 
       expect(first).toBe(second);
-    });
-
-    it("ignores unrelated flags without erroring", async () => {
-      await searchCommand.parseAsync([
-        "node",
-        "cli",
-        "hello",
-        "--source",
-        "slack",
-        "--agent",
-        "550e8400-e29b-41d4-a716-446655440001",
-      ]);
-
-      expect(mockExit).not.toHaveBeenCalled();
-      const output = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(output).toContain("search.messages");
     });
   });
 

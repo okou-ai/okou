@@ -18,7 +18,7 @@ export function parseMailProvider(value: string): MailProvider {
 export function currentAgentId(): string {
   const agentId = getOkouAgentId()?.trim();
   if (!agentId) {
-    throw new Error("OKOU_AGENT_ID is not set", {
+    throw new Error("The current Run execution context is unavailable", {
       cause: new Error("Run this command from an active agent run"),
     });
   }

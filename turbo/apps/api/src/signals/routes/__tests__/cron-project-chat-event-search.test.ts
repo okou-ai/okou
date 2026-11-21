@@ -188,7 +188,22 @@ describe("chat search publication", () => {
       await flushWaitUntilForTest();
     }
     const native = await chat.searchChat(owner, keyword);
-    expect(native.results.length).toBeGreaterThan(0);
+    expect(
+      new Set(
+        native.results.map(({ chatThreadId }) => {
+          return chatThreadId;
+        }),
+      ),
+    ).toStrictEqual(
+      new Set(
+        ownerInputs.map(({ threadId }) => {
+          return threadId;
+        }),
+      ),
+    );
+    await expect(
+      chat.searchChat(owner, keyword, { agentId: foreign.agentId }),
+    ).resolves.toStrictEqual(native);
     const token = mcp.authorize(owner);
     context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
       data: [owner.orgId, otherOrg.orgId].map((orgId) => {

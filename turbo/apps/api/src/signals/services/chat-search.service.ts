@@ -47,24 +47,22 @@ type ChatSearchInput = {
   readonly userId: string;
   readonly orgId: string;
   readonly keyword: string;
-  readonly agentId?: string;
   readonly projectId?: string;
   readonly projectMetadata?: boolean;
 };
 
 function chatSearchScope(
-  args: Pick<ChatSearchInput, "userId" | "orgId" | "agentId" | "projectId">,
+  args: Pick<ChatSearchInput, "userId" | "orgId" | "projectId">,
 ) {
   return and(
     eq(chatEventSearchMessages.userId, args.userId),
     eq(chatEventSearchMessages.orgId, args.orgId),
+    eq(chatThreads.userId, args.userId),
+    eq(chatThreads.orgId, args.orgId),
     eq(chatThreads.hidden, false),
     eq(chatThreads.orgId, args.orgId),
     eq(chatThreads.userId, args.userId),
     args.projectId ? eq(chatThreads.projectId, args.projectId) : undefined,
-    args.agentId
-      ? eq(chatEventSearchMessages.agentId, args.agentId)
-      : undefined,
   );
 }
 
@@ -75,7 +73,7 @@ async function findChatSearchMatches(
   /**
    * Take up to 500 scoped keyword hits without ordering them, then sort only
    * those visible-thread candidates by time. This intentionally does not
-   * find the newest hits across all history; missing Agents are not backfilled.
+   * find the newest hits across all history.
    */
   const tsquery = chatSearchBigramTsquery(args.keyword);
   if (tsquery === null) {

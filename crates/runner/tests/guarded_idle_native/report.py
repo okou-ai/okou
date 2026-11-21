@@ -429,8 +429,13 @@ def _validate_receipts(directory, cases, phases, collector):
     return result, collector, receipts
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
+def run_cli(validate, description, *, sort_keys=False):
+    """Run one Guarded Idle directory reader and print its JSON report."""
+    parser = argparse.ArgumentParser(description=description)
     parser.add_argument("directory", type=pathlib.Path)
     args = parser.parse_args()
-    print(json.dumps(validate(args.directory), indent=2))
+    print(json.dumps(validate(args.directory), indent=2, sort_keys=sort_keys))
+
+
+if __name__ == "__main__":
+    run_cli(validate, __doc__)

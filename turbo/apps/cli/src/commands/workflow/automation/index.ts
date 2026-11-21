@@ -1,4 +1,3 @@
-import { workflowHelp } from "../mode";
 import { isAutoSelectedModel } from "@okouai/core/auto-run-model";
 import { Command } from "commander";
 import chalk from "chalk";
@@ -33,10 +32,7 @@ import {
 } from "../../../lib/domain/model-catalog-display";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
 import { parseDurationSeconds } from "../../shared/duration";
-import {
-  resolveWorkflowRef,
-  type WorkflowRefOptions,
-} from "../resolve-workflow-ref";
+import { resolveWorkflowRef } from "../resolve-workflow-ref";
 import {
   printWorkflowAutomationDetails,
   printWorkflowAutomationThreadModel,
@@ -56,7 +52,6 @@ interface AddOptions extends GmailAutomationOptions {
   readonly at?: string;
   readonly every?: string;
   readonly timezone?: string;
-  readonly agent?: string;
   readonly subject?: string;
   readonly actor?: string;
   readonly action?: string;
@@ -2031,33 +2026,34 @@ function createAutomationAddCommand(): Command {
       "--output-pattern <pattern>",
       "Optional * wildcard matched against the finished run's final assistant text",
     )
-    .option("--agent <id>", "Agent ID for resolving a workflow name")
-    .addHelpText("after", () => {
-      return workflowHelp(`
+
+    .addHelpText(
+      "after",
+      `
 Examples:
-  okou workflow automation add tell-a-joke --agent <agent-id> cron --expr "0 9 * * *" -z Asia/Shanghai
-  okou workflow automation add tell-a-joke --agent <agent-id> once --at "2026-06-10T09:00" -z Asia/Shanghai
-  okou workflow automation add tell-a-joke --agent <agent-id> loop --every 15m
-  okou workflow automation add triage --agent <agent-id> gmail-new-message --from-contains "@example.com"
-  okou workflow automation add triage --agent <agent-id> gmail-new-message --config ./gmail-automation.json
-  okou workflow automation add triage --agent <agent-id> gmail-label-applied --label "Support"
-  okou workflow automation add merge-follow-up --agent <agent-id> github-pull-request --repository okou-ai/okou --action closed --merged yes --base-branch main
-  okou workflow automation add pr-triage --agent <agent-id> github-pull-request --repository okou-ai/okou --action labeled --label "triage"
-  okou workflow automation add ci-triage --agent <agent-id> github-workflow-run-completed --repository okou-ai/okou --workflow Turbo --conclusion failure,timed_out --branch main --triggering-event push --actor dependabot[bot]
-  okou workflow automation add triage --agent <agent-id> google-calendar-event-created
-  okou workflow automation add triage --agent <agent-id> google-calendar-event-updated
-  okou workflow automation add triage --agent <agent-id> google-calendar-event-cancelled
-  okou workflow trigger add triage --agent <agent-id> google-forms-response-submitted --form-url "https://docs.google.com/forms/d/<form-id>/edit"
-  okou workflow automation add meeting-notes --agent <agent-id> google-meet-transcript-generated
-  okou workflow automation add research-notes --agent <agent-id> notion-child-page-created --parent-page-url "https://www.notion.so/workspace/Page-title-1234567890abcdef1234567890abcdef"
-  okou workflow automation add research-notes --agent <agent-id> notion-database-item-created --database-url "https://www.notion.so/1234567890abcdef1234567890abcdef?v=abcdef1234567890abcdef1234567890"
-  okou workflow automation add research-notes --agent <agent-id> notion-page-content-updated --page-url "https://www.notion.so/workspace/Page-title-1234567890abcdef1234567890abcdef"
-  okou workflow automation add research-notes --agent <agent-id> notion-page-content-updated --database-url "https://www.notion.so/1234567890abcdef1234567890abcdef?v=abcdef1234567890abcdef1234567890"
-  okou workflow automation add triage --agent <agent-id> webhook
-  okou workflow automation add follow-up --agent <agent-id> chat-run-finished --chat-thread-id <thread-uuid> --run-status completed,failed --output-pattern "*deploy failed*"
+  okou workflow automation add tell-a-joke cron --expr "0 9 * * *" -z Asia/Shanghai
+  okou workflow automation add tell-a-joke once --at "2026-06-10T09:00" -z Asia/Shanghai
+  okou workflow automation add tell-a-joke loop --every 15m
+  okou workflow automation add triage gmail-new-message --from-contains "@example.com"
+  okou workflow automation add triage gmail-new-message --config ./gmail-automation.json
+  okou workflow automation add triage gmail-label-applied --label "Support"
+  okou workflow automation add merge-follow-up github-pull-request --repository okou-ai/okou --action closed --merged yes --base-branch main
+  okou workflow automation add pr-triage github-pull-request --repository okou-ai/okou --action labeled --label "triage"
+  okou workflow automation add ci-triage github-workflow-run-completed --repository okou-ai/okou --workflow Turbo --conclusion failure,timed_out --branch main --triggering-event push --actor dependabot[bot]
+  okou workflow automation add triage google-calendar-event-created
+  okou workflow automation add triage google-calendar-event-updated
+  okou workflow automation add triage google-calendar-event-cancelled
+  okou workflow trigger add triage google-forms-response-submitted --form-url "https://docs.google.com/forms/d/<form-id>/edit"
+  okou workflow automation add meeting-notes google-meet-transcript-generated
+  okou workflow automation add research-notes notion-child-page-created --parent-page-url "https://www.notion.so/workspace/Page-title-1234567890abcdef1234567890abcdef"
+  okou workflow automation add research-notes notion-database-item-created --database-url "https://www.notion.so/1234567890abcdef1234567890abcdef?v=abcdef1234567890abcdef1234567890"
+  okou workflow automation add research-notes notion-page-content-updated --page-url "https://www.notion.so/workspace/Page-title-1234567890abcdef1234567890abcdef"
+  okou workflow automation add research-notes notion-page-content-updated --database-url "https://www.notion.so/1234567890abcdef1234567890abcdef?v=abcdef1234567890abcdef1234567890"
+  okou workflow automation add triage webhook
+  okou workflow automation add follow-up chat-run-finished --chat-thread-id <thread-uuid> --run-status completed,failed --output-pattern "*deploy failed*"
 
 Notes:
-  - Workflow names resolve under --agent, then OKOU_AGENT_ID
+  - Workflow names resolve in the current workspace
   - Gmail automations match all inbound messages when no text match rules are provided
   - GitHub automations require the GitHub App installation in the workspace
   - GitHub workflow run filters accept comma-separated values; omit a filter to match any value
@@ -2067,8 +2063,8 @@ Notes:
   - Each match starts a new run in the workflow's automation thread; it does not resume the watched or creating run
   - An automation stays enabled for future matches until explicitly disabled or removed
   - Webhook automations print the signing secret only once after creation
-  - Use the workflow ID when a name is ambiguous`);
-    })
+  - Use the workflow ID when a name is ambiguous`,
+    )
     .action(
       withErrorHandler(
         async (workflowRef: string, kind: string, options: AddOptions) => {
@@ -2082,7 +2078,7 @@ Notes:
               "--timezone only applies to cron and once automations",
             );
           }
-          const workflowId = await resolveWorkflowRef(workflowRef, options);
+          const workflowId = await resolveWorkflowRef(workflowRef);
           const body = buildCreateRequest(kind, options);
           const automation = await createWorkflowAutomation(workflowId, body);
 
@@ -2117,8 +2113,9 @@ const updateCommand = addGithubAutomationOptions(
       .option("-z, --timezone <tz>", "IANA timezone for --expr / --at"),
   ),
 )
-  .addHelpText("after", () => {
-    return workflowHelp(`
+  .addHelpText(
+    "after",
+    `
 Examples:
   okou workflow automation update 22222222-2222-4222-8222-222222222222 --expr "0 9 * * *" -z Asia/Shanghai
   okou workflow automation update 22222222-2222-4222-8222-222222222222 --at "2026-06-10T09:00" -z UTC
@@ -2128,8 +2125,8 @@ Examples:
   okou workflow automation update 22222222-2222-4222-8222-222222222222 --label "Support"
   okou workflow automation update 22222222-2222-4222-8222-222222222222 --actor anyone
   okou workflow automation update 22222222-2222-4222-8222-222222222222 --conclusion failure,timed_out --branch main
-  okou workflow automation update 22222222-2222-4222-8222-222222222222 --actor any`);
-  })
+  okou workflow automation update 22222222-2222-4222-8222-222222222222 --actor any`,
+  )
   .action(
     withErrorHandler(async (id: string, options: UpdateOptions) => {
       const existing = await getWorkflowAutomation(id);
@@ -2148,31 +2145,30 @@ const listCommand = new Command()
   .alias("ls")
   .description("List a workflow's automations")
   .argument("<workflow>", "Workflow ID or name")
-  .option("--agent <id>", "Agent ID for resolving a workflow name")
-  .addHelpText("after", () => {
-    return workflowHelp(`
-Examples:
-  okou workflow automation list tell-a-joke --agent <agent-id>
-  okou workflow automation list <workflow-id>`);
-  })
-  .action(
-    withErrorHandler(
-      async (workflowRef: string, options: WorkflowRefOptions) => {
-        const workflowId = await resolveWorkflowRef(workflowRef, options);
-        const automations = await listWorkflowAutomations(workflowId);
 
-        if (automations.length === 0) {
-          console.log(chalk.dim("No automations"));
-          console.log(
-            chalk.dim(
-              `  Add one with: okou workflow automation add ${workflowRef} cron --expr "0 9 * * *"`,
-            ),
-          );
-          return;
-        }
-        printWorkflowAutomationsTable(automations);
-      },
-    ),
+  .addHelpText(
+    "after",
+    `
+Examples:
+  okou workflow automation list tell-a-joke
+  okou workflow automation list <workflow-id>`,
+  )
+  .action(
+    withErrorHandler(async (workflowRef: string) => {
+      const workflowId = await resolveWorkflowRef(workflowRef);
+      const automations = await listWorkflowAutomations(workflowId);
+
+      if (automations.length === 0) {
+        console.log(chalk.dim("No automations"));
+        console.log(
+          chalk.dim(
+            `  Add one with: okou workflow automation add ${workflowRef} cron --expr "0 9 * * *"`,
+          ),
+        );
+        return;
+      }
+      printWorkflowAutomationsTable(automations);
+    }),
   );
 
 const showCommand = new Command()
@@ -2252,8 +2248,9 @@ export const automationCommand = new Command()
   .addCommand(rmCommand)
   .addCommand(enableCommand)
   .addCommand(disableCommand)
-  .addHelpText("after", () => {
-    return workflowHelp(`
+  .addHelpText(
+    "after",
+    `
 Examples:
   Add an automation:     okou workflow automation add <workflow-id> cron --expr "0 9 * * *"
   Add a Notion page:     okou workflow automation add <workflow-id> notion-child-page-created --parent-page-url "https://www.notion.so/..."
@@ -2269,5 +2266,5 @@ chat-run-finished:
   starts a new run in the workflow's automation thread rather than resuming the
   watched run. It remains enabled for future matches until disabled or removed.
   chat messages is only a point-in-time read; use this event when completion
-  should trigger work instead of polling.`);
-  });
+  should trigger work instead of polling.`,
+  );

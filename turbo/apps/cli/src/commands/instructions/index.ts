@@ -5,16 +5,7 @@ import {
   getInstructions,
   updateInstructions,
 } from "../../lib/api/domains/instructions";
-import { isPersonalExecution } from "../../lib/personal-execution";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-
-async function requirePersonalInstructions() {
-  if (!isPersonalExecution()) {
-    throw new Error(
-      "Personal Instructions are unavailable in this context. Use okou agent --help for the current experience.",
-    );
-  }
-}
 
 async function readContent(file: string): Promise<string> {
   if (file !== "-") {
@@ -36,7 +27,7 @@ export function createInstructionsCommand(): Command {
     .description("Read or replace your personal Instructions in this workspace")
     .addHelpText(
       "after",
-      "\nSaved Instructions apply the next time Okou starts working. Work in progress won't change.\nNo user or Agent target is accepted. An empty file intentionally clears the document.",
+      "\nSaved Instructions apply the next time Okou starts working. Work in progress won't change.\nAn empty file intentionally clears the document.",
     )
     .addCommand(
       new Command("view")
@@ -55,7 +46,6 @@ export function createInstructionsCommand(): Command {
         .action(
           withErrorHandler(
             async (options: { raw?: boolean; json?: boolean }) => {
-              await requirePersonalInstructions();
               const saved = await getInstructions();
               if (options.raw) process.stdout.write(saved.content);
               else if (options.json) console.log(JSON.stringify(saved));
@@ -100,7 +90,6 @@ export function createInstructionsCommand(): Command {
               ifVersion?: string;
               json?: boolean;
             }) => {
-              await requirePersonalInstructions();
               const body = instructionsRequestSchema.parse({
                 content: await readContent(options.file),
                 ...(options.ifVersion === undefined

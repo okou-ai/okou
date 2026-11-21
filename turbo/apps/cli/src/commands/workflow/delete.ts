@@ -1,38 +1,32 @@
-import { workflowHelp } from "./mode";
 import { Command } from "commander";
 import chalk from "chalk";
 import { deleteWorkflow, getWorkflow } from "../../lib/api/domains/workflows";
 import { isInteractive, promptConfirm } from "../../lib/utils/prompt-utils";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import {
-  resolveWorkflowRef,
-  type WorkflowRefOptions,
-} from "./resolve-workflow-ref";
+import { resolveWorkflowRef } from "./resolve-workflow-ref";
 
 export const deleteCommand = new Command()
   .name("delete")
   .alias("rm")
   .description("Delete a workflow")
   .argument("<workflow>", "Workflow ID or name")
-  .option("--agent <id>", "Agent ID for resolving workflow names")
+
   .option("-y, --yes", "Skip confirmation prompt")
-  .addHelpText("after", () => {
-    return workflowHelp(`
+  .addHelpText(
+    "after",
+    `
 Examples:
-  okou workflow delete tell-a-joke --agent <agent-id> -y
+  okou workflow delete tell-a-joke -y
   okou workflow delete <workflow-id>
   okou workflow delete <workflow-id> -y
 
 Notes:
-  - Use -y to skip confirmation in non-interactive mode`);
-  })
+  - Use -y to skip confirmation in non-interactive mode`,
+  )
   .action(
     withErrorHandler(
-      async (
-        workflowRef: string,
-        options: { yes?: boolean } & WorkflowRefOptions,
-      ) => {
-        const workflowId = await resolveWorkflowRef(workflowRef, options);
+      async (workflowRef: string, options: { yes?: boolean }) => {
+        const workflowId = await resolveWorkflowRef(workflowRef);
         const workflow = await getWorkflow(workflowId);
 
         if (!options.yes) {

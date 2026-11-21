@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Validate old native insertion-ABA refusal and independently captured recovery."""
 
-import argparse
-import json
 import pathlib
 
 import observation_report
@@ -146,7 +144,4 @@ def validate(directory, *, cases=None, policy_key="native_batch_aba_policy_json"
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("directory", type=pathlib.Path)
-    args = parser.parse_args()
-    print(json.dumps(validate(args.directory), indent=2, sort_keys=True))
+    report.run_cli(validate, __doc__, sort_keys=True)

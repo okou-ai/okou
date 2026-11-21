@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Validate source-bound policy-pressure or logical-substitution native evidence."""
 
-import argparse
 import json
 import pathlib
 
@@ -173,6 +172,4 @@ def validate(directory):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("directory", type=pathlib.Path)
-    print(json.dumps(validate(parser.parse_args().directory), indent=2))
+    report.run_cli(validate, __doc__)

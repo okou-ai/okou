@@ -251,7 +251,6 @@ export const bankingAccessAuditEvents = pgTable(
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
     runId: uuid("run_id"),
-    agentId: uuid("agent_id"),
     connectionId: uuid("connection_id"),
     provider: varchar("provider", { length: 32 })
       .$type<BankingProvider>()
