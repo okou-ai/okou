@@ -226,7 +226,6 @@ func mentionState(_ input: ComposerTextView, in host: UIView) -> String {
     + "caret=\(input.selectedRange); "
     + "query=\(String(reflecting: editor?.mentionQuery)); "
     + "source=\(editor?.mentionSource != nil); "
-    + "sourceAgent=\(String(describing: editor?.mentionSource?.agentID)); "
     + "sourceThreads=\(String(describing: editor?.mentionSource?.threads.count)); "
     + "candidates=\(String(describing: editor?.mentionSuggestions.map(\.referenceID))); "
     + "selected=\(String(describing: editor?.selectedMentionIndex)); "
