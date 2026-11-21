@@ -34,12 +34,13 @@ export const authorizeUrl =
 
 export function statusService(
   context: TestContext,
-  read: () => Partial<DiscordOrgStatus>,
+  read: () => Partial<DiscordOrgStatus> | Promise<Partial<DiscordOrgStatus>>,
+  sessionToken: string = harbor.auth.session.token,
 ) {
   context.mocks.api(
     integrationsDiscordContract.getStatus,
-    ({ request, respond }) => {
-      if (request.headers.get("authorization") !== "Bearer harbor-session") {
+    async ({ request, respond }) => {
+      if (request.headers.get("authorization") !== "Bearer " + sessionToken) {
         return respond(403, {
           error: { code: "FORBIDDEN", message: "Unexpected identity" },
         });
@@ -57,7 +58,7 @@ export function statusService(
         onboarding: "oauth",
         dmSelectionConnectionId: null,
         dmBindings: [],
-        ...read(),
+        ...(await read()),
       });
     },
   );
@@ -106,30 +107,37 @@ export function authorizationService(
   context: TestContext,
   options: { guildId?: string; flow?: "install" },
   before: Partial<DiscordOrgStatus> = {},
+  sessionToken: string = harbor.auth.session.token,
 ) {
   const checking = createDeferredPromise<void>(context.signal);
   const pending = createDeferredPromise<void>(context.signal);
   const release = createDeferredPromise<void>(context.signal);
+  let forbiddenMessage = "Harbor could not verify this identity";
   let approved = false;
   let outcome: "connected" | "forbidden" | "conflict" = "connected";
   let connected = false;
-  statusService(context, () => {
-    return connected
-      ? {
-          isConnected: true,
-          guildId: harbor.guild,
-          guildName: "Koala harbor",
-          discordUserId: "731271",
-        }
-      : before;
-  });
+  statusService(
+    context,
+    () => {
+      return connected
+        ? {
+            ...before,
+            isConnected: true,
+            guildId: harbor.guild,
+            guildName: "Koala harbor",
+            discordUserId: "731271",
+          }
+        : before;
+    },
+    sessionToken,
+  );
   context.mocks.api(
     discordOauthContract.start,
     ({ body, request, respond }) => {
       if (
         body.guildId !== options.guildId ||
         body.flow !== options.flow ||
-        request.headers.get("authorization") !== "Bearer harbor-session"
+        request.headers.get("authorization") !== "Bearer " + sessionToken
       ) {
         return respond(403, {
           error: {
@@ -148,7 +156,7 @@ export function authorizationService(
     discordOauthContract.complete,
     async ({ body, request, respond }) => {
       if (
-        request.headers.get("authorization") !== "Bearer harbor-session" ||
+        request.headers.get("authorization") !== "Bearer " + sessionToken ||
         body.state !== consentState ||
         body.completionToken !== privateToken
       ) {
@@ -165,7 +173,7 @@ export function authorizationService(
         return respond(403, {
           error: {
             code: "FORBIDDEN",
-            message: "Harbor could not verify this identity",
+            message: forbiddenMessage,
           },
         });
       }
@@ -199,7 +207,10 @@ export function authorizationService(
     approve: () => {
       approved = true;
     },
-    fail: (reason: "forbidden" | "conflict") => {
+    fail: (reason: "forbidden" | "conflict", message?: string) => {
+      if (message) {
+        forbiddenMessage = message;
+      }
       outcome = reason;
     },
   };
