@@ -46,7 +46,7 @@ import {
 import {
   CALLBACK_PROMPT_PLACEHOLDER,
   connectorActionUrl,
-  currentChatSupportsActionCallback,
+  currentPermissionCallbackThread,
   printCallbackActionUrlExample,
 } from "./action-url";
 import {
@@ -311,7 +311,6 @@ function printNamedPolicyResult(
   target: ConnectorRuntimeTarget,
   permission: string,
   policy: ConnectorCheckPolicy,
-  agentId: string | undefined,
   request: UrlDiagnosticRequest | undefined,
   platformOrigin: string,
 ): void {
@@ -350,7 +349,6 @@ function printNamedPolicyResult(
       printPermissionRequestCommands(
         target,
         permission,
-        agentId,
         "To request this permission, run",
         request,
         platformOrigin,
@@ -365,7 +363,6 @@ function printNamedPolicyResult(
       printPermissionRequestCommands(
         target,
         permission,
-        agentId,
         "To request this permission, run",
         request,
         platformOrigin,
@@ -380,7 +377,6 @@ function printNamedPolicyResult(
 function printPermissionRequestCommands(
   target: ConnectorRuntimeTarget,
   permission: string,
-  agentId: string | undefined,
   introduction: string,
   request: UrlDiagnosticRequest | undefined,
   platformOrigin: string,
@@ -407,7 +403,7 @@ function printPermissionRequestCommands(
     request,
   );
   console.log(`${introduction}: ${command}`);
-  if (!currentChatSupportsActionCallback(agentId)) {
+  if (!currentPermissionCallbackThread()) {
     return;
   }
 
@@ -421,7 +417,6 @@ function printPermissionRequestCommands(
 function printUnknownEndpointPolicy(
   target: ConnectorRuntimeTarget,
   policy: ConnectorCheckPolicy,
-  agentId: string | undefined,
   request: UrlDiagnosticRequest,
   platformOrigin: string,
   suppressBuiltinUnknownAction: boolean,
@@ -457,7 +452,6 @@ function printUnknownEndpointPolicy(
       printPermissionRequestCommands(
         target,
         "__unknown__",
-        agentId,
         "To request access to unknown endpoints, run",
         request,
         platformOrigin,
@@ -471,7 +465,6 @@ function printUnknownEndpointPolicy(
       printPermissionRequestCommands(
         target,
         "__unknown__",
-        agentId,
         "To request access to unknown endpoints, run",
         request,
         platformOrigin,
@@ -486,7 +479,6 @@ function printUnknownEndpointPolicy(
 function printUrlPermissionDiagnostic(
   request: UrlDiagnosticRequest,
   result: ResolvedUrlDiagnostic,
-  agentId: string | undefined,
   platformOrigin: string,
   awsContextIncomplete: boolean,
 ): void {
@@ -511,7 +503,6 @@ function printUrlPermissionDiagnostic(
         result.connector.target,
         permission.name,
         permission.policy,
-        agentId,
         request,
         platformOrigin,
       );
@@ -528,7 +519,6 @@ function printUrlPermissionDiagnostic(
     printUnknownEndpointPolicy(
       result.connector.target,
       result.permission.policy,
-      agentId,
       request,
       platformOrigin,
       awsContextIncomplete,
@@ -540,7 +530,6 @@ function printUrlPermissionDiagnostic(
 function printEnvironmentPermissionDiagnostic(
   result: ResolvedEnvironmentDiagnostic,
   permissionName: string | undefined,
-  agentId: string | undefined,
   platformOrigin: string,
 ): void {
   if (result.permission === null) {
@@ -561,7 +550,6 @@ function printEnvironmentPermissionDiagnostic(
     result.connector.target,
     permissionName,
     result.permission,
-    agentId,
     undefined,
     platformOrigin,
   );
@@ -756,7 +744,6 @@ Permission recovery:
         printUrlPermissionDiagnostic(
           requireUrlRequest(request),
           result,
-          ctx.agentId,
           ctx.platformOrigin,
           awsContextIncomplete,
         );
@@ -764,7 +751,6 @@ Permission recovery:
         printEnvironmentPermissionDiagnostic(
           result,
           request.mode === "environment" ? request.permission : undefined,
-          ctx.agentId,
           ctx.platformOrigin,
         );
       }

@@ -1,3 +1,5 @@
+import { uuid } from "zod";
+import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { getOkouAgentId, getOkouChatThreadId } from "../../lib/okou-env";
 
 export const CALLBACK_PROMPT_PLACEHOLDER =
@@ -44,6 +46,35 @@ export function finalizeActionUrl(
   callbackPrompt: string | undefined,
   agentId: string | undefined,
 ): string {
+  return finalizeCallbackUrl(actionUrl, callbackPrompt, () => {
+    return currentChatThreadId(agentId);
+  });
+}
+
+const threadIdSchema = uuid();
+export function currentPermissionCallbackThread(): string | undefined {
+  const parsed = threadIdSchema.safeParse(getOkouChatThreadId());
+  return parsed.success && decodeSandboxTokenPayload()?.runId
+    ? parsed.data
+    : undefined;
+}
+
+export function finalizePermissionActionUrl(
+  actionUrl: URL,
+  callbackPrompt: string | undefined,
+): string {
+  return finalizeCallbackUrl(
+    actionUrl,
+    callbackPrompt,
+    currentPermissionCallbackThread,
+  );
+}
+
+function finalizeCallbackUrl(
+  actionUrl: URL,
+  callbackPrompt: string | undefined,
+  resolveThreadId: () => string | null | undefined,
+): string {
   if (callbackPrompt === undefined) {
     return actionUrl.toString();
   }
@@ -58,7 +89,7 @@ export function finalizeActionUrl(
     );
   }
 
-  const threadId = currentChatThreadId(agentId);
+  const threadId = resolveThreadId();
   if (!threadId) {
     throw new Error(
       "--callback-prompt requires the current web chat and its execution context",

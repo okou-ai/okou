@@ -1,7 +1,6 @@
 import { Command, Option } from "commander";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-types";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import { getPlatformOrigin } from "../../lib/platform-url";
 import {
   isComputerUsePermissionTarget,
   printComputerUsePermissionGuidance,
@@ -14,11 +13,11 @@ import { ApiRequestError } from "../../lib/api/core/client-factory";
 import { createBrowserAuthorizationRequest } from "../../lib/api/domains/browser";
 import { createComputerUseAuthorizationRequest } from "../../lib/api/domains/computer-use";
 import { getOkouToken } from "../../lib/okou-env";
-import { resolvePermissionActionAgentId } from "./agent-context";
+import { memberPermissionUrl } from "./member-permission-url";
 import {
   CALLBACK_PROMPT_MAX_LENGTH,
-  connectorActionCallbackAvailable,
-  finalizeActionUrl,
+  currentPermissionCallbackThread,
+  finalizePermissionActionUrl,
   printCallbackTurnInstruction,
 } from "./action-url";
 import {
@@ -144,9 +143,8 @@ function printComputerUseAuthorizationLink(args: {
 
 async function printComputerUsePermissionRequestMessage(
   callbackPrompt: string | undefined,
-  agentId: string | undefined,
 ): Promise<void> {
-  finalizeActionUrl(new URL("https://app.okou.ai"), callbackPrompt, agentId);
+  finalizePermissionActionUrl(new URL("https://app.okou.ai"), callbackPrompt);
   if (!getOkouToken()) {
     printComputerUsePermissionGuidance();
     return;
@@ -155,10 +153,9 @@ async function printComputerUsePermissionRequestMessage(
   try {
     const request = await createComputerUseAuthorizationRequest();
     printComputerUseAuthorizationLink({
-      authorizationUrl: finalizeActionUrl(
+      authorizationUrl: finalizePermissionActionUrl(
         new URL(request.authorizationUrl),
         callbackPrompt,
-        agentId,
       ),
       expiresAt: request.expiresAt,
     });
@@ -195,9 +192,8 @@ function printBrowserAuthorizationLink(args: {
 
 async function printBrowserPermissionRequestMessage(
   callbackPrompt: string | undefined,
-  agentId: string | undefined,
 ): Promise<void> {
-  finalizeActionUrl(new URL("https://app.okou.ai"), callbackPrompt, agentId);
+  finalizePermissionActionUrl(new URL("https://app.okou.ai"), callbackPrompt);
   if (!getOkouToken()) {
     printBrowserPermissionGuidance();
     return;
@@ -206,10 +202,9 @@ async function printBrowserPermissionRequestMessage(
     const request = await createBrowserAuthorizationRequest();
     printBrowserAuthorizationLink({
       ...request,
-      authorizationUrl: finalizeActionUrl(
+      authorizationUrl: finalizePermissionActionUrl(
         new URL(request.authorizationUrl),
         callbackPrompt,
-        agentId,
       ),
     });
     if (callbackPrompt !== undefined) printCallbackTurnInstruction();
@@ -231,17 +226,13 @@ async function outputPermissionRequestMessage(
   connectorSlug: string,
   label: string,
   permission: string,
-  agentId: string | undefined,
   callbackPrompt: string | undefined,
 ): Promise<void> {
-  const platformOrigin = await getPlatformOrigin();
-
-  const pagePath = agentId ? `/agents/${agentId}/permissions` : "/agents";
-  const actionUrl = new URL(pagePath, platformOrigin);
+  const actionUrl = await memberPermissionUrl("single");
   actionUrl.searchParams.set("connectorSlug", connectorSlug);
   actionUrl.searchParams.set("permission", permission);
   actionUrl.searchParams.set("action", "allow");
-  const url = finalizeActionUrl(actionUrl, callbackPrompt, agentId);
+  const url = finalizePermissionActionUrl(actionUrl, callbackPrompt);
 
   printSensitivePermissionGuidance(connectorSlug, permission);
   printPermissionRequestMessage({
@@ -258,7 +249,7 @@ const callbackPromptOption = new Option(
   "--callback-prompt <prompt>",
   `Start the next web chat round with this prompt after the permission is granted (max ${CALLBACK_PROMPT_MAX_LENGTH} characters)`,
 );
-const callbackPromptAvailable = connectorActionCallbackAvailable();
+const callbackPromptAvailable = Boolean(currentPermissionCallbackThread());
 if (!callbackPromptAvailable) {
   callbackPromptOption.hideHelp();
 }
@@ -359,7 +350,6 @@ accounts never resets permissions. Browser/Computer Use consent remains separate
           }
           const batch = await resolvePermissionRequestBatch({
             batchFile: opts.batchFile,
-            agentId: await resolvePermissionActionAgentId(),
             callbackPrompt: opts.callbackPrompt,
           });
           for (const summary of batch.summaries) console.log(summary);
@@ -396,7 +386,6 @@ accounts never resets permissions. Browser/Computer Use consent remains separate
             "Supply a selector and --permission for a single request, or use --batch-file <path>.",
           );
         }
-        const agentId = await resolvePermissionActionAgentId();
         if (opts.url !== undefined) {
           validateDiagnosticUrl(opts.url);
         }
@@ -412,10 +401,7 @@ accounts never resets permissions. Browser/Computer Use consent remains separate
             permission: opts.permission,
           })
         ) {
-          await printBrowserPermissionRequestMessage(
-            opts.callbackPrompt,
-            agentId,
-          );
+          await printBrowserPermissionRequestMessage(opts.callbackPrompt);
           return;
         }
         if (
@@ -424,10 +410,7 @@ accounts never resets permissions. Browser/Computer Use consent remains separate
             permission: opts.permission,
           })
         ) {
-          await printComputerUsePermissionRequestMessage(
-            opts.callbackPrompt,
-            agentId,
-          );
+          await printComputerUsePermissionRequestMessage(opts.callbackPrompt);
           return;
         }
 
@@ -448,7 +431,6 @@ accounts never resets permissions. Browser/Computer Use consent remains separate
           result.connectorSlug,
           result.label,
           opts.permission,
-          agentId,
           opts.callbackPrompt,
         );
       },
