@@ -334,7 +334,6 @@ class ChatListModel(
             foregroundChanged = { foreground ->
                 warming.foreground(foreground)
                 listInForeground = foreground
-                if (foreground) expireCachedUnread()
                 updateListRetryVisibility()
             },
         ) { changes ->
@@ -828,6 +827,8 @@ class ChatListModel(
 
     fun refresh() {
         if (!current()) return
+        // Activity resume refreshes this owner even while workspace preferences are loading.
+        expireCachedUnread()
         restoreCache()
         if (mutable.value.offline) return
         refreshList()

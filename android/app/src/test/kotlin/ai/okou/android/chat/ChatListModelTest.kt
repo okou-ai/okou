@@ -326,6 +326,38 @@ class ChatListModelTest {
     }
 
     @Test
+    fun refreshDropsExpiredUnreadWhenOnlyWallTimeHasAdvanced() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val cache = cache(temporary.newFolder(), dispatcher)
+        val store = ViewModelStore()
+        var now = 1_000_000L
+        val unread = mapOf(CHAT_PERSONAL to CHAT_DATE)
+        val indicators = CompletableDeferred<Indicators>()
+        val service = Service().apply { statusRead = { indicators.await() } }
+        try {
+            cache
+                .open(identity) { true }
+                .use { assertTrue(it.saveUnread(CachedUnread(now, unread))) }
+            val model = unreadModel(store, cache, service, dispatcher) { now }
+            model.refresh()
+            runCurrent()
+            assertEquals(unread, model.uiState.value.displayUnreadAt)
+
+            // Device sleep advances wall time without running the scheduled timeout.
+            now += 120_000L
+            model.refresh()
+            runCurrent()
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
+            assertNull(model.uiState.value.displayUnreadAt)
+        } finally {
+            store.clear()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
     fun anEarlierReadbackCannotSettleTheNextIntent() = runTest {
         val commitRead = CompletableDeferred<ReadState>()
         val stale = CompletableDeferred<Indicators>()

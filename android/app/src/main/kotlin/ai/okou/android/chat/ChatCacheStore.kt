@@ -8,6 +8,7 @@ import ai.okou.android.api.generated.ProjectEventsEventsItem
 import ai.okou.android.auth.WorkspaceIdentity
 import android.content.Context
 import android.util.AtomicFile
+import android.util.Log
 import androidx.room.Room
 import androidx.room.deferredTransaction
 import androidx.room.immediateTransaction
@@ -15,6 +16,7 @@ import androidx.room.useReaderConnection
 import androidx.room.useWriterConnection
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import java.io.File
+import java.io.FileNotFoundException
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicReference
@@ -76,13 +78,17 @@ internal constructor(
         encodeDefaults = true
     }
 
+    private fun ensureDirectory() {
+        if (!directory.isDirectory && !directory.mkdirs() && !directory.isDirectory)
+            throw IOException("Cannot create chat cache")
+    }
+
     // Called only under the IO mutex. Never open SQLite during construction or on Main.
     private fun database(): ChatCacheDatabase {
         database?.let {
             return it
         }
-        if (!directory.isDirectory && !directory.mkdirs() && !directory.isDirectory)
-            throw IOException("Cannot create chat cache")
+        ensureDirectory()
         return createDatabase(file).also { database = it }
     }
 
@@ -141,9 +147,13 @@ internal constructor(
                             json.decodeFromString<UnreadCacheRecord>(
                                 unreadFile.readFully().decodeToString()
                             )
+                        } catch (_: FileNotFoundException) {
+                            return@withLock null
                         } catch (_: IOException) {
+                            Log.w("ChatCacheStore", "Could not read the unread snapshot")
                             return@withLock null
                         } catch (_: SerializationException) {
+                            Log.w("ChatCacheStore", "Could not decode the unread snapshot")
                             return@withLock null
                         }
                     checkCurrent()
@@ -157,6 +167,8 @@ internal constructor(
                     checkCurrent()
                     val data = json.encodeToString(UnreadCacheRecord(authorization, snapshot))
                     try {
+                        // The Room writer can create this parent concurrently on first use.
+                        ensureDirectory()
                         val output = unreadFile.startWrite()
                         var committed = false
                         try {
@@ -172,6 +184,7 @@ internal constructor(
                         }
                         true
                     } catch (_: IOException) {
+                        Log.w("ChatCacheStore", "Could not update the unread snapshot")
                         false
                     }
                 }

@@ -165,6 +165,22 @@ class ChatCacheStoreTest {
     }
 
     @Test
+    fun corruptUnreadSnapshotCanBeReplacedByAConfirmedSnapshot() = runTest {
+        val root = temporary.newFolder().resolve("chat-list")
+        val snapshot = CachedUnread(1_000L, mapOf(CHAT_PERSONAL to CHAT_DATE))
+        cache(root)
+            .open(identity) { true }
+            .use { lease ->
+                assertTrue(lease.saveUnread(snapshot))
+                checkNotNull(root.listFiles()).single().writeText("{")
+                assertNull(lease.loadUnread())
+
+                assertTrue(lease.saveUnread(snapshot))
+                assertEquals(snapshot, lease.loadUnread())
+            }
+    }
+
+    @Test
     fun projectDatasetReopensWithoutAChatCacheAndRejectsStaleOrUnauthorizedWrites() = runTest {
         val root = temporary.newFolder()
         val store = cache(root)
