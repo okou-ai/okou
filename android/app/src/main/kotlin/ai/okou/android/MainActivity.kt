@@ -17,7 +17,6 @@ import ai.okou.android.updates.updateToolbarAction
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -52,6 +51,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
@@ -210,7 +210,7 @@ class MainActivity : AppCompatActivity() {
                         openWorkspaceSetup = {
                             try {
                                 startActivity(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.WEB_ORIGIN))
+                                    Intent(Intent.ACTION_VIEW, BuildConfig.WEB_ORIGIN.toUri())
                                 )
                             } catch (_: ActivityNotFoundException) {
                                 Toast.makeText(
@@ -337,7 +337,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun canInstallPackages() =
-        Build.VERSION.SDK_INT < 26 || packageManager.canRequestPackageInstalls()
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()
 
     private fun canHandOffUpdate() =
         lifecycle.currentState == Lifecycle.State.RESUMED && windowFocused
@@ -350,13 +350,11 @@ class MainActivity : AppCompatActivity() {
                 ?.isVisible(WindowInsetsCompat.Type.ime()) != true
 
     private fun authorizeUpdate(explanation: UpdateInstallAttempt.Explain) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         if (!updateInstall.beginAuthorization(explanation, canInstallPackages())) return
         try {
             sourceSettings.launch(
-                Intent(
-                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                    Uri.parse("package:$packageName"),
-                )
+                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:$packageName".toUri())
             )
         } catch (_: ActivityNotFoundException) {
             updateInstall.launchFailed(explanation.release)

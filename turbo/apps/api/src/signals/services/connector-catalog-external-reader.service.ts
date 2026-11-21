@@ -626,7 +626,7 @@ function connectorCatalogDetail(
 }
 
 export function getConnectorCatalogResolutionDetail(
-  connector: ConnectorCatalogArtifactConnector,
+  connector: Omit<ConnectorCatalogArtifactConnector, "skill">,
 ): PublicConnectorCatalogDetail {
   return connectorCatalogDetail({
     connector: {

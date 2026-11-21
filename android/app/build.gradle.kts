@@ -67,11 +67,13 @@ val appVersionCode =
 
 android {
     namespace = "ai.okou.android"
-    compileSdk = 36
+    compileSdk = 37
+    compileSdkMinor = 2
+    buildToolsVersion = "37.0.0"
     defaultConfig {
         applicationId = "ai.okou.android"
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 37
         versionName = appVersion
         testInstrumentationRunner = "ai.okou.android.OkouTestRunner"
         testInstrumentationRunnerArguments["useTestStorageService"] = "true"
@@ -114,6 +116,7 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+    lint { warningsAsErrors = true }
     testOptions {
         unitTests.isIncludeAndroidResources = true
         animationsDisabled = true
@@ -159,7 +162,7 @@ abstract class TraceNativeTestReferences : DefaultTask() {
     @get:Classpath abstract val appLibraries: ConfigurableFileCollection
     @get:Classpath abstract val testLibraries: ConfigurableFileCollection
     @get:Classpath abstract val compileLibraries: ConfigurableFileCollection
-    @get:Classpath abstract val androidJar: RegularFileProperty
+    @get:Classpath abstract val androidBootClasspath: ListProperty<RegularFile>
     @get:Classpath abstract val r8: ConfigurableFileCollection
     @get:InputFile @get:PathSensitive(PathSensitivity.NONE) abstract val driver: RegularFileProperty
     @get:OutputFile abstract val rules: RegularFileProperty
@@ -191,7 +194,9 @@ abstract class TraceNativeTestReferences : DefaultTask() {
             (testLibraries.files - appLibraries.files) +
                 testJars.get().map { it.asFile } +
                 pack("test.jar", testDirectories.get())
-        val libraries = (compileLibraries.files - targets - sources) + androidJar.get().asFile
+        val libraries =
+            (compileLibraries.files - targets - sources) +
+                androidBootClasspath.get().map { it.asFile }
         val output = rules.get().asFile
         output.parentFile.mkdirs()
         execOperations.javaexec {
@@ -289,11 +294,7 @@ androidComponents.onVariants { variant ->
                 appLibraries.from(classes("releaseRuntimeClasspath"))
                 testLibraries.from(classes("releaseAndroidTestRuntimeClasspath"))
                 compileLibraries.from(nativeTestTraceCompileOnly)
-                androidJar.set(
-                    androidComponents.sdkComponents.sdkDirectory.map {
-                        it.file("platforms/android-36/android.jar")
-                    }
-                )
+                androidBootClasspath.set(androidComponents.sdkComponents.bootClasspath)
                 r8.from(
                     File(
                         com.android.tools.r8.retrace.Retrace::class

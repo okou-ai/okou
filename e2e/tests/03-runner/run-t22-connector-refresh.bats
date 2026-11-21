@@ -36,7 +36,7 @@ assert_no_connector_refresh_raw_secrets() {
 
     local initial_secret="e2e-bentoml-initial-$(_runner_uuid)"
     local updated_secret="e2e-bentoml-updated-$(_runner_uuid)"
-    local initial_endpoint="https://bentoml.com"
+    local initial_endpoint="https://docs.bentoml.com"
     local updated_endpoint="https://cloud.bentoml.com"
     local initial_endpoint_digest updated_endpoint_digest
     initial_endpoint_digest=$(printf '%s' "$initial_endpoint" | sha256sum | cut -d' ' -f1)
@@ -123,7 +123,7 @@ EOF
         run runner_e2e_wait_for_firewall_log \
             "$first_run_id" \
             bentoml \
-            bentoml.com \
+            docs.bentoml.com \
             '["BENTO_CLOUD_API_KEY"]'
         local first_network_diagnostics="$output"
         public_surfaces+="$first_network_diagnostics"$'\n'
@@ -144,7 +144,7 @@ EOF
     run runner_e2e_wait_for_firewall_log \
         "$first_run_id" \
         bentoml \
-        bentoml.com \
+        docs.bentoml.com \
         '["BENTO_CLOUD_API_KEY"]'
     echo "$output"
     assert_success
@@ -246,7 +246,7 @@ EOF
     assert_success
     local updated_network_logs="$output"
     public_surfaces+="$updated_network_logs"$'\n'
-    run jq -e --arg unexpectedHost bentoml.com '
+    run jq -e --arg unexpectedHost docs.bentoml.com '
         all(.[];
             .firewall_name != "bentoml" or
             .host != $unexpectedHost

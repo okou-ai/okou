@@ -141,9 +141,8 @@ const bundledConnectorCatalogSkillSchema = object({
   fileCount: number().int().positive().max(CONNECTOR_SKILL_MAX_FILES),
 }).strict();
 
-// Producer/API rollout and retained catalogs still require the complete Storage
-// descriptor. Remove this variant under #45309 after the producer contracts and
-// retained catalog/Run references and supported rollback catalogs no longer use it.
+// Retained generations and rollback catalogs can carry the full descriptor.
+// Validate its original fields before accepting a replayed catalog.
 const legacyBundledConnectorCatalogSkillSchema =
   bundledConnectorCatalogSkillSchema
     .extend({

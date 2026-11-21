@@ -4,3 +4,9 @@
 -keep class kotlin.coroutines.jvm.internal.DebugProbesKt {
     public static void probeCoroutineSuspended(kotlin.coroutines.Continuation);
 }
+
+# R8's synthesized base method is mapped with an unqualified ByteString argument.
+# The test APK renames the argument type but cannot map MockWebServer's method name.
+-keepclassmembernames class okhttp3.internal.platform.Platform {
+    public void configureTlsExtensions(javax.net.ssl.SSLSocket, java.lang.String, java.util.List, okio.ByteString);
+}
