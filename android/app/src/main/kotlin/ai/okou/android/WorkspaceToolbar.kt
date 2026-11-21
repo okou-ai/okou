@@ -325,7 +325,6 @@ internal fun WorkspaceMenu(
     items: List<WorkspaceMenuItem>,
     close: () -> Unit,
     filter: Boolean = false,
-    title: String? = null,
     back: () -> Unit = close,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -353,7 +352,7 @@ internal fun WorkspaceMenu(
             shadowElevation = 6.dp,
             border = BorderStroke(1.dp, colors.outline),
         ) {
-            key(filter) { WorkspaceMenuItems(items, filter, title, close, back) }
+            key(filter) { WorkspaceMenuItems(items, filter, close, back) }
         }
     }
 }
@@ -362,7 +361,6 @@ internal fun WorkspaceMenu(
 private fun WorkspaceMenuItems(
     items: List<WorkspaceMenuItem>,
     filter: Boolean,
-    title: String?,
     close: () -> Unit,
     back: () -> Unit,
 ) {
@@ -421,16 +419,6 @@ private fun WorkspaceMenuItems(
             .verticalScroll(rememberScrollState())
             .padding(7.dp)
     ) {
-        if (title != null) {
-            Text(
-                title,
-                Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
         val row: @Composable (Int) -> Unit = { index ->
             WorkspaceMenuRow(
                 items[index],
@@ -477,7 +465,7 @@ private fun WorkspaceMenuRow(item: WorkspaceMenuItem, modifier: Modifier, focuse
         else Modifier.selectable(selected, enabled, role = Role.RadioButton, onClick = onClick)
     val colors = MaterialTheme.colorScheme
     val foreground = if (destructive) colors.error else colors.onSurface
-    val color = if (enabled) foreground else foreground.copy(alpha = 0.4f)
+    val color = if (enabled) foreground else foreground.copy(alpha = 0.38f)
     val shape = RoundedCornerShape(10.dp)
     Row(
         modifier

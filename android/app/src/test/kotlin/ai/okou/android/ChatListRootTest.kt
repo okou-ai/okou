@@ -568,6 +568,9 @@ class ChatListRootTest {
         awaitListAndNames()
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Research"))
         compose.onNodeWithText("Research").performSemanticsAction(SemanticsActions.OnLongClick)
+        compose
+            .onNode(hasText("Research").and(hasAnyAncestor(hasTestTag("workspace_popup"))))
+            .assertDoesNotExist()
         compose.onNodeWithText("New chat in this Project").performClick()
         compose.onNodeWithText("Research").assertExists()
         compose.onNodeWithTag("message_input").assertExists()
@@ -623,6 +626,9 @@ class ChatListRootTest {
         }
         fun choose(label: String) {
             compose.onNode(target).performSemanticsAction(SemanticsActions.OnLongClick)
+            compose
+                .onNode(target.and(hasAnyAncestor(hasTestTag("workspace_popup"))))
+                .assertDoesNotExist()
             compose.onNodeWithText(label).performClick()
         }
         awaitAction(unreadStatus)
