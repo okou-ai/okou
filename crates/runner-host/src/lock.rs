@@ -410,16 +410,11 @@ pub fn try_acquire_existing_or_missing_blocking(path: &Path) -> HostResult<Exist
 /// This is an existing-only probe: it does not create missing parent
 /// directories or a lock file. `ExistingTryLock::Missing` is returned when
 /// either is absent, while contention is returned as
-/// `ExistingTryLock::Busy`. An existing path is still required to be a
-/// trusted, runner-owned, regular, private lock file; invalid or insecure
-/// paths return a `HostError` rather than `Missing`. A successful
+/// `ExistingTryLock::Busy`. The path must have a trusted parent and a
+/// runner-owned, regular lock file. Group- or other-writable files are
+/// rejected. Other legacy modes are tightened to owner-only permissions.
+/// Invalid or insecure paths return a `HostError`. A successful
 /// `ExistingTryLock::Acquired` guard holds the shared lock until dropped.
-pub async fn try_acquire_existing_shared_or_missing(path: PathBuf) -> HostResult<ExistingTryLock> {
-    tokio::task::spawn_blocking(move || try_acquire_existing_shared_or_missing_blocking(&path))
-        .await
-        .map_err(|e| HostError::Internal(format!("lock task: {e}")))?
-}
-
 pub fn try_acquire_existing_shared_or_missing_blocking(path: &Path) -> HostResult<ExistingTryLock> {
     acquire_existing_result_blocking(path, LockMode::TryShared).map(existing_try_lock)
 }
