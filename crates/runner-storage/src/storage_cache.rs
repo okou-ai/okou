@@ -2733,13 +2733,12 @@ async fn process_one_hit_or_passthrough(
     let lock_path = home.storage_lock(&target.name, &target.version);
     let cache_dir = home.storage_cache_dir(&target.name, &target.version);
     let archive_path = cache_dir.join("archive.tar.gz");
-    let archive_may_exist = cached_archive_exists(&archive_path).await?;
-    let started_at = Instant::now();
-    let reader_result = lock::try_acquire_existing_shared_or_missing(lock_path.clone()).await;
+    let (archive_may_exist, reader_result, lock_elapsed) =
+        probe_cached_archive(&archive_path, &lock_path).await?;
     let success = reader_result.is_ok();
     metrics.record(
         STORAGE_CACHE_LOCK_WAIT,
-        started_at.elapsed(),
+        lock_elapsed,
         success,
         (!success).then_some(STORAGE_CACHE_LOCK_WAIT_FAILED),
     );
@@ -2842,8 +2841,43 @@ async fn remove_storage_lock_after_missing_cache(lock_path: &Path, archive_path:
     }
 }
 
+async fn probe_cached_archive(
+    archive_path: &Path,
+    lock_path: &Path,
+) -> RunnerResult<(
+    bool,
+    runner_host::HostResult<lock::ExistingTryLock>,
+    Duration,
+)> {
+    let started_at = Instant::now();
+    let archive_path = archive_path.to_path_buf();
+    let lock_path = lock_path.to_path_buf();
+    let (archive_may_exist, reader_result, stat_elapsed) = tokio::task::spawn_blocking(move || {
+        let stat_started = Instant::now();
+        let metadata = std::fs::metadata(&archive_path);
+        let stat_elapsed = stat_started.elapsed();
+        let archive_may_exist = cached_archive_presence(metadata, &archive_path)?;
+        let reader_result = lock::try_acquire_existing_shared_or_missing_blocking(&lock_path);
+        Ok::<_, RunnerError>((archive_may_exist, reader_result, stat_elapsed))
+    })
+    .await
+    .map_err(|error| RunnerError::Internal(format!("cached archive probe task: {error}")))??;
+    Ok((
+        archive_may_exist,
+        reader_result,
+        started_at.elapsed().saturating_sub(stat_elapsed),
+    ))
+}
+
 async fn cached_archive_exists(archive_path: &Path) -> RunnerResult<bool> {
-    match fs::metadata(archive_path).await {
+    cached_archive_presence(fs::metadata(archive_path).await, archive_path)
+}
+
+fn cached_archive_presence(
+    metadata: io::Result<std::fs::Metadata>,
+    archive_path: &Path,
+) -> RunnerResult<bool> {
+    match metadata {
         Ok(_) => Ok(true),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(e) => Err(RunnerError::Internal(format!(
