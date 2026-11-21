@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { once } from "node:events";
+import { channel } from "node:diagnostics_channel";
+import { on, once } from "node:events";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:https";
 import { tmpdir } from "node:os";
@@ -11,7 +12,6 @@ import {
   getCACertificates,
   setDefaultCACertificates,
 } from "node:tls";
-import { setImmediate } from "node:timers/promises";
 import "../src/__tests__/global-setup-env.ts";
 import { createRunnerDispatchTransport } from "../src/runner-dispatch-transport.node.ts";
 import { awaitWithSignal } from "../src/signals/utils.ts";
@@ -145,6 +145,24 @@ async function withPeer(signal, run) {
   }
 }
 
+async function waitForFetchClientDrain(origin, signal) {
+  // Observe the default dispatcher shared by native fetch and Undici. Node 22
+  // uses the v1 key, while newer Node versions expose the agent under v2.
+  const dispatcher =
+    globalThis[Symbol.for("undici.globalDispatcher.2")] ??
+    globalThis[Symbol.for("undici.globalDispatcher.1")];
+  assert.ok(dispatcher, "Expected native fetch to initialize its dispatcher");
+  for await (const [connectedOrigin, targets] of on(dispatcher, "connect", {
+    signal,
+  })) {
+    if (connectedOrigin.origin === origin) {
+      await once(targets.at(-1), "drain", { signal });
+      return;
+    }
+  }
+  throw new Error("Expected native fetch to connect to the HTTPS peer");
+}
+
 function reserve(transport, runId, url, signal) {
   transport.reserve(
     runId,
@@ -195,12 +213,13 @@ test(
 
       const post = send(transport, peer.origin);
       run.abort();
+      // Consuming the response can finish before the pool can reuse the client.
+      const reusable = waitForFetchClientDrain(peer.origin, test.signal);
       peer.releaseHandshake();
-      await post;
+      await Promise.all([post, reusable]);
       assert.deepEqual(peer.bodyPorts, peer.ports);
       assert.deepEqual(peer.bodies, [dispatchBody]);
 
-      await setImmediate();
       await send(transport, peer.origin);
       assert.equal(peer.ports.length, 1);
       assert.deepEqual(peer.bodyPorts, [peer.ports[0], peer.ports[0]]);
@@ -216,9 +235,29 @@ test(
       const { transport } = peer;
       reserve(transport, "ready", peer.origin, test.signal);
       await peer.firstHandshake;
+
+      const { hostname, port } = new globalThis.URL(peer.origin);
+      const client = Promise.withResolvers();
+      const connected = channel("undici:client:connected");
+      function onConnected({ connectParams, socket }) {
+        if (
+          connectParams.hostname === hostname &&
+          String(connectParams.port) === port
+        ) {
+          client.resolve(socket);
+        }
+      }
+      connected.subscribe(onConnected);
+      test.after(() => {
+        connected.unsubscribe(onConnected);
+      });
+
       peer.releaseHandshake();
-      await peer.firstSecureConnection;
-      await setImmediate();
+      const [, socket] = await Promise.all([
+        peer.firstSecureConnection,
+        client.promise,
+      ]);
+      assert.equal(socket.bytesWritten, 0);
       assert.deepEqual(peer.requestPaths, []);
 
       await send(transport, peer.origin);
