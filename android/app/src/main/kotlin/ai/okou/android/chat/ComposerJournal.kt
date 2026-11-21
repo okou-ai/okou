@@ -65,6 +65,13 @@ data class ComposerJournal(
     val defaultAgentId: String? = null,
 )
 
+internal fun ComposerJournal.acceptedNewChats(): List<ProvisionalChat> =
+    entries.entries.toList().asReversed().mapNotNull { (key, entry) ->
+        if (!key.startsWith("new:")) return@mapNotNull null
+        val id = entry.createdThreadId ?: return@mapNotNull null
+        ProvisionalChat(id, key.removePrefix("new:").ifEmpty { null })
+    }
+
 data class ComposerTarget(
     val threadId: String? = null,
     val agentId: String? = null,
@@ -132,6 +139,13 @@ data class ComposerState(
                 ?.takeIf { it.threadId == threadId }
                 ?.create
                 ?.let { ComposerTarget(projectId = it.projectId) }
+        }
+
+    internal fun pendingNewChats(): List<ProvisionalChat> =
+        journal?.entries.orEmpty().values.toList().asReversed().mapNotNull { entry ->
+            val pending = entry.pending ?: return@mapNotNull null
+            val create = pending.create ?: return@mapNotNull null
+            ProvisionalChat(pending.threadId, create.projectId)
         }
 
     fun canSend(target: ComposerTarget): Boolean =

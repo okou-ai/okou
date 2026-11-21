@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -101,6 +100,8 @@ internal fun ChatListScreen(
     retryMetadata: () -> Unit,
     retryIndicators: () -> Unit,
     open: (ConfirmedChat) -> Unit,
+    provisionalChats: List<ProvisionalChat>,
+    openProvisional: (ProvisionalChat) -> Unit,
     performRowAction: (String, ChatRowAction) -> Unit,
     renameThread: (String, String) -> Unit,
     projectExpansion: ProjectExpansionModel?,
@@ -194,11 +195,28 @@ internal fun ChatListScreen(
         }
     val indicators = state.indicators?.threads.orEmpty()
     val unreadChatIds = remember(unreadAt, state.readIntents) { state.unreadChatIds() }
+    val knownProjects = remember(state.projects) { state.projects.mapTo(hashSetOf()) { it.id } }
+    val pendingByProject =
+        remember(state.threads, state.filter, provisionalChats, knownProjects) {
+            if (state.filter != ChatListFilter.Inbox || provisionalChats.isEmpty()) emptyMap()
+            else {
+                val confirmedIds = state.threads.mapTo(hashSetOf()) { it.id }
+                provisionalChats
+                    .filterNot { it.threadId in confirmedIds }
+                    .groupBy { it.projectId?.takeIf(knownProjects::contains) }
+            }
+        }
     val expansion = projectExpansion?.state?.collectAsStateWithLifecycle()?.value
     val expandedProjectIds = expansion?.expandedIds.orEmpty()
     val sections =
-        remember(groups, expandedProjectIds, indicators, unreadChatIds) {
-            chatListSections(groups, expandedProjectIds, indicators, unreadChatIds)
+        remember(groups, expandedProjectIds, indicators, unreadChatIds, pendingByProject) {
+            chatListSections(
+                groups,
+                expandedProjectIds,
+                indicators,
+                unreadChatIds,
+                pendingByProject,
+            )
         }
     val runningKeys =
         remember(indicators, sections) {
@@ -229,7 +247,6 @@ internal fun ChatListScreen(
     val metadataMissing =
         state.agentsSource == null && state.agentsPhase == ChatReadPhase.Failed ||
             state.projectsSource == null && state.projectsPhase == ChatReadPhase.Failed
-    val knownProjects = remember(state.projects) { state.projects.mapTo(hashSetOf()) { it.id } }
     val missingDefault =
         state.agentsPhase == ChatReadPhase.Ready &&
             state.agents.none { it.isDefaultAgent } &&
@@ -257,6 +274,7 @@ internal fun ChatListScreen(
         else state.listReadFailure
     val awaitingFirstList =
         (state.confirmedAt == null || missingUnread) &&
+            pendingByProject.isEmpty() &&
             !state.offline &&
             firstLoadFailure == null &&
             (startupRecovery == null || state.listPhase != ChatReadPhase.Idle)
@@ -269,9 +287,12 @@ internal fun ChatListScreen(
     }
     // Follow changes to refreshed content without turning Project expansion into a scroll action.
     val lastContentKey =
-        remember(groups) {
+        remember(groups, pendingByProject) {
             groups.asReversed().firstNotNullOfOrNull { group ->
-                group.threads.lastOrNull()?.id ?: group.project?.id?.let(::projectRowKey)
+                group.threads.lastOrNull()?.takeIf { it.pinnedAt == null }?.id
+                    ?: pendingByProject[group.project?.id]?.lastOrNull()?.threadId
+                    ?: group.threads.lastOrNull()?.id
+                    ?: group.project?.id?.let(::projectRowKey)
             }
         }
     ChatListViewport(
@@ -349,10 +370,11 @@ internal fun ChatListScreen(
                     ChatNotice(R.string.chat_metadata_unavailable)
                     ChatAction(R.string.retry, retryMetadata)
                 }
-            if (state.confirmedAt != null) {
+            if (state.confirmedAt != null || pendingByProject.isNotEmpty()) {
                 sections.forEach { section ->
                     val group = section.group
                     val project = group.project
+                    val pending = section.provisionalChats
                     val foldedStatus = section.foldedStatus
                     if (project != null) {
                         item(key = projectRowKey(project.id)) {
@@ -367,7 +389,7 @@ internal fun ChatListScreen(
                                 newChat = if (newChatEnabled) ({ newChat(project.id) }) else null,
                             )
                         }
-                        if (foldedStatus == null && group.threads.isEmpty()) {
+                        if (foldedStatus == null && group.threads.isEmpty() && pending.isEmpty()) {
                             item(key = "project_actions_${project.id}") {
                                 Column(Modifier.projectChildIndent(outline)) {
                                     if (!newChatEnabled) {
@@ -385,36 +407,58 @@ internal fun ChatListScreen(
                         }
                     }
                     if (foldedStatus == null) {
-                        val pinTail = group.pinnedTailIndex()
-                        itemsIndexed(group.threads, key = { _, thread -> thread.id }) {
-                            index,
-                            thread ->
+                        val pinTail = group.pinnedTailIndex(hasProvisional = pending.isNotEmpty())
+                        val firstPending = pinTail + 1
+                        fun confirmedIndex(index: Int) =
+                            if (index < firstPending) index else index - pending.size
+                        items(
+                            group.threads.size + pending.size,
+                            key = { index ->
+                                pending.getOrNull(index - firstPending)?.threadId
+                                    ?: group.threads[confirmedIndex(index)].id
+                            },
+                        ) { index ->
                             Column(
                                 if (project == null) Modifier
                                 else Modifier.projectChildIndent(outline)
                             ) {
+                                val provisional = pending.getOrNull(index - firstPending)
+                                val threadIndex = confirmedIndex(index)
+                                val thread =
+                                    if (provisional == null) group.threads[threadIndex] else null
+                                val id = provisional?.threadId ?: checkNotNull(thread).id
+                                val unread = thread != null && id in unreadChatIds
                                 ChatRow(
-                                    thread,
-                                    chatRowStatus(
-                                        indicators[thread.id],
-                                        thread.muted == true,
-                                        thread.id in unreadChatIds,
-                                    ),
-                                    unread = thread.id in unreadChatIds,
-                                    isSelected = thread.id == selectedChatId,
+                                    id,
+                                    thread?.title,
+                                    pinned = thread?.pinnedAt != null,
+                                    status =
+                                        if (thread == null) ChatRowStatus.None
+                                        else
+                                            chatRowStatus(
+                                                indicators[id],
+                                                thread.muted == true,
+                                                unread,
+                                            ),
+                                    unread = unread,
+                                    isSelected = id == selectedChatId,
                                     runningFrame = runningFrame,
                                     row = section.firstChatRow + index,
-                                    actions = state.rowActions(thread, group, index),
-                                    pendingAction = state.pendingRowActions[thread.id],
+                                    actions =
+                                        thread
+                                            ?.let { state.rowActions(it, group, threadIndex) }
+                                            .orEmpty(),
+                                    pendingAction = state.pendingRowActions[id],
                                     performAction = { action ->
                                         when (action) {
-                                            ChatRowAction.Rename -> renamingId = thread.id
-                                            ChatRowAction.Delete -> deletingId = thread.id
-                                            else -> performRowAction(thread.id, action)
+                                            ChatRowAction.Rename -> renamingId = id
+                                            ChatRowAction.Delete -> deletingId = id
+                                            else -> performRowAction(id, action)
                                         }
                                     },
                                 ) {
-                                    open(thread)
+                                    if (provisional != null) openProvisional(provisional)
+                                    else open(checkNotNull(thread))
                                 }
                                 if (index == pinTail) {
                                     HorizontalDivider(
@@ -428,6 +472,7 @@ internal fun ChatListScreen(
                 }
                 if (
                     groups.all { it.threads.isEmpty() } &&
+                        pendingByProject.isEmpty() &&
                         metadataUsable &&
                         !missingDefault &&
                         (state.filter != ChatListFilter.Unread || unreadAt != null)
@@ -640,7 +685,9 @@ private fun Modifier.contextMenuInput(openMenu: (() -> Unit)?): Modifier {
 
 @Composable
 private fun ChatRow(
-    thread: ConfirmedChat,
+    threadId: String,
+    title: String?,
+    pinned: Boolean,
     status: ChatRowStatus,
     unread: Boolean,
     isSelected: Boolean,
@@ -667,7 +714,7 @@ private fun ChatRow(
             status.label(),
             if (status == ChatRowStatus.Running && unread) stringResource(R.string.chat_unread)
             else null,
-            if (thread.pinnedAt != null) stringResource(R.string.chat_pinned) else null,
+            if (pinned) stringResource(R.string.chat_pinned) else null,
             pendingAction?.let {
                 stringResource(
                     if (it.updatesChat) R.string.chat_row_action_pending
@@ -699,7 +746,7 @@ private fun ChatRow(
                     onLongClick = openMenu,
                     onLongClickLabel = stringResource(R.string.chat_actions),
                 )
-                .testTag("chat_${thread.id}")
+                .testTag("chat_$threadId")
                 .semantics {
                     if (isSelected) selected = true
                     if (labels.isNotEmpty()) stateDescription = labels.joinToString()
@@ -708,7 +755,7 @@ private fun ChatRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                thread.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
+                title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
                 Modifier.weight(1f),
                 color = if (isSelected) colors.onSecondaryContainer else colors.onSurface,
                 maxLines = 1,
@@ -736,9 +783,7 @@ private fun ChatRow(
                     restoreMenuFocus = true
                     menuOpen = false
                 },
-                title =
-                    thread.title?.takeIf { it.isNotBlank() }
-                        ?: stringResource(R.string.chat_untitled),
+                title = title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
             )
         }
     }

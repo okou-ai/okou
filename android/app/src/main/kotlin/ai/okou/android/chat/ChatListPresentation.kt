@@ -4,6 +4,8 @@ import ai.okou.android.api.generated.IndicatorsThreadsValue
 
 data class ChatListGroup(val project: ConfirmedProject?, val threads: List<ConfirmedChat>)
 
+data class ProvisionalChat(val threadId: String, val projectId: String?)
+
 internal enum class ChatRowStatus {
     Running,
     Unread,
@@ -49,9 +51,13 @@ internal fun collapsedProjectActivity(
 }
 
 /** Replay already orders the pins first. Render a boundary only within the visible scope. */
-internal fun ChatListGroup.pinnedTailIndex(): Int {
+internal fun ChatListGroup.pinnedTailIndex(hasProvisional: Boolean = false): Int {
     val firstOrdinary = threads.indexOfFirst { it.pinnedAt == null }
-    return if (firstOrdinary > 0) firstOrdinary - 1 else -1
+    return when {
+        firstOrdinary > 0 -> firstOrdinary - 1
+        firstOrdinary == -1 && hasProvisional -> threads.lastIndex
+        else -> -1
+    }
 }
 
 internal fun ChatListGroup.pinNeighbor(index: Int, step: Int): ConfirmedChat? =
@@ -68,6 +74,7 @@ internal data class ChatListSection(
     val group: ChatListGroup,
     val firstRow: Int,
     val foldedActivity: ProjectActivity?,
+    val provisionalChats: List<ProvisionalChat>,
 ) {
     val foldedStatus: ChatRowStatus?
         get() = foldedActivity?.status
@@ -81,6 +88,7 @@ internal fun chatListSections(
     expandedProjectIds: Set<String>,
     indicators: Map<String, IndicatorsThreadsValue>,
     unreadChatIds: Set<String>,
+    provisionalByProject: Map<String?, List<ProvisionalChat>> = emptyMap(),
 ): List<ChatListSection> {
     var row = 0
     return groups.map { group ->
@@ -88,8 +96,11 @@ internal fun chatListSections(
             if (group.project != null && group.project.id !in expandedProjectIds) {
                 collapsedProjectActivity(group.threads, indicators, unreadChatIds)
             } else null
-        val section = ChatListSection(group, row, foldedActivity)
-        row = section.firstChatRow + if (foldedActivity == null) group.threads.size else 0
+        val provisional = provisionalByProject[group.project?.id].orEmpty()
+        val section = ChatListSection(group, row, foldedActivity, provisional)
+        row =
+            section.firstChatRow +
+                if (foldedActivity == null) group.threads.size + provisional.size else 0
         section
     }
 }
