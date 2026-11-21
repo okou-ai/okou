@@ -10,12 +10,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-internal data class ProjectExpansionChange(val projectId: String, val expanded: Boolean)
-
 internal data class ProjectExpansionState(
     val expandedIds: Set<String> = emptySet(),
     val readFailed: Boolean = false,
-    val failedWrite: ProjectExpansionChange? = null,
+    val failedWrites: Map<String, Boolean> = emptyMap(),
 )
 
 class ProjectExpansionModel
@@ -48,17 +46,13 @@ internal constructor(
 
     internal fun setExpanded(projectId: String, expanded: Boolean) {
         if (!savingIds.add(projectId)) return
-        mutable.update {
-            if (it.failedWrite?.projectId == projectId) it.copy(failedWrite = null) else it
-        }
+        mutable.update { it.copy(failedWrites = it.failedWrites - projectId) }
         viewModelScope.launch {
             try {
                 store.setExpanded(identity, projectId, expanded)
                 observe()
             } catch (_: IOException) {
-                mutable.update {
-                    it.copy(failedWrite = ProjectExpansionChange(projectId, expanded))
-                }
+                mutable.update { it.copy(failedWrites = it.failedWrites + (projectId to expanded)) }
             } finally {
                 savingIds.remove(projectId)
             }
@@ -68,6 +62,6 @@ internal constructor(
     internal fun retry() {
         val snapshot = state.value
         if (snapshot.readFailed) observe()
-        snapshot.failedWrite?.let { setExpanded(it.projectId, it.expanded) }
+        snapshot.failedWrites.forEach { (projectId, expanded) -> setExpanded(projectId, expanded) }
     }
 }

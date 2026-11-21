@@ -280,7 +280,7 @@ internal fun ChatListScreen(
             if (
                 projectExpansion != null &&
                     expansion != null &&
-                    (expansion.readFailed || expansion.failedWrite != null)
+                    (expansion.readFailed || expansion.failedWrites.isNotEmpty())
             ) {
                 item {
                     ChatNotice(
