@@ -230,7 +230,9 @@ export interface WorkflowComposerSignals {
   readonly templateRequests$: Computed<readonly GenerationTemplateRequest[]>;
   readonly activeSlashRange$: Computed<SlashWorkflowRange | null>;
   readonly activeChatThreadSuggestionRange$: Computed<ChatThreadSuggestionRange | null>;
-  readonly chatThreadSuggestions$: Computed<ComposerChatThreadSuggestionResult>;
+  readonly chatThreadSuggestions$: Computed<
+    Promise<ComposerChatThreadSuggestionResult>
+  >;
   /** Null while the draft has no text. */
   readonly workflows$: Computed<Promise<readonly ComposerWorkflow[]> | null>;
   readonly reloadWorkflows$: Command<Promise<void>, [AbortSignal]>;

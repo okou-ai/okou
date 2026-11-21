@@ -15,8 +15,8 @@ export interface ComposerChatThreadSuggestionResult {
 
 export function createComposerChatThreadSuggestions(
   activeRange$: Computed<ChatThreadSuggestionRange | null>,
-): Computed<ComposerChatThreadSuggestionResult> {
-  return computed((get): ComposerChatThreadSuggestionResult => {
+): Computed<Promise<ComposerChatThreadSuggestionResult>> {
+  return computed(async (get): Promise<ComposerChatThreadSuggestionResult> => {
     const range = get(activeRange$);
     if (!range) {
       return {

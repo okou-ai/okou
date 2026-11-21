@@ -475,7 +475,9 @@ function useComposerMentionSuggestions(
   const chatThreadRange = useGet(
     composer.suggestion.activeChatThreadSuggestionRange$,
   );
-  const chatThreadResult = useGet(composer.suggestion.chatThreadSuggestions$);
+  const chatThreadResult = useLastResolved(
+    composer.suggestion.chatThreadSuggestions$,
+  );
   const result =
     chatThreadRange &&
     chatThreadResult &&

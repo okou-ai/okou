@@ -285,9 +285,14 @@ test("Browse and filter mobile browser chats before opening a conversation and r
 
   click(screen.getByLabelText("New chat"));
 
-  await expect(
-    screen.findByRole("textbox", { name: "Message" }),
-  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      screen.getByRole("textbox", { name: "Message" }),
+    ).toBeInTheDocument();
+    expect(new URLSearchParams(window.location.search).get("compose")).toBe(
+      "1",
+    );
+  });
   expect(window.location.pathname).toBe(CHAT_LIST_PATH);
   expect(new URLSearchParams(window.location.search).get("compose")).toBe("1");
   expect(screen.getByLabelText("Back to chats")).toBeInTheDocument();
@@ -422,9 +427,14 @@ test("My Okou's chats tab is its chat list at / and composes a new chat there", 
 
   click(screen.getByLabelText("New chat"));
 
-  await expect(
-    screen.findByRole("textbox", { name: "Message" }),
-  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      screen.getByRole("textbox", { name: "Message" }),
+    ).toBeInTheDocument();
+    expect(new URLSearchParams(window.location.search).get("compose")).toBe(
+      "1",
+    );
+  });
   expect(window.location.pathname).toBe("/");
   expect(new URLSearchParams(window.location.search).get("compose")).toBe("1");
   expect(screen.getByLabelText("Back to chats")).toHaveAttribute("href", "/");
@@ -553,9 +563,14 @@ test("Start the first chat from an empty mobile chat list", async () => {
 
   click(fastButton("New chat", emptyMessage.parentElement!));
 
-  await expect(
-    screen.findByRole("textbox", { name: "Message" }),
-  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      screen.getByRole("textbox", { name: "Message" }),
+    ).toBeInTheDocument();
+    expect(new URLSearchParams(window.location.search).get("compose")).toBe(
+      "1",
+    );
+  });
   expect(window.location.pathname).toBe(CHAT_LIST_PATH);
   expect(new URLSearchParams(window.location.search).get("compose")).toBe("1");
 });

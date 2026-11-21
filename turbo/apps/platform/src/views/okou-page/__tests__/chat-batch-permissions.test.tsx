@@ -24,7 +24,6 @@ import {
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { permissionMetadata } from "./chat-capability-connector-test-helpers.ts";
 import {
-  CAPABILITY_AGENT_ID,
   completedConversation,
   createChatCapabilityHelpers,
   readyChat,
@@ -59,7 +58,7 @@ function batchUrl(
   } = {},
 ): string {
   const url = new URL(
-    `/agents/${CAPABILITY_AGENT_ID}/permissions/batch`,
+    "/connectors/permissions/batch?orgId=org_default&userId=test-user-123",
     "https://app.okou.ai",
   );
   url.searchParams.set("items", JSON.stringify(args.rows ?? items));
@@ -520,7 +519,7 @@ test("A batch save does not empty sibling permission cards during a grants reloa
     },
   );
   const single = new URL(
-    `/agents/${CAPABILITY_AGENT_ID}/permissions`,
+    "/connectors/permissions?orgId=org_default&userId=test-user-123",
     "https://app.okou.ai",
   );
   single.searchParams.set("connectorSlug", "reports-service");
