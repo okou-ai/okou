@@ -254,6 +254,10 @@ export class RelayFixture {
     return new Response("Unhandled external request", { status: 599 });
   }
 
+  async ready(): Promise<void> {
+    await this.runtime.ready;
+  }
+
   request(path: string, token: string | null = CONTROL_SECRET) {
     return this.runtime.dispatchFetch(`https://relay.example.test${path}`, {
       method: ["/health", "/dead-letters"].includes(path) ? "GET" : "POST",
