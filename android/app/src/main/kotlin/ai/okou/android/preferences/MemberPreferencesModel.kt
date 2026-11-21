@@ -37,9 +37,11 @@ data class PreferenceChange(
     val colorTheme: UserPreferencesColorTheme? = null,
     val locale: UserPreferencesLocale? = null,
     val theme: UserPreferencesTheme? = null,
+    val timezone: String? = null,
 ) {
     fun request() =
         UpdatePreferencesRequest(
+            timezone = timezone,
             colorTheme = colorTheme?.let { UpdatePreferencesRequestColorTheme.valueOf(it.name) },
             locale = locale?.let { UpdatePreferencesRequestLocale.valueOf(it.name) },
             theme = theme?.let { UpdatePreferencesRequestTheme.valueOf(it.name) },
@@ -50,12 +52,13 @@ data class PreferenceChange(
                 colorTheme = colorTheme.takeUnless { it == sent.colorTheme },
                 locale = locale.takeUnless { it == sent.locale },
                 theme = theme.takeUnless { it == sent.theme },
+                timezone = timezone.takeUnless { it == sent.timezone },
             )
             .takeUnless { it == PreferenceChange() }
 }
 
 private fun UserPreferences.asChoice() =
-    PreferenceChange(colorTheme = colorTheme, locale = locale, theme = theme)
+    PreferenceChange(colorTheme = colorTheme, locale = locale, theme = theme, timezone = timezone)
 
 data class MemberPreferencesState(
     val confirmed: UserPreferences,
@@ -71,6 +74,9 @@ data class MemberPreferencesState(
 
     val theme: UserPreferencesTheme
         get() = pending?.theme ?: confirmed.theme ?: UserPreferencesTheme.SYSTEM
+
+    val timezone: String?
+        get() = pending?.timezone ?: confirmed.timezone
 
     val supportedLocales: List<UserPreferencesLocale>
         get() = confirmed.supportedLocales.map { UserPreferencesLocale.valueOf(it.name) }
@@ -141,6 +147,12 @@ class MemberPreferencesModel(
         val state = mutable.value
         if (value in state.supportedLocales && state.locale != value)
             select((state.pending ?: PreferenceChange()).copy(locale = value))
+    }
+
+    fun selectTimezone(value: String) {
+        val state = mutable.value
+        if (state.timezone != value)
+            select((state.pending ?: PreferenceChange()).copy(timezone = value))
     }
 
     private fun select(change: PreferenceChange) {

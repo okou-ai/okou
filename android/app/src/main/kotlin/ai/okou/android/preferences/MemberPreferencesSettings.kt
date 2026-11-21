@@ -13,6 +13,7 @@ import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.resolveDark
 import ai.okou.android.resolvePalette
+import android.icu.text.TimeZoneNames
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
@@ -42,12 +44,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.currentStateAsState
+import java.util.TimeZone
 
 @Composable
 internal fun MemberPreferencesSettings(model: MemberPreferencesModel) {
@@ -85,7 +88,7 @@ internal fun MemberPreferencesSettings(model: MemberPreferencesModel) {
             SettingsPickerRow(
                 colorTitle,
                 value = stringResource(paletteLabel(state.colorTheme)),
-                leading = { PaletteSwatch(state.colorTheme, dark, size = 20.dp) },
+                leading = { SettingsIcon(R.drawable.ic_palette) },
             ) { dismiss ->
                 SettingsSheet(colorTitle, dismiss) {
                     PaletteOptions(state.colorTheme, dark) { palette ->
@@ -113,8 +116,84 @@ internal fun MemberPreferencesSettings(model: MemberPreferencesModel) {
                     }
                 }
             }
+            HorizontalDivider()
+            TimezonePicker(state.timezone, model::selectTimezone)
         }
         PreferenceFeedback(state, model::retry)
+    }
+}
+
+private val commonTimezones =
+    listOf(
+        "Asia/Shanghai",
+        "Asia/Tokyo",
+        "Asia/Singapore",
+        "Europe/London",
+        "America/Los_Angeles",
+        "Etc/UTC",
+        "America/New_York",
+        "America/Chicago",
+        "America/Denver",
+        "America/Anchorage",
+        "Pacific/Honolulu",
+        "America/Toronto",
+        "America/Vancouver",
+        "America/Sao_Paulo",
+        "Europe/Berlin",
+        "Europe/Paris",
+        "Europe/Moscow",
+        "Asia/Dubai",
+        "Asia/Kolkata",
+        "Asia/Seoul",
+        "Australia/Sydney",
+        "Pacific/Auckland",
+    )
+
+@Composable
+private fun TimezonePicker(saved: String?, onSelect: (String) -> Unit) {
+    val current = saved ?: TimeZone.getDefault().id
+    val title = stringResource(R.string.settings_timezone)
+    val utc = stringResource(R.string.settings_timezone_utc)
+    val locale = LocalConfiguration.current.locales[0]
+    val labels = remember(locale) { TimeZoneNames.getInstance(locale) }
+    fun label(id: String): String =
+        when (id) {
+            "UTC",
+            "Etc/UTC" -> utc
+            else -> labels.getExemplarLocationName(id) ?: id
+        }
+    SettingsPickerRow(
+        title,
+        value = label(current),
+        leading = { SettingsIcon(R.drawable.ic_schedule) },
+    ) { dismiss ->
+        SettingsSheet(title, dismiss) {
+            Text(
+                stringResource(R.string.settings_timezone_hint),
+                Modifier.padding(horizontal = 8.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style =
+                    MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp, lineHeight = 20.sp),
+            )
+            val options =
+                if (current in commonTimezones) commonTimezones
+                else
+                    listOf(current) +
+                        commonTimezones.filterNot { current == "UTC" && it == "Etc/UTC" }
+            Column(Modifier.fillMaxWidth().selectableGroup()) {
+                options.forEach { zone ->
+                    SettingsChoiceRow(
+                        label(zone),
+                        selected = zone == current,
+                        enabled = true,
+                        onClick = {
+                            dismiss()
+                            onSelect(zone)
+                        },
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -173,13 +252,13 @@ private fun PaletteOptions(
 }
 
 @Composable
-private fun PaletteSwatch(palette: UserPreferencesColorTheme, dark: Boolean, size: Dp = 24.dp) {
+private fun PaletteSwatch(palette: UserPreferencesColorTheme, dark: Boolean) {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val preview =
         remember(context, configuration, dark, palette) { resolvePalette(context, dark, palette) }
     Box(
-        Modifier.size(size)
+        Modifier.size(24.dp)
             .background(
                 Brush.linearGradient(listOf(preview.scheme.primary, preview.swatchCompanion)),
                 CircleShape,

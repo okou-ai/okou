@@ -244,9 +244,10 @@ class OkouAppTest {
                                 projectExpansion = null,
                                 settingsContent = { _, _, _ ->
                                     SettingsScreen(
+                                        conversation = {},
                                         workspacePreferences = {
                                             MemberPreferencesSettings(models.second)
-                                        }
+                                        },
                                     )
                                 },
                                 updateToolbarAction =
@@ -632,7 +633,8 @@ class OkouAppTest {
         compose.onNodeWithContentDescription("Einstellungen").assertIsDisplayed().performClick()
         selectAppearance("Dunkel", row = "Anzeigemodus")
         compose.onNodeWithText("Dunkel").assertIsDisplayed()
-        compose.onNodeWithText("Gemeinsame Einstellungen").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Darstellung und Region").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Zeitzone").performScrollTo().assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithContentDescription("Zurück").assertIsDisplayed().performClick()
         compose.onNodeWithContentDescription("Chats").assertIsDisplayed()
         compose.mainClock.advanceTimeBy(120)

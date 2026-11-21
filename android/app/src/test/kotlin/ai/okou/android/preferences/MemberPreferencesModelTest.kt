@@ -70,6 +70,7 @@ class MemberPreferencesModelTest {
                     locale =
                         request.locale?.let { UserPreferencesLocale.valueOf(it.name) }
                             ?: stored.locale,
+                    timezone = request.timezone ?: stored.timezone,
                 )
             stored
         }
@@ -290,14 +291,20 @@ class MemberPreferencesModelTest {
             runCurrent()
             model.selectTheme(UserPreferencesTheme.DARK)
             model.selectTheme(UserPreferencesTheme.LIGHT)
+            model.selectTimezone("Asia/Tokyo")
+            model.selectTimezone("Asia/Shanghai")
             runCurrent()
             assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.theme)
+            assertEquals("Asia/Shanghai", model.uiState.value.timezone)
+            assertEquals("UTC", model.uiState.value.confirmed.timezone)
             assertTrue(api.requests.isEmpty())
 
             online.value = true
             runCurrent()
             assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.confirmed.theme)
             assertEquals(UpdatePreferencesRequestTheme.LIGHT, api.requests.single().theme)
+            assertEquals("Asia/Shanghai", api.requests.single().timezone)
+            assertEquals("Asia/Shanghai", model.uiState.value.confirmed.timezone)
         }
     }
 
