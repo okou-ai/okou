@@ -13,6 +13,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1162.0](https://github.com/okou-ai/okou/compare/app-v0.1161.3...app-v0.1162.0) (2026-11-21)
+
+
+### Features
+
+* **platform:** put the for you header on a cover-tinted banner ([#49652](https://github.com/okou-ai/okou/issues/49652)) ([a07fe3d](https://github.com/okou-ai/okou/commit/a07fe3d9b1a8645e0909e5357a9bd3a1a9299830))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.0
+    * @okouai/core bumped to 8.858.4
+    * @okouai/ui bumped to 1.21.80
+
 ## [0.1161.3](https://github.com/okou-ai/okou/compare/app-v0.1161.2...app-v0.1161.3) (2026-11-21)
 
 
