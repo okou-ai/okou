@@ -894,6 +894,8 @@ class ChatListRootTest {
     fun rejectedProjectRenameShowsFailureAtTheProjectWithoutDisplacingUndo() {
         val app = compose.activity.application as ChatListApplication
         val events = app.fixture.rowEventTail()
+        val renameStarted = AtomicBoolean()
+        val releaseRename = CountDownLatch(1)
         app.fixture.commandResponse = { request ->
             when (request.requestUrl?.encodedPath) {
                 "/api/chat-threads/$CHAT_PERSONAL/archive" -> {
@@ -904,24 +906,33 @@ class ChatListRootTest {
                     events.add(25L to request.rowEvent(25, CHAT_PERSONAL, "unarchived"))
                     MockResponse().setResponseCode(204)
                 }
-                "/api/projects/$CHAT_PROJECT" -> MockResponse().setResponseCode(409)
+                "/api/projects/$CHAT_PROJECT" -> {
+                    renameStarted.set(true)
+                    releaseRename.await()
+                    MockResponse().setResponseCode(409)
+                }
                 else -> null
             }
         }
         app.responseGate.countDown()
         awaitListAndNames()
         val chat = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
-        chat.performTouchInput { longClick() }
-        compose.onNodeWithText("Archive chat").performClick()
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithText("Chat archived").fetchSemanticsNodes().isNotEmpty()
+        try {
+            compose.onNodeWithText("Research").performTouchInput { longClick() }
+            compose.onNodeWithText("Rename").performClick()
+            compose.onNode(hasSetTextAction()).performTextReplacement("Field notes")
+            compose.onNodeWithText("Save").performClick()
+            compose.waitUntil(10_000) { renameStarted.get() }
+            compose.onNodeWithText("Field notes").assertIsDisplayed()
+
+            chat.performTouchInput { longClick() }
+            compose.onNodeWithText("Archive chat").performClick()
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText("Chat archived").fetchSemanticsNodes().isNotEmpty()
+            }
+        } finally {
+            releaseRename.countDown()
         }
-
-        compose.onNodeWithText("Research").performTouchInput { longClick() }
-        compose.onNodeWithText("Rename").performClick()
-        compose.onNode(hasSetTextAction()).performTextReplacement("Field notes")
-        compose.onNodeWithText("Save").performClick()
-
         val failure = "Could not rename the Project."
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText(failure).fetchSemanticsNodes().isNotEmpty()
