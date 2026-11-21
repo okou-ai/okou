@@ -82,6 +82,13 @@ assert 'detect-release' in android['ci-gate-android']['needs']
 assert android['ci-gate-android']['if'] == 'always()'
 for native in ['build-test', 'instrumentation', 'release-smoke']:
     assert android[native]['needs'] == 'detect'
+retrace = android['retrace-failure']
+assert retrace['needs'] == 'release-smoke'
+assert '!cancelled()' in retrace['if']
+assert "needs.release-smoke.result == 'failure'" in retrace['if']
+assert 'retrace-failure' not in android['ci-gate-android']['needs']
+download, = (step for step in retrace['steps'] if step.get('uses', '').startswith('actions/download-artifact@'))
+assert download['with']['artifact-ids'] == '${{ needs.release-smoke.outputs.retrace-artifact-id }}'
 
 with tempfile.TemporaryDirectory() as temp:
     work = Path(temp)

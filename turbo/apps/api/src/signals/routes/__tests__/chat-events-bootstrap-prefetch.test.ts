@@ -232,10 +232,16 @@ describe("chat agent bootstrap prefetch", () => {
     await cancelChatRun(actor, promoted.runId, nextExecution.sandboxHeaders);
   });
 
-  it("selects the same current Workflow from prefetch and a later independent pick", async () => {
+  it("uses the captured Workflow for the sending pick and the newer version for an independent pick", async () => {
     const { actor, defaultAgentId: agentId } = await entitledNativeChatActor();
     const misc = createMiscRoutesApi(context);
-    const s3 = installWorkflowVolumeS3Fixture(context);
+    const attachment = await deferAttachmentMetadata(
+      actor,
+      "workflow-snapshot.txt",
+    );
+    const s3 = installWorkflowVolumeS3Fixture(context, new Map(), {
+      bundlesOnly: true,
+    });
     const workflow = await misc.createWorkflow(
       actor,
       agentId,
@@ -246,9 +252,26 @@ describe("chat agent bootstrap prefetch", () => {
     if (workflow.status !== 201) {
       throw new Error("Expected workflow publication");
     }
-    const first = await sendChatRun(actor, {
+    const sending = sendChatRun(actor, {
       prompt: "prefetched skill",
+      userMessage: {
+        version: 1,
+        parts: [attachment.part, { type: "text", text: "prefetched skill" }],
+      },
     });
+    const [first] = await Promise.all([
+      sending,
+      (async () => {
+        await attachment.entered;
+        await flushWaitUntilForTest();
+        await misc.updateWorkflow(
+          actor,
+          workflow.body.id,
+          "# Context storage\nMount the newer Workflow on the next independent pick.",
+          [200],
+        );
+      })().finally(attachment.release),
+    ]);
     const firstExecution = await runExecution(first.runId);
     const firstMount = firstExecution.execution.contentBundles.skills.find(
       (mount) => {
@@ -298,17 +321,15 @@ describe("chat agent bootstrap prefetch", () => {
         return mount.mountPath === firstMount.mountPath;
       },
     );
-    expect(nextMount).toMatchObject({
-      sha256: firstMount.sha256,
-      archiveBytes: firstMount.archiveBytes,
-      mountPath: firstMount.mountPath,
-    });
     if (!nextMount) {
       throw new Error("Expected the independently selected Workflow bundle");
     }
-    expect(readExecutionContentBundle(s3.objects, nextMount)).toStrictEqual(
-      firstDownload,
-    );
+    expect(nextMount.sha256).not.toBe(firstMount.sha256);
+    expect(
+      readExecutionContentBundle(s3.objects, nextMount)
+        .get("SKILL.md")
+        ?.toString(),
+    ).toContain("Mount the newer Workflow on the next independent pick.");
     await cancelChatRun(actor, promoted.runId, nextExecution.sandboxHeaders);
   });
 

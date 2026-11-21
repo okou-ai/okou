@@ -9,7 +9,17 @@ import {
 } from "@okouai/db/schema/member-memory";
 import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import { computed } from "ccstate";
-import { and, asc, count, eq, exists, isNotNull, lt, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  exists,
+  isNotNull,
+  lt,
+  ne,
+  sql,
+} from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 
 import {
@@ -39,8 +49,9 @@ import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 function buildPreparationTables(
   claim: { readonly orgId: string; readonly chatThreadId: string },
   capacity: number,
-  requestInputId: string | undefined,
+  requestInput: EnqueuedChatInputFacts | undefined,
 ) {
+  const requestInputId = requestInput?.id;
   const builder = new QueryBuilder();
   const occupancy = builder.$with("preparation_occupancy").as(
     builder
@@ -97,6 +108,9 @@ function buildPreparationTables(
         and(
           eq(chatEvents.contextType, "agent_run"),
           eq(agentRuns.id, chatEvents.contextId),
+          requestInput?.sourceAutonomyBudget === undefined
+            ? undefined
+            : ne(chatEvents.id, requestInput.id),
         ),
       )
       .where(queuedThreadInputCondition(claim.chatThreadId))
@@ -119,7 +133,7 @@ export function createChatRunPreparationSnapshot(
     const { occupancy, head } = buildPreparationTables(
       claim,
       capacity,
-      requestInput?.id,
+      requestInput,
     );
     const hasCapacity =
       capacity === 0 ? sql`true` : lt(occupancy.activeCount, capacity);
@@ -220,6 +234,8 @@ export function createChatRunPreparationSnapshot(
     const owned = requestInput?.id === picked.id ? requestInput : undefined;
     const pickedEvent: PickedThreadInputEvent = {
       ...picked,
+      sourceAutonomyBudget:
+        owned?.sourceAutonomyBudget ?? picked.sourceAutonomyBudget,
       userMessage: owned ? owned.userMessage : picked.userMessage,
       modelSelection: owned ? owned.modelSelection : picked.modelSelection,
       requiredOfficialWorkflowIds: owned

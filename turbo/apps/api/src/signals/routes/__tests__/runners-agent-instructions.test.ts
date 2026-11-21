@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { buildArtifactPrefix } from "../../../lib/file-url";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { publicChatActor } from "./helpers/public-chat-actor";
@@ -86,7 +87,7 @@ describe("Published member instructions in direct Runs", () => {
     });
   });
 
-  it("captures the sending member’s current instructions at Run creation after attachment verification", async () => {
+  it("reuses the sending member's instructions captured before attachment verification", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const bdd = createBddApi(context);
@@ -110,7 +111,7 @@ describe("Published member instructions in direct Runs", () => {
       });
       await bdd.updatePersonalInstructions(
         member,
-        "Instructions at send authorization",
+        "Instructions captured before attachment verification",
       );
       const send = context.mocks.s3.send.getMockImplementation();
       if (!send) {
@@ -121,9 +122,10 @@ describe("Published member instructions in direct Runs", () => {
           command instanceof ListObjectsV2Command &&
           command.input.Prefix === buildArtifactPrefix(member.userId, fileId)
         ) {
+          await flushWaitUntilForTest();
           await bdd.updatePersonalInstructions(
             member,
-            "Member instructions at Run creation",
+            "Member instructions updated during attachment verification",
           );
           await bdd.updateAgentMetadata(owned.actor, owned.agentId, {
             visibility: "private",
@@ -155,7 +157,7 @@ describe("Published member instructions in direct Runs", () => {
         )
           .get("instructions.md")
           ?.toString(),
-      ).toBe("Member instructions at Run creation");
+      ).toBe("Instructions captured before attachment verification");
     });
   });
 });

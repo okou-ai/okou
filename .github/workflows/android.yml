@@ -176,6 +176,8 @@ jobs:
     if: needs.detect.outputs.needed == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    outputs:
+      retrace-artifact-id: ${{ steps.release-smoke.outcome == 'failure' && steps.release-artifacts.outcome == 'success' && steps.smoke-evidence.outputs.artifact-id || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Fetch complete history for versioned builds
@@ -232,26 +234,67 @@ jobs:
           if-no-files-found: error
           overwrite: true
           retention-days: 7
-      - name: Restore Release smoke stack traces
-        if: ${{ failure() && steps.release-smoke.outputs.release-directory != '' }}
-        timeout-minutes: 2
-        working-directory: android
-        env:
-          RELEASE_ARTIFACTS: ${{ steps.release-smoke.outputs.release-directory }}
-        run: |
-          export ANDROID_HOME=${ANDROID_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/android-sdk}
-          if test -s "$RELEASE_ARTIFACTS/tested-app.apk" && test -s "$RELEASE_ARTIFACTS/release-smoke-logcat.log"; then
-            python3 scripts/retrace-release.py \
-              "$RELEASE_ARTIFACTS/tested-app.apk" "$RELEASE_ARTIFACTS"/okou-android-*-mapping.txt.gz \
-              "$RELEASE_ARTIFACTS/release-smoke-logcat.log" "$RELEASE_ARTIFACTS/retraced"
-          fi
       - name: Retain Release smoke evidence
+        id: smoke-evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: android-release-smoke-api35-${{ github.sha }}${{ github.run_attempt != '1' && format('-attempt-{0}', github.run_attempt) || '' }}
           path: android/build/reports/release/
           if-no-files-found: warn
+          retention-days: 7
+
+  retrace-failure:
+    needs: release-smoke
+    if: ${{ !cancelled() && needs.release-smoke.result == 'failure' && needs.release-smoke.outputs.retrace-artifact-id != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: android/scripts
+          persist-credentials: false
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Download retained Android diagnostics
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.release-smoke.outputs.retrace-artifact-id }}
+          path: release-evidence
+      - name: Restore failed release stack traces
+        id: retrace
+        continue-on-error: true
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          shopt -s nullglob
+          releases=(release-evidence/run.*/)
+          if (( ${#releases[@]} != 1 )); then
+            echo '::warning::Expected one Release build in the retained Android diagnostics'
+            exit 1
+          fi
+          release=${releases[0]%/}
+          logcat="$release/release-smoke-logcat.log"
+          if [[ ! -s "$release/tested-app.apk" || ! -s "$logcat" ]]; then
+            echo 'No tested Release APK or logcat to retrace'
+            exit 0
+          fi
+          maps=("$release"/okou-android-*-mapping.txt.gz)
+          if (( ${#maps[@]} != 1 )); then
+            echo '::warning::Expected one R8 mapping in the retained Release smoke evidence'
+            exit 1
+          fi
+          timeout --kill-after=2s 28s python3 android/scripts/retrace-release.py \
+            "$release/tested-app.apk" "${maps[0]}" "$logcat" retraced --ci-logcat
+      - name: Retain restored Android stack traces
+        if: ${{ !cancelled() && steps.retrace.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-retraced-api35-${{ github.sha }}${{ github.run_attempt != '1' && format('-attempt-{0}', github.run_attempt) || '' }}
+          path: retraced/
+          if-no-files-found: ignore
           retention-days: 7
 
   ci-gate-android:

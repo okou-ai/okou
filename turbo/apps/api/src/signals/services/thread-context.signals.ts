@@ -8,10 +8,8 @@ import { createWechatThreadContext } from "./wechat-context.service";
 import { randomUUID } from "node:crypto";
 import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { computed, type Computed } from "ccstate";
-import { and, eq, isNull, sql } from "drizzle-orm";
-import { object } from "zod";
-import { parseRawRows } from "../../lib/db-raw-rows";
-import { db$, rawSqlReadDb$ } from "../external/db";
+import { and, eq, isNull } from "drizzle-orm";
+import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import {
@@ -20,11 +18,7 @@ import {
 } from "./chat-session-continuity.service";
 import type { PickedChatThread } from "./chat-run-preparation-facts";
 import { createDiscordThreadContext } from "./discord-thread-prompt-context.service";
-import {
-  executionPackageSourcesSchema,
-  executionPackageSourcesSql,
-  type ExecutionPackageSources,
-} from "./execution-workflow-selection";
+import type { ExecutionPackageSources } from "./execution-package-sources";
 import { createRunTemplates } from "./run-templates.service";
 import {
   type ConnectedAccounts,
@@ -181,7 +175,7 @@ export function createThreadContext(
   };
   const resources = createThreadInputResources(
     pickedEvent$,
-    sourceSettings.featureSwitches$,
+    bootstrap,
     integrations,
     inputSources,
   );
@@ -260,7 +254,7 @@ function createThreadModelContext(
 
 function createThreadInputResources(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  featureSwitches$: AgentRunContextSignals["featureSwitches$"],
+  owner: { readonly userId: string; readonly orgId: string },
   integrations: ReturnType<typeof createThreadIntegrationContexts>,
   context: Pick<
     ThreadContext,
@@ -275,10 +269,7 @@ function createThreadInputResources(
     | "executionPackageSources$"
   >,
 ) {
-  const projectContext$ = createThreadProjectContext(
-    pickedEvent$,
-    featureSwitches$,
-  );
+  const projectContext$ = createThreadProjectContext(pickedEvent$, owner);
   const incompleteContext$ = createIncompletePrompt(pickedEvent$);
   const emailResources$ = computed(async (get) => {
     await Promise.allSettled([
@@ -411,10 +402,6 @@ function createOfficialWorkflowCreditWaiver(
   });
 }
 
-const packageSourcesRowSchema = object({
-  packages: executionPackageSourcesSchema,
-});
-
 function createThreadExecutionPackageSources(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
@@ -430,18 +417,19 @@ function createThreadExecutionPackageSources(
       const target = await get(automationTarget$);
       return target?.packageSources ?? null;
     }
-    const db = get(rawSqlReadDb$);
-    const rows = await get(dispatchTiming$).measure(
+    const { result, durationMs, finishedAt } = await get(
+      bootstrap.executionPackageSources$,
+    );
+    get(dispatchTiming$).recordDuration(
       "api_dispatch_prepare_execution_package_sources",
       "nested",
-      () => {
-        return db.execute(
-          sql`SELECT ${executionPackageSourcesSql(bootstrap)} AS packages`,
-        );
-      },
+      durationMs,
+      finishedAt,
     );
-    const [row] = parseRawRows(packageSourcesRowSchema, rows);
-    return row?.packages ?? null;
+    if (!result.ok) {
+      throw result.error;
+    }
+    return result.value;
   });
 }
 
