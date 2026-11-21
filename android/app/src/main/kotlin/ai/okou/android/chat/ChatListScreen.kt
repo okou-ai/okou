@@ -121,10 +121,7 @@ internal fun ChatListScreen(
     var renamingId by remember { mutableStateOf<String?>(null) }
     var renamingProjectId by remember { mutableStateOf<String?>(null) }
     val projectToRename = state.projects.firstOrNull { it.id == renamingProjectId }
-    val canRenameProject =
-        state.projectsSource == ChatListSource.Network &&
-            !state.offline &&
-            state.renamingProjectId == null
+    val canRenameProject = state.canRenameProject
     if (projectToRename != null) {
         key(projectToRename.id) {
             RenameListItemDialog(

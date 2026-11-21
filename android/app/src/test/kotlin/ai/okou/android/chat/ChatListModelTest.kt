@@ -177,6 +177,7 @@ class ChatListModelTest {
         realtime: TestRealtimeService? = null,
         connectivity: MutableStateFlow<Boolean> = MutableStateFlow(true),
         authorized: () -> Boolean = { true },
+        chatCache: ChatCacheStore? = null,
         exercise: suspend (ChatListModel) -> Unit,
     ) {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -190,7 +191,7 @@ class ChatListModelTest {
                         initializer {
                             ChatListModel(
                                 service,
-                                cache(temporary.newFolder(), dispatcher),
+                                chatCache ?: cache(temporary.newFolder(), dispatcher),
                                 identity,
                                 authorized,
                                 {},
@@ -2136,18 +2137,16 @@ class ChatListModelTest {
     }
 
     @Test
-    fun rejectedProjectRenameRestoresConfirmedNameWithoutRequiringReadback() = runTest {
-        val service = HeldProjectRenameService()
-        withCatchUpModel(service) { model ->
-            model.refresh()
-            advanceUntilIdle()
+    fun rejectedCachedProjectRenameRestoresConfirmedNameWhileInitialReadIsHeld() = runTest {
+        val initialRead = CompletableDeferred<Unit>()
+        val service = HeldProjectRenameService(initialRead)
+        withCachedProjectRename(service) { model, _ ->
             val projectReads = service.projectReads
             model.renameProject(CHAT_PROJECT, "Rejected")
             runCurrent()
             assertEquals("Rejected", model.uiState.value.projects.single().name)
 
-            service.failProjectReads = true
-            service.response.completeExceptionally(ApiFailure.Http(409, "CONFLICT", null, null))
+            service.response.completeExceptionally(ApiFailure.Http(404, null, null, null))
             advanceUntilIdle()
             val state = model.uiState.value
             assertEquals("Before", state.projects.single().name)
@@ -2161,6 +2160,96 @@ class ChatListModelTest {
             model.retryProjectRename(CHAT_PROJECT)
             runCurrent()
             assertEquals(1, service.sent.size)
+
+            initialRead.complete(Unit)
+            advanceUntilIdle()
+            service.receipt =
+                ProjectEventsEventsItem(
+                    id = CHAT_EVENT,
+                    seqId = 1,
+                    projectId = CHAT_PROJECT,
+                    kind = ProjectEventsEventsItemKind.DELETED,
+                    name = null,
+                    createdAt = CHAT_DATE,
+                )
+            model.refreshMetadata()
+            advanceUntilIdle()
+            assertTrue(model.uiState.value.projects.isEmpty())
+        }
+    }
+
+    @Test
+    fun cachedProjectRenameRecoversLostResponseAfterTheInitialRead() = runTest {
+        val initialRead = CompletableDeferred<Unit>()
+        val service = HeldProjectRenameService(initialRead)
+        withCachedProjectRename(service) { model, diskCache ->
+            model.renameProject(CHAT_PROJECT, "After")
+            runCurrent()
+            val eventId = service.sent.single()
+            assertEquals("After", model.uiState.value.projects.single().name)
+            diskCache
+                .open(identity) { true }
+                .use {
+                    assertEquals(
+                        "Before",
+                        replayProjects(checkNotNull(it.loadProjects()).checkpoint).single().name,
+                    )
+                }
+            service.receipt =
+                ProjectEventsEventsItem(
+                    id = eventId,
+                    seqId = 1,
+                    projectId = CHAT_PROJECT,
+                    kind = ProjectEventsEventsItemKind.RENAMED,
+                    name = "After",
+                    createdAt = CHAT_DATE,
+                )
+            service.response.completeExceptionally(ApiFailure.Network(IOException("Lost response")))
+            runCurrent()
+            initialRead.complete(Unit)
+            advanceUntilIdle()
+
+            val state = model.uiState.value
+            assertEquals(ChatListSource.Network, state.projectsSource)
+            assertEquals("After", state.projects.single().name)
+            assertNull(state.renamingProjectId)
+            assertNull(state.projectRenameRejection)
+            assertTrue(state.unconfirmedProjectRenames.isEmpty())
+            diskCache
+                .open(identity) { true }
+                .use {
+                    val saved = checkNotNull(it.loadProjects())
+                    assertEquals(eventId, saved.checkpoint.cursor.eventId)
+                    assertEquals("After", replayProjects(saved.checkpoint).single().name)
+                }
+        }
+    }
+
+    private suspend fun TestScope.withCachedProjectRename(
+        service: HeldProjectRenameService,
+        exercise: suspend (ChatListModel, ChatCacheStore) -> Unit,
+    ) {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val root = temporary.newFolder()
+        val diskCache = cache(root, dispatcher)
+        diskCache
+            .open(identity) { true }
+            .use {
+                val project = ConfirmedProject(CHAT_PROJECT, "Before", CHAT_DATE, CHAT_DATE)
+                assertTrue(
+                    it.saveProjects(
+                        ProjectCheckpoint(ProjectArchive(listOf(project), null, 0)),
+                        100,
+                    )
+                )
+            }
+        withCatchUpModel(service, chatCache = cache(root, dispatcher)) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            assertEquals(1, service.projectReads)
+            assertEquals(ChatListSource.Cache, model.uiState.value.projectsSource)
+            assertTrue(model.uiState.value.canRenameProject)
+            exercise(model, diskCache)
         }
     }
 
@@ -2228,11 +2317,12 @@ class ChatListModelTest {
         }
     }
 
-    private inner class HeldProjectRenameService : Service() {
+    private inner class HeldProjectRenameService(
+        private val initialRead: CompletableDeferred<Unit>? = null
+    ) : Service() {
         var response = CompletableDeferred<Unit>()
         val sent = mutableListOf<String>()
         var projectReads = 0
-        var failProjectReads = false
         var receipt: ProjectEventsEventsItem? = null
 
         override suspend fun projectSnapshot() =
@@ -2251,8 +2341,9 @@ class ChatListModelTest {
 
         override suspend fun projectEvents(since: Long): ProjectEvents {
             projectReads++
-            if (failProjectReads) throw ApiFailure.Network(IOException("Project read failed"))
-            return ProjectEvents(listOfNotNull(receipt?.takeIf { it.seqId > since }), false)
+            val result = ProjectEvents(listOfNotNull(receipt?.takeIf { it.seqId > since }), false)
+            if (projectReads == 1) initialRead?.await()
+            return result
         }
 
         override suspend fun renameProject(projectId: String, name: String, eventId: String) {
