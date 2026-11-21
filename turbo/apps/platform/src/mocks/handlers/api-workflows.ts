@@ -116,7 +116,7 @@ export const apiWorkflowsHandlers = [
       200,
       mockWorkflows
         .filter((workflow) => {
-          return workflow.agentId === query.agentId;
+          return !query.agentId || workflow.agentId === query.agentId;
         })
         .map((workflow) => {
           return {
@@ -243,7 +243,7 @@ export const apiWorkflowsHandlers = [
     const copied: WorkflowDetailResponse = {
       ...source,
       id: crypto.randomUUID(),
-      agentId: body.toAgentId,
+      agentId: body.toAgentId ?? source.agentId,
       visibility: "private",
       ownerUserId: "test-user-123",
       canPublish: true,

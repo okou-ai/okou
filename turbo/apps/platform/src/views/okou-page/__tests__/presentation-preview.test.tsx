@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
 
 import {
@@ -154,7 +154,7 @@ test("Selecting a slide preserves its authored layout", async () => {
   if (!template) {
     throw new Error("Expected the authored presentation template");
   }
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, savedPresentationDraft(template));
   });
   arrangePresentation(`<!doctype html>

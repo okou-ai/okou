@@ -229,7 +229,6 @@ function createBankingContinueSignal(descriptor: BankingActionDescriptor) {
       runChatActionCallback$,
       {
         threadId: descriptor.threadId,
-        agentId: descriptor.agentId,
         callbackPrompt: descriptor.callbackPrompt,
         callbackIds,
       },

@@ -28,7 +28,7 @@ import { modelCatalog$, type ModelCatalog } from "../external/model-catalog.ts";
 import { availableRunModels$ } from "../external/run-models.ts";
 import { userModelPreference$ } from "../external/user-model-preference.ts";
 import { logger } from "../log.ts";
-import { clearAgentDraftById$ } from "../okou-page/agent-draft.ts";
+import { clearComposerDraft$ } from "../okou-page/agent-draft.ts";
 import {
   talkDraft$,
   type DraftSignals,
@@ -738,7 +738,7 @@ const clearSubmittedNewThreadDraft$ = command(
     }
     set(draft.clear$);
     if (!request.forward && !request.preserveAgentDraft) {
-      await set(clearAgentDraftById$, request.agentId, signal);
+      await set(clearComposerDraft$, signal);
     }
   },
 );

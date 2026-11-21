@@ -254,7 +254,11 @@ const listWorkflowsInner$ = computed(async (get) => {
 
 const listComposerWorkflowsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  const { agentId } = get(queryOf(workflowsCollectionContract.composer));
+  const query = get(queryOf(workflowsCollectionContract.composer));
+  const agentId = query.agentId ?? (await get(workflowNamespace$));
+  if (!agentId) {
+    return forbidden("A workspace Workflow namespace is required");
+  }
   const workflows = await get(
     workflowList({
       orgId: auth.orgId,
@@ -1408,15 +1412,19 @@ const copyWorkflowInner$ = command(
     if (!sourceWorkflow) {
       return workflowNotFound(params.workflowId);
     }
+    const namespace = await get(workflowNamespace$);
+    const targetId = bodyResult.data.toAgentId ?? namespace;
+    signal.throwIfAborted();
+    if (!targetId) {
+      return forbidden("Make a private copy in the current workspace");
+    }
     const [targetAgent] = await db
       .select()
-      .from(workflowCopyAgentQuery(auth.orgId, bodyResult.data.toAgentId));
+      .from(workflowCopyAgentQuery(auth.orgId, targetId));
     signal.throwIfAborted();
     if (!targetAgent) {
-      return notFound(`Agent not found: ${bodyResult.data.toAgentId}`);
+      return notFound("Workflow destination not found");
     }
-    const namespace = await get(workflowNamespace$);
-    signal.throwIfAborted();
     if (namespace && targetAgent.id !== namespace) {
       return forbidden("Make a private copy in the current workspace");
     }

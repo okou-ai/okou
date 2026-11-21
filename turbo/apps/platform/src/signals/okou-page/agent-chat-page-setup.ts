@@ -91,7 +91,7 @@ const setupChatPageForAgent$ = command(
       setPwaAgentComposeRequested$,
       isPwaAgentComposeRequested(get(searchParams$)),
     );
-    const agentDraft: EnsuredAgentDraft = set(ensureAgentDraft$, agentId);
+    const agentDraft: EnsuredAgentDraft = await set(ensureAgentDraft$, signal);
     set(setAgentComposerContext$, { agentId, agentDraft });
     set(get(agentChatComposerSignals$).setup$, signal);
     set(setTalkDraft$, agentDraft.draft);

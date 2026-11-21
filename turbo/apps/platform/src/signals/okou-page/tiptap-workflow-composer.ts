@@ -48,7 +48,6 @@ import { VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS } from "@okouai/api-contra
 import type { VoiceIoEditorContext } from "@okouai/api-contracts/contracts/voice-io-transcribe";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { splitPlainTextUrls } from "../../lib/plain-text-urls.ts";
-import { agents$ } from "../agent.ts";
 import { currentChatAgentRecordId$ } from "../agent-chat.ts";
 import { createRecentWorkflowIds } from "./recent-workflows.ts";
 import { detach, onRef, Reason, resetSignal } from "../utils.ts";
@@ -67,13 +66,7 @@ import {
   type ChatThreadSuggestionRange,
   type ComposerChatThreadSuggestion,
 } from "./chat-thread-suggestion-domain.ts";
-import { splitAgentMentionSegments } from "./composer-agent-suggestion-domain.ts";
-import {
-  agentMentionText,
-  createAgentMentionAvatarRuntime,
-  createAgentMentionNode,
-  type AgentMentionAvatarRuntime,
-} from "./composer-agent-mention-node.ts";
+import { legacyAgentMentionsToText } from "./legacy-agent-mention.ts";
 import {
   createComposerChatThreadSuggestions,
   type ComposerChatThreadSuggestionResult,
@@ -87,7 +80,6 @@ import {
 } from "./workflow-composer-domain.ts";
 import {
   PROJECT_MENTION_NODE_NAME,
-  AGENT_MENTION_NODE_NAME,
   CHAT_THREAD_MENTION_NODE_NAME,
   createEditorDocumentSnapshot,
   draftToEditorDoc,
@@ -95,7 +87,7 @@ import {
   TEMPLATE_ATTACHMENT_NODE_NAME,
   type EditorDocumentSnapshot,
 } from "./user-message-document-codec.ts";
-import { createComposerWorkflows } from "./composer-workflows.ts";
+import { composerWorkflows$ } from "./composer-workflows.ts";
 import type { OpenTemplatePickerDialogCommand } from "./chat-composer.ts";
 import { reloadWorkflowData$ } from "../workflows-page/workflow-reload.ts";
 import { i18n } from "../../i18n/index.ts";
@@ -105,7 +97,6 @@ type WorkflowNamesSyncCommand = Command<
   Promise<void>,
   [AbortSignal, AbortSignal]
 >;
-type AgentMentionAvatarsSyncCommand = Command<Promise<void>, [AbortSignal]>;
 
 interface ComposerWorkflowNames {
   readonly sync$: WorkflowNamesSyncCommand;
@@ -336,13 +327,13 @@ function createComposerAgentResources<T extends AgentIdValue>(
   const agentId$ = computed(async (get): Promise<string | null> => {
     return await get(agentIdSource$);
   });
-  const allWorkflows$ = createComposerWorkflows(agentId$);
+  const allWorkflows$ = composerWorkflows$;
   // Empty drafts do not need workflows. The underlying computed retains its
   // request and result when the draft is cleared and later edited again.
   const workflows$ = computed((get) => {
     return get(hasInput$) ? get(allWorkflows$) : null;
   });
-  const sync$ = createSyncWorkflowNamesCommand(editor, agentId$, allWorkflows$);
+  const sync$ = createSyncWorkflowNamesCommand(editor, allWorkflows$);
   const syncForInput$ = command(
     ({ get, set }, mountSignal: AbortSignal): void => {
       if (!get(hasInput$)) {
@@ -1422,26 +1413,14 @@ function removeTemplateAttachmentNode(editor: Editor): void {
   editor.view.dispatch(transaction.scrollIntoView());
 }
 
-function agentMentionInlineContent(value: string): JSONContent[] {
-  return splitAgentMentionSegments(value).map((segment): JSONContent => {
-    return segment.type === "text"
-      ? { type: "text", text: segment.text }
-      : {
-          type: AGENT_MENTION_NODE_NAME,
-          attrs: {
-            agentId: segment.agentId,
-            name: segment.name,
-            avatarUrl: null,
-          },
-        };
-  });
-}
-
 function composerInlineReferenceContent(line: string): JSONContent[] {
   const content: JSONContent[] = [];
   for (const segment of splitChatThreadMentionSegments(line)) {
     if (segment.type === "text") {
-      content.push(...agentMentionInlineContent(segment.text));
+      content.push({
+        type: "text",
+        text: legacyAgentMentionsToText(segment.text),
+      });
       continue;
     }
     content.push({
@@ -1464,9 +1443,6 @@ function valueToWorkflowComposerDoc(value: string): JSONContent {
 function composerLeafText(node: ProseMirrorNode): string {
   if (node.type.name === PROJECT_MENTION_NODE_NAME) {
     return projectMentionText(node);
-  }
-  if (node.type.name === AGENT_MENTION_NODE_NAME) {
-    return agentMentionText(node);
   }
   if (node.type.name === CHAT_THREAD_MENTION_NODE_NAME) {
     return chatThreadMentionText(node);
@@ -1835,10 +1811,7 @@ function createFeedbackItemNode(
   });
 }
 
-function createWorkflowEditor(
-  runtime: WorkflowComposerRuntime,
-  agentMentionAvatarRuntime: AgentMentionAvatarRuntime,
-): Editor {
+function createWorkflowEditor(runtime: WorkflowComposerRuntime): Editor {
   const editor = new Editor({
     element: null,
     extensions: [
@@ -1847,10 +1820,6 @@ function createWorkflowEditor(
       createInlineTemplateNode(runtime),
       createFeedbackItemNode(runtime),
       createProjectMentionNode(),
-      createAgentMentionNode(
-        COMPOSER_INLINE_REFERENCE_CLASS,
-        agentMentionAvatarRuntime,
-      ),
       ChatThreadMentionNode,
       WorkflowHighlight,
       UrlHighlight,
@@ -2037,7 +2006,6 @@ function applyWorkflowNames(editor: Editor, names: readonly string[]): void {
 
 function createSyncWorkflowNamesCommand(
   editor: Editor,
-  agentId$: Computed<Promise<string | null>>,
   workflows$: Computed<Promise<readonly ComposerWorkflow[]>>,
 ): WorkflowNamesSyncCommand {
   const resetWorkflowNamesSyncSignal$ = resetSignal();
@@ -2061,33 +2029,19 @@ function createSyncWorkflowNamesCommand(
         mountSignal,
         signal,
       );
-      const [agentId, workflows] = await Promise.all([
-        get(agentId$),
-        get(workflows$),
-      ]);
+      const workflows = await get(workflows$);
       signal.throwIfAborted();
       if (syncSignal.aborted) {
         return;
       }
-      const workflowNames = buildComposerSlashWorkflows({
-        agentId,
-        workflows,
-      }).map((workflow) => {
-        return workflow.name;
-      });
+      const workflowNames = buildComposerSlashWorkflows(workflows).map(
+        (workflow) => {
+          return workflow.name;
+        },
+      );
       applyWorkflowNames(editor, workflowNames);
     },
   );
-}
-
-function createSyncAgentMentionAvatarsCommand(
-  avatarRuntime: AgentMentionAvatarRuntime,
-): AgentMentionAvatarsSyncCommand {
-  return command(async ({ get }, signal: AbortSignal): Promise<void> => {
-    const agents = await get(agents$);
-    signal.throwIfAborted();
-    avatarRuntime.replaceAgents(agents);
-  });
 }
 
 interface ComposerCompositionQuery {
@@ -2358,7 +2312,6 @@ interface MountEditorOptions {
   feedback: ComposerFeedbackModel;
   compositionGate: CompositionGate;
   workflowNames: ComposerWorkflowNames;
-  syncAgentMentionAvatars$: AgentMentionAvatarsSyncCommand;
   autoFocus: boolean;
 }
 
@@ -2468,7 +2421,6 @@ function createMountEditorCommand({
   feedback,
   compositionGate,
   workflowNames,
-  syncAgentMentionAvatars$,
   autoFocus,
 }: MountEditorOptions) {
   const removeFeedback$ = createRemoveFeedbackCommand(editor, draft, feedback);
@@ -2579,10 +2531,7 @@ function createMountEditorCommand({
         set(editorInteractionActiveState$, false);
         editor.unmount();
       });
-      await Promise.all([
-        set(workflowNames.sync$, signal, signal),
-        set(syncAgentMentionAvatars$, signal),
-      ]);
+      await set(workflowNames.sync$, signal, signal);
     }),
   );
 }
@@ -2702,13 +2651,6 @@ function createInsertTextCommands(editor: Editor) {
     const { from, to } = selection;
     const limit = VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS;
     const leafText = (node: ProseMirrorNode): string => {
-      if (node.type.name === AGENT_MENTION_NODE_NAME) {
-        const name: unknown = node.attrs.name;
-        if (typeof name !== "string") {
-          throw new Error("Agent mention name is invalid");
-        }
-        return `@${name}`;
-      }
       if (node.type.name === CHAT_THREAD_MENTION_NODE_NAME) {
         return `@${chatThreadMentionAttributes(node).title}`;
       }
@@ -3407,9 +3349,8 @@ export function createWorkflowComposerSignals<
   const runtime = createWorkflowComposerRuntime(
     composerFeedbackPlaceholder(options.feedbackPlaceholder),
   );
-  const agentMentionAvatarRuntime = createAgentMentionAvatarRuntime();
   const compositionGate = createCompositionGate();
-  const editor = createWorkflowEditor(runtime, agentMentionAvatarRuntime);
+  const editor = createWorkflowEditor(runtime);
   const mountComposition$ = createMountCompositionCommand(
     editor,
     compositionGate,
@@ -3422,9 +3363,6 @@ export function createWorkflowComposerSignals<
     editor,
     agentIdSource$,
     draft.hasInput$,
-  );
-  const syncAgentMentionAvatars$ = createSyncAgentMentionAvatarsCommand(
-    agentMentionAvatarRuntime,
   );
   const templates = createTemplateSignals(editor, draft, openDialog$);
   const activeSlashRange$ = createActiveSlashRange(
@@ -3470,7 +3408,6 @@ export function createWorkflowComposerSignals<
     feedback,
     compositionGate,
     workflowNames,
-    syncAgentMentionAvatars$,
     autoFocus: options.autoFocus ?? false,
   });
   const suggestionInsertionCommands = createSuggestionInsertionCommands(

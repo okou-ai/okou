@@ -2,7 +2,7 @@ import { cleanup, screen, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   chatThreadDraftContract,
   chatThreadEventsContract,
@@ -33,7 +33,7 @@ function installWorkspace() {
     threads: [thread],
   });
   context.mocks.data.onboardingStatus({ defaultAgentId: thread.agentId });
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, { draftUserMessage: null, draftAttachments: null });
   });
   context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {

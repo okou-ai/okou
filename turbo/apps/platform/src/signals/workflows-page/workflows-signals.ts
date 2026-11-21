@@ -724,11 +724,7 @@ export const allVisibleWorkflows$ = computed(
     const locale = get(locale$);
     const client = get(apiClient$)(workflowsCollectionContract);
 
-    const agentId = await get(defaultAgentId$);
-    if (!agentId) {
-      throw new Error("Workspace default executor is unavailable");
-    }
-    const result = await accept(client.list({ query: { agentId } }), [200]);
+    const result = await accept(client.list({ query: {} }), [200]);
     return result.body
       .filter((workflow) => {
         return !isOfficialWorkflow(workflow);
@@ -1596,16 +1592,12 @@ export const makePrivateWorkflowCopy$ = command(
     workflow: WorkflowDetailResponse,
     signal: AbortSignal,
   ) => {
-    const agentId = await get(defaultAgentId$);
     signal.throwIfAborted();
-    if (!agentId) {
-      throw new Error("Workspace Workflow copying is unavailable");
-    }
     const collection = get(apiClient$)(workflowsCollectionContract);
     const detail = get(apiClient$)(workflowsDetailContract);
     const findCopy = async () => {
       const result = await accept(
-        collection.list({ query: { agentId }, fetchOptions: { signal } }),
+        collection.list({ query: {}, fetchOptions: { signal } }),
         [200],
       );
       return result.body.find((item) => {
@@ -1622,7 +1614,7 @@ export const makePrivateWorkflowCopy$ = command(
       const result = await accept(
         detail.copy({
           params: { workflowId: workflow.id },
-          body: { toAgentId: agentId },
+          body: {},
           fetchOptions: { signal },
         }),
         [201, 409],

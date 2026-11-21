@@ -264,7 +264,6 @@ const runConnectorActionCallback$ = command(
       runChatActionCallback$,
       {
         threadId: descriptor.threadId,
-        agentId: descriptor.agentId,
         callbackPrompt: descriptor.callbackPrompt,
       },
       signal,
@@ -299,7 +298,6 @@ function createConnectionCompletion(
         runChatActionCallback$,
         {
           threadId: descriptor.threadId,
-          agentId: descriptor.agentId,
           callbackPrompt: descriptor.callbackPrompt,
           callbackIds,
         },

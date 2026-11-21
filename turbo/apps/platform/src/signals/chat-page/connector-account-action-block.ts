@@ -207,7 +207,6 @@ function createConnectorAccountConfirmSignal(
       runChatActionCallback$,
       {
         threadId: descriptor.threadId,
-        agentId: descriptor.agentId,
         callbackPrompt: descriptor.callbackPrompt,
         callbackIds,
       },

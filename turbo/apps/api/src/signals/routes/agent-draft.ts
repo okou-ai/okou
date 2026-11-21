@@ -1,7 +1,10 @@
 import { projectChatContract } from "@okouai/api-contracts/contracts/project-chat";
 import { personalProjectAccess$ } from "./projects";
 import { command, computed } from "ccstate";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import {
+  agentDraftContract,
+  composerDraftContract,
+} from "@okouai/api-contracts/contracts/agent-draft";
 import { agentDrafts } from "@okouai/db/schema/agent-draft";
 import { agents } from "@okouai/db/schema/agent";
 import { and, eq } from "drizzle-orm";
@@ -27,6 +30,7 @@ function agentNotFound(agentId: string) {
 }
 
 type AgentDraftContract =
+  | typeof composerDraftContract
   | typeof agentDraftContract
   | {
       get: typeof projectChatContract.agentDraft;
@@ -41,21 +45,22 @@ function createAgentDraftReader(
       return notFound("Projects unavailable");
     }
     const auth = get(organizationAuthContext$);
-    const params = get(pathParamsOf(contract.get));
-
-    const agentScope = {
-      orgId: auth.orgId,
-      userId: auth.userId,
-      agentId: params.id,
-    };
-    const [visibleAgent] = await get(db$)
-      .select({ id: agents.id })
-      .from(agents)
-      .where(visibleAgentIdentityCondition(agentScope))
-      .limit(1);
-    const exists = Boolean(visibleAgent);
-    if (!exists) {
-      return agentNotFound(params.id);
+    if ("pathParams" in contract.get) {
+      const { id } = get(pathParamsOf(contract.get));
+      const [visibleAgent] = await get(db$)
+        .select({ id: agents.id })
+        .from(agents)
+        .where(
+          visibleAgentIdentityCondition({
+            orgId: auth.orgId,
+            userId: auth.userId,
+            agentId: id,
+          }),
+        )
+        .limit(1);
+      if (!visibleAgent) {
+        return agentNotFound(id);
+      }
     }
 
     const [draft] = await get(db$)
@@ -94,7 +99,6 @@ function createAgentDraftRoutes(
         return notFound("Projects unavailable");
       }
       const auth = get(organizationAuthContext$);
-      const params = get(pathParamsOf(contract.patch));
 
       const bodyResult = await get(bodyResultOf(contract.patch));
       signal.throwIfAborted();
@@ -106,20 +110,23 @@ function createAgentDraftRoutes(
       }
       signal.throwIfAborted();
 
-      const agentScope = {
-        orgId: auth.orgId,
-        userId: auth.userId,
-        agentId: params.id,
-      };
-      const [visibleAgent] = await get(db$)
-        .select({ id: agents.id })
-        .from(agents)
-        .where(visibleAgentIdentityCondition(agentScope))
-        .limit(1);
-      signal.throwIfAborted();
-      const exists = Boolean(visibleAgent);
-      if (!exists) {
-        return agentNotFound(params.id);
+      if ("pathParams" in contract.patch) {
+        const { id } = get(pathParamsOf(contract.patch));
+        const [visibleAgent] = await get(db$)
+          .select({ id: agents.id })
+          .from(agents)
+          .where(
+            visibleAgentIdentityCondition({
+              orgId: auth.orgId,
+              userId: auth.userId,
+              agentId: id,
+            }),
+          )
+          .limit(1);
+        signal.throwIfAborted();
+        if (!visibleAgent) {
+          return agentNotFound(id);
+        }
       }
 
       const draftAttachments = bodyResult.data.draftAttachments ?? null;
@@ -166,14 +173,22 @@ function createAgentDraftRoutes(
     },
   );
 
+  const auth =
+    "pathParams" in contract.get
+      ? agentReadAuth
+      : ({
+          requireOrganization: true,
+          missingOrganizationStatus: 401,
+          accept: ["session"],
+        } as const);
   return [
     {
       route: contract.get,
-      handler: authRoute(agentReadAuth, getAgentDraftInner$),
+      handler: authRoute(auth, getAgentDraftInner$),
     },
     {
       route: contract.patch,
-      handler: authRoute(agentReadAuth, patchAgentDraftInner$),
+      handler: authRoute(auth, patchAgentDraftInner$),
     },
   ];
 }
@@ -187,4 +202,9 @@ export const projectAgentDraftRoutes = createAgentDraftRoutes(
     patch: projectChatContract.saveAgentDraft,
   },
   true,
+);
+
+export const composerDraftRoutes = createAgentDraftRoutes(
+  composerDraftContract,
+  false,
 );

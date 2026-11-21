@@ -28,7 +28,6 @@ import {
   registerOptimisticChatThreadEvent$,
 } from "./chat-thread-event-sourcing.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
-import type { AgentReferenceSignals } from "./agent-reference-signals.ts";
 import type { ArtifactSignals } from "./artifact-card-signals.ts";
 import type { VisualizationPreferences } from "../okou-page/composer-visualization.ts";
 
@@ -71,11 +70,6 @@ export type UserMessageFeedbackNoteRenderPart =
       readonly part: FeedbackNotePartOfType<"chat_thread">;
     }
   | {
-      readonly type: "agent";
-      readonly part: FeedbackNotePartOfType<"agent">;
-      readonly signals: AgentReferenceSignals;
-    }
-  | {
       readonly type: "template";
       readonly part: FeedbackNotePartOfType<"template">;
     };
@@ -92,11 +86,6 @@ export type UserMessageRenderPart =
   | {
       readonly type: "chat_thread";
       readonly part: UserMessagePartOfType<"chat_thread">;
-    }
-  | {
-      readonly type: "agent";
-      readonly part: UserMessagePartOfType<"agent">;
-      readonly signals: AgentReferenceSignals;
     }
   | {
       readonly type: "template";

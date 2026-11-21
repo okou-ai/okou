@@ -455,10 +455,7 @@ function useComposerWorkflowSuggestions(
   // null while a request is in flight.
   const requested =
     workflowsLoadable.state === "hasData" ? workflowsLoadable.data : undefined;
-  const workflows = buildComposerSlashWorkflows({
-    agentId: composer.agentId,
-    workflows: requested ?? [],
-  });
+  const workflows = buildComposerSlashWorkflows(requested ?? []);
   return {
     workflows:
       query === undefined

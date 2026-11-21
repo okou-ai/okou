@@ -247,7 +247,7 @@ export function createForwardAgentComposerSignals(
 ) {
   return createAgentComposerSignalsWithDraft(
     agentId,
-    createAgentDraftSignals(agentId),
+    createAgentDraftSignals(),
     { forward, inPlace: true, onOptimisticSend, projectId },
   );
 }
@@ -263,7 +263,7 @@ export function createInPlaceAgentComposerSignals(
 ) {
   return createAgentComposerSignalsWithDraft(
     agentId,
-    createAgentDraftSignals(agentId),
+    createAgentDraftSignals(),
     { inPlace: true, onOptimisticSend, title },
   );
 }

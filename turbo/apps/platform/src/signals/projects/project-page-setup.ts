@@ -35,7 +35,7 @@ export const setupProjectPage$ = command(
       throw new Error("A Project page requires a Project and a default Agent");
     }
     set(setChatAgentId$, agentId);
-    const agentDraft = set(ensureAgentDraft$, agentId);
+    const agentDraft = await set(ensureAgentDraft$, signal);
     set(setAgentComposerContext$, { agentId, agentDraft, projectId });
     set(get(agentChatComposerSignals$).setup$, signal);
     set(setTalkDraft$, agentDraft.draft);

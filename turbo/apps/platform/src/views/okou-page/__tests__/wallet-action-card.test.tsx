@@ -84,7 +84,6 @@ function mockAuthorization(
   const read = createDeferredPromise<void>(context.signal);
   context.mocks.api(walletUserContract.connectStatus, ({ body, respond }) => {
     expect(body).toStrictEqual({
-      agentId: AGENT_ID,
       state: OAUTH_STATE,
     });
     if (!read.settled()) {

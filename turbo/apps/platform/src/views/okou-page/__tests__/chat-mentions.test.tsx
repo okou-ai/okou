@@ -1,6 +1,6 @@
 import { userMessageInputDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
 import {
-  agentDraftContract,
+  composerDraftContract,
   type AgentDraftRequest,
 } from "@okouai/api-contracts/contracts/agent-draft";
 import {
@@ -66,7 +66,7 @@ function configureAgentDraft(
     selectedImageModel: null,
     updatedAt: null,
   });
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: userMessageInputDocumentSchema.parse(draft),
       draftAttachments: null,
@@ -223,7 +223,7 @@ test("Special characters in a conversation title survive saving and restoring", 
     },
     [referencedThread(SPECIAL_TITLE_THREAD_ID, specialTitle)],
   );
-  context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
+  context.mocks.api(composerDraftContract.patch, ({ body, respond }) => {
     savedDraft = body;
     return respond(204);
   });

@@ -1,3 +1,4 @@
+import { legacyAgentMentionsToText } from "../okou-page/legacy-agent-mention.ts";
 import {
   userMessageDocumentSchema,
   resolveChatEventRecommendedFollowups,
@@ -139,10 +140,6 @@ import {
   textToMessageDocument,
 } from "../okou-page/user-message-document-codec.ts";
 import { parseComposerVisualizationPreferences } from "../okou-page/composer-additional-info.ts";
-import {
-  createAgentReferenceSignalsRegistry,
-  type AgentReferenceSignalsRegistry,
-} from "./agent-reference-signals.ts";
 import {
   createArtifactCardSignalsRegistry,
   type ArtifactCardSignalsRegistry,
@@ -1034,39 +1031,34 @@ function createRenderedChatGroups(
   };
 }
 
-const registerFeedbackNoteRenderPart$ = command(
-  (
-    { set },
-    part: FeedbackNotePart,
-    agentReferenceSignals: AgentReferenceSignalsRegistry,
-  ): UserMessageFeedbackNoteRenderPart => {
-    switch (part.type) {
-      case "text": {
-        return { type: "text", part };
-      }
-      case "project": {
-        return { type: "project", part };
-      }
-      case "chat_thread": {
-        return { type: "chat_thread", part };
-      }
-      case "template": {
-        return { type: "template", part };
-      }
-      case "agent": {
-        return {
-          type: part.type,
-          part,
-          signals: set(agentReferenceSignals.register$, part.agentId),
-        };
-      }
+function feedbackNoteRenderPart(
+  part: FeedbackNotePart,
+): UserMessageFeedbackNoteRenderPart {
+  switch (part.type) {
+    case "text": {
+      const text = legacyAgentMentionsToText(part.text);
+      return {
+        type: "text",
+        part: text === part.text ? part : { ...part, text },
+      };
     }
-  },
-);
+    case "project": {
+      return { type: "project", part };
+    }
+    case "chat_thread": {
+      return { type: "chat_thread", part };
+    }
+    case "template": {
+      return { type: "template", part };
+    }
+    case "agent": {
+      return { type: "text", part: { type: "text", text: part.nameSnapshot } };
+    }
+  }
+}
 
 interface UserMessagePartRegistries {
   readonly artifactCardSignals: ArtifactCardSignalsRegistry;
-  readonly agentReferenceSignals: AgentReferenceSignalsRegistry;
 }
 
 const registerUserMessageRenderPart$ = command(
@@ -1075,10 +1067,14 @@ const registerUserMessageRenderPart$ = command(
     part: Exclude<UserMessagePart, { type: "additional_info" }>,
     registries: UserMessagePartRegistries,
   ): UserMessageRenderPart => {
-    const { artifactCardSignals, agentReferenceSignals } = registries;
+    const { artifactCardSignals } = registries;
     switch (part.type) {
       case "text": {
-        return { type: "text", part };
+        const text = legacyAgentMentionsToText(part.text);
+        return {
+          type: "text",
+          part: text === part.text ? part : { ...part, text },
+        };
       }
       case "project": {
         return { type: "project", part };
@@ -1097,9 +1093,8 @@ const registerUserMessageRenderPart$ = command(
       }
       case "agent": {
         return {
-          type: part.type,
-          part,
-          signals: set(agentReferenceSignals.register$, part.agentId),
+          type: "text",
+          part: { type: "text", text: part.nameSnapshot },
         };
       }
       case "source": {
@@ -1138,13 +1133,7 @@ const registerUserMessageRenderPart$ = command(
         return {
           type: part.type,
           part,
-          note: part.note.map((notePart) => {
-            return set(
-              registerFeedbackNoteRenderPart$,
-              notePart,
-              agentReferenceSignals,
-            );
-          }),
+          note: part.note.map(feedbackNoteRenderPart),
         };
       }
     }
@@ -2071,7 +2060,6 @@ function createPagedEventResources({
     onBrowserPageInput$,
   );
   const artifactCardSignals = createArtifactCardSignalsRegistry();
-  const agentReferenceSignals = createAgentReferenceSignalsRegistry();
   const subscriptionResetCardSignals =
     createSubscriptionResetCardSignalsRegistry();
   const connectorCardSignals = createConnectorCardSignalsRegistry();
@@ -2141,7 +2129,7 @@ function createPagedEventResources({
           set(
             registerUserMessageRenderDocument$,
             document,
-            { artifactCardSignals, agentReferenceSignals },
+            { artifactCardSignals },
             event.contextType,
           ),
         );

@@ -19,7 +19,7 @@ import {
   chatThreadDraftContract,
   chatEventsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   click,
   fill,
@@ -209,13 +209,13 @@ function metadata(extra: readonly { id: string; name: string }[] = []) {
   context.mocks.api(projectsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });
   });
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, { draftUserMessage: null, draftAttachments: null });
   });
   context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
     return respond(200, { draftUserMessage: null, draftAttachments: null });
   });
-  context.mocks.api(agentDraftContract.patch, ({ respond }) => {
+  context.mocks.api(composerDraftContract.patch, ({ respond }) => {
     return respond(204);
   });
   context.mocks.api(chatThreadByIdContract.patch, ({ respond }) => {
@@ -2259,7 +2259,7 @@ test("Home, Project, and conversation navigation preserves the correct draft and
   context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
     return respond(200, textContinuityDraft("Conversation-only draft"));
   });
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, textContinuityDraft("New conversation draft"));
   });
   const created: { threadId?: string; projectId?: string | null } = {};
