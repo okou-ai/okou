@@ -1,6 +1,7 @@
 """Shared model-provider flow helpers for mitm-addon tests."""
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from mitmproxy import http
@@ -9,7 +10,7 @@ from mitmproxy.test import tutils
 import flow_metadata_keys as metadata_keys
 import http_network_log
 from tests.flow_helpers import header_map
-from tests.jsonl_log_helpers import jsonl_exists_after_flush, read_jsonl_entries_after_flush
+from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 
 RealFlowFactory = Callable[..., http.HTTPFlow]
 _WEBSOCKET_KEY = "dGhlIHNhbXBsZSBub25jZQ=="
@@ -229,12 +230,21 @@ def model_provider_usage_sources(flow: http.HTTPFlow) -> dict:
     return sources
 
 
-def model_usage_source_entries(flow: http.HTTPFlow) -> list[dict]:
+@dataclass(frozen=True, slots=True)
+class ModelUsageLog:
+    entries: list[dict]
+
+    def source_entries(self) -> list[dict]:
+        return [entry for entry in self.entries if entry.get("type") == "model_usage_source"]
+
+    def correlation_entries(self) -> list[dict]:
+        return [entry for entry in self.entries if entry.get("type") == "model_usage_correlation"]
+
+
+def read_model_usage_log(flow: http.HTTPFlow) -> ModelUsageLog:
     proxy_log = Path(flow.metadata[metadata_keys.SANDBOX_PROXY_LOG_PATH])
-    if not jsonl_exists_after_flush(proxy_log):
-        return []
-    return [
-        entry
-        for entry in read_jsonl_entries_after_flush(proxy_log)
-        if entry.get("type") == "model_usage_source"
-    ]
+    return ModelUsageLog(read_jsonl_entries_after_flush(proxy_log, missing_ok=True))
+
+
+def model_usage_source_entries(flow: http.HTTPFlow) -> list[dict]:
+    return read_model_usage_log(flow).source_entries()
