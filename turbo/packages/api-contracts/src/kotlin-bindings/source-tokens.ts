@@ -7,6 +7,7 @@ interface KotlinToken {
 /** Formatting-independent drift comparison; comments and strings are not code. */
 export function kotlinTokens(source: string): KotlinToken[] {
   const tokens: KotlinToken[] = [];
+  const wordPattern = /[A-Za-z_0-9]+/uy;
   let offset = 0;
   while (offset < source.length) {
     if (/\s/u.test(source[offset]!)) {
@@ -35,8 +36,8 @@ export function kotlinTokens(source: string): KotlinToken[] {
           throw new Error("Unterminated Kotlin string");
         offset += delimiter.length;
       } else {
-        const word = /^[A-Za-z_0-9]+/u.exec(source.slice(offset))?.[0];
-        offset += word?.length ?? 1;
+        wordPattern.lastIndex = offset;
+        offset = wordPattern.test(source) ? wordPattern.lastIndex : offset + 1;
       }
       tokens.push({
         text: source.slice(start, offset),
