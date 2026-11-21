@@ -55,20 +55,26 @@ async function sourceFixture() {
 describe("chat relationships", () => {
   it("returns all created chats once without inferring human-created children", async () => {
     const { actor, source, receivedExecution, token } = await sourceFixture();
-    const createdIds: string[] = [];
-    for (let index = 0; index < 51; index++) {
-      const clientThreadId = randomUUID();
-      const request = {
+    const childRequest = (index: number) => {
+      return {
         headers: { authorization: `Bearer ${token}` },
-        body: { clientThreadId, title: `Child ${index}` },
+        body: { clientThreadId: randomUUID(), title: `Child ${index}` },
       };
-      const [created, replayed] = await Promise.all([
-        accept(threads.create(request), [201]),
-        accept(threads.create(request), [201]),
-      ]);
-      expect(replayed.body.id).toBe(created.body.id);
+    };
+    const createdIds: string[] = [];
+    const formerPageSize = 50;
+    for (let index = 0; index < formerPageSize; index++) {
+      const created = await accept(threads.create(childRequest(index)), [201]);
       createdIds.push(created.body.id);
     }
+    const request = childRequest(formerPageSize);
+    const [created, replayed] = await Promise.all([
+      accept(threads.create(request), [201]),
+      accept(threads.create(request), [201]),
+    ]);
+    expect(replayed.body.id).toBe(created.body.id);
+    createdIds.push(created.body.id);
+
     const humanThread = await chat.createThread(actor, {});
     await accept(
       threads.create({
