@@ -168,7 +168,7 @@ class NativeRealtimeTest {
                                 By.pkg(app.packageName)
                                     .clickable(true)
                                     .enabled(true)
-                                    .hasDescendant(label(app.getString(R.string.controls_stop)))
+                                    .hasDescendant(label(app.getString(R.string.conversation_stop)))
                             ),
                             10_000,
                         )
@@ -545,7 +545,7 @@ class NativeRealtimeTest {
                     !device.hasObject(label(app.getString(R.string.composer_sync_saving))) &&
                     !device.hasObject(label(app.getString(R.string.composer_unconfirmed)))
             }
-            reveal(app.getString(R.string.controls_stop))
+            reveal(app.getString(R.string.conversation_stop))
             clickStop()
             condition("Single interrupt reaches transport while the response is held") {
                 controlPosts.get() == 1 &&
@@ -562,9 +562,16 @@ class NativeRealtimeTest {
                 activeRun,
                 interrupted.get()!!.getValue("interruptsRunId").jsonPrimitive.content,
             )
-            // Wait for the new control panel before the duplicate native action.
+            // An ambiguous receipt keeps Stop unavailable until readback settles it.
             reveal(app.getString(R.string.controls_unknown))
-            clickStop()
+            val pendingStop =
+                device.findObject(
+                    By.pkg(app.packageName)
+                        .clickable(true)
+                        .hasDescendant(label(app.getString(R.string.conversation_stop)))
+                )
+            checkNotNull(pendingStop)
+            assertTrue(!pendingStop.isEnabled)
             device.waitForIdle()
             scenario.onActivity {
                 assertEquals(1, controls?.uiState?.value?.journal?.pending?.size)
@@ -652,7 +659,7 @@ class NativeRealtimeTest {
                     device.findObject(
                         By.pkg(app.packageName)
                             .clickable(true)
-                            .hasDescendant(By.text(app.getString(R.string.controls_stop)))
+                            .hasDescendant(By.text(app.getString(R.string.conversation_stop)))
                     )
                 val summary =
                     diagnostics() +

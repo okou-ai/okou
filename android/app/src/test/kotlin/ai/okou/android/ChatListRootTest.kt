@@ -304,7 +304,8 @@ class ChatListRootTest {
                 .onNodeWithTag("conversation")
                 .performScrollToNode(hasText("Native history", substring = true))
             compose.onNodeWithText("Native history", substring = true).assertExists()
-            compose.onNodeWithContentDescription("Settings").performClick()
+            compose.onNodeWithContentDescription("Chat actions").performClick()
+            compose.onNodeWithText("Settings").performClick()
             compose.onNodeWithText("Display mode").assertExists()
             release.countDown()
             compose.waitUntil(10_000) {
@@ -369,7 +370,8 @@ class ChatListRootTest {
             val loadingLabel = app.getString(R.string.history_loading)
             compose.mainClock.advanceTimeBy(160)
             compose.waitUntilExactlyOneExists(hasContentDescription(loadingLabel), 5_000)
-            compose.onNodeWithContentDescription("Settings").performClick()
+            compose.onNodeWithContentDescription("Chat actions").performClick()
+            compose.onNodeWithText("Settings").performClick()
             compose.onNodeWithText("Display mode").assertExists()
             gate.countDown()
             val chats =

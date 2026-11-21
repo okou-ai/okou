@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="conversation_welcome">今天想推進什麼？</string>
+    <string name="conversation_welcome_detail">把想做的事告訴 Okou。</string>
+    <string name="conversation_jump_latest">回到最新</string>
+    <string name="conversation_new_reply">有新回覆</string>
+    <string name="conversation_view_progress">查看進度</string>
+    <string name="conversation_processing">處理中</string>
+    <string name="conversation_history_offline">連線後載入聊天記錄。</string>
+    <string name="conversation_offline_send">草稿已保留，請連線後再傳送。</string>
+    <string name="conversation_work">工作過程</string>
+    <string name="conversation_reply_actions">回覆操作</string>
+    <string name="conversation_copy_reply">複製回覆</string>
+    <string name="conversation_reply_copied">已複製回覆</string>
+    <string name="conversation_revoke">撤回</string>
+    <string name="conversation_stop">停止</string>
+</resources>

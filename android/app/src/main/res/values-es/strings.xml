@@ -8,8 +8,6 @@
     <string name="composer_restore_draft">Restaurar borrador conservado</string>
     <string name="controls_storage_failed">No se pueden guardar las solicitudes de control pendientes.</string>
     <string name="controls_stop">Detener el trabajo en curso</string>
-    <string name="controls_queued_automation">Automatización en cola</string>
-    <string name="controls_skip">Omitir automatización</string>
     <string name="controls_preparing">Guardando solicitud de control…</string>
     <string name="controls_sending">Enviando solicitud de control…</string>
     <string name="controls_accepted">Solicitud aceptada. Esperando confirmación.</string>
@@ -23,9 +21,6 @@
     <string name="controls_read_failed">No se pudo verificar el resultado.</string>
     <string name="controls_recovery_failed">El estado de recuperación no está disponible.</string>
     <string name="controls_recovering">Preparando la conversación para continuar.</string>
-    <string name="output_live">Respuesta en directo</string>
-    <string name="output_waiting">Esperando una respuesta en directo</string>
-    <string name="output_catching_up">Actualizando los mensajes guardados. Se conserva el texto recibido.</string>
     <string name="settings">Ajustes</string>
     <string name="back">Volver</string>
     <string name="appearance">Modo de visualización</string>

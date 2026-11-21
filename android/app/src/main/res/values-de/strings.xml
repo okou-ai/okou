@@ -8,8 +8,6 @@
     <string name="composer_restore_draft">Behaltenen Entwurf wiederherstellen</string>
     <string name="controls_storage_failed">Ausstehende Steuerbefehle können nicht gespeichert werden.</string>
     <string name="controls_stop">Laufende Arbeit stoppen</string>
-    <string name="controls_queued_automation">Automatisierung in Warteschlange</string>
-    <string name="controls_skip">Automatisierung überspringen</string>
     <string name="controls_preparing">Steuerbefehl wird gespeichert…</string>
     <string name="controls_sending">Steuerbefehl wird gesendet…</string>
     <string name="controls_accepted">Anfrage angenommen. Bestätigung steht aus.</string>
@@ -23,9 +21,6 @@
     <string name="controls_read_failed">Ergebnis konnte nicht geprüft werden.</string>
     <string name="controls_recovery_failed">Wiederherstellungsstatus ist nicht verfügbar.</string>
     <string name="controls_recovering">Fortsetzung wird vorbereitet.</string>
-    <string name="output_live">Live-Antwort</string>
-    <string name="output_waiting">Warten auf Live-Antwort</string>
-    <string name="output_catching_up">Gespeicherte Nachrichten werden geladen. Empfangener Text bleibt erhalten.</string>
     <string name="settings">Einstellungen</string>
     <string name="back">Zurück</string>
     <string name="appearance">Anzeigemodus</string>

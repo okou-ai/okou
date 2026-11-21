@@ -75,6 +75,25 @@ class ConversationHistoryModel(
     private var confirmed: ConfirmedTimeline? = null
     // The active timeline is kept separately. Only inactive visits count toward this limit.
     private val recent = linkedMapOf<String, ConfirmedTimeline>()
+    private val reading = linkedMapOf<String, ConversationAnchor?>()
+
+    internal suspend fun restoreReadingAnchor(threadId: String): ConversationAnchor? {
+        if (reading.containsKey(threadId)) return reading[threadId]
+        val stored = cache.loadReadingAnchor(threadId)
+        if (reading.containsKey(threadId)) return reading[threadId]
+        reading[threadId] = stored
+        if (reading.size > 4) reading.remove(reading.keys.first())
+        return stored
+    }
+
+    internal fun rememberReadingAnchor(threadId: String, anchor: ConversationAnchor?) {
+        if (!current(generation) || mutable.value.thread?.id != threadId) return
+        if (reading.containsKey(threadId) && reading[threadId] == anchor) return
+        reading.remove(threadId)
+        reading[threadId] = anchor
+        if (reading.size > 4) reading.remove(reading.keys.first())
+        scope.launch { cache.saveReadingAnchor(threadId, anchor) }
+    }
 
     internal fun checkpoint(threadId: String): HistoryCheckpoint? =
         confirmed?.history?.checkpoint?.takeIf { current(generation) && it.threadId == threadId }
