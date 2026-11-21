@@ -2145,17 +2145,30 @@ export function createThreadClaimRunObjects(
     };
   });
   const bundleHashes$ = computed(async (get) => {
-    if (
-      !(await get(resourceAllowed$)) ||
-      (await get(captureNetworkBodiesGate$))
-    ) {
+    const [automation, captureNetworkBodies] = await Promise.all([
+      get(isAutomation$),
+      get(captureNetworkBodiesGate$),
+    ]);
+    if (captureNetworkBodies) {
       return null;
     }
-    if (
-      (await get(isAutomation$)) &&
-      (await get(automationLaunch$)).kind !== "launch"
-    ) {
-      return null;
+    if (automation) {
+      if (
+        !(await get(resourceAllowed$)) ||
+        (await get(automationLaunch$)).kind !== "launch"
+      ) {
+        return null;
+      }
+    } else {
+      // Prompt material can still be loading from an integration. Package
+      // selection needs the prepared input's model and templates.
+      const [ready, templates] = await Promise.all([
+        get(promptReady$),
+        get(runTemplates$),
+      ]);
+      if (!ready || "error" in templates) {
+        return null;
+      }
     }
     const packagePlan = await get(runnerPackages$);
     return isRouteError(packagePlan)

@@ -529,6 +529,7 @@ export function createChatFilesBddApi(context: TestContext) {
         readonly title?: string;
         readonly clientThreadId?: string;
         readonly eventId?: string;
+        readonly projectId?: string;
         /** Null selects Auto; omitted, the member default applies. */
         readonly model?: string | null;
       },
@@ -542,6 +543,9 @@ export function createChatFilesBddApi(context: TestContext) {
               ? {}
               : { clientThreadId: body.clientThreadId }),
             ...(body.eventId === undefined ? {} : { eventId: body.eventId }),
+            ...(body.projectId === undefined
+              ? {}
+              : { projectId: body.projectId }),
             model:
               body.model === undefined
                 ? await defaultCreateThreadModel(actor)

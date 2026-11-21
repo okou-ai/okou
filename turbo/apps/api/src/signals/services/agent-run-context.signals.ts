@@ -261,12 +261,25 @@ interface RunContextRequestInputs {
 export function createAgentRunContextSignals(
   identity: ChatRunContextIdentity,
   requestInputs: RunContextRequestInputs,
-): AgentRunContextSignals {
-  return createIdentityContext(
-    { ...identity, chatThreadId: identity.chatThreadId.toLowerCase() },
-    undefined,
-    requestInputs,
+) {
+  const scope = {
+    ...identity,
+    chatThreadId: identity.chatThreadId.toLowerCase(),
+  };
+  const memberContext = createExecutionOrgMemberContext(
+    scope,
+    true,
+    requestInputs.newThread ? undefined : scope.chatThreadId,
   );
+  return {
+    context: createIdentityContext(
+      scope,
+      undefined,
+      requestInputs,
+      memberContext,
+    ),
+    existingThread$: memberContext.existingThread$,
+  };
 }
 
 /** Reuse by each group's authority key before wiring dependent computeds. */
@@ -537,15 +550,14 @@ function createIdentityContext(
 }
 
 /**
- * Trigger each group immediately after context creation, before authorization in
- * prepareNormalSendContext$, or at pick start when no matching context is passed.
+ * Trigger the launch groups during send preparation or once a pick has capacity.
  * Cached failures remain authoritative.
  */
 export const preloadAgentRunContext$ = command(
   ({ get }, signals: AgentRunContextSignals, signal: AbortSignal): void => {
     signal.throwIfAborted();
     // Start the org/member and global model reads before launch-only prefetches.
-    // Normal sends already dispatched the Thread read before reaching this point.
+    // Normal sends have already captured the organization/member and Chat row.
     // All nodes start in this turn; the starter awaits none of them.
     const nodes: readonly Computed<Promise<unknown>>[] = [
       signals.modelFacts$,

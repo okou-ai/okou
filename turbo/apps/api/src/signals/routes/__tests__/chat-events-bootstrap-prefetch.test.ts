@@ -464,7 +464,7 @@ describe("chat agent bootstrap prefetch", () => {
         ],
       },
     });
-    // Attachment metadata is awaited after model capture and before enqueue.
+    // Object lookup starts with the member settings already captured.
     const [sent] = await Promise.all([
       sending,
       attachment.entered.then(() => {
