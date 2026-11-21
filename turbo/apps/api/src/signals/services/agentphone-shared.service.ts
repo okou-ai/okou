@@ -415,18 +415,6 @@ export function markdownToImessagePlain(markdown: string): string {
   return text.trim();
 }
 
-function plainLabel(value: string | null | undefined): string | undefined {
-  const label = value?.trim().replace(/\s+/gu, " ");
-  return label || undefined;
-}
-
-function displayLabel(row: {
-  readonly agentDisplayName: string | null;
-  readonly agentName: string;
-}): string {
-  return plainLabel(row.agentDisplayName) ?? row.agentName;
-}
-
 export const resolveOrgDefaultComposeId$ = command(
   async ({ get }, orgId: string): Promise<string | null> => {
     const db = get(db$);

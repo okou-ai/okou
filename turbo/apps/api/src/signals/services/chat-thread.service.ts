@@ -40,7 +40,6 @@ import {
   CANONICAL_ASSET_VERSION,
   runUploadedFiles,
 } from "@okouai/db/schema/run-uploaded-file";
-import { agents } from "@okouai/db/schema/agent";
 import {
   and,
   asc,
@@ -267,7 +266,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const ACTIVE_RUN_STATUSES = ["pending", "running"] as const;
-const INDICATOR_AGENT_LIMIT = 128;
 const INDICATOR_ACTIVE_LIMIT = 50;
 const INDICATOR_UNREAD_LIMIT = 50;
 /** Unread candidates read per request: the newest threads within the lookback. */

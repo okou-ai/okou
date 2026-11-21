@@ -1,5 +1,5 @@
 import { command, computed, type Computed } from "ccstate";
-import { and, eq, getTableColumns, gt, isNotNull, or } from "drizzle-orm";
+import { and, eq, getTableColumns, gt, isNotNull } from "drizzle-orm";
 import {
   BROWSER_MAX_SCREEN_HEIGHT,
   BROWSER_MIN_SCREEN_HEIGHT,

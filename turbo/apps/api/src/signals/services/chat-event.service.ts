@@ -25,7 +25,7 @@ import { chatAgentRunContext } from "@okouai/db/schema/chat-agent-run-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { and, eq, sql, type SQL } from "drizzle-orm";
+import { eq, sql, type SQL } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { object, string, uuid } from "zod";
 import { pgTimestampWithoutTimezoneToDateSchema } from "../../lib/db-raw-rows";

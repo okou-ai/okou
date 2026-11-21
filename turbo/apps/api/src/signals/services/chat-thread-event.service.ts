@@ -7,7 +7,7 @@ import {
   type ModelSettings,
   type ModelSettingsPatch,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { and, asc, eq, gt, notExists, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, gt, notExists, sql, type SQL } from "drizzle-orm";
 import { alias, unionAll } from "drizzle-orm/pg-core";
 import type {
   ChatThreadEvent,

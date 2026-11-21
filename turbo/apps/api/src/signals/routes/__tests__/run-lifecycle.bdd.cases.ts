@@ -8337,7 +8337,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const workflowName = "bdd-context-workflow";
         await misc.createWorkflow(
           actor,
-          agent.agentId,
+          (await bdd.readOnboardingStatus(actor)).defaultAgentId!,
           workflowName,
           { content: "# BDD context workflow\nUse the combined run context." },
           [201],
@@ -8351,14 +8351,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const execution = await api.executionInput(run.runId);
 
         const appendSystemPrompt = execution.appendSystemPrompt ?? "";
-        expect(appendSystemPrompt).toContain("# Agent Identity");
-        expect(appendSystemPrompt).toContain("Your name is Research Bot.");
-        expect(appendSystemPrompt).toContain(
-          "Your role: Finds release details",
-        );
-        expect(appendSystemPrompt).toContain(
-          "Be brief and to the point. Skip pleasantries and filler",
-        );
+        expect(appendSystemPrompt).toContain("# Identity");
+        expect(appendSystemPrompt).toContain("Your name is Okou.");
+        expect(appendSystemPrompt).not.toContain("Research Bot");
         expect(appendSystemPrompt).toContain("# Execution Time Limit");
         expect(appendSystemPrompt).toContain(
           "A single agent run has a maximum execution time of 2 hours.",
@@ -9124,13 +9119,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         }
         const s3 = installWorkflowVolumeS3Fixture(context);
 
-        const agent = await bdd.createAgent(actor, {
-          displayName: "BDD workflow priority agent",
-          visibility: "public",
-        });
+        const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+        if (!defaultAgentId) {
+          throw new Error("Expected a member workflow namespace");
+        }
         const workflowName = `bdd-priority-${randomUUID().slice(0, 8)}`;
         await workflows.createWorkflow(actor, {
-          agentId: agent.agentId,
+          agentId: defaultAgentId,
           name: workflowName,
           visibility: "public",
           instruction: "Visible public Workflow body.",
@@ -9138,7 +9133,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const privateInstruction =
           "Selected caller-owned private Workflow body.";
         await workflows.createWorkflow(actor, {
-          agentId: agent.agentId,
+          agentId: defaultAgentId,
           name: workflowName,
           visibility: "private",
           instruction: privateInstruction,
@@ -9148,14 +9143,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           orgRole: "org:member",
         });
         await workflows.createWorkflow(otherActor, {
-          agentId: agent.agentId,
+          agentId: (await bdd.readOnboardingStatus(otherActor)).defaultAgentId!,
           name: workflowName,
           visibility: "private",
           instruction: "Another caller's private Workflow body.",
         });
 
         const run = await api.createThreadRun(actor, {
-          agentId: agent.agentId,
+          agentId: defaultAgentId,
           prompt: "use the private workflow override",
         });
         await api.heartbeatRunner(runnerGroup);
@@ -9221,21 +9216,20 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const workflowName = "bdd-claude-kit";
-        const agent = await bdd.createAgent(actor, {
-          displayName: "BDD claude workflows agent",
-          visibility: "private",
-        });
-        // Workflows are created directly under the owning agent (agent-scoped 1:N).
+        const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+        if (!defaultAgentId) {
+          throw new Error("Expected a member workflow namespace");
+        }
         await misc.createWorkflow(
           actor,
-          agent.agentId,
+          defaultAgentId,
           workflowName,
           { content: "# BDD claude kit\nUse this workflow in claude runs." },
           [201],
         );
 
         const run = await api.createThreadRun(actor, {
-          agentId: agent.agentId,
+          agentId: defaultAgentId,
           prompt: "use the workflow",
         });
         await api.heartbeatRunner(runnerGroup);

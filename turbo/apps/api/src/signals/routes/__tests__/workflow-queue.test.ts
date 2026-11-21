@@ -334,7 +334,7 @@ async function expectAutomationRunPrompt(
   return prompt;
 }
 
-async function startOrgConcurrencyBlocker(scenario: Scenario): Promise<string> {
+async function startOrgConcurrencyBlocker(): Promise<string> {
   const response = await accept(
     chatEventsClient().send({
       headers: authHeaders(),
@@ -729,7 +729,7 @@ describe("workflow queue", () => {
         await postWorkflowWebhook(automation, "first"),
         automation.threadId,
       );
-      const blockerRunId = await startOrgConcurrencyBlocker(scenario);
+      const blockerRunId = await startOrgConcurrencyBlocker();
       expectAccepted(
         await postWorkflowWebhook(automation, "queued behind first"),
       );

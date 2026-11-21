@@ -1359,10 +1359,6 @@ describe("Agent suggestions", () => {
   });
   it("returns the original target and canonical draft when its thread was deleted after publication", async () => {
     const fixture = await primaryRun();
-    const secondary = await createBddApi(context).createAgent(fixture.actor, {
-      displayName: "Target Agent",
-      visibility: "private",
-    });
     const threads = setupApp({
       context,
       routes: [...chatThreadCreateRoutes, ...chatThreadDeleteRoutes],

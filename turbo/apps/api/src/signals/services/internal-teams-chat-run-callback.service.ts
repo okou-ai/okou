@@ -564,28 +564,25 @@ const resolveTeamsAdmissionFailurePresentation$ = command(
     signal: AbortSignal,
   ): Promise<TeamsAdmissionFailurePresentation> => {
     const db = get(db$);
-    const [mentionerCount] = await Promise.all([
-      (async () => {
-        const tenantId = args.target.tenantId;
-        const conversationId = args.target.conversationId;
-        const threadId = args.target.threadId;
-        const [row] = await db
-          .select({ count: countDistinct(teamsChatThreadRoutes.connectionId) })
-          .from(teamsChatThreadRoutes)
-          .innerJoin(
-            teamsOrgConnections,
-            eq(teamsOrgConnections.id, teamsChatThreadRoutes.connectionId),
-          )
-          .where(
-            and(
-              eq(teamsOrgConnections.teamsTenantId, tenantId),
-              eq(teamsChatThreadRoutes.conversationId, conversationId),
-              eq(teamsChatThreadRoutes.threadId, threadId),
-            ),
-          );
-        return row?.count ?? 0;
-      })(),
-    ]);
+
+    const tenantId = args.target.tenantId;
+    const conversationId = args.target.conversationId;
+    const threadId = args.target.threadId;
+    const [row] = await db
+      .select({ count: countDistinct(teamsChatThreadRoutes.connectionId) })
+      .from(teamsChatThreadRoutes)
+      .innerJoin(
+        teamsOrgConnections,
+        eq(teamsOrgConnections.id, teamsChatThreadRoutes.connectionId),
+      )
+      .where(
+        and(
+          eq(teamsOrgConnections.teamsTenantId, tenantId),
+          eq(teamsChatThreadRoutes.conversationId, conversationId),
+          eq(teamsChatThreadRoutes.threadId, threadId),
+        ),
+      );
+    const mentionerCount = row?.count ?? 0;
     signal.throwIfAborted();
 
     const footerParts: string[] = [];

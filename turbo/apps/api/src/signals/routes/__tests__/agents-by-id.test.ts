@@ -422,6 +422,7 @@ describe("DELETE /api/agents/:id", () => {
     });
     await bdd.requestDeleteAgent(actor, agent.agentId, [204]);
     await bdd.requestReadAgent(actor, agent.agentId, [404]);
-    await api.requestCancelRun(actor, run.runId, [200]);
+    const cancelled = await api.requestCancelRun(actor, run.runId, [200]);
+    expect(cancelled.status).toBe(200);
   });
 });

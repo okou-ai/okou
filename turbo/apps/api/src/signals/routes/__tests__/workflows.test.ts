@@ -1003,7 +1003,7 @@ describe("workflows", () => {
       const agent = await workspaceExecutor(actor);
       const workflowName = `create-race-${randomUUID().slice(0, 8)}`;
       const results = await Promise.all(
-        ["First", "Second"].map(async (instruction) => {
+        ["First", "Second"].map((instruction) => {
           return accept(
             collectionClient().create({
               headers: authHeaders(actor),

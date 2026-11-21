@@ -2121,7 +2121,7 @@ const appendNormalSendInput$ = command(
 
 const prepareNormalSend$ = command(
   async (
-    { get, set },
+    { get },
     args: NormalSendArgs & {
       readonly context: AgentRunContextSignals;
       readonly existing: ExistingSendThreadRow | undefined;
@@ -2463,7 +2463,7 @@ const prepareNormalSendModels$ = command(
 );
 
 const prepareNormalSendContext$ = command(
-  async ({ get, set }, request: NormalSendRequest, signal: AbortSignal) => {
+  async ({ set }, request: NormalSendRequest, signal: AbortSignal) => {
     // MCP attribution is server-owned. Reject a forged source even on an
     // idempotent retry, before any read starts.
     if (

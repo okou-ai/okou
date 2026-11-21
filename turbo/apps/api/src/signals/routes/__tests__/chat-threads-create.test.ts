@@ -542,10 +542,6 @@ describe("POST /api/chat-threads", () => {
     const actor = bdd.user();
 
     bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Selection authorization changes",
-      visibility: "private",
-    });
     const builtin = await connectorApi.connectManualGrant(
       actor,
       "openai",
