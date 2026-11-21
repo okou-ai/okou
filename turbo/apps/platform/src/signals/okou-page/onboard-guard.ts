@@ -14,8 +14,6 @@ const ONBOARDING_GUARDED_PATHS = [
   ROUTES.activityDetail,
   ROUTES.activityInspect,
   ROUTES.agentChat,
-  ROUTES.agentDetail,
-  ROUTES.agentIdeas,
   ROUTES.agentPermissions,
   ROUTES.agents,
   ROUTES.artifacts,

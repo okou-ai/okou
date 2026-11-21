@@ -1,12 +1,6 @@
 import { detachedNavigateTo$ } from "../../signals/route.ts";
-import {
-  useGet,
-  useLastLoadable,
-  useLastResolved,
-  useSet,
-} from "ccstate-react";
+import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import type {
   WorkflowSummary,
   WorkflowAutomationSummary,
@@ -36,7 +30,6 @@ import {
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
-import { defaultAgentId$, agents$ } from "../../signals/agent.ts";
 import {
   setWorkflowAutomationDialogOpen$,
   startCreateWorkflowFromAutomationDialog$,
@@ -706,7 +699,6 @@ function WorkflowSelectionStep({
   onCreateWorkflow,
 }: {
   readonly workflows: readonly WorkflowSummary[];
-  readonly agents: readonly AgentResponse[];
   readonly loading: boolean;
   readonly onClose: () => void;
   readonly onCreateWorkflow: () => void;
@@ -824,10 +816,7 @@ function WorkflowAutomationDialogFooter({
 }
 
 export function CreateWorkflowAutomationDialog() {
-  const defaultAgentId = useLastResolved(defaultAgentId$);
   const { t } = useTranslation();
-  const agentsLoadable = useLastLoadable(agents$);
-  const agents = agentsLoadable.state === "hasData" ? agentsLoadable.data : [];
   const workflowsLoadable = useLastLoadable(allVisibleWorkflows$);
   const workflows =
     workflowsLoadable.state === "hasData" ? workflowsLoadable.data : [];
@@ -894,7 +883,6 @@ export function CreateWorkflowAutomationDialog() {
         {selectingExistingWorkflow ? (
           <WorkflowSelectionStep
             workflows={workflows}
-            agents={agents}
             loading={workflowsLoading}
             onClose={() => {
               setOpen(false);
@@ -903,11 +891,7 @@ export function CreateWorkflowAutomationDialog() {
           />
         ) : (
           <div className="px-5 pb-4">
-            <Button
-              variant="neutral"
-              disabled={!defaultAgentId}
-              onClick={openWorkspaceChat}
-            >
+            <Button variant="neutral" onClick={openWorkspaceChat}>
               {creatingAutomationInChat
                 ? t(($) => {
                     return $.workflows.createDialog.createAutomation;

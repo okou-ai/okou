@@ -3210,7 +3210,6 @@ function sendRuntimeOptions(
 
 interface SendMessageDeps {
   readonly threadId: string;
-  readonly agentId?: string;
   modelSelectionForSend$: Command<
     Promise<ModelSelectionForSend>,
     [AbortSignal]
@@ -3224,7 +3223,6 @@ interface SendMessageDeps {
 interface ValidatedSendMessageRequest {
   readonly prompt: string;
   readonly options: SendMessageOptions | undefined;
-  readonly agentId?: string;
   readonly modelSelection: ModelSelectionForSend;
 }
 
@@ -3265,7 +3263,6 @@ function sendInputForRequest(args: {
   return {
     kind: "input",
     delivery: "run",
-    agentId: request.agentId,
     prompt: result.prompt,
     hasTextContent: result.hasTextContent,
     userMessage: args.userMessage,
@@ -3358,7 +3355,7 @@ function createPerformSendMessage(deps: SendMessageDeps) {
 }
 
 function createSendMessage(deps: SendMessageDeps) {
-  const { threadId, agentId, modelSelectionForSend$ } = deps;
+  const { threadId, modelSelectionForSend$ } = deps;
   const performSendMessage$ = createPerformSendMessage(deps);
   const optimisticCreateUnsettled$ =
     optimisticChatThreadCreateUnsettled(threadId);
@@ -3380,7 +3377,6 @@ function createSendMessage(deps: SendMessageDeps) {
         {
           prompt,
           options,
-          agentId,
           modelSelection,
         },
         signal,
@@ -3392,7 +3388,6 @@ function createSendMessage(deps: SendMessageDeps) {
 function createQueueMessage(deps: SendMessageDeps) {
   const {
     threadId,
-    agentId,
     modelSelectionForSend$,
     draft,
     cancelDraftSync$,
@@ -3445,7 +3440,6 @@ function createQueueMessage(deps: SendMessageDeps) {
           {
             kind: "input",
             delivery: "queue",
-            agentId,
             prompt: result.prompt,
             hasTextContent: result.hasTextContent,
             userMessage,
@@ -3475,7 +3469,6 @@ function createQueueMessage(deps: SendMessageDeps) {
 
 interface RecallMessageDeps {
   readonly threadId: string;
-  readonly agentId?: string;
   readonly queuedEvents$: ChatEventSignals["queuedEvents$"];
   draft: DraftSignals;
   queueDraftSync$: Command<Promise<void>, [AbortSignal]>;
@@ -3483,7 +3476,7 @@ interface RecallMessageDeps {
 }
 
 function createRecallMessage(deps: RecallMessageDeps) {
-  const { agentId, queuedEvents$, draft, queueDraftSync$, sendEvent$ } = deps;
+  const { queuedEvents$, draft, queueDraftSync$, sendEvent$ } = deps;
 
   return command(async ({ get, set }, eventId: string, signal: AbortSignal) => {
     const event = get(queuedEvents$).find((candidate) => {
@@ -3514,7 +3507,6 @@ function createRecallMessage(deps: RecallMessageDeps) {
       sendEvent$,
       {
         kind: "revoke",
-        agentId,
         revokesEventId: event.id,
       },
       signal,
@@ -3526,7 +3518,6 @@ function createRecallMessage(deps: RecallMessageDeps) {
 }
 
 function createSkipAutomationEvent({
-  agentId,
   queuedEvents$,
   sendEvent$,
 }: RecallMessageDeps) {
@@ -3549,7 +3540,6 @@ function createSkipAutomationEvent({
         sendEvent$,
         {
           kind: "revoke",
-          agentId,
           revokesEventId: event.id,
         },
         signal,
@@ -3585,12 +3575,10 @@ function createThreadMessageActions(deps: MessageCommandsDeps) {
  */
 function createInterruptLiveRuns({
   threadId,
-  agentId,
   liveRunIds$,
   sendEvent$,
 }: {
   readonly threadId: string;
-  readonly agentId?: string;
   readonly liveRunIds$: ChatEventSignals["liveRunIds$"];
   sendEvent$: Command<Promise<void>, [SendChatEventInput, AbortSignal]>;
 }) {
@@ -3609,7 +3597,6 @@ function createInterruptLiveRuns({
           sendEvent$,
           {
             kind: "interrupt",
-            agentId,
             interruptsRunId: runId,
           },
           signal,
@@ -3860,7 +3847,6 @@ function createThreadComposerSignalsWithContext(
       : persistence;
   const messageActions = createThreadMessageActions({
     threadId,
-    agentId: context.agentId,
     modelSelectionForSend$,
     queuedEvents$: chatEvents.queuedEvents$,
     liveRunIds$: chatEvents.liveRunIds$,
@@ -4051,7 +4037,6 @@ export function createChatPanelSignals(
     onBrowserPageInput$: onPageInput$,
   });
   const browserPresence = createBrowserPresenceSignals({
-    agentId,
     latestRunId$: messagePipeline.latestRunId$,
     liveRunId$: messagePipeline.liveRunId$,
     sendEvent$: chatEvents.sendEvent$,

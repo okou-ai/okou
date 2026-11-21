@@ -1,7 +1,5 @@
 import {
-  avatarComposerUrl,
   parseAvatarComposerUrl,
-  randomAvatarComposerConfig,
   type AvatarComposerConfig,
   type AvatarComposerFaceShape,
   type AvatarComposerHairStyle,
@@ -25,10 +23,6 @@ export interface LegacyAvatarSvgConfig {
 }
 
 export type ResolvedAvatarSvgConfig = AvatarSvgConfig | LegacyAvatarSvgConfig;
-
-export function serializeAvatarSvgConfig(config: AvatarSvgConfig): string {
-  return avatarComposerUrl(config);
-}
 
 function legacyAvatarIntensity(value: string | undefined): "d" | "m" | "h" {
   if (value === "d" || value === "m" || value === "h") {
@@ -334,8 +328,4 @@ export function avatarSvgComposition(
     headOffsetY: (headOffsetY / 380) * 100,
     ...placement(composerContentBounds(config, headOffsetY)),
   };
-}
-
-export function randomAvatarSvgConfig(): AvatarSvgConfig {
-  return randomAvatarComposerConfig();
 }

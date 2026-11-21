@@ -118,7 +118,6 @@ import { markAgentThreadsRead$ } from "../../signals/chat-page/sidebar-unread-th
 import {
   closeRenameChatThreadDialog$,
   pendingDeleteThreadId$,
-  renameDialogAgentId$,
   renameDialogOpen$,
   setPendingDeleteThreadId$,
   renameDialogThreadId$,
@@ -819,7 +818,6 @@ function ChatThreadRenameDialog() {
 function ChatThreadRenameDialogBody() {
   const { t } = useTranslation();
   const renameDialogThreadId = useGet(renameDialogThreadId$);
-  const renameDialogAgentId = useGet(renameDialogAgentId$);
   const renameDialogInput = useGet(renameDialogInput$);
   const closeRenameChatThreadDialog = useSet(closeRenameChatThreadDialog$);
   const setRenameDialogInput = useSet(setRenameDialogInput$);
@@ -839,7 +837,6 @@ function ChatThreadRenameDialogBody() {
         {
           threadId: renameDialogThreadId,
           input: renameDialogInput,
-          agentId: renameDialogAgentId,
         },
         pageSignal,
       ),

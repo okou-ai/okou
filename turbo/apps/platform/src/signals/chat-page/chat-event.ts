@@ -3,7 +3,7 @@ import type { Root } from "hast";
 import { command } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { navigateToNewChat$ } from "../okou-page/nav.ts";
-import { currentChatThreadId$, chatThreads$ } from "../agent-chat.ts";
+import { currentChatThreadId$ } from "../agent-chat.ts";
 import {
   chatThreadArchiveContract,
   chatThreadMuteContract,
@@ -179,7 +179,6 @@ export const deleteChatThread$ = command(
         id: eventId,
         kind: "deleted",
         chatThreadId: threadId,
-        agentId: existingThread.agentId,
       });
     }
 
@@ -247,7 +246,6 @@ export const setChatThreadPinned$ = command(
         pinOrder,
         kind: pinned ? "pinned" : "unpinned",
         chatThreadId: threadId,
-        agentId: existingThread.agentId,
       });
     }
     // Render every click immediately, but preserve the order of header saves.
@@ -315,7 +313,6 @@ export const setChatThreadArchived$ = command(
         id: eventId,
         kind: archived ? "archived" : "unarchived",
         chatThreadId: threadId,
-        agentId: existingThread.agentId,
       });
     }
     const client = get(apiClient$)(chatThreadArchiveContract);
@@ -351,7 +348,6 @@ export const setChatThreadMuted$ = command(
         id: eventId,
         kind: "sort_touched",
         chatThreadId: threadId,
-        agentId: thread.agentId,
         muted,
         createdAt: thread.sortAt,
       });
@@ -374,32 +370,17 @@ export const setChatThreadMuted$ = command(
 export const renameChatThread$ = command(
   async (
     { get, set },
-    {
-      threadId,
-      title,
-      agentId,
-    }: { threadId: string; title: string; agentId?: string | null },
+    { threadId, title }: { threadId: string; title: string },
     signal: AbortSignal,
   ) => {
+    signal.throwIfAborted();
     const eventId = crypto.randomUUID();
-    let optimisticAgentId = agentId?.trim() || null;
-    if (!optimisticAgentId) {
-      const threads = await get(chatThreads$);
-      signal.throwIfAborted();
-      optimisticAgentId =
-        threads.find((thread) => {
-          return thread.id === threadId;
-        })?.agentId ?? null;
-    }
-    if (optimisticAgentId) {
-      set(registerOptimisticChatThreadEvent$, {
-        id: eventId,
-        kind: "renamed",
-        chatThreadId: threadId,
-        agentId: optimisticAgentId,
-        title,
-      });
-    }
+    set(registerOptimisticChatThreadEvent$, {
+      id: eventId,
+      kind: "renamed",
+      chatThreadId: threadId,
+      title,
+    });
 
     const client = get(apiClient$)(chatThreadRenameContract);
     signal.throwIfAborted();

@@ -716,7 +716,6 @@ export const touchOptimisticChatThreadSort$ = command(
     args: {
       readonly id: string;
       readonly threadId: string;
-      readonly agentId?: string;
       readonly createdAt: string;
     },
   ) => {
@@ -724,7 +723,6 @@ export const touchOptimisticChatThreadSort$ = command(
       id: args.id,
       kind: "sort_touched",
       chatThreadId: args.threadId,
-      agentId: args.agentId,
       createdAt: args.createdAt,
     });
   },

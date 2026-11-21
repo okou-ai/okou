@@ -104,7 +104,6 @@ export function isChatRoute(key: RouteKey | null): boolean {
     key === "home" ||
     key === "forYou" ||
     key === "agentChat" ||
-    key === "agentIdeas" ||
     key === "chat" ||
     key === "project"
   );

@@ -393,7 +393,6 @@ const mintOptimisticThreadWithEvent$ = command(
 async function createChatThread(
   args: {
     readonly createClient: ApiClientFactory;
-    readonly agentId: string;
     readonly projectId?: string;
     readonly title: string | undefined;
     readonly clientThreadId: string;
@@ -539,7 +538,6 @@ const startNewChatThreadCreate$ = command(
       await createChatThread(
         {
           createClient,
-          agentId,
           projectId,
           title: undefined,
           clientThreadId: threadId,
@@ -762,7 +760,6 @@ function newThreadRecordOptions(args: {
   const { createClient, request, identity, resolved, codexExecution } = args;
   return {
     createClient,
-    agentId: request.agentId,
     projectId: request.projectId,
     title: request.title,
     clientThreadId: identity.threadId,
