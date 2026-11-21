@@ -29,6 +29,8 @@
   int chat_loading;
   int chat_more_actions;
   int chat_muted;
+  int chat_refresh_failed;
+  int chat_unread;
   int composer_accepted;
   int composer_new;
   int composer_saving;
@@ -868,6 +870,7 @@
 }
 -keep,allowobfuscation class kotlin.io.FilesKt__FileReadWriteKt {
   public static byte[] readBytes(java.io.File);
+  public static java.lang.String readText$default(java.io.File, java.nio.charset.Charset, int, java.lang.Object);
   public static void writeBytes(java.io.File, byte[]);
   public static void writeText$default(java.io.File, java.lang.String, java.nio.charset.Charset, int, java.lang.Object);
 }

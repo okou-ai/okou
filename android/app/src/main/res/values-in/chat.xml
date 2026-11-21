@@ -26,7 +26,6 @@
     <string name="chat_project_empty">Belum ada chat dalam Proyek ini.</string>
     <string name="chat_empty">Tidak ada chat dalam tampilan ini.</string>
     <string name="chat_untitled">Chat tanpa judul</string>
-    <string name="chat_agent_identity">Okou · %1$s</string>
     <string name="chat_pinned">Disematkan</string>
     <string name="chat_active">Aktif</string>
     <string name="chat_actions">Tindakan chat</string>

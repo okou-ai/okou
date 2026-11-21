@@ -16,6 +16,7 @@ import {
   createChatEventsFixture,
   userMessages,
 } from "./helpers/chat-events-fixture";
+import { commitMemoryVersion } from "./helpers/memory";
 import { installS3Fixture } from "./helpers/template-publish-fixture";
 
 const context = testContext();
@@ -460,14 +461,14 @@ describe("chat agent bootstrap prefetch", () => {
     await cancelChatRun(actor, sent.runId, execution.sandboxHeaders);
   });
 
-  it("continues the session of a Run that completes while a follow-up resolves its attachment", async () => {
+  it("continues the predecessor session with the Memory it published during follow-up preparation", async () => {
     const { actor } = await entitledNativeChatActor();
     const model = "claude-fable-5-1";
     const first = await sendChatRun(actor, {
       model,
       prompt: "Start a session",
     });
-    const { sandboxHeaders } = await runExecution(first.runId);
+    const { execution, sandboxHeaders } = await runExecution(first.runId);
     const attachment = await deferAttachmentMetadata(actor, "follow-up.txt");
     const clientEventId = randomUUID();
     const prompt = "Continue this session with the attachment";
@@ -487,13 +488,30 @@ describe("chat agent bootstrap prefetch", () => {
       {},
     );
     const sessionId = `bdd-cli-${first.runId}`;
-    await Promise.all([
+    const [, memory] = await Promise.all([
       sending,
-      attachment.entered.then(() => {
-        return completeChatRunOk(first.runId, sandboxHeaders, {
+      (async () => {
+        await attachment.entered;
+        await flushWaitUntilForTest();
+        const memory = await commitMemoryVersion(
+          context,
+          {
+            runId: first.runId,
+            sandboxHeaders,
+            storageManifest: execution.storageManifest,
+          },
+          [
+            {
+              path: "MEMORY.md",
+              content: "Written while preparing the follow-up",
+            },
+          ],
+        );
+        await completeChatRunOk(first.runId, sandboxHeaders, {
           cliAgentSessionId: sessionId,
-        }).finally(attachment.release);
-      }),
+        });
+        return memory;
+      })().finally(attachment.release),
     ]);
     await flushWaitUntilForTest();
     const { events } = await chat.listThreadEvents(actor, first.threadId);
@@ -511,6 +529,16 @@ describe("chat agent bootstrap prefetch", () => {
     expect(next.execution.nativeContinuation).toMatchObject({
       sessionId,
       generationRunId: first.runId,
+    });
+    expect(
+      expectCanonicalStorageManifest(
+        next.execution.storageManifest,
+      )?.storageMounts.find((mount) => {
+        return mount.name === "memory";
+      }),
+    ).toMatchObject({
+      storageId: memory.storageId,
+      versionId: memory.versionId,
     });
     await cancelChatRun(actor, successor.runId, next.sandboxHeaders);
   });

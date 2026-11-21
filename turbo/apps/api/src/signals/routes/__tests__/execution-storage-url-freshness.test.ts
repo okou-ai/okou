@@ -1,17 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { HeadObjectCommand } from "@aws-sdk/client-s3";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
-import { buildArtifactKeyV2 } from "../../../lib/file-url";
 import { closeS3Clients } from "../../../lib/s3-client";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { createPublicRunnerMemory } from "./helpers/public-runner-memory";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 
 const context = testContext();
+const cacheRefreshAfterMs = (48 - 4) * 60 * 60 * 1000;
 
 describe("Execution Storage URL freshness", () => {
   it("refreshes a queued mount across the cache margin and publishes the winning URL", async () => {
@@ -43,7 +42,7 @@ describe("Execution Storage URL freshness", () => {
       await fixture.cancel(cached);
 
       // A settled Run ages the two-day cache. Only two minutes pass while queued.
-      mockNow(startedAt + (48 - 4) * 60 * 60 * 1000 - 60_000);
+      mockNow(startedAt + cacheRefreshAfterMs - 60_000);
       await fixture.api.configureRunnerGroup();
       const queued = await createChatEventsFixture(context).queueChatRun(
         fixture.actor,
@@ -56,7 +55,7 @@ describe("Execution Storage URL freshness", () => {
           fixture.registerQueuedThread(blocker.threadId);
         },
       );
-      mockNow(startedAt + (48 - 4) * 60 * 60 * 1000 + 60_000);
+      mockNow(startedAt + cacheRefreshAfterMs + 60_000);
       await fixture.api.configureRunnerGroup();
       const launched = await queued.launch();
       const state = await fixture.api.readRun(fixture.actor, launched.runId);
@@ -80,9 +79,11 @@ describe("Execution Storage URL freshness", () => {
     });
   });
 
-  it("dispatches the captured Memory archive when HEAD changes during chat startup", async () => {
+  it("dispatches the picked Memory archive when HEAD changes during signing", async () => {
+    const startedAt = now();
+    mockNow(startedAt);
+    onTestFinished(clearMockNow);
     const fixture = createPublicRunnerMemory(context);
-    const chat = createChatEventsFixture(context);
     await fixture.run(async () => {
       const agentId = await fixture.initializeNative();
       fixture.installObjects();
@@ -90,50 +91,38 @@ describe("Execution Storage URL freshness", () => {
       const version = await fixture.publish(first, [
         { path: "MEMORY.md", content: "First version" },
       ]);
+      const cached = await fixture.startExecution(agentId, "Cache Memory");
+      await fixture.cancel(cached);
+      // The writer gets a fresh execution token while the cached URL is still usable.
+      mockNow(startedAt + cacheRefreshAfterMs - 60_000);
+      await fixture.api.configureRunnerGroup();
       const writer = await fixture.startExecution(agentId, "Update Memory");
-      const fileId = randomUUID();
-      const filename = "hold.txt";
-      const key = buildArtifactKeyV2(fileId, filename);
-      const entered = createDeferredPromise<void>(context.signal);
+      expect(writer.memory).toStrictEqual(cached.memory);
+
+      mockNow(startedAt + cacheRefreshAfterMs + 60_000);
+      await fixture.api.configureRunnerGroup();
+      const archiveSuffix = `/${writer.memory.storageId}/${version}/archive.tar.gz`;
+      const entered = createDeferredPromise<string>(context.signal);
       const release = createDeferredPromise<void>(context.signal);
-      const original = context.mocks.s3.send.getMockImplementation();
+      const original = context.mocks.s3.getSignedUrl.getMockImplementation();
       if (!original) {
-        throw new Error("Expected the Memory fixture's storage transport");
+        throw new Error("Expected the Memory fixture's URL signer");
       }
-      context.mocks.s3.send.mockImplementation(async (request: unknown) => {
-        if (request instanceof HeadObjectCommand && request.input.Key === key) {
-          entered.resolve(undefined);
-          await release.promise;
-          return {
-            ContentLength: 1,
-            ContentType: "text/plain",
-            LastModified: new Date(now()),
-            Metadata: {
-              "artifact-id": fileId,
-              "user-id": encodeURIComponent(fixture.actor.userId),
-              filename,
-            },
-          };
-        }
-        return await original(request);
-      });
+      context.mocks.s3.getSignedUrl.mockImplementation(
+        async (client, request, options) => {
+          if (
+            request instanceof GetObjectCommand &&
+            request.input.Key?.endsWith(archiveSuffix) &&
+            !entered.settled()
+          ) {
+            entered.resolve(request.input.Key);
+            await release.promise;
+          }
+          return await original(client, request, options);
+        },
+      );
       const sending = settleIncludingAbort(
-        chat.sendChatRun(fixture.actor, {
-          model: "claude-fable-5-1",
-          prompt: "Use the captured Memory",
-          userMessage: {
-            version: 1,
-            parts: [
-              {
-                type: "file",
-                fileId,
-                filenameSnapshot: filename,
-                contentType: "text/plain",
-              },
-              { type: "text", text: "Use the captured Memory" },
-            ],
-          },
-        }),
+        fixture.startExecution(agentId, "Use the picked Memory"),
       );
       onTestFinished(async () => {
         if (!release.settled()) {
@@ -141,15 +130,14 @@ describe("Execution Storage URL freshness", () => {
         }
         await sending;
       });
-      await Promise.race([
+      const archiveKey = await Promise.race([
         entered.promise,
         sending.then((result) => {
           throw result.ok
-            ? new Error("The send finished before reading its attachment")
+            ? new Error("The Run started before its Memory URL was signed")
             : result.error;
         }),
       ]);
-      await flushWaitUntilForTest();
       const nextVersion = await fixture.publish(writer, [
         { path: "MEMORY.md", content: "Second version" },
       ]);
@@ -158,15 +146,16 @@ describe("Execution Storage URL freshness", () => {
       if (!sent.ok) {
         throw sent.error;
       }
-      fixture.registerRun(sent.value.runId);
-      const state = await fixture.api.readRun(fixture.actor, sent.value.runId);
-      const captured = await fixture.readExecution({
-        ...sent.value,
-        status: state.status,
-        createdAt: state.createdAt,
+      const captured = sent.value;
+      expect(captured.memory).toStrictEqual({
+        ...writer.memory,
+        archiveUrl: captured.memory.archiveUrl,
       });
-      expect(captured.memory).toStrictEqual(writer.memory);
       expect(captured.memory.versionId).toBe(version);
+      expect(captured.memory.archiveUrl).not.toBe(writer.memory.archiveUrl);
+      expect(captured.memory.archiveUrl).toContain(
+        encodeURIComponent(archiveKey),
+      );
       await fixture.cancel(captured);
       const next = await fixture.startExecution(
         agentId,
