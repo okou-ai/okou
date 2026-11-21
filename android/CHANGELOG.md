@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.32.6](https://github.com/okou-ai/okou/compare/android-v0.32.5...android-v0.32.6) (2026-11-21)
+
+
+### Bug Fixes
+
+* **android:** remove retired chat strings ([#49678](https://github.com/okou-ai/okou/issues/49678)) ([fdc44df](https://github.com/okou-ai/okou/commit/fdc44dfbf5b6d2edc02dcb7c226d88a3b89d9129))
+
+
+### Refactoring
+
+* **api:** require member-scoped chat clients for run creation ([#49676](https://github.com/okou-ai/okou/issues/49676)) ([8ed0c41](https://github.com/okou-ai/okou/commit/8ed0c41efd72d4ddd1f6b9cc6c90d103cde20eb3))
+
+
+### Performance Improvements
+
+* **android:** restore recent unread status at startup ([#49627](https://github.com/okou-ai/okou/issues/49627)) ([84d9dec](https://github.com/okou-ai/okou/commit/84d9decad596d74879c85e6c4c29fef23bdc12a0))
+
 ## [0.32.5](https://github.com/okou-ai/okou/compare/android-v0.32.4...android-v0.32.5) (2026-11-21)
 
 

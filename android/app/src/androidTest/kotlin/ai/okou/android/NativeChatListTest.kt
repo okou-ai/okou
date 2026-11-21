@@ -14,8 +14,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.Direction
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
-import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.UiScrollable
 import androidx.test.uiautomator.UiSelector
 import androidx.test.uiautomator.Until
@@ -187,28 +187,31 @@ class NativeChatListTest {
             fun revealText(value: String) {
                 val target = By.pkg(app.packageName).text(value).hasAncestor(chatListRegion(app))
                 val scrollable = chatListRegion(app).scrollable(true)
+                var direction = Direction.UP
+                var reachedEnd = false
                 assertTrue(
+                    "Missing $value",
                     device.wait(
                         object : Condition<UiDevice, Boolean> {
-                            override fun apply(device: UiDevice) =
-                                device.hasObject(target) || device.hasObject(scrollable)
+                            override fun apply(device: UiDevice): Boolean {
+                                if (device.hasObject(target)) return true
+                                if (reachedEnd) return false
+                                val container = device.findObject(scrollable) ?: return false
+                                try {
+                                    // A gesture can replace the list's accessibility node.
+                                    if (!container.scroll(direction, 0.8f)) {
+                                        if (direction == Direction.UP) direction = Direction.DOWN
+                                        else reachedEnd = true
+                                    }
+                                } catch (_: StaleObjectException) {
+                                    // Observe the current window again within the same wait.
+                                }
+                                return device.hasObject(target)
+                            }
                         },
                         10_000,
-                    )
+                    ),
                 )
-                // The whole list can fit after collapse; only scroll when it is necessary.
-                if (!device.hasObject(target)) {
-                    val visible =
-                        object : Condition<UiObject2, Boolean> {
-                            // Resolve virtual descendants from the current window after scrolls.
-                            override fun apply(container: UiObject2) = device.hasObject(target)
-                        }
-                    if (device.findObject(scrollable)?.scrollUntil(Direction.UP, visible) != true) {
-                        device.findObject(scrollable)?.scrollUntil(Direction.DOWN, visible)
-                    }
-                }
-                // A scroll result is not a receipt for Compose's eventual visible outcome.
-                assertNotNull(device.wait(Until.findObject(target), 10_000))
             }
             device.awaitChatList(app)
             scenario.onActivity { activity ->

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.51.7](https://github.com/okou-ai/okou/compare/ios-v0.51.6...ios-v0.51.7) (2026-11-21)
+
+
+### Bug Fixes
+
+* **ios:** keep the keyboard session when emptying a quoted draft ([#49668](https://github.com/okou-ai/okou/issues/49668)) ([6459c98](https://github.com/okou-ai/okou/commit/6459c98c7bceb217c8338c5d4e8b82918488efdb))
+* **ios:** present the fork sheet at its fitted height ([#49671](https://github.com/okou-ai/okou/issues/49671)) ([27f2ec7](https://github.com/okou-ai/okou/commit/27f2ec79a4f78b25f4953780a0f18fd2208309a6))
+
 ## [0.51.6](https://github.com/okou-ai/okou/compare/ios-v0.51.5...ios-v0.51.6) (2026-11-21)
 
 
