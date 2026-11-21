@@ -20,7 +20,6 @@ import {
 interface NewChatThreadArgs {
   readonly orgId: string;
   readonly userId: string;
-  readonly agentId?: string;
   readonly id?: string;
   readonly title?: string | null;
   readonly projectId?: string | null;

@@ -1544,18 +1544,6 @@ function newSendThreadInsertPlan(args: NormalSendArgs, thread: NewSendThread) {
   });
 }
 
-const createdSendThreadSelection = Object.freeze({
-  id: chatThreads.id,
-  userId: chatThreads.userId,
-  title: chatThreads.title,
-  selectedModel: chatThreads.selectedModel,
-  modelSettings: chatThreads.modelSettings,
-  codexServiceTier: chatThreads.codexServiceTier,
-  computerUseHostId: chatThreads.computerUseHostId,
-  cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-  createdAt: chatThreads.createdAt,
-});
-
 interface NormalSendInput {
   readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
   readonly sourceAutonomyBudget: number | null;
@@ -2068,13 +2056,12 @@ const appendNormalSendInput$ = command(
     const query = normalChatInputPublicationSql({
       ...prepared.plan,
       newThread: created
-        ? db
-            .with(...created.defaults)
-            .insert(chatThreads)
-            .values(created.values)
-            .onConflictDoNothing()
-            .returning(createdSendThreadSelection)
-            .getSQL()
+        ? normalChatInputInsertSql(
+            chatThreads,
+            created.values,
+            sql`true`,
+            sql`DO NOTHING`,
+          )
         : undefined,
     });
     const rows = await (async () => {

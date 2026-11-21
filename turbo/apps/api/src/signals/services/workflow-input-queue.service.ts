@@ -61,12 +61,12 @@ export interface WorkflowSourceAdmissionPlan {
 
 export type WorkflowAutomationBinding = Pick<
   RunWorkflowAutomationNowArgs,
-  "automation" | "agentId" | "chatThreadId"
+  "automation" | "chatThreadId"
 >;
 
 /** Hold the observed binding for the duration of the atomic admission. */
 export function currentWorkflowAutomationBindingSql(
-  { automation, agentId, chatThreadId }: WorkflowAutomationBinding,
+  { automation, chatThreadId }: WorkflowAutomationBinding,
   condition: SQL,
   lock: "schedule-claim" | "event-receipt",
 ) {
@@ -88,10 +88,9 @@ export function currentWorkflowAutomationBindingSql(
       eq(workflowAutomations.ownerUserId, automation.ownerUserId),
       eq(workflowAutomations.workflowId, automation.workflowId),
       eq(workflows.orgId, automation.orgId),
-      eq(workflows.agentId, agentId),
       eq(chatThreads.id, chatThreadId),
       eq(chatThreads.userId, automation.ownerUserId),
-      eq(chatThreads.agentId, agentId),
+      eq(chatThreads.orgId, automation.orgId),
       condition,
     )}
     ${lockAutomation} OF ${workflowAutomations}

@@ -1922,7 +1922,6 @@ function workflowThreadCreatedEventValues(
   owner: {
     readonly orgId: string;
     readonly userId: string;
-    readonly agentId: string;
   },
   values: ReturnType<typeof preparedWorkflowThreadValues>,
 ) {
@@ -1974,7 +1973,6 @@ function eventAutomationThreadOwner(args: InsertEventAutomationArgs) {
     orgId: args.input.orgId,
     userId: args.input.member.userId,
     workflowId: args.workflowId,
-    agentId: args.agentId,
     workflowTitle: args.workflowTitle,
     currentTime: args.currentTime,
   };
@@ -2125,14 +2123,12 @@ const insertEventAutomation$ = command(
         const thread = db
           .$with("inserted_thread", {
             id: chatThreads.id,
-            agentId: chatThreads.agentId,
           })
           .as(workflowThreadInsertFromBindingSql(values, values.id));
         const event = chatThreadEventInsertPlan(
           workflowThreadCreatedEventValues(owner, values),
           {
             gate: sql`EXISTS (SELECT 1 FROM inserted_thread)`,
-            agentId: sql`(SELECT agent_id FROM inserted_thread)`,
           },
         );
         const reserved = db
@@ -2291,7 +2287,6 @@ function automationThreadInsertPlan(args: {
     readonly orgId: string;
     readonly member: Pick<WorkflowMember, "userId">;
   };
-  readonly agentId: string;
   readonly threadPreparation: WorkflowThreadPreparation;
   readonly currentTime: Date;
 }) {
@@ -2299,7 +2294,6 @@ function automationThreadInsertPlan(args: {
   return prepareChatThreadInsert({
     orgId: args.input.orgId,
     userId: args.input.member.userId,
-    agentId: args.agentId,
     title: args.threadPreparation.title,
     hidden: args.threadPreparation.hidden,
     modelSettings: args.threadPreparation.modelSettings,
@@ -2479,7 +2473,6 @@ function webhookThreadPublicationValues(args: WebhookAutomationCreateArgs) {
   const values = preparedWorkflowThreadValues(
     {
       ...webhookThreadOwner(args),
-      agentId: args.agentId,
       workflowTitle: args.threadPreparation.title,
       currentTime: args.currentTime,
     },
@@ -2666,7 +2659,6 @@ const commitWebhookEventAutomation$ = command(
     const thread = db
       .$with("inserted_thread", {
         id: chatThreads.id,
-        agentId: chatThreads.agentId,
       })
       .as(workflowThreadInsertFromBindingSql(values, values.id));
     const event = chatThreadEventInsertPlan(
@@ -2674,13 +2666,11 @@ const commitWebhookEventAutomation$ = command(
         {
           orgId: args.input.orgId,
           userId: args.input.member.userId,
-          agentId: args.agentId,
         },
         values,
       ),
       {
         gate: sql`EXISTS (SELECT 1 FROM inserted_thread)`,
-        agentId: sql`(SELECT agent_id FROM inserted_thread)`,
       },
     );
     const reserved = db

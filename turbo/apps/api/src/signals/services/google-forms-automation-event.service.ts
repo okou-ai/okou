@@ -165,7 +165,6 @@ type DecodedGoogleFormsPubSubPush = Extract<
 
 interface GoogleFormsEventAutomationRow {
   readonly automation: AutomationRow;
-  readonly agentId: string;
   readonly workflowName: string;
   readonly chatThreadId: string;
   readonly config: GoogleFormsResponseSubmittedEventConfig;
@@ -276,7 +275,6 @@ const loadGoogleFormsEventAutomations$ = command(
             orgId: row.automation.orgId,
             userId: row.automation.ownerUserId,
             workflowId: row.automation.workflowId,
-            agentId: row.agentId,
             workflowTitle: row.workflowDisplayName ?? row.workflowName,
             currentTime: nowDate(),
           },
@@ -284,7 +282,6 @@ const loadGoogleFormsEventAutomations$ = command(
         ));
       result.push({
         automation: row.automation,
-        agentId: row.agentId,
         workflowName: row.workflowName,
         chatThreadId,
         config: config.data,
@@ -433,7 +430,6 @@ const startGoogleFormsWorkflowRun$ = command(
         runWorkflowAutomationNow$,
         {
           automation: args.automation.automation,
-          agentId: args.automation.agentId,
           chatThreadId: args.automation.chatThreadId,
           automationContext: context,
           connectorSourceId: args.state.connectorId,

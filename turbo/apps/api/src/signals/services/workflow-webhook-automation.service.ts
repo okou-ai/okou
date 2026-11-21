@@ -47,7 +47,6 @@ function sha256Hex(value: string): string {
 interface WorkflowWebhookAutomationDispatchRow {
   readonly automation: AutomationRow;
   readonly webhook: WebhookAutomationRow;
-  readonly agentId: string;
   readonly workflowName: string;
   readonly chatThreadId: string;
 }
@@ -248,7 +247,6 @@ const loadWebhookAutomationForToken$ = command(
           orgId: row.automation.orgId,
           userId: row.automation.ownerUserId,
           workflowId: row.automation.workflowId,
-          agentId: row.agentId,
           workflowTitle: row.workflowDisplayName ?? row.workflowName,
           currentTime,
         },
@@ -258,7 +256,6 @@ const loadWebhookAutomationForToken$ = command(
     return {
       automation: row.automation,
       webhook: row.webhook,
-      agentId: row.agentId,
       workflowName: row.workflowName,
       chatThreadId,
     };
@@ -479,7 +476,6 @@ const startWorkflowWebhookRun$ = command(
       runWorkflowAutomationNow$,
       {
         automation: args.row.automation,
-        agentId: args.row.agentId,
         chatThreadId: args.row.chatThreadId,
         automationContext: runInput.context,
         apiStartTime: args.apiStartTime,

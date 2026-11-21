@@ -47,7 +47,7 @@ export type RunWorkflowAutomationResult = {
 
 export interface RunWorkflowAutomationNowArgs {
   readonly automation: AutomationRow;
-  readonly agentId: string;
+  readonly proactiveAgentId?: string;
   readonly chatThreadId: string;
   readonly automationContext: WorkflowAutomationContext;
   /** Stable ingress identity when a source callback may retry the same event. */
