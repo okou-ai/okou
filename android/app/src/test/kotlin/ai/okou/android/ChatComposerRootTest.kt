@@ -423,14 +423,15 @@ class ChatComposerRootTest {
                 } else reply(request)
             }
             list.events = { request ->
-                if (request.requestUrl?.queryParameter("sinceSeqId") == "23") {
+                val since = request.requestUrl?.queryParameter("sinceSeqId")?.toLongOrNull()
+                if (since != null && since < 40L) {
                     cursorExpired.set(true)
                     jsonResponse("{}").setResponseCode(410)
                 } else jsonResponse("""{"events":[],"hasMore":false}""")
             }
             list.snapshot = {
                 jsonResponse(
-                    """{"url":"${list.server.url("/archive")}","expiresInSeconds":60,"latestEventId":"$CHAT_EVENT","latestSeqId":40}"""
+                    """{"url":"${list.server.url("/archive")}","expiresInSeconds":60,"latestEventId":"$HISTORY_LAST_EVENT","latestSeqId":40}"""
                 )
             }
             list.archive = { jsonResponse("""{"chatThreads":[]}""") }
@@ -440,12 +441,12 @@ class ChatComposerRootTest {
             var activity: MainActivity? = null
             fresh.onActivity { activity = it }
             val row = "chat_${pending.threadId}"
+            awaitConversation { cursorExpired.get() }
+            awaitConversation { detailRequested.get() }
             compose.waitUntil(10_000) {
-                detailRequested.get() &&
-                    compose.onAllNodesWithTag(row).fetchSemanticsNodes().size == 1
+                compose.onAllNodesWithTag(row).fetchSemanticsNodes().size == 1
             }
             captureOwners(checkNotNull(activity))
-            assertTrue(cursorExpired.get())
             detail.countDown()
             awaitConversation {
                 val state = editor?.uiState?.value
