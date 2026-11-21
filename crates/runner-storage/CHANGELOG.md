@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.8](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.7...runner-storage-v0.12.8) (2026-11-21)
+
+
+### Performance Improvements
+
+* **runner-storage:** avoid allocating decoded cache digest strings ([#49673](https://github.com/okou-ai/okou/issues/49673)) ([1491c15](https://github.com/okou-ai/okou/commit/1491c158ccdb9bf61999b78899dc81b267f9fdfa))
+
 ## [0.12.7](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.6...runner-storage-v0.12.7) (2026-11-21)
 
 

@@ -10,6 +10,30 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.100.1](https://github.com/okou-ai/okou/compare/api-v2.100.0...api-v2.100.1) (2026-11-21)
+
+
+### Refactoring
+
+* **api:** read native custom connector skill publications ([#49677](https://github.com/okou-ai/okou/issues/49677)) ([4f5de2f](https://github.com/okou-ai/okou/commit/4f5de2f6f8f7f61b0470bdaca4af99a7e3ce2aea))
+* **api:** remove redundant drive account readiness ([#49664](https://github.com/okou-ai/okou/issues/49664)) ([2a48ac4](https://github.com/okou-ai/okou/commit/2a48ac4e25abc2e34a780a2f6b28a9914082d315))
+* **api:** require member-scoped chat clients for run creation ([#49676](https://github.com/okou-ai/okou/issues/49676)) ([8ed0c41](https://github.com/okou-ai/okou/commit/8ed0c41efd72d4ddd1f6b9cc6c90d103cde20eb3))
+
+
+### Performance Improvements
+
+* **api:** capture coherent memory and connector inputs for chat runs ([#49660](https://github.com/okou-ai/okou/issues/49660)) ([c5b9ea9](https://github.com/okou-ai/okou/commit/c5b9ea99725f7658fff226ca85206baa96966599))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.96.2
+    * @okouai/core bumped to 8.858.2
+    * @okouai/db bumped to 2.57.1
+    * @okouai/pi-agent-runtime bumped to 1.52.21
+
 ## [2.100.0](https://github.com/okou-ai/okou/compare/api-v2.99.0...api-v2.100.0) (2026-11-21)
 
 

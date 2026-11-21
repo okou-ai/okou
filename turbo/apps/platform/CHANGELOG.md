@@ -13,6 +13,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1161.2](https://github.com/okou-ai/okou/compare/app-v0.1161.1...app-v0.1161.2) (2026-11-21)
+
+
+### Refactoring
+
+* **api:** remove redundant drive account readiness ([#49664](https://github.com/okou-ai/okou/issues/49664)) ([2a48ac4](https://github.com/okou-ai/okou/commit/2a48ac4e25abc2e34a780a2f6b28a9914082d315))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.96.2
+    * @okouai/core bumped to 8.858.2
+    * @okouai/ui bumped to 1.21.78
+
 ## [0.1161.1](https://github.com/okou-ai/okou/compare/app-v0.1161.0...app-v0.1161.1) (2026-11-21)
 
 
