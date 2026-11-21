@@ -466,7 +466,7 @@ class ChatListRootTest {
         compose.onNodeWithContentDescription("Chats").assertExists()
         compose.mainClock.advanceTimeBy(120)
         compose.onNodeWithContentDescription("Loading chats…").assertExists()
-        compose.onNodeWithContentDescription("Switch workspace").performClick()
+        compose.onNodeWithContentDescription("Switch workspace", substring = true).performClick()
         compose.onNodeWithText("Workspace B").assertExists()
         compose.onNodeWithText("Back").performClick()
         compose.onNodeWithContentDescription("Settings").performClick()

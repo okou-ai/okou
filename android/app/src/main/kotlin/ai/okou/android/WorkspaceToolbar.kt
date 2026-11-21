@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -67,8 +68,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
@@ -81,26 +80,18 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 
 @Composable
-internal fun workspaceListTitleStyle(widthDp: Int, listWidth: Int?): TextStyle {
-    val fontSize =
-        when {
-            listWidth == 320 -> 18.sp
-            widthDp < 360 -> 16.sp
-            else -> 20.sp
-        }
-    return MaterialTheme.typography.titleLarge.copy(
-        fontSize = fontSize,
-        lineHeight = 24.sp,
-        letterSpacing = 0.sp,
-        fontWeight = FontWeight.SemiBold,
-    )
-}
+internal fun workspaceSearchControlHeight() =
+    with(LocalDensity.current) {
+        maxOf(48.dp, MaterialTheme.typography.bodyLarge.lineHeight.toDp() + 16.dp)
+    }
 
 @Composable
 internal fun WorkspaceListToolbar(
     widthDp: Int,
     listWidth: Int?,
-    title: @Composable () -> Unit,
+    avatar: (@Composable () -> Unit)?,
+    workspaceName: String?,
+    openSearch: (() -> Unit)?,
     actions: @Composable () -> Unit,
 ) {
     val inset =
@@ -115,9 +106,50 @@ internal fun WorkspaceListToolbar(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) { title() }
+        avatar?.invoke()
+        val searchLabel = stringResource(R.string.chat_search)
+        val searchShape = RoundedCornerShape(100)
+        val compact = (listWidth ?: widthDp).dp <= with(LocalDensity.current) { 16.sp.toDp() * 21 }
+        Surface(
+            Modifier.weight(1f),
+            shape = searchShape,
+            color = MaterialTheme.colorScheme.surface,
+        ) {
+            Row(
+                Modifier.heightIn(min = workspaceSearchControlHeight())
+                    .clip(searchShape)
+                    .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), searchShape)
+                    .then(
+                        if (openSearch != null)
+                            Modifier.clickable(role = Role.Button, onClick = openSearch)
+                        else Modifier
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    painterResource(R.drawable.ic_search),
+                    contentDescription = searchLabel.takeIf { openSearch != null },
+                    modifier = Modifier.size(20.dp),
+                )
+                if (!compact || workspaceName != null) {
+                    Text(
+                        when {
+                            workspaceName == null -> searchLabel
+                            compact -> workspaceName
+                            else -> "$searchLabel · $workspaceName"
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
         Row(
-            Modifier.width(156.dp),
+            Modifier.widthIn(min = 100.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -132,9 +164,7 @@ internal fun WorkspaceToolbarActions(
     list: ChatListUiState,
     selectFilter: (ChatListFilter) -> Unit,
     markAllRead: () -> Unit,
-    openSearch: (() -> Unit)? = null,
     update: UpdateToolbarAction?,
-    stackUpdateLabel: Boolean,
     settingsFocus: FocusRequester,
     openSettings: ((restoreFocus: Boolean) -> Unit)?,
 ) {
@@ -177,17 +207,6 @@ internal fun WorkspaceToolbarActions(
                                     R.drawable.ic_filter_list,
                                 ) {
                                     menu = WorkspaceMenuPage.Filter
-                                }
-                            )
-                        }
-                        if (openSearch != null) {
-                            add(
-                                WorkspaceMenuItem(
-                                    stringResource(R.string.chat_search),
-                                    R.drawable.ic_search,
-                                ) {
-                                    menu = null
-                                    openSearch()
                                 }
                             )
                         }
@@ -258,18 +277,13 @@ internal fun WorkspaceToolbarActions(
                 menuContent()
             }
         }
-        if (openSearch != null) {
-            IconButton(onClick = openSearch) {
-                Icon(painterResource(R.drawable.ic_search), stringResource(R.string.chat_search))
-            }
-        }
         if (openSettings != null) {
             IconButton(modifier = settingsAnchor, onClick = { openSettings(anchorFocused) }) {
                 Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings))
             }
         }
     } else {
-        UpdateToolbarButton(update, stacked = stackUpdateLabel)
+        UpdateToolbarButton(update)
         Box {
             IconButton(
                 modifier =

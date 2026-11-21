@@ -9,26 +9,21 @@ import ai.okou.android.SettingsScreen
 import ai.okou.android.SettingsSection
 import ai.okou.android.api.generated.Organization
 import ai.okou.android.chat.WorkspaceRealtimeLifecycle
-import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.instructions.PersonalInstructionsSettings
 import ai.okou.android.preferences.MemberPreferencesSettings
 import ai.okou.android.state.SettingsDestination
 import ai.okou.android.updates.UpdateToolbarAction
-import ai.okou.android.workspaceListPaneWidth
-import ai.okou.android.workspaceListTitleStyle
+import ai.okou.android.workspaceSearchControlHeight
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -36,7 +31,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -54,10 +49,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.clerk.api.ui.ClerkColors
 import com.clerk.api.ui.ClerkTheme
@@ -114,9 +109,10 @@ internal fun SessionRoot(
                         }
                     },
                     recovery = ready?.recovery,
-                    workspaceTitle =
+                    workspaceName = organization?.name,
+                    workspaceAvatar =
                         organization?.let { workspace ->
-                            { WorkspaceTitle(workspace, state, chooseWorkspace) }
+                            { WorkspaceAvatar(workspace, state, chooseWorkspace) }
                         },
                     updateToolbarAction = updateToolbarAction,
                     onUpdateEditingChanged = onUpdateEditingChanged,
@@ -321,67 +317,34 @@ private fun AccountSettings(openInstructions: () -> Unit, signOut: () -> Unit) {
 }
 
 @Composable
-private fun WorkspaceTitle(
+private fun WorkspaceAvatar(
     workspace: Organization,
     state: SessionUiState,
     chooseWorkspace: (String) -> Unit,
 ) {
     val canSwitch = state.ready != null && state.memberships.size > 1
-    val window = currentWindowSizeDp()
-    val pane = workspaceListPaneWidth(window.width, window.height)
-    val logoSize = if (pane == null) 28.dp else 26.dp
-    val spacing = if (pane == null) 8.dp else 6.dp
     var choosing by remember { mutableStateOf(false) }
-    val identity: @Composable RowScope.() -> Unit = {
-        val logo = remember(workspace.id) { workspaceLogo(workspace.id) }
+    val logo = remember(workspace.id) { workspaceLogo(workspace.id) }
+    val size = workspaceSearchControlHeight()
+    val avatar: @Composable () -> Unit = {
         Image(
             painterResource(logo),
-            contentDescription = null,
-            modifier = Modifier.size(logoSize).clip(RoundedCornerShape(8.dp)),
+            contentDescription = if (canSwitch) null else workspace.name,
+            modifier = Modifier.size(size).clip(CircleShape),
         )
-        Row(
-            Modifier.padding(start = spacing).weight(1f, fill = false),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                workspace.name,
-                Modifier.weight(1f, fill = false),
-                style = workspaceListTitleStyle(window.width, pane),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (canSwitch) {
-                Icon(
-                    painterResource(R.drawable.ic_expand_more),
-                    stringResource(R.string.auth_switch_workspace),
-                    Modifier.padding(start = spacing).size(14.dp),
-                )
-            }
-        }
     }
     if (canSwitch) {
-        TextButton(
+        val label = stringResource(R.string.auth_switch_workspace)
+        IconButton(
             onClick = { choosing = true },
-            modifier = Modifier.heightIn(min = 48.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors =
-                ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
-            contentPadding =
-                PaddingValues(
-                    start = spacing,
-                    top = spacing,
-                    end = if (pane == 320 || window.width < 360) 0.dp else spacing,
-                    bottom = spacing,
-                ),
-            content = identity,
-        )
+            modifier =
+                Modifier.size(size).semantics { contentDescription = "$label, ${workspace.name}" },
+        ) {
+            avatar()
+        }
         if (choosing) WorkspaceChooser(state, chooseWorkspace) { choosing = false }
     } else {
-        Row(
-            Modifier.heightIn(min = 48.dp).padding(spacing),
-            verticalAlignment = Alignment.CenterVertically,
-            content = identity,
-        )
+        avatar()
     }
 }
 
