@@ -13,6 +13,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1162.4](https://github.com/okou-ai/okou/compare/app-v0.1162.3...app-v0.1162.4) (2026-11-21)
+
+
+### Bug Fixes
+
+* **app:** shorten long url labels in chat ([#49870](https://github.com/okou-ai/okou/issues/49870)) ([e67322a](https://github.com/okou-ai/okou/commit/e67322a09416baaad1b15eb0bed206bd4518365d))
+
+
+### Refactoring
+
+* contract legacy chat and run agent storage ([#49868](https://github.com/okou-ai/okou/issues/49868)) ([abbf9f8](https://github.com/okou-ai/okou/commit/abbf9f8e672ac56f0f98583cfb0b536e9225e905))
+* remove project thread deletion feature switch ([#49871](https://github.com/okou-ai/okou/issues/49871)) ([87a5dd0](https://github.com/okou-ai/okou/commit/87a5dd02dd9f35ce5a9fcc6775d63cf11547eaef))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.3
+    * @okouai/core bumped to 8.858.8
+    * @okouai/ui bumped to 1.21.84
+
 ## [0.1162.3](https://github.com/okou-ai/okou/compare/app-v0.1162.2...app-v0.1162.3) (2026-11-21)
 
 
