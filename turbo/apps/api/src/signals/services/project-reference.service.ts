@@ -4,6 +4,7 @@ import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-t
 import { projects } from "@okouai/db/schema/project";
 import type { AuthContext } from "../../types/auth";
 import { db$ } from "../external/db";
+import type { ProjectReferenceRow } from "./chat-run-preparation-facts";
 
 function projectReferences(document: UserMessageDocument | null | undefined) {
   return (document?.parts ?? [])
@@ -15,7 +16,7 @@ function projectReferences(document: UserMessageDocument | null | undefined) {
     });
 }
 
-export function projectReferencesAvailable(
+export function captureProjectReferences(
   auth: AuthContext,
   document: UserMessageDocument | null | undefined,
 ) {
@@ -27,28 +28,30 @@ export function projectReferencesAvailable(
       }),
     ),
   ];
-  return computed(async (get) => {
-    if (projectIds.length === 0) {
-      return true;
-    }
-    if (
-      !auth.orgId ||
-      (auth.tokenType === "agent" && auth.singleAgent !== true)
-    ) {
-      return false;
-    }
-    const rows = await get(db$)
-      .select({ id: projects.id })
-      .from(projects)
-      .where(
-        and(
-          inArray(projects.id, projectIds),
-          eq(projects.userId, auth.userId),
-          eq(projects.orgId, auth.orgId),
-        ),
-      );
-    return rows.length === projectIds.length;
-  });
+  return computed(
+    async (get): Promise<readonly ProjectReferenceRow[] | null> => {
+      if (projectIds.length === 0) {
+        return [];
+      }
+      if (
+        !auth.orgId ||
+        (auth.tokenType === "agent" && auth.singleAgent !== true)
+      ) {
+        return null;
+      }
+      const rows = await get(db$)
+        .select({ id: projects.id, name: projects.name })
+        .from(projects)
+        .where(
+          and(
+            inArray(projects.id, projectIds),
+            eq(projects.userId, auth.userId),
+            eq(projects.orgId, auth.orgId),
+          ),
+        );
+      return rows.length === projectIds.length ? rows : null;
+    },
+  );
 }
 
 export function canWriteProjectReferences(

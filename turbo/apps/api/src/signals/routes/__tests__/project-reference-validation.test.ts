@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { describe, expect, it } from "vitest";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import type { UserMessageInputDocument } from "@okouai/api-contracts/contracts/chat-threads";
@@ -11,6 +12,7 @@ import { chatEventsRoutes } from "../chat-events";
 import { projectRoutes } from "../projects";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { installS3Fixture } from "./helpers/template-publish-fixture";
 
 const context = testContext();
 const fixture = createChatEventsFixture(context);
@@ -89,6 +91,73 @@ describe("project reference admission through chat send", () => {
     expect(prepared.prompt).toContain(
       `[Research note](/projects/${first.id}) then [Launch note](/projects/${second.id.toUpperCase()})`,
     );
+    await fixture.cancelChatRun(actor, run.runId);
+  });
+
+  it("uses the Project name captured before attachment verification", async () => {
+    const { actor } = await fixture.entitledNativeChatActor();
+    const project = await createProject(actor, "Research at send");
+    const storage = installS3Fixture(context);
+    const filename = "project.txt";
+    const contentType = "text/plain";
+    const bytes = Buffer.from("Project context");
+    const upload = await fixture.chat.prepareUpload(actor, {
+      filename,
+      contentType,
+      size: bytes.length,
+    });
+    if (!("uploadUrl" in upload)) {
+      throw new Error("Expected a single-part upload");
+    }
+    storage.put(upload.uploadUrl, bytes, contentType);
+    const key = storage.signedKey(upload.uploadUrl);
+    const send = context.mocks.s3.send.getMockImplementation();
+    if (!key || !send) {
+      throw new Error("Expected an attachment object and storage transport");
+    }
+    context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+      if (command instanceof HeadObjectCommand && command.input.Key === key) {
+        await accept(
+          projects().update({
+            headers: fixture.sessionHeaders(actor),
+            params: { id: project.id },
+            body: {
+              eventId: createProjectOperationId(now(), randomUUID()),
+              name: "Research during verification",
+            },
+          }),
+          [200],
+        );
+      }
+      return await send(command);
+    });
+    const run = await fixture.sendChatRun(actor, {
+      prompt: "Use the referenced Project",
+      userMessage: {
+        version: 1,
+        parts: [
+          mention(project.id),
+          {
+            type: "file",
+            fileId: upload.id,
+            filenameSnapshot: filename,
+            contentType,
+          },
+        ],
+      },
+    });
+    const { execution } = await fixture.runExecution(run.runId);
+    expect(execution.appendSystemPrompt).toContain(
+      'current name="Research at send"',
+    );
+    const renamed = await accept(
+      projects().get({
+        headers: fixture.sessionHeaders(actor),
+        params: { id: project.id },
+      }),
+      [200],
+    );
+    expect(renamed.body.name).toBe("Research during verification");
     await fixture.cancelChatRun(actor, run.runId);
   });
 
