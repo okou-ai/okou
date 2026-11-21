@@ -117,7 +117,7 @@ describe("okou connector permission-request --batch-file", () => {
   }
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), "okou-permission-batch-"));
-    vi.stubEnv("OKOU_TOKEN", capturedRunToken(["agent:read"]));
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken([]));
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
     vi.stubEnv("OKOU_CHAT_THREAD_ID", "thread-current");
     diagnostics();

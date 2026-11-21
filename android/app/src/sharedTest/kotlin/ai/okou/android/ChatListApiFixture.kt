@@ -5,7 +5,9 @@ import ai.okou.android.auth.CanonicalWorkspaceSession
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.chat.plainDraftDocument
 import java.io.Closeable
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -16,6 +18,7 @@ import kotlinx.serialization.json.long
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.RecordedRequest
+import org.junit.Assert.assertEquals
 
 const val CHAT_AGENT = "22222222-2222-4222-8222-222222222222"
 const val CHAT_OTHER_AGENT = "33333333-3333-4333-8333-333333333333"
@@ -36,6 +39,36 @@ fun chatEventWire(
 ): String {
     val legacyAgent = agent?.let { ""","agentId":"$it"""" }.orEmpty()
     return """{"id":"$id","seqId":$seq,"kind":"$kind","chatThreadId":"$thread"$legacyAgent,"title":"$title","selectedModel":null,"serviceTier":null,"computerUseHostId":null,"createdAt":"$CHAT_DATE"$extra}"""
+}
+
+internal fun ChatListApiFixture.rowEventTail(
+    beforeReadback: (Long) -> Unit = {}
+): MutableList<Pair<Long, String>> {
+    val initialEvents = events
+    val tail = CopyOnWriteArrayList<Pair<Long, String>>()
+    events = { request ->
+        val since = request.requestUrl?.queryParameter("sinceSeqId")?.toLong()
+        if (since == null) initialEvents(request)
+        else {
+            if (tail.isNotEmpty()) beforeReadback(since)
+            val observed = tail.filter { it.first > since }.joinToString(",") { it.second }
+            jsonResponse("""{"events":[$observed],"hasMore":false}""")
+        }
+    }
+    return tail
+}
+
+internal fun RecordedRequest.rowEvent(
+    seq: Long,
+    thread: String,
+    kind: String,
+    extra: String = "",
+): String {
+    val id = checkNotNull(requestUrl?.queryParameter("eventId"))
+    assertEquals(id, UUID.fromString(id).toString())
+    assertEquals("Bearer fixture-token", getHeader("Authorization"))
+    assertEquals(0L, bodySize)
+    return chatEventWire(id = id, seq = seq, thread = thread, kind = kind, extra = extra)
 }
 
 const val HISTORY_LAST_EVENT = "88888888-8888-4888-8888-888888888888"

@@ -49,6 +49,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -97,6 +98,7 @@ internal fun SettingsRow(
     showChevron: Boolean = onClick != null,
     valueMaxLines: Int = Int.MAX_VALUE,
     valueLeading: (@Composable () -> Unit)? = null,
+    supportingText: String? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val muted = colors.onSurfaceVariant
@@ -115,7 +117,23 @@ internal fun SettingsRow(
     ) {
         leading()
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = if (supportingText == null) null else FontWeight(550),
+            )
+            if (supportingText != null) {
+                Text(
+                    supportingText,
+                    Modifier.padding(top = 2.dp),
+                    color = muted,
+                    style =
+                        MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                        ),
+                )
+            }
             if (expandedText && value != null) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

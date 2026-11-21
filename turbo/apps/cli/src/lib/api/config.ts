@@ -7,7 +7,7 @@ export async function getToken(): Promise<string | undefined> {
 
 /**
  * Get the active token for API requests.
- * Agent runs use OKOU_TOKEN.
+ * Runs use OKOU_TOKEN.
  */
 export async function getActiveToken(): Promise<string | undefined> {
   return getToken();
@@ -26,7 +26,7 @@ export { decodeSandboxTokenPayload };
 
 /**
  * Get the active organization for API requests.
- * The organization is carried by the run-scoped agent token.
+ * The organization is carried by the Run token.
  */
 export async function getActiveOrg(): Promise<string | undefined> {
   return decodeSandboxTokenPayload()?.orgId;

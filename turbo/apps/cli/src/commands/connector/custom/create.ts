@@ -28,9 +28,7 @@ interface CreateOptions {
 function requireCustomConnectorWriteCapability(): void {
   const payload = decodeSandboxTokenPayload();
   if (payload && !payload.capabilities.includes("connector:write")) {
-    throw new Error(
-      `Custom connector creation is not enabled for this ${payload.singleAgent ? "Run" : "agent run"}`,
-    );
+    throw new Error("Custom connector creation is not enabled for this Run");
   }
 }
 

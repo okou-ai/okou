@@ -480,7 +480,7 @@ if (args[0] === "stop") {
       const stdout = mockConsoleLog.mock.calls.flat().join("\n");
       expect(stdout).toContain("hero\tassets/image-hero.webp");
       expect(stdout).toContain(join(stateDirectory, "artifacts.json"));
-      expect(stdout).toContain("only available inside the agent runtime");
+      expect(stdout).toContain("only available inside the Run");
       if (visibility === "public") {
         if (sharingUrl === undefined) {
           throw new Error("Public fixture did not provide its delivery alias");

@@ -3,6 +3,10 @@
     <string name="chat_undo_unarchived">チャットのアーカイブを解除しました</string>
     <string name="chat_undo_marked_read">チャットを既読にしました</string>
     <string name="chat_undo">元に戻す</string>
+    <string name="chat_undo_offline">%1$s\nオンラインに戻ると元に戻せます</string>
+    <string name="chat_undo_checking">元に戻せたか確認しています…</string>
+    <string name="chat_undo_failed">元に戻せませんでした</string>
+    <string name="chat_undo_unconfirmed">元に戻せたか確認できませんでした</string>
     <string name="chat_feedback_dismiss">閉じる</string>
     <string name="chat_list_offline">オフライン</string>
     <string name="chat_list_refresh_failed">チャット一覧を更新できませんでした</string>
@@ -42,6 +46,7 @@
     <string name="chat_unarchive">アーカイブを解除</string>
     <string name="chat_row_action_pending">チャットを更新しています…</string>
     <string name="chat_row_action_failed">チャットの変更を確認できませんでした。</string>
+    <string name="chat_row_action_rejected">チャットの変更を完了できませんでした。</string>
     <string name="chat_rename">チャットの名前を変更する</string>
     <string name="chat_pin">チャットをピン留めする</string>
     <string name="chat_unpin">チャットの固定を解除する</string>

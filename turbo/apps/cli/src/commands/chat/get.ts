@@ -1,4 +1,3 @@
-import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
 import chalk from "chalk";
 import { Command } from "commander";
 
@@ -45,13 +44,23 @@ Notes:
         await getPlatformOrigin(),
       ).href;
       if (options.json) {
-        const fields = chatThreadMetadataContract.get.responses[200].shape;
-        const metadata = Object.fromEntries(
-          Object.entries(thread).filter(([key]) => {
-            return Object.hasOwn(fields, key);
+        console.log(
+          JSON.stringify({
+            id: thread.id,
+            title: thread.title,
+            selectedModel: thread.selectedModel,
+            modelSettings: thread.modelSettings,
+            reasoningEffort: thread.reasoningEffort,
+            serviceTier: thread.serviceTier,
+            pinnedAt: thread.pinnedAt,
+            archived: thread.archived,
+            hidden: thread.hidden,
+            muted: thread.muted,
+            computerUseHostId: thread.computerUseHostId,
+            cloudBrowserEnabled: thread.cloudBrowserEnabled,
+            url,
           }),
         );
-        console.log(JSON.stringify({ ...metadata, url }));
         return;
       }
 

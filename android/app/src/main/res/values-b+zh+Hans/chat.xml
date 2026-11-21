@@ -1,9 +1,13 @@
 <resources>
-    <string name="chat_undo_archived">聊天已归档</string>
-    <string name="chat_undo_unarchived">聊天已取消归档</string>
-    <string name="chat_undo_marked_read">聊天已标为已读</string>
+    <string name="chat_undo_archived">已归档</string>
+    <string name="chat_undo_unarchived">已取消归档</string>
+    <string name="chat_undo_marked_read">已标为已读</string>
     <string name="chat_undo">撤销</string>
-    <string name="chat_feedback_dismiss">关闭</string>
+    <string name="chat_undo_offline">%1$s · 联网后可撤销</string>
+    <string name="chat_undo_checking">正在核对撤销结果</string>
+    <string name="chat_undo_failed">未能撤销</string>
+    <string name="chat_undo_unconfirmed">撤销结果尚未确认</string>
+    <string name="chat_feedback_dismiss">关闭提示</string>
     <string name="chat_list_offline">离线</string>
     <string name="chat_list_refresh_failed">列表刷新失败</string>
     <string name="chat_list_first_load_failed">暂时无法加载</string>
@@ -42,6 +46,7 @@
     <string name="chat_unarchive">取消归档</string>
     <string name="chat_row_action_pending">正在更新聊天…</string>
     <string name="chat_row_action_failed">无法确认聊天更改。</string>
+    <string name="chat_row_action_rejected">未能完成聊天更改。</string>
     <string name="chat_rename">重命名聊天</string>
     <string name="chat_pin">置顶聊天</string>
     <string name="chat_unpin">取消置顶</string>

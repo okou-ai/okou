@@ -144,7 +144,7 @@ export const phoneUseCommand = new Command("phone-use")
   .description("Internal iPhone automation through Okou iOS Use")
   .addHelpText(
     "after",
-    `\nOpen Okou iOS Use, sign in and go online. Online means connected with control available. Turn on your iPhone in this Web Chat's Connectors menu. Start a new Run after granting access.\nStart a session, observe the foreground UI and open the app requested by the task. The companion can observe its own App, the Home screen and alerts. Observe before every tap, type or swipe. Preserve operation IDs. Never replay unknown effects. Secrets and device unlock require the owner.\nAuthorized input runs directly without local screen, label or gesture classification. Follow the task authorization and the Agent's applicable confirmation rules. Use status or wait <operationId> to read existing receipts. An approval_required receipt comes from an older companion that needs updating.\n`,
+    `\nOpen Okou iOS Use, sign in and go online. Online means connected with control available. Turn on your iPhone in this Web Chat's Connectors menu. Start a new Run after granting access.\nStart a session, observe the foreground UI and open the app requested by the task. The companion can observe its own App, the Home screen and alerts. Observe before every tap, type or swipe. Preserve operation IDs. Never replay unknown effects. Secrets and device unlock require the owner.\nAuthorized input runs directly without local screen, label or gesture classification. Follow the task authorization and applicable confirmation rules. Use status or wait <operationId> to read existing receipts. An approval_required receipt comes from an older companion that needs updating.\n`,
   );
 phoneUseCommand
   .command("devices")

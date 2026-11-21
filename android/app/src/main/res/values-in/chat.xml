@@ -3,6 +3,10 @@
     <string name="chat_undo_unarchived">Chat dikeluarkan dari arsip</string>
     <string name="chat_undo_marked_read">Chat ditandai sudah dibaca</string>
     <string name="chat_undo">Urungkan</string>
+    <string name="chat_undo_offline">%1$s\nUrungkan perubahan saat kembali online.</string>
+    <string name="chat_undo_checking">Memeriksa hasil pengurungan…</string>
+    <string name="chat_undo_failed">Perubahan tidak dapat diurungkan.</string>
+    <string name="chat_undo_unconfirmed">Pengurungan perubahan tidak dapat dikonfirmasi.</string>
     <string name="chat_feedback_dismiss">Tutup</string>
     <string name="chat_list_offline">Offline</string>
     <string name="chat_list_refresh_failed">Daftar chat gagal diperbarui</string>
@@ -42,6 +46,7 @@
     <string name="chat_unarchive">Batalkan pengarsipan</string>
     <string name="chat_row_action_pending">Memperbarui chat…</string>
     <string name="chat_row_action_failed">Perubahan chat tidak dapat dikonfirmasi.</string>
+    <string name="chat_row_action_rejected">Perubahan chat tidak dapat diselesaikan.</string>
     <string name="chat_rename">Ganti nama chat</string>
     <string name="chat_pin">Sematkan chat</string>
     <string name="chat_unpin">Lepas sematan chat</string>

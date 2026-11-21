@@ -11,7 +11,6 @@ import { chatCommand } from "../index";
 
 const THREAD_ID = "00000000-0000-4000-8000-000000000001";
 const OTHER_THREAD_ID = "00000000-0000-4000-8000-000000000002";
-const AGENT_ID = "00000000-0000-4000-8000-000000000010";
 const SEND_URL = "http://localhost:3000/api/chat/events";
 
 function metadataUrl(threadId: string): string {
@@ -57,7 +56,6 @@ describe("okou chat send command", () => {
       http.get(metadataUrl(THREAD_ID), () => {
         return HttpResponse.json({
           id: THREAD_ID,
-          agentId: AGENT_ID,
           title: "Launch plan",
           selectedModel: null,
         });
@@ -66,7 +64,6 @@ describe("okou chat send command", () => {
         expect(request.headers.get("authorization")).toBe("Bearer test-token");
         const body = (await request.json()) as Record<string, unknown>;
         sentEventId = String(body.clientEventId);
-        expect(body).not.toHaveProperty("agentId");
         expect(body).toMatchObject({
           threadId: THREAD_ID,
           prompt: "Continue the analysis",
@@ -117,7 +114,6 @@ describe("okou chat send command", () => {
       http.get(metadataUrl(OTHER_THREAD_ID), () => {
         return HttpResponse.json({
           id: OTHER_THREAD_ID,
-          agentId: AGENT_ID,
           title: "Busy thread",
           selectedModel: null,
         });
@@ -193,14 +189,12 @@ describe("okou chat send command", () => {
       http.get(metadataUrl(THREAD_ID), () => {
         return HttpResponse.json({
           id: THREAD_ID,
-          agentId: AGENT_ID,
           title: "Launch plan",
           selectedModel: null,
         });
       }),
       http.post(SEND_URL, async ({ request }) => {
         const body = (await request.json()) as Record<string, unknown>;
-        expect(body).not.toHaveProperty("agentId");
         expect(body).toMatchObject({
           threadId: THREAD_ID,
           prompt: "Review this deck",
@@ -246,7 +240,6 @@ describe("okou chat send command", () => {
       http.get(metadataUrl(THREAD_ID), () => {
         return HttpResponse.json({
           id: THREAD_ID,
-          agentId: AGENT_ID,
           title: "Launch plan",
           selectedModel: null,
         });

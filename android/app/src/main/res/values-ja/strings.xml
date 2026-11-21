@@ -48,7 +48,7 @@
     <string name="auth_workspace">現在のワークスペース</string>
     <string name="auth_switch_workspace">ワークスペースを切り替え</string>
     <string name="auth_browser_unavailable">ワークスペースの設定を開くにはブラウザをインストールしてください。</string>
-    <string name="preferences_title">共有設定</string>
+    <string name="preferences_title">外観と地域</string>
     <string name="preference_save_failed">設定を保存できませんでした。選択した設定は引き続き有効です。</string>
     <string name="preference_refresh_failed">設定を更新できませんでした。再試行してください。</string>
     <string name="preference_color_theme">カラーテーマ</string>
@@ -150,8 +150,6 @@
     <string name="settings_account">アカウント</string>
     <string name="chat_project_expansion_read_failed">このデバイスでプロジェクトの開閉状態を読み込めませんでした。</string>
     <string name="chat_project_expansion_save_failed">このデバイスでプロジェクトの開閉状態を保存できませんでした。</string>
-    <string name="settings_switch">切り替え</string>
-    <string name="settings_view">表示</string>
     <string name="settings_cancel">キャンセル</string>
     <string name="settings_saving">保存中…</string>
     <string name="settings_sign_out_title">ログアウトしますか？</string>
@@ -160,4 +158,8 @@
     <string name="updates_waiting_to_download">ダウンロード待ち</string>
     <string name="instructions_placeholder">Okou に覚えておいてほしいことはありますか？</string>
     <string name="instructions_save_when_online">接続すると変更を保存できます。</string>
+    <string name="settings_conversation">チャット</string>
+    <string name="settings_timezone">タイムゾーン</string>
+    <string name="settings_timezone_hint">新しいスケジュールタスクのデフォルトのタイムゾーン。</string>
+    <string name="settings_timezone_utc">協定世界時（UTC）</string>
 </resources>

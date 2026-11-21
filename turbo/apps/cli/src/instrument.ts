@@ -19,7 +19,6 @@ const DSN = process.env.SENTRY_DSN ?? __DEFAULT_SENTRY_DSN__;
 const OPERATIONAL_ERROR_PATTERNS = [
   /not authenticated/i,
   /not found/i,
-  /agent not found/i,
   /version not found/i,
   /session not found/i,
   /file not found/i,

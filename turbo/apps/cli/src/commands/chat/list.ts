@@ -117,7 +117,29 @@ Lists your chats in the current workspace. Supports archived, unread, Project an
             ...(options.projectId !== undefined || options.limit === "all"
               ? { complete: threads.length === matchingThreads.length }
               : {}),
-            threads,
+            threads: threads.map((thread) => {
+              return {
+                id: thread.id,
+                projectId: thread.projectId,
+                title: thread.title,
+                sortAt: thread.sortAt,
+                createdAt: thread.createdAt,
+                updatedAt: thread.updatedAt,
+                pinnedAt: thread.pinnedAt,
+                pinOrder: thread.pinOrder,
+                archived: thread.archived,
+                hidden: thread.hidden,
+                muted: thread.muted,
+                renamedAt: thread.renamedAt,
+                selectedModel: thread.selectedModel,
+                modelSettings: thread.modelSettings,
+                reasoningEffort: thread.reasoningEffort,
+                serviceTier: thread.serviceTier,
+                computerUseHostId: thread.computerUseHostId,
+                cloudBrowserEnabled: thread.cloudBrowserEnabled,
+                ...("unreadAt" in thread ? { unreadAt: thread.unreadAt } : {}),
+              };
+            }),
           }),
         );
         return;

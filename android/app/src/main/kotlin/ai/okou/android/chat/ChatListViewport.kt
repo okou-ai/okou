@@ -70,7 +70,7 @@ private enum class ListLayer {
 internal fun ChatListViewport(
     modifier: Modifier,
     listState: LazyListState,
-    lastContentKey: String?,
+    contentChangeKey: Any?,
     status: ChatListStatus?,
     newChatEnabled: Boolean,
     newChat: () -> Unit,
@@ -127,7 +127,7 @@ internal fun ChatListViewport(
             } else null
         val rows =
             subcompose(ListLayer.Rows) {
-                    KeepLazyListEndInView(listState, reserve, height, short, lastContentKey)
+                    KeepLazyListEndInView(listState, reserve, height, short, contentChangeKey)
                     content(reserve, inline)
                 }
                 .single()

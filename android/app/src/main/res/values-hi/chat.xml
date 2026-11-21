@@ -3,6 +3,10 @@
     <string name="chat_undo_unarchived">चैट संग्रह से निकाली गई</string>
     <string name="chat_undo_marked_read">चैट पढ़ी हुई चिह्नित की गई</string>
     <string name="chat_undo">पूर्ववत करें</string>
+    <string name="chat_undo_offline">%1$s\nदोबारा ऑनलाइन होने पर बदलाव पूर्ववत करें।</string>
+    <string name="chat_undo_checking">पूर्ववत करने का नतीजा जाँचा जा रहा है…</string>
+    <string name="chat_undo_failed">बदलाव पूर्ववत नहीं किया जा सका।</string>
+    <string name="chat_undo_unconfirmed">पुष्टि नहीं हो सकी कि बदलाव पूर्ववत हुआ।</string>
     <string name="chat_feedback_dismiss">बंद करें</string>
     <string name="chat_list_offline">ऑफ़लाइन</string>
     <string name="chat_list_refresh_failed">चैट सूची रीफ़्रेश नहीं हुई</string>
@@ -43,6 +47,7 @@
     <string name="chat_unarchive">आर्काइव से निकालें</string>
     <string name="chat_row_action_pending">चैट अपडेट हो रही है…</string>
     <string name="chat_row_action_failed">चैट में हुए बदलाव की पुष्टि नहीं हो सकी।</string>
+    <string name="chat_row_action_rejected">चैट में बदलाव पूरा नहीं हो सका।</string>
     <string name="chat_rename">चैट का नाम बदलें</string>
     <string name="chat_pin">चैट पिन करें</string>
     <string name="chat_unpin">चैट अनपिन करें</string>
