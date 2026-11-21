@@ -150,7 +150,7 @@ internal class ProjectListOwner(
                 checkpoint.events.any { it.id == eventId })
 
     private fun confirmedRows(source: ChatListSource? = state.source): List<ConfirmedProject> =
-        if (source == null) emptyList() else confirmedProjects?.rows.orEmpty()
+        if (source == null) emptyList() else checkNotNull(confirmedProjects).rows
 
     private fun publishProjects(snapshot: ProjectListUiState) {
         val rows = confirmedRows(snapshot.source)
@@ -250,8 +250,8 @@ internal class ProjectListOwner(
                         val previous = confirmedProjects
                         val result = projectSync.synchronize(previous?.checkpoint)
                         val candidate =
-                            if (!result.changed && previous != null) previous
-                            else replayConfirmedProjects(result.checkpoint)
+                            if (result.changed) replayConfirmedProjects(result.checkpoint)
+                            else checkNotNull(previous)
                         requireCurrent()
                         val saved =
                             if (candidate === previous && !state.cacheUnavailable)
