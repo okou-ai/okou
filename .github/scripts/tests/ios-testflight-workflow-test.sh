@@ -94,7 +94,7 @@ def ancestors(name):
     needs = [needs] if isinstance(needs, str) else needs
     return set(needs).union(*(ancestors(job) for job in needs))
 
-def started(event, needed='true', release=False, reuse='', cancelled=False, **forced):
+def started(event, needed='true', release=False, reuse='', cancelled=False, scripts='true', **forced):
     """Evaluate the actual job conditions in dependency order, as Actions does."""
     results = {}
     for name in ['detect', 'script-checks', 'resolve-release', *native_jobs]:
@@ -105,6 +105,7 @@ def started(event, needed='true', release=False, reuse='', cancelled=False, **fo
         if selected:
             detected = results.get('detect') == 'success'
             context = {'github.event_name': event, '!cancelled()': True,
+                       'needs.detect.outputs.scripts-needed': scripts if detected else '',
                        'needs.detect.outputs.needed': needed if detected else '',
                        'needs.detect.outputs.release': str(release).lower() if detected else '',
                        'needs.resolve-release.outputs.reuse': reuse if results.get('resolve-release') == 'success' else ''}
@@ -133,6 +134,8 @@ for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
                         expected.add('resolve-release')
             assert started(event, needed, release, reuse='false') == expected, (event, needed, release)
 ordinary = started('merge_group')
+assert started('merge_group', scripts='false') == ordinary
+assert 'publish-archive' not in started('merge_group', scripts='true', **{'script-checks': 'skipped'})
 # Verified reuse omits every native job; a miss runs all of them after the resolver.
 assert started('merge_group', release=True, reuse='true') == {'resolve-release'}
 assert started('merge_group', release=True, reuse='false') == ordinary | {'resolve-release'}
