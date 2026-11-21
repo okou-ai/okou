@@ -96,6 +96,7 @@ function officialThreadSettingsCondition(
   return and(
     eq(chatThreads.id, threadId),
     eq(chatThreads.userId, owner.userId),
+    eq(chatThreads.orgId, owner.orgId),
     exists(
       new QueryBuilder()
         .select({ id: workflows.id })
@@ -141,7 +142,6 @@ const readOfficialWorkflowThread$ = command(
     const [thread] = await get(db$)
       .select({
         id: chatThreads.id,
-        agentId: chatThreads.agentId,
         hidden: chatThreads.hidden,
         selectedModel: chatThreads.selectedModel,
         codexServiceTier: chatThreads.codexServiceTier,
@@ -165,6 +165,7 @@ const readOfficialWorkflowThread$ = command(
           eq(workflows.orgId, owner.orgId),
           eq(workflows.ownerUserId, owner.userId),
           eq(chatThreads.userId, owner.userId),
+          eq(chatThreads.orgId, owner.orgId),
           isNotNull(workflows.officialDefinitionName),
         ),
       )
@@ -185,7 +186,7 @@ export const synchronizeOfficialWorkflowThread$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const thread = await set(readOfficialWorkflowThread$, owner, signal);
-    if (!thread?.definitionName || !thread.agentId) {
+    if (!thread?.definitionName) {
       return false;
     }
     await set(revokeOfficialThreadUserInputs$, thread.id, signal);
@@ -216,7 +217,7 @@ export const synchronizeOfficialWorkflowThread$ = command(
         .update(chatThreads)
         .set({ hidden, updatedAt: nowDate() })
         .where(and(current, ne(chatThreads.hidden, hidden)))
-        .returning({ id: chatThreads.id, agentId: chatThreads.agentId });
+        .returning({ id: chatThreads.id });
       await database.execute(
         chatThreadEventInsertSql(
           {
@@ -230,7 +231,6 @@ export const synchronizeOfficialWorkflowThread$ = command(
           {
             cte: sql`changed_thread AS (${changed.getSQL()})`,
             gate: sql`EXISTS (SELECT 1 FROM changed_thread)`,
-            agentId: sql`(SELECT agent_id FROM changed_thread)`,
           },
         ),
       );
