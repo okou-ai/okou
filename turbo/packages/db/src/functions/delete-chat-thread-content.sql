@@ -111,14 +111,14 @@ BEGIN
       RETURNING last_seq_id
     )
     INSERT INTO public.chat_thread_events (
-      id, user_id, org_id, seq_id, chat_thread_id, kind, agent_id,
+      id, user_id, org_id, seq_id, chat_thread_id, kind,
       title, pin_order, muted, hidden, selected_model,
       model_settings, model_settings_patch, service_tier, computer_use_host_id,
       cloud_browser_enabled, created_at
     )
     SELECT COALESCE(p_event_id, gen_random_uuid()::text)::uuid,
       p_user_id, p_org_id, reserved.last_seq_id, owned_thread.id,
-      'deleted'::public.chat_thread_event_kind, owned_thread.agent_id,
+      'deleted'::public.chat_thread_event_kind,
       NULL, NULL, NULL, NULL, NULL,
       NULL::jsonb, NULL::jsonb, NULL, NULL::uuid,
       false, timezone('UTC', now())

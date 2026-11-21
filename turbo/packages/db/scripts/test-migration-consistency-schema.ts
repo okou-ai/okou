@@ -1459,7 +1459,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "68de3d84dc168dfbaad2a71d2e5789b3",
+    bodyHash: "f1162fb0087eae27af46180e5052de60",
   },
   {
     schemaName: "public",

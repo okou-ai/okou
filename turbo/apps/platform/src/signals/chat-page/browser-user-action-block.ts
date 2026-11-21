@@ -230,11 +230,7 @@ function hasValidBrowserUserActionClaims(
   ) {
     return false;
   }
-  return (
-    !context ||
-    (chatActionIdMatches(agentId, context.agentId) &&
-      chatActionIdMatches(threadId, context.threadId))
-  );
+  return !context || chatActionIdMatches(threadId, context.threadId);
 }
 
 function hasValidBrowserUserActionParts(args: {
@@ -320,7 +316,6 @@ function actionMatches(
 ): action is BrowserUserAction {
   return (
     action.requestToken === descriptor.requestToken &&
-    chatActionIdMatches(action.agentId, descriptor.agentId) &&
     chatActionIdMatches(action.threadId, descriptor.threadId)
   );
 }

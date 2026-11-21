@@ -40,7 +40,6 @@ type BankingAccessResult =
 
 interface BankingRunContext {
   readonly runId: string;
-  readonly agentId: string;
   readonly triggerSource: string | null;
 }
 
@@ -98,7 +97,6 @@ export const recordBankingAudit$ = command(
 function bankingRunColumns() {
   return {
     runId: agentRuns.id,
-    agentId: agentRuns.agentId,
     triggerSource: agentRuns.triggerSource,
   };
 }
@@ -121,11 +119,7 @@ function bankingGrantColumns() {
   };
 }
 
-function bankingGrantPredicate(
-  auth: BankingAuth,
-  agentId: string,
-  nowValue: Date,
-) {
+function bankingGrantPredicate(auth: BankingAuth, nowValue: Date) {
   return and(
     eq(bankingConnections.orgId, auth.orgId),
     eq(bankingConnections.userId, auth.userId),
@@ -142,7 +136,6 @@ function bankingGrantPredicate(
     ),
     eq(bankingAgentEnablements.orgId, auth.orgId),
     eq(bankingAgentEnablements.userId, auth.userId),
-    eq(bankingAgentEnablements.agentId, agentId),
     isNull(bankingAgentEnablements.revokedAt),
     gt(bankingAgentEnablements.expiresAt, nowValue),
   );
@@ -204,9 +197,7 @@ export const authorizeBankingAccess$ = command(
       .from(agentRuns)
       .where(bankingRunPredicate(auth))
       .limit(1);
-    const run: BankingRunContext | null = runRow?.agentId
-      ? { ...runRow, agentId: runRow.agentId }
-      : null;
+    const run: BankingRunContext | undefined = runRow;
     if (!run) {
       return await set(denyBankingAccess$, auth, action, providerAccountId, {
         failureCode: "RUN_NOT_FOUND",
@@ -222,13 +213,13 @@ export const authorizeBankingAccess$ = command(
         bankingAgentEnablements,
         eq(bankingAgentEnablements.connectionId, bankingConnections.id),
       )
-      .where(bankingGrantPredicate(auth, run.agentId, nowValue))
+      .where(bankingGrantPredicate(auth, nowValue))
       .limit(1);
     const grant: BankingGrantContext | null = grantRow ?? null;
     if (!grant) {
       return await set(denyBankingAccess$, auth, action, providerAccountId, {
         failureCode: "NO_ACTIVE_GRANT",
-        message: "Banking is not enabled for this agent",
+        message: "Banking is not enabled for this workspace member",
       });
     }
 
@@ -260,7 +251,7 @@ export const authorizeBankingAccess$ = command(
       return await set(denyBankingAccess$, auth, action, providerAccountId, {
         connectionId: grant.connectionId,
         failureCode: "ACCOUNT_NOT_ALLOWED",
-        message: "Banking account is not enabled for this agent",
+        message: "Banking account is not enabled for this workspace member",
       });
     }
 

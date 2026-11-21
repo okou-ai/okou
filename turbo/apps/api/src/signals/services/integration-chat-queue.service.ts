@@ -199,7 +199,7 @@ function integrationModelReplacementSql(
       RETURNING last_seq_id
     ), model_events AS (
       INSERT INTO ${chatThreadEvents}
-        (id, user_id, org_id, seq_id, chat_thread_id, kind, agent_id,
+        (id, user_id, org_id, seq_id, chat_thread_id, kind,
          selected_model, service_tier, cloud_browser_enabled, created_at)
       SELECT CASE WHEN event.ordinal = 0 THEN ${modelId}::uuid ELSE ${tierId}::uuid END,
         ${replacement.userId}, ${replacement.orgId},
@@ -207,7 +207,6 @@ function integrationModelReplacementSql(
         ${replacement.chatThreadId}::uuid,
         CASE WHEN event.ordinal = 0 THEN 'model_selection_updated'::chat_thread_event_kind
           ELSE 'service_tier_updated'::chat_thread_event_kind END,
-        ${replacement.agentId}::uuid,
         CASE WHEN event.ordinal = 0 THEN ${replacement.selectedModel} ELSE NULL END,
         CASE WHEN event.ordinal = 1 THEN ${tier} ELSE NULL END, false,
         ${sql.param(updatedAt, chatThreadEvents.createdAt)}

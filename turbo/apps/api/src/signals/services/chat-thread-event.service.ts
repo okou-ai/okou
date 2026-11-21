@@ -5,17 +5,7 @@ import {
   type ModelSettings,
   type ModelSettingsPatch,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import {
-  and,
-  asc,
-  eq,
-  exists,
-  gt,
-  notExists,
-  or,
-  sql,
-  type SQL,
-} from "drizzle-orm";
+import { and, asc, eq, gt, notExists, sql, type SQL } from "drizzle-orm";
 import { alias, unionAll } from "drizzle-orm/pg-core";
 import type {
   ChatThreadEvent,
@@ -23,6 +13,7 @@ import type {
   CodexServiceTier,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { agents } from "@okouai/db/schema/agent";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   chatThreadEventSequences,
   chatThreadEvents,
@@ -141,7 +132,7 @@ export function chatThreadEventInsertPlan(
       SET last_seq_id = ${chatThreadEventSequences.lastSeqId} + ${eventCount}
       RETURNING last_seq_id`;
   const insertion = sql`INSERT INTO ${chatThreadEvents} (
-      id, user_id, org_id, seq_id, chat_thread_id, kind, agent_id, project_id,
+      id, user_id, org_id, seq_id, chat_thread_id, kind, project_id,
       title,
       pin_order, muted, hidden, selected_model, model_settings, model_settings_patch,
       service_tier, computer_use_host_id, cloud_browser_enabled, created_at
@@ -149,7 +140,7 @@ export function chatThreadEventInsertPlan(
       ${event.id},
       ${args.userId}, ${orgId}, ${event.sequence},
       ${chatThreadId}::uuid, ${event.kind},
-      ${agentId}::uuid, ${args.projectId ?? null}::uuid,
+      ${args.projectId ?? null}::uuid,
       ${args.title ?? null}, ${args.pinOrder ?? null}, ${args.muted ?? null}, ${args.hidden ?? null},
       ${args.selectedModel ?? null},
       ${args.modelSettings === undefined ? null : JSON.stringify(args.modelSettings)}::jsonb,
@@ -265,13 +256,27 @@ type ChatThreadEventRow = {
   readonly createdAt: Date;
 };
 
+// Compatibility for event consumers that still expect an execution reference.
+function eventExecutorId(
+  eventTable: "chat_thread_events" | "page_chat_thread_event",
+) {
+  const event = sql.identifier(eventTable);
+  return sql<string | null>`CASE WHEN ${event}.kind = 'deleted'
+    THEN ${event}.chat_thread_id
+    ELSE (SELECT thread.agent_id FROM ${chatThreads} AS thread
+      WHERE thread.id = ${event}.chat_thread_id
+        AND thread.user_id = ${event}.user_id
+        AND thread.org_id = ${event}.org_id)
+    END`;
+}
+
 const chatThreadEventSelection = Object.freeze({
   id: chatThreadEvents.id,
   seqId: chatThreadEvents.seqId,
   kind: chatThreadEvents.kind,
   projectId: chatThreadEvents.projectId,
   chatThreadId: chatThreadEvents.chatThreadId,
-  agentId: chatThreadEvents.agentId,
+  agentId: eventExecutorId("chat_thread_events"),
   title: chatThreadEvents.title,
   pinOrder: chatThreadEvents.pinOrder,
   muted: chatThreadEvents.muted,
@@ -291,7 +296,7 @@ const pageChatThreadEventSelection = Object.freeze({
   kind: pageChatThreadEvent.kind,
   projectId: pageChatThreadEvent.projectId,
   chatThreadId: pageChatThreadEvent.chatThreadId,
-  agentId: pageChatThreadEvent.agentId,
+  agentId: eventExecutorId("page_chat_thread_event"),
   title: pageChatThreadEvent.title,
   pinOrder: pageChatThreadEvent.pinOrder,
   muted: pageChatThreadEvent.muted,
@@ -423,17 +428,6 @@ function chatThreadEventRowsAfterCursor(args: {
             eq(pageChatThreadEvent.userId, args.userId),
             eq(pageChatThreadEvent.orgId, args.orgId),
             gt(pageChatThreadEvent.seqId, validCursor.seqId),
-            // Tombstones for Agent deletion outlive the Agent itself. Other
-            // events still require a canonical Agent to be returned.
-            or(
-              eq(pageChatThreadEvent.kind, "deleted"),
-              exists(
-                db
-                  .select({ id: agents.id })
-                  .from(agents)
-                  .where(eq(agents.id, pageChatThreadEvent.agentId)),
-              ),
-            ),
           ),
         )
         .orderBy(asc(pageChatThreadEvent.seqId))
@@ -488,15 +482,6 @@ export function getChatThreadEventsSince(args: {
             and(
               eq(chatThreadEvents.userId, args.userId),
               eq(chatThreadEvents.orgId, args.orgId),
-              or(
-                eq(chatThreadEvents.kind, "deleted"),
-                exists(
-                  db
-                    .select({ id: agents.id })
-                    .from(agents)
-                    .where(eq(agents.id, chatThreadEvents.agentId)),
-                ),
-              ),
             ),
           )
           .orderBy(asc(chatThreadEvents.seqId))

@@ -68,7 +68,6 @@ function createAgentDraftReader(
         and(
           eq(agentDrafts.userId, auth.userId),
           eq(agentDrafts.orgId, auth.orgId),
-          eq(agentDrafts.agentId, params.id),
         ),
       )
       .limit(1);
@@ -130,7 +129,6 @@ function createAgentDraftRoutes(
       const draft = {
         userId: auth.userId,
         orgId: auth.orgId,
-        agentId: params.id,
         draftUserMessage,
         draftAttachments,
         updatedAt,
@@ -139,7 +137,6 @@ function createAgentDraftRoutes(
         const keyPredicate = and(
           eq(agentDrafts.userId, draft.userId),
           eq(agentDrafts.orgId, draft.orgId),
-          eq(agentDrafts.agentId, draft.agentId),
         );
         if (
           !draft.draftUserMessage &&
@@ -159,11 +156,7 @@ function createAgentDraftRoutes(
           .insert(agentDrafts)
           .values(draft)
           .onConflictDoUpdate({
-            target: [
-              agentDrafts.userId,
-              agentDrafts.orgId,
-              agentDrafts.agentId,
-            ],
+            target: [agentDrafts.userId, agentDrafts.orgId],
             set: update,
           });
       })();

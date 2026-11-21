@@ -1003,7 +1003,7 @@ test("prevents an in-flight OAuth callback from resurrecting a disconnected gran
   ).toBeFalsy();
 });
 
-test("shares a workspace wallet across agents while isolating purchase approvals", async () => {
+test("shares wallet activity across chats while restricting credentials to the original chat", async () => {
   const fixture = await carrier();
   server.use(
     tokenHandler(),
@@ -1036,7 +1036,7 @@ test("shares a workspace wallet across agents while isolating purchase approvals
       headers: otherAgent.headers,
       params: { id: created.body.id },
     }),
-    [404],
+    [200],
   );
   await accept(
     client().spendCredentials({
@@ -1044,7 +1044,7 @@ test("shares a workspace wallet across agents while isolating purchase approvals
       params: { id: created.body.id },
       body: {},
     }),
-    [404],
+    [409],
   );
   const secondPurchase = { ...purchase(), test: false };
   spendProvider(secondPurchase);
@@ -2811,13 +2811,16 @@ test("paginates owner-isolated recorded spend history and retains it after reaut
         [200],
       )
     ).body.data,
-  ).toStrictEqual([]);
+  ).toEqual([
+    expect.objectContaining({ id: second.body.id, canRefresh: false }),
+    expect.objectContaining({ id: first.body.id, canRefresh: false }),
+  ]);
   await accept(
     client().listSpends({
       headers: other.headers,
       query: { startingAfter: first.body.id },
     }),
-    [400],
+    [200],
   );
   server.use(
     tokenHandler({

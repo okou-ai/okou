@@ -44,13 +44,13 @@ export const walletApprovalStatus$ = command(
             linkWalletSpends.authorizationId,
           ),
           isNull(linkWalletConnections.revokedAt),
+          isNull(linkWalletConnections.retiredAt),
         ),
       )
       .where(
         and(
           eq(linkWalletSpends.orgId, owner.orgId),
           eq(linkWalletSpends.userId, owner.userId),
-          eq(linkWalletSpends.agentId, input.agentId),
           eq(linkWalletSpends.approvalThreadId, input.threadId),
           eq(linkWalletSpends.approvalUrl, input.approvalUrl),
         ),

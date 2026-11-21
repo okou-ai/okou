@@ -57,7 +57,7 @@ const approvalToObserve$ = command(
 
     // Provenance is server-written at purchase creation, not supplied by Worker.
     const [source] = await database
-      .select({ id: agentRuns.id })
+      .select({ id: agentRuns.id, agentId: chatThreads.agentId })
       .from(agentRuns)
       .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
       .where(
@@ -66,15 +66,15 @@ const approvalToObserve$ = command(
           eq(agentRuns.triggerSource, "web"),
           eq(agentRuns.orgId, row.orgId),
           eq(agentRuns.userId, row.userId),
-          eq(agentRuns.agentId, row.agentId),
+          eq(agentRuns.agentId, chatThreads.agentId),
           eq(chatThreads.id, row.approvalThreadId),
           eq(chatThreads.userId, row.userId),
-          eq(chatThreads.agentId, row.agentId),
+          eq(chatThreads.orgId, row.orgId),
         ),
       )
       .limit(1);
     signal.throwIfAborted();
-    if (!source) {
+    if (!source?.agentId) {
       return undefined;
     }
     const [delivered] = await database
@@ -88,7 +88,11 @@ const approvalToObserve$ = command(
     if (delivered) {
       return undefined;
     }
-    return { ...row, approvalThreadId: row.approvalThreadId };
+    return {
+      ...row,
+      agentId: source.agentId,
+      approvalThreadId: row.approvalThreadId,
+    };
   },
 );
 

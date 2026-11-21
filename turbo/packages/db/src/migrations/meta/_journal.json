@@ -3669,6 +3669,13 @@
       "when": 1795210374026,
       "tag": "1602_retire_chat_thread_reassigned_agent_id",
       "breakpoints": true
+    },
+    {
+      "idx": 1603,
+      "version": "7",
+      "when": 1795222694393,
+      "tag": "1603_retire_secondary_agent_columns",
+      "breakpoints": true
     }
   ]
 }

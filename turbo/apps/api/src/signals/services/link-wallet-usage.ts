@@ -56,7 +56,7 @@ export function recordWalletConnectionUsage(
  * of payment. Explicit fields exclude card data, tokens, URLs and purchase text.
  */
 export function recordWalletSpendUsage(
-  spend: WalletUsageOwner & {
+  spend: Omit<WalletUsageOwner, "agentId"> & {
     readonly id: string;
     readonly authorizationId: string;
     readonly intentId: string;
@@ -70,7 +70,6 @@ export function recordWalletSpendUsage(
     eventId: `${spend.id}:${event}:${status}`,
     userId: spend.userId,
     orgId: spend.orgId,
-    agentId: spend.agentId,
     authorizationId: spend.authorizationId,
     spendId: spend.id,
     intentId: spend.intentId,

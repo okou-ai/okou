@@ -66,7 +66,6 @@ export const chatThreadEvents = pgTable(
     chatThreadId: uuid("chat_thread_id").notNull(),
     projectId: uuid("project_id"),
     kind: chatThreadEventKind("kind").notNull(),
-    agentId: uuid("agent_id"),
     title: text("title"),
     pinOrder: text("pin_order"),
     /** Metadata-only sort_touched payload; NULL means no mute change. */
