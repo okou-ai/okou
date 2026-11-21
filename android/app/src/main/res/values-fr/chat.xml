@@ -28,7 +28,6 @@
     <string name="chat_project_empty">Aucune discussion dans ce projet.</string>
     <string name="chat_empty">Aucune discussion dans cette vue.</string>
     <string name="chat_untitled">Discussion sans titre</string>
-    <string name="chat_agent_identity">Okou · %1$s</string>
     <string name="chat_pinned">Épinglée</string>
     <string name="chat_active">Active</string>
     <string name="chat_actions">Actions de la discussion</string>

@@ -26,7 +26,6 @@
     <string name="chat_project_empty">此專案尚無聊天。</string>
     <string name="chat_empty">此檢視尚無聊天。</string>
     <string name="chat_untitled">未命名聊天</string>
-    <string name="chat_agent_identity">Okou · %1$s</string>
     <string name="chat_pinned">已置頂</string>
     <string name="chat_active">活躍</string>
     <string name="chat_actions">聊天操作</string>

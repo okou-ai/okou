@@ -28,7 +28,6 @@
     <string name="chat_project_empty">No hay chats en este proyecto.</string>
     <string name="chat_empty">No hay chats en esta vista.</string>
     <string name="chat_untitled">Chat sin título</string>
-    <string name="chat_agent_identity">Okou · %1$s</string>
     <string name="chat_pinned">Fijado</string>
     <string name="chat_active">Activo</string>
     <string name="chat_actions">Acciones del chat</string>

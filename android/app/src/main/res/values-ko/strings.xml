@@ -99,8 +99,6 @@
     <string name="composer_message">메시지</string>
     <string name="composer_send">보내기</string>
     <string name="composer_local_failed">이 기기에 초안 변경 사항을 저장하지 못했습니다.</string>
-    <string name="composer_target_loading">대화 사용 가능 여부 확인 중…</string>
-    <string name="composer_target_unavailable">이 계정에서는 새 대화를 사용할 수 없습니다.</string>
     <string name="composer_unconfirmed">메시지 전송 결과를 아직 확인하지 못했습니다.</string>
     <string name="composer_sending">전송 중…</string>
     <string name="composer_check">전송 결과 확인</string>
