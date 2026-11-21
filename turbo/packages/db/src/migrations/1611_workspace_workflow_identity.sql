@@ -17,7 +17,8 @@ BEGIN
   END IF;
   IF EXISTS (
     SELECT 1 FROM org_metadata m
-    LEFT JOIN agents a ON a.org_id = m.org_id AND a.name = 'default-agent' AND a.visibility = 'public'
+    FULL JOIN (SELECT id, org_id FROM agents WHERE name = 'default-agent' AND visibility = 'public') a
+      ON a.org_id = m.org_id
     WHERE m.default_agent_id IS DISTINCT FROM a.id
   ) THEN
     RAISE EXCEPTION 'Workspace default executor differs from the shared bootstrap profile'
