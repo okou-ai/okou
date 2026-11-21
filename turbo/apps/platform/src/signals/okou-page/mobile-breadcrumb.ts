@@ -82,10 +82,12 @@ const workflowsBreadcrumb$ = computed(
   },
 );
 
-const chatBreadcrumb$ = computed((get): MobileBreadcrumb => ({
-  section: get(assistantName$),
-  sectionPath: CHAT_PATH,
-}));
+const chatBreadcrumb$ = computed((get): MobileBreadcrumb => {
+  return {
+    section: get(assistantName$),
+    sectionPath: CHAT_PATH,
+  };
+});
 
 /**
  * Provides breadcrumb data for the MobileTopBar.

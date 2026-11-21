@@ -26,8 +26,14 @@ export const pwaHasUnreadChats$ = computed(async (get) => {
   const unread = await get(sidebarUnreadThreadIds$);
   const archived = new Set(
     get(eventDrivenChatThreads$)
-      .filter((thread) => thread.archived)
-      .map((thread) => thread.id),
+      .filter((thread) => {
+        return thread.archived;
+      })
+      .map((thread) => {
+        return thread.id;
+      }),
   );
-  return [...unread].some((threadId) => !archived.has(threadId));
+  return [...unread].some((threadId) => {
+    return !archived.has(threadId);
+  });
 });
