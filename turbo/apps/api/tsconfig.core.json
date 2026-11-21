@@ -321,6 +321,7 @@
     "src/signals/services/workflow-automation-account-projection.service.ts",
     "src/signals/services/workflow-automation-account.service.ts",
     "src/signals/services/workflow-data.service.ts",
+    "src/signals/services/workflow-visibility.ts",
     "src/signals/services/workflow-user-automation-thread.service.ts",
     "src/signals/usage-underbilling.ts",
     "src/lib/connector-oauth-state.ts",

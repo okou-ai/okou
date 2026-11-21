@@ -25,10 +25,10 @@ import {
 } from "../services/official-workflow-catalog-read.service";
 import { resolveOfficialWorkflowBlueprintForReconciliation } from "../services/official-workflow-installation.service";
 import {
-  visibleWorkflowCondition,
   type WorkflowRow,
   type WorkflowMember,
 } from "../services/workflow-data.service";
+import { visibleWorkflowCondition } from "../services/workflow-visibility";
 
 interface WorkflowCopyObservation {
   readonly workflowXmin: string;
@@ -188,7 +188,7 @@ export function workflowCopyVisibleQuery(args: {
       and(
         eq(workflows.orgId, args.orgId),
         eq(workflows.id, args.workflowId),
-        visibleWorkflowCondition(args.member),
+        visibleWorkflowCondition(args.member.userId),
       ),
     )
     .limit(1)

@@ -1,3 +1,4 @@
+import { automationWorkflowJoinCondition } from "./workflow-visibility";
 import { executionAgentId } from "./execution-agent";
 import { agents } from "@okouai/db/schema/agent";
 import { logger } from "../../lib/log";
@@ -550,13 +551,7 @@ const loadGoogleCalendarEventAutomations$ = command(
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
       })
       .from(workflowAutomations)
-      .innerJoin(
-        workflows,
-        and(
-          eq(workflowAutomations.workflowId, workflows.id),
-          eq(workflows.orgId, workflowAutomations.orgId),
-        ),
-      )
+      .innerJoin(workflows, automationWorkflowJoinCondition())
       .innerJoin(
         agents,
         eq(

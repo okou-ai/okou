@@ -1,3 +1,4 @@
+import { automationWorkflowJoinCondition } from "./workflow-visibility";
 import { executionAgentId } from "./execution-agent";
 import { agents } from "@okouai/db/schema/agent";
 import {
@@ -188,13 +189,7 @@ const loadWebhookAutomationForToken$ = command(
         workflowAutomations,
         eq(workflowWebhookAutomations.automationId, workflowAutomations.id),
       )
-      .innerJoin(
-        workflows,
-        and(
-          eq(workflowAutomations.workflowId, workflows.id),
-          eq(workflows.orgId, workflowAutomations.orgId),
-        ),
-      )
+      .innerJoin(workflows, automationWorkflowJoinCondition())
       .innerJoin(
         agents,
         eq(

@@ -1,3 +1,7 @@
+import {
+  iosWorkflowListTransform,
+  iosWorkflowDetailTransform,
+} from "@okouai/api-contracts/client-transforms/workflow-executor";
 import { workflowExecutorHintAllowed } from "../services/member-execution-agent.service";
 import { executionAgentId } from "../services/execution-agent";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
@@ -106,7 +110,6 @@ import {
   workflowExecutionProfileColumns,
   loadVisibleWorkflowById$,
   type VisibleWorkflow,
-  visibleWorkflowCondition,
   requireWorkflowPermission,
   workflowSummary,
   workflowList,
@@ -114,6 +117,7 @@ import {
   type WorkflowMember,
   type WorkflowRow,
 } from "../services/workflow-data.service";
+import { visibleWorkflowCondition } from "../services/workflow-visibility";
 import type { RouteEntry } from "../route-entry";
 import { sendNormalEvent$ } from "../services/chat-events.command";
 import {
@@ -1219,7 +1223,7 @@ const publishCopiedWorkflow$ = command(
           and(
             eq(workflows.orgId, args.orgId),
             eq(workflows.id, targetWorkflowId),
-            visibleWorkflowCondition(args.member),
+            visibleWorkflowCondition(args.member.userId),
           ),
         )
         .limit(1);
@@ -1598,7 +1602,7 @@ const loadVisibilityTransition$ = command(
         and(
           eq(workflows.orgId, args.orgId),
           eq(workflows.id, args.workflowId),
-          visibleWorkflowCondition(args.member),
+          visibleWorkflowCondition(args.member.userId),
         ),
       )
       .limit(1);
@@ -1759,6 +1763,7 @@ export const workflowsRoutes: readonly RouteEntry[] = [
   },
   {
     route: workflowsCollectionContract.list,
+    responseTransforms: [iosWorkflowListTransform],
     handler: authRoute(workflowReadAuth, listWorkflowsInner$),
   },
   // Registered before the `/:workflowId` routes so the static path wins.
@@ -1772,6 +1777,7 @@ export const workflowsRoutes: readonly RouteEntry[] = [
   },
   {
     route: workflowsDetailContract.get,
+    responseTransforms: [iosWorkflowDetailTransform],
     handler: authRoute(workflowReadAuth, getWorkflowDetailInner$),
   },
   {

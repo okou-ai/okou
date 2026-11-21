@@ -20,15 +20,18 @@ export async function validateWorkspaceWorkflowIdentity(databaseUrl: string) {
     ) as {
       entries: { tag: string; when: number }[];
     };
-    const entry = journal.entries.find((row) => row.tag === migration);
+    const entry = journal.entries.find((row) => {
+      return row.tag === migration;
+    });
     assert.ok(entry);
     await applyPendingMigrations(sql, { beforeMillis: entry.when });
     const audit = await readFile(
       new URL("./audit-workspace-workflow-identity.sql", import.meta.url),
       "utf8",
     );
-    const migrate = () =>
-      applyPendingMigrations(sql, { beforeMillis: entry.when + 1 });
+    const migrate = () => {
+      return applyPendingMigrations(sql, { beforeMillis: entry.when + 1 });
+    };
     const org = "workflow-migration";
     const [first, second, personal] = [
       randomUUID(),
@@ -77,8 +80,9 @@ export async function validateWorkspaceWorkflowIdentity(databaseUrl: string) {
         code: "23505",
         constraint_name: "idx_workflows_" + key + "_unique",
       });
-      const retained =
-        await sql`DELETE FROM workflows WHERE org_id = ${org} AND id <> ${hidden.id} RETURNING agent_id`;
+      const retained: readonly { agent_id: string }[] = await sql<
+        { agent_id: string }[]
+      >`DELETE FROM workflows WHERE org_id = ${org} AND id <> ${hidden.id} RETURNING agent_id`;
       assert.equal(retained.length, 2);
     }
     await sql`UPDATE workflows SET owner_user_id = 'other' WHERE id = ${hidden.id}`;

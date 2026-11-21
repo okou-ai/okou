@@ -1,3 +1,4 @@
+import { automationWorkflowJoinCondition } from "./workflow-visibility";
 import { executionAgentId } from "./execution-agent";
 import { agents } from "@okouai/db/schema/agent";
 import { selectDueMorningBriefWorkflow$ } from "./morning-brief-workflow-selection.service";
@@ -248,13 +249,7 @@ const dueWorkflowAutomationRows$ = command(
         userTimezone: orgMembersMetadata.timezone,
       })
       .from(workflowAutomations)
-      .innerJoin(
-        workflows,
-        and(
-          eq(workflowAutomations.workflowId, workflows.id),
-          eq(workflows.orgId, workflowAutomations.orgId),
-        ),
-      )
+      .innerJoin(workflows, automationWorkflowJoinCondition())
       .innerJoin(
         agents,
         eq(

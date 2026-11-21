@@ -179,10 +179,10 @@ import {
 import {
   workflowExecutionProfileColumns,
   loadVisibleWorkflowById$,
-  visibleWorkflowCondition,
   workflowSummary,
   type WorkflowMember,
 } from "./workflow-data.service";
+import { visibleWorkflowCondition } from "./workflow-visibility";
 import {
   type WorkflowThreadPreparation,
   workflowUserAutomationThreadOwnerCondition,
@@ -1090,7 +1090,7 @@ export const loadAutomationWorkflowRunTarget$ = command(
         and(
           eq(workflows.orgId, args.orgId),
           eq(workflows.id, args.workflowId),
-          visibleWorkflowCondition({ userId: args.userId, role: "member" }),
+          visibleWorkflowCondition(args.userId),
         ),
       )
       .limit(1);
@@ -1260,7 +1260,7 @@ export const listWorkspaceWorkflowAutomations$ = command(
           eq(workflowAutomations.orgId, args.orgId),
           eq(workflowAutomations.ownerUserId, args.member.userId),
           eq(workflows.orgId, args.orgId),
-          visibleWorkflowCondition(args.member),
+          visibleWorkflowCondition(args.member.userId),
         ),
       )
       .orderBy(asc(workflowAutomations.createdAt), asc(workflowAutomations.id));
@@ -1389,7 +1389,7 @@ export const listThreadBoundWorkflowAutomations$ = command(
         and(
           eq(workflowAutomations.orgId, args.orgId),
           eq(workflows.orgId, args.orgId),
-          visibleWorkflowCondition({ userId: args.userId, role: "member" }),
+          visibleWorkflowCondition(args.userId),
           eq(workflowAutomations.ownerUserId, args.userId),
           eq(workflowUserAutomationThreads.chatThreadId, args.threadId),
           or(
@@ -7121,7 +7121,7 @@ const readWorkflowAutomationEnableTarget$ = command(
           eq(workflowAutomations.orgId, args.orgId),
           eq(workflows.orgId, args.orgId),
           eq(agents.orgId, args.orgId),
-          visibleWorkflowCondition(args.member),
+          visibleWorkflowCondition(args.member.userId),
         ),
       )
       .limit(1);

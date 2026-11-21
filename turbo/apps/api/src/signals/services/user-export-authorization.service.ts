@@ -21,7 +21,7 @@ import { listAllUserOrganizationMemberships } from "../external/clerk-organizati
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { db$ } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
-import { visibleWorkflowCondition } from "./workflow-data.service";
+import { visibleWorkflowCondition } from "./workflow-visibility";
 
 function identifiers(
   rows: readonly { readonly metadata: Record<string, unknown> }[],
@@ -174,7 +174,7 @@ export const authorizeUserExportPage$ = command(
             and(
               inArray(workflows.id, workflowIds),
               inArray(workflows.orgId, orgIds),
-              visibleWorkflowCondition({ userId, role: "member" }),
+              visibleWorkflowCondition(userId),
             ),
           );
         signal.throwIfAborted();
@@ -308,7 +308,7 @@ function userExportPublicationChecks(
         and(
           inArray(workflows.id, workflowIds),
           inArray(workflows.orgId, args.orgIds),
-          visibleWorkflowCondition({ userId: args.userId, role: "member" }),
+          visibleWorkflowCondition(args.userId),
         ),
       )
       .orderBy(asc(workflows.id))

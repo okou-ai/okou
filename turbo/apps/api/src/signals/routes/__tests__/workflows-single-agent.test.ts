@@ -1,3 +1,8 @@
+import {
+  CLIENT_TYPE_HEADER,
+  CLIENT_TYPE_IOS,
+  CLIENT_VERSION_HEADER,
+} from "@okouai/api-contracts/contracts/client-headers";
 import { randomUUID } from "node:crypto";
 import {
   workflowsCollectionContract,
@@ -488,6 +493,26 @@ test("manages workspace Workflows before an execution profile exists", async () 
   );
   const params = { workflowId: created.body.id };
   expect(created.body).toMatchObject({ agentId: null, visibility: "public" });
+  const iosHeaders = {
+    ...headers(bob),
+    [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS,
+    [CLIENT_VERSION_HEADER]: "0.51.9",
+  };
+  const iosList = await accept(
+    collection().list({ headers: iosHeaders }),
+    [200],
+  );
+  const iosDetail = await accept(
+    detail().get({ headers: iosHeaders, params }),
+    [200],
+  );
+  for (const row of [iosList.body[0], iosDetail.body]) {
+    expect(row).toMatchObject({
+      id: created.body.id,
+      agentId: "00000000-0000-0000-0000-000000000000",
+      description: "/workspace-procedure",
+    });
+  }
   const copied = await accept(
     detail().copy({ headers: headers(bob), params, body: {} }),
     [201],

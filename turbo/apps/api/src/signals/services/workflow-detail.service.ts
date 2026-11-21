@@ -13,11 +13,11 @@ import type {
 import { db$ } from "../external/db";
 import {
   workflowExecutionProfileColumns,
-  visibleWorkflowCondition,
   workflowSummary,
   type WorkflowMember,
   readWorkflowShadowWinner$,
 } from "./workflow-data.service";
+import { visibleWorkflowCondition } from "./workflow-visibility";
 import { workflowAttachmentFiles } from "./workflow-attachments.service";
 import { loadWorkflowAutomations$ } from "./workflow-automation.service";
 import {
@@ -75,7 +75,7 @@ export const workflowDetail$ = command(
         and(
           eq(workflows.orgId, args.orgId),
           eq(workflows.id, args.workflowId),
-          visibleWorkflowCondition(args.member),
+          visibleWorkflowCondition(args.member.userId),
         ),
       )
       .limit(1);

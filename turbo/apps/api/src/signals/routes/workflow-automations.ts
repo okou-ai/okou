@@ -20,10 +20,8 @@ import {
 } from "../../lib/error";
 import { maxAutonomyBudget$ } from "../autonomy-budget-limit";
 import { childAutonomyBudget } from "../services/autonomy-budget.service";
-import {
-  visibleWorkflowCondition,
-  type WorkflowMember,
-} from "../services/workflow-data.service";
+import { type WorkflowMember } from "../services/workflow-data.service";
+import { visibleWorkflowCondition } from "../services/workflow-visibility";
 import {
   createWorkflowAutomation$,
   deleteWorkflowAutomation$,
@@ -166,7 +164,7 @@ const listAutomationsInner$ = command(
         and(
           eq(workflows.orgId, auth.orgId),
           eq(workflows.id, params.workflowId),
-          visibleWorkflowCondition(memberFromAuth(auth)),
+          visibleWorkflowCondition(auth.userId),
         ),
       )
       .limit(1);

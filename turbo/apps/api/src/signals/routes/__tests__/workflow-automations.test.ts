@@ -4550,7 +4550,10 @@ describe("okou workflow automations", () => {
           [201],
         );
         expect(automation.body.chatThreadId).toBeNull();
-        return await runAutomationNow(automation.body.id);
+        return {
+          ...(await runAutomationNow(automation.body.id)),
+          automationId: automation.body.id,
+        };
       };
       const first = await createAndRun(workflowId);
       const second = await createAndRun(secondWorkflowId);
@@ -4609,6 +4612,15 @@ describe("okou workflow automations", () => {
           ).get({
             headers: authHeaders(),
             params: { id: first.chatThreadId },
+          }),
+          [404],
+        );
+        await wf.demoteWorkflow(owned.actor, workflowId);
+        mocks.clerk.session(member.userId, member.orgId, member.orgRole);
+        await accept(
+          automationsClient().run({
+            headers: authHeaders(),
+            params: { id: memberRun.automationId },
           }),
           [404],
         );

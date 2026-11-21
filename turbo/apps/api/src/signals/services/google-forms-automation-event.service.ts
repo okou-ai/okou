@@ -1,3 +1,4 @@
+import { automationWorkflowJoinCondition } from "./workflow-visibility";
 import { executionAgentId } from "./execution-agent";
 import { agents } from "@okouai/db/schema/agent";
 import { GoogleFormsSourceTransitionChangedError } from "./workflow-google-forms-queue.service";
@@ -215,13 +216,7 @@ const loadGoogleFormsEventAutomations$ = command(
         cursor: googleFormsAutomationCursors.lastSeenSubmittedTime,
       })
       .from(workflowAutomations)
-      .innerJoin(
-        workflows,
-        and(
-          eq(workflowAutomations.workflowId, workflows.id),
-          eq(workflows.orgId, workflowAutomations.orgId),
-        ),
-      )
+      .innerJoin(workflows, automationWorkflowJoinCondition())
       .innerJoin(
         agents,
         eq(

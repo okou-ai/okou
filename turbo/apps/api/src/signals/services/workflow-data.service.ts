@@ -1,3 +1,4 @@
+import { visibleWorkflowCondition } from "./workflow-visibility";
 import { executionAgentId } from "./execution-agent";
 import { command, computed, type Computed } from "ccstate";
 import type { WorkflowAttachments } from "@okouai/db/jsonb-contracts/workflow";
@@ -132,20 +133,6 @@ export function requireWorkflowPermission(
   };
 }
 
-/** The caller supplies the workspace boundary for this visibility predicate. */
-export function visibleWorkflowCondition(member: WorkflowMember): SQL {
-  return and(
-    or(
-      isNull(workflows.officialDefinitionName),
-      eq(workflows.officialInstallationState, "installed"),
-    ),
-    or(
-      eq(workflows.visibility, "public"),
-      eq(workflows.ownerUserId, member.userId),
-    ),
-  ) as SQL;
-}
-
 export interface VisibleWorkflow {
   readonly workflow: WorkflowRow;
   readonly agent: WorkflowAgentInfo | null;
@@ -179,13 +166,13 @@ export const loadVisibleWorkflowById$ = command(
           eq(workflows.id, args.workflowId),
           args.includeInstallingOfficial
             ? or(
-                visibleWorkflowCondition(args.member),
+                visibleWorkflowCondition(args.member.userId),
                 and(
                   eq(workflows.ownerUserId, args.member.userId),
                   eq(workflows.officialInstallationState, "installing"),
                 ),
               )
-            : visibleWorkflowCondition(args.member),
+            : visibleWorkflowCondition(args.member.userId),
         ),
       )
       .limit(1);
@@ -366,7 +353,7 @@ export function workflowList(args: {
       .where(
         and(
           eq(workflows.orgId, args.orgId),
-          visibleWorkflowCondition(args.member),
+          visibleWorkflowCondition(args.member.userId),
         ),
       )
       .orderBy(asc(workflows.name));
