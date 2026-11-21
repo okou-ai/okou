@@ -12,7 +12,6 @@
     <string name="chat_refresh">チャットを更新</string>
     <string name="chat_loading">チャットを読み込み中…</string>
     <string name="chat_refresh_failed">更新できませんでした。最後に読み込んだチャットを表示しています。</string>
-    <string name="chat_cached">保存済みのチャットを表示しています。</string>
     <string name="chat_cache_unavailable">オフライン保存を利用できません。再起動後にこれらのチャットを表示できない場合があります。</string>
     <string name="chat_metadata_unavailable">一部の Okou またはプロジェクトの情報を利用できません。</string>
     <string name="chat_inbox">受信トレイ</string>

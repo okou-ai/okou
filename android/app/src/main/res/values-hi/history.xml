@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="history_syncing">संदेश सिंक हो रहे हैं…</string>
     <string name="history_loading">बातचीत लोड हो रही है…</string>
     <string name="history_failed">बातचीत रीफ़्रेश नहीं हो सकी। फिर कोशिश करें।</string>
     <string name="history_missing">यह बातचीत हटाई गई है या उपलब्ध नहीं है।</string>

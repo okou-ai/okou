@@ -12,7 +12,6 @@
     <string name="chat_refresh">Refresh chats</string>
     <string name="chat_loading">Loading chats…</string>
     <string name="chat_refresh_failed">Could not refresh. Showing the last loaded chats.</string>
-    <string name="chat_cached">Showing saved chats.</string>
     <string name="chat_cache_unavailable">Offline storage is unavailable. These chats may not be available after restarting.</string>
     <string name="chat_metadata_unavailable">Some Okou or Project information is unavailable.</string>
     <string name="chat_inbox">Inbox</string>
