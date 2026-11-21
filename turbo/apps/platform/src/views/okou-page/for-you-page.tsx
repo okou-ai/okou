@@ -81,6 +81,7 @@ const HEADER_SCRIM_MASK = `linear-gradient(${[
 interface ForYouHeaderColors {
   readonly tone: "light" | "dark";
   readonly tint: readonly [string, string, string];
+  readonly bar: readonly [string, string];
 }
 
 function headerScrim({ tint: [left, middle, right] }: ForYouHeaderColors) {
@@ -437,6 +438,10 @@ function headerInkVars(cover: (typeof forYouCovers)[number]): CSSProperties {
   return {
     "--for-you-ink-wide": headerInk(cover.header.wide),
     "--for-you-ink-compact": headerInk(cover.header.compact),
+    "--for-you-bar-wide": cover.header.wide.bar[0],
+    "--for-you-bar-compact": cover.header.compact.bar[0],
+    "--for-you-track-wide": cover.header.wide.bar[1],
+    "--for-you-track-compact": cover.header.compact.bar[1],
   } as CSSProperties;
 }
 
@@ -461,7 +466,7 @@ function ForYouHeader() {
   return (
     <header
       style={headerInkVars(cover)}
-      className="absolute inset-x-0 top-0 z-10 grid h-14 grid-flow-col grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 px-4 sm:h-15 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8 sm:px-8 [--for-you-ink:var(--for-you-ink-compact)] @min-[56rem]/for-you:[--for-you-ink:var(--for-you-ink-wide)]"
+      className="absolute inset-x-0 top-0 z-10 grid h-14 grid-flow-col grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 px-4 sm:h-15 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8 sm:px-8 [--for-you-bar:var(--for-you-bar-compact)] [--for-you-ink:var(--for-you-ink-compact)] [--for-you-track:var(--for-you-track-compact)] @min-[56rem]/for-you:[--for-you-bar:var(--for-you-bar-wide)] @min-[56rem]/for-you:[--for-you-ink:var(--for-you-ink-wide)] @min-[56rem]/for-you:[--for-you-track:var(--for-you-track-wide)]"
     >
       <ForYouHeaderScrim cover={cover} />
       <div className="min-w-0">
@@ -522,9 +527,10 @@ function ForYouHeader() {
                 <span
                   aria-hidden
                   className={cn(
-                    "h-1 w-full rounded-full bg-[rgb(var(--for-you-ink)/0.2)] transition-colors",
-                    index === position &&
-                      "bg-linear-to-r from-primary/65 via-primary to-primary-hover shadow-[0_0_0_1px_rgb(var(--for-you-ink)/0.25)]",
+                    "h-1 w-full rounded-full transition-colors",
+                    index === position
+                      ? "bg-[rgb(var(--for-you-bar))]"
+                      : "bg-[rgb(var(--for-you-track))]",
                   )}
                 />
               </Link>
