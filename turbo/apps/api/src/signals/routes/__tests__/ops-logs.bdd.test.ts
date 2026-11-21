@@ -122,8 +122,9 @@ describe("OPS-01: user data export", () => {
     const events = createChatEventsFixture(context);
     await fixture.run(async () => {
       const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
-      if (!defaultAgentId)
+      if (!defaultAgentId) {
         throw new Error("Expected a workspace workflow namespace");
+      }
       await bdd.updatePersonalInstructions(
         actor,
         "Use the exported personal instructions.",

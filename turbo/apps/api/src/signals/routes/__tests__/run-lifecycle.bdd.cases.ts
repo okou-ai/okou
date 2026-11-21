@@ -1472,8 +1472,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const prompt = "storage manifest dimensions should not leak prompt";
         const { defaultAgentId } =
           await createBddApi(context).readOnboardingStatus(actor);
-        if (!defaultAgentId)
+        if (!defaultAgentId) {
           throw new Error("Expected a workspace workflow namespace");
+        }
         // A member Workflow is distributed as an immutable read-only bundle.
         const workflowName = `manifest-shape-${randomUUID().slice(0, 8)}`;
         const workflow = await createMiscRoutesApi(context).createWorkflow(
@@ -2547,7 +2548,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
       });
 
-      it("limits private agents to their owner", async () => {
+      it("prevents another member from continuing an owned thread", async () => {
         const bdd = createBddApi(context);
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
@@ -2557,21 +2558,21 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-        const memberPrompt = `run someone else's private agent ${randomUUID()}`;
-        const memberRejected = await chat.requestSendEvent(
-          member,
-          { agentId, prompt: memberPrompt, model: NATIVE_RUNNER_ROUTE.model },
-          [403],
-        );
-        expectApiError(memberRejected.body);
-        expect(memberRejected.body.error.message).toBe(
-          "Only the private agent owner can run this agent",
-        );
-
         const owned = await api.createThreadRun(actor, {
           agentId,
           prompt: "open a session",
         });
+        const rejected = await chat.requestSendEvent(
+          member,
+          {
+            threadId: owned.threadId,
+            agentId,
+            prompt: "continue another member's thread",
+          },
+          [404],
+        );
+        expectApiError(rejected.body);
+        expect(rejected.body.error.code).toBe("NOT_FOUND");
         await api.requestCancelRun(actor, owned.runId, [200]);
         await finishCancelledRun(
           owned.runId,
@@ -2964,26 +2965,23 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.ensurePersonalSubscriptionModel(actor);
         await api.updateUserModelPreference(actor, "claude-fable-5-1");
 
-        const agent = await bdd.createAgent(actor, {
-          displayName: "BDD codex skills agent",
-          visibility: "private",
-        });
-        // Workflows are created directly under the owning agent (agent-scoped 1:N).
+        const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+        if (!defaultAgentId) {
+          throw new Error("Expected the member workflow namespace");
+        }
         for (const workflowName of workflowNames) {
           await misc.createWorkflow(
             actor,
-            agent.agentId,
+            defaultAgentId,
             workflowName,
             { content: `# ${workflowName}\nUse this workflow for codex runs.` },
             [201],
           );
         }
         const thread = await chat.createThread(actor, {
-          agentId: agent.agentId,
           model: "claude-fable-5-1",
         });
         const sent = await chat.sendAndLaunch(actor, {
-          agentId: agent.agentId,
           threadId: thread.id,
           prompt: "run on the personal Codex subscription",
           model: "gpt-6-astra",
@@ -9185,8 +9183,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const workflowName = "bdd-claude-kit";
-        const { defaultAgentId } =
-          await createBddApi(context).readOnboardingStatus(actor);
+        const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
         if (!defaultAgentId) {
           throw new Error("Expected a member workflow namespace");
         }
