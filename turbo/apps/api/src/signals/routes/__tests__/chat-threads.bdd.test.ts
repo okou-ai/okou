@@ -2230,7 +2230,10 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         ]),
       },
     ]);
-    for (const file of native.body.runs.flatMap((entry) => entry.files)) {
+    const nativeFiles = native.body.runs.flatMap((entry) => {
+      return entry.files;
+    });
+    for (const file of nativeFiles) {
       expect(file).not.toHaveProperty("googleDriveSync");
       expect(file).not.toHaveProperty("googleDriveConnectionId");
     }
