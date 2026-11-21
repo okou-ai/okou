@@ -833,7 +833,7 @@ class ChatListRootTest {
                 when (writes.size) {
                     1 -> {
                         pending.await()
-                        MockResponse().setResponseCode(409)
+                        MockResponse().setResponseCode(503)
                     }
                     2 ->
                         jsonResponse(
@@ -886,6 +886,34 @@ class ChatListRootTest {
         assertEquals(List(3) { writes.first() }, writes.toList())
         compose.onNodeWithText("Field notes").assertIsDisplayed()
         compose.onNodeWithText(unconfirmed).assertDoesNotExist()
+    }
+
+    @Test
+    fun rejectedProjectRenameRestoresTheNameAndShowsFailure() {
+        val app = compose.activity.application as ChatListApplication
+        app.fixture.commandResponse = { request ->
+            if (
+                request.method == "PATCH" &&
+                    request.requestUrl?.encodedPath == "/api/projects/$CHAT_PROJECT"
+            ) {
+                MockResponse().setResponseCode(409)
+            } else null
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithText("Research").performTouchInput { longClick() }
+        compose.onNodeWithText("Rename").performClick()
+        compose.onNode(hasSetTextAction()).performTextReplacement("Field notes")
+        compose.onNodeWithText("Save").performClick()
+
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodesWithText("Could not rename the Project.")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        compose.onNodeWithText("Research").assertIsDisplayed()
+        compose.onNodeWithText("Try again").assertDoesNotExist()
     }
 
     @Test
