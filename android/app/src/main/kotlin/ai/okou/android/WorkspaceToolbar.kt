@@ -263,12 +263,14 @@ private fun WorkspaceToolEntry(
     stacked: Boolean,
     modifier: Modifier,
 ) {
+    val title = stringResource(label)
     val color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
     val entry =
         modifier
             .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(9.dp))
-            .semantics(mergeDescendants = true) {
+            .clearAndSetSemantics {
+                contentDescription = title
                 role = Role.Button
                 disabled()
             }
@@ -276,7 +278,7 @@ private fun WorkspaceToolEntry(
     val content: @Composable () -> Unit = {
         Icon(painterResource(icon), null, Modifier.size(18.dp), tint = color)
         Text(
-            stringResource(label),
+            title,
             color = color,
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 20.sp),
