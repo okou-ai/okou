@@ -10,6 +10,30 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.100.2](https://github.com/okou-ai/okou/compare/api-v2.100.1...api-v2.100.2) (2026-11-21)
+
+
+### Refactoring
+
+* **api:** use member workflow bindings for chat run admission ([#49698](https://github.com/okou-ai/okou/issues/49698)) ([6bb1e26](https://github.com/okou-ai/okou/commit/6bb1e26af7737c36ea543a9ac3e96f51fee54337))
+
+
+### Performance Improvements
+
+* **api:** capture desktop grants with fifo and prefetch attachment records ([#49714](https://github.com/okou-ai/okou/issues/49714)) ([695e836](https://github.com/okou-ai/okou/commit/695e8363125b7b404c28ba5c9235823c0b2f04ec))
+* **api:** overlap chat context reads and reuse project references ([#49705](https://github.com/okou-ai/okou/issues/49705)) ([9b90eaa](https://github.com/okou-ai/okou/commit/9b90eaa9867fb54811101ca7954f818dc5310172))
+* **api:** prefetch chat packages and reuse launch inputs ([#49689](https://github.com/okou-ai/okou/issues/49689)) ([50c3992](https://github.com/okou-ai/okou/commit/50c399224cd1b62a29bf767ef041420c2730cafe))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.97.0
+    * @okouai/core bumped to 8.858.3
+    * @okouai/db bumped to 2.57.2
+    * @okouai/pi-agent-runtime bumped to 1.52.22
+
 ## [2.100.1](https://github.com/okou-ai/okou/compare/api-v2.100.0...api-v2.100.1) (2026-11-21)
 
 
