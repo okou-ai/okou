@@ -45,14 +45,18 @@ internal class ProjectListOwner(
         get() = readState()
         set(value) = publish(value)
 
-    private var confirmedProjects: CachedProjects? = null
-    private var confirmedProjectRows = emptyList<ConfirmedProject>()
+    private var confirmedProjects: ConfirmedProjects? = null
     private var projectRename: ProjectRename? = null
     private val retryableProjectRenames = mutableMapOf<String, ProjectRename>()
     private var projectsRestoreJob: Job? = null
     private var projectsJob: Job? = null
     private val projectSync = ProjectSync(service, dispatcher)
     private val projectInvalidations = Channel<Unit>(Channel.CONFLATED)
+
+    private data class ConfirmedProjects(
+        val checkpoint: ProjectCheckpoint,
+        val rows: List<ConfirmedProject>,
+    )
 
     private data class ProjectRename(val id: String, val name: String, val eventId: String)
 
@@ -76,10 +80,15 @@ internal class ProjectListOwner(
         projectsRestoreJob =
             scope.launch {
                 try {
-                    val saved = cache.loadProjects() ?: return@launch
+                    val checkpoint = cache.loadProjects()?.checkpoint ?: return@launch
                     requireCurrent()
-                    confirmedProjects = saved
-                    showCachedProjects()
+                    if (state.source == ChatListSource.Network) return@launch
+                    val restored = replayConfirmedProjects(checkpoint)
+                    requireCurrent()
+                    if (state.source != ChatListSource.Network) {
+                        confirmedProjects = restored
+                        publishProjects(state.copy(source = ChatListSource.Cache))
+                    }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
@@ -89,34 +98,27 @@ internal class ProjectListOwner(
             }
     }
 
-    private suspend fun showCachedProjects() {
-        val saved = confirmedProjects ?: return
-        if (!current() || state.source == ChatListSource.Network) return
-        val rows = withContext(dispatcher) { replayProjects(saved.checkpoint) }
-        requireCurrent()
-        if (state.source != ChatListSource.Network)
-            publishProjects(rows, state.copy(source = ChatListSource.Cache))
-    }
+    private suspend fun replayConfirmedProjects(checkpoint: ProjectCheckpoint): ConfirmedProjects =
+        withContext(dispatcher) { ConfirmedProjects(checkpoint, replayProjects(checkpoint)) }
 
-    private suspend fun persistProjects(saved: CachedProjects): CachedProjects =
+    private suspend fun persistProjects(checkpoint: ProjectCheckpoint): ProjectCheckpoint =
         try {
-            val written = cache.saveProjects(saved.checkpoint, saved.confirmedAt)
-            val disk = if (written) null else cache.loadProjects()
+            val written = cache.saveProjects(checkpoint, System.currentTimeMillis())
+            val disk = if (written) null else cache.loadProjects()?.checkpoint
             requireCurrent()
             state = state.copy(cacheUnavailable = false)
-            if (disk != null && disk.checkpoint.cursor.seqId > saved.checkpoint.cursor.seqId) disk
-            else saved
+            if (disk != null && disk.cursor.seqId > checkpoint.cursor.seqId) disk else checkpoint
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
             requireCurrent()
             state = state.copy(cacheUnavailable = true)
-            saved
+            checkpoint
         }
 
     internal fun renameProject(id: String, input: String) {
         val name = input.trim()
-        if (name.length !in 1..120 || confirmedProjectRows.none { it.id == id && it.name != name })
+        if (name.length !in 1..120 || confirmedRows().none { it.id == id && it.name != name })
             return
         submitProjectRename(ProjectRename(id, name, newProjectOperationId()))
     }
@@ -145,11 +147,11 @@ internal class ProjectListOwner(
                 checkpoint.events.any { it.id == eventId }
         } == true
 
-    private fun publishProjects(
-        rows: List<ConfirmedProject>,
-        snapshot: ProjectListUiState = state,
-    ) {
-        confirmedProjectRows = rows
+    private fun confirmedRows(source: ChatListSource? = state.source): List<ConfirmedProject> =
+        if (source == null) emptyList() else confirmedProjects?.rows.orEmpty()
+
+    private fun publishProjects(snapshot: ProjectListUiState) {
+        val rows = confirmedRows(snapshot.source)
         val pending = projectRename
         state =
             snapshot.copy(
@@ -170,16 +172,15 @@ internal class ProjectListOwner(
         if (
             !current() ||
                 !snapshot.canRename(offline()) ||
-                confirmedProjectRows.none { it.id == rename.id }
+                confirmedRows().none { it.id == rename.id }
         )
             return
         projectRename = rename
         retryableProjectRenames.remove(rename.id)
         val previousRejection = snapshot.renameRejection
         publishProjects(
-            confirmedProjectRows,
             if (previousRejection?.projectId == rename.id) snapshot.copy(renameRejection = null)
-            else snapshot,
+            else snapshot
         )
         scope.launch {
             var rejected = false
@@ -209,7 +210,7 @@ internal class ProjectListOwner(
                 val readBack = projectsJob
                 readBack?.join()
                 requireCurrent()
-                val confirmedName = confirmedProjectRows.firstOrNull { it.id == rename.id }?.name
+                val confirmedName = confirmedRows().firstOrNull { it.id == rename.id }?.name
                 val observedName =
                     readBack !== previousRead &&
                         state.phase == ChatReadPhase.Ready &&
@@ -230,7 +231,7 @@ internal class ProjectListOwner(
                                 renameRejection = ProjectRenameRejection(rename.id, rename.eventId)
                             )
                         else snapshot
-                    publishProjects(confirmedProjectRows, settled)
+                    publishProjects(settled)
                 }
             }
         }
@@ -247,23 +248,23 @@ internal class ProjectListOwner(
                         val previous = confirmedProjects
                         val result = projectSync.synchronize(previous?.checkpoint)
                         val candidate =
-                            if (!result.changed && previous != null && !state.cacheUnavailable)
-                                previous
-                            else CachedProjects(result.checkpoint, System.currentTimeMillis())
-                        val projected =
-                            withContext(dispatcher) { replayProjects(candidate.checkpoint) }
+                            if (!result.changed && previous != null) previous
+                            else replayConfirmedProjects(result.checkpoint)
                         requireCurrent()
                         val saved =
-                            if (candidate === previous) candidate else persistProjects(candidate)
-                        val rows =
-                            if (saved === candidate) projected
-                            else withContext(dispatcher) { replayProjects(saved.checkpoint) }
+                            if (candidate === previous && !state.cacheUnavailable)
+                                candidate.checkpoint
+                            else persistProjects(candidate.checkpoint)
+                        val selected =
+                            if (saved === candidate.checkpoint) candidate
+                            else replayConfirmedProjects(saved)
                         requireCurrent()
-                        confirmedProjects = saved
+                        confirmedProjects = selected
                         if (retryableProjectRenames.isNotEmpty()) {
-                            val names = rows.associate { it.id to it.name }
-                            val appliedEvents = saved.checkpoint.events.mapTo(hashSetOf()) { it.id }
-                            saved.checkpoint.archive.latestEventId?.let(appliedEvents::add)
+                            val names = selected.rows.associate { it.id to it.name }
+                            val appliedEvents =
+                                selected.checkpoint.events.mapTo(hashSetOf()) { it.id }
+                            selected.checkpoint.archive.latestEventId?.let(appliedEvents::add)
                             retryableProjectRenames.entries.removeAll { (id, rename) ->
                                 names[id] == null ||
                                     names[id] == rename.name ||
@@ -271,8 +272,7 @@ internal class ProjectListOwner(
                             }
                         }
                         publishProjects(
-                            rows,
-                            state.copy(phase = ChatReadPhase.Ready, source = ChatListSource.Network),
+                            state.copy(phase = ChatReadPhase.Ready, source = ChatListSource.Network)
                         )
                     } catch (cancelled: CancellationException) {
                         throw cancelled
@@ -281,9 +281,9 @@ internal class ProjectListOwner(
                         if (error is ApiFailure.Http && error.status == 404) {
                             if (current()) {
                                 retryableProjectRenames.clear()
+                                // Keep the confirmed checkpoint for catch-up and rename receipts.
                                 publishProjects(
-                                    emptyList(),
-                                    state.copy(source = null, phase = ChatReadPhase.Failed),
+                                    state.copy(source = null, phase = ChatReadPhase.Failed)
                                 )
                             }
                         } else if (current()) {
