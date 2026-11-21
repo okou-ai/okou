@@ -783,8 +783,7 @@ private fun ChatRow(
                     restoreMenuFocus = true
                     menuOpen = false
                 },
-                title =
-                    title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
+                title = title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
             )
         }
     }
