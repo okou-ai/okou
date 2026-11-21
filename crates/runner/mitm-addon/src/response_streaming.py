@@ -31,6 +31,7 @@ import usage
 import websocket_handshake
 from body_limits import STREAM_BUFFER_LIMIT
 from logging_utils import log_proxy_entry
+from usage.parse_error_diagnostics import ParseErrorWarningBudget
 from usage.providers.connectors.response_parser import ConnectorResponseParser
 from usage.underbilling import log_usage_underbilling
 
@@ -47,7 +48,6 @@ _RESPONSE_INSPECTION = "_response_inspection"
 _ANTHROPIC_MESSAGES_SSE_PROTOCOL = "anthropic_messages_sse"
 _OPENAI_CHAT_COMPLETIONS_SSE_PROTOCOL = "openai_chat_completions_sse"
 _OPENAI_RESPONSES_SSE_PROTOCOL = "openai_responses_sse"
-_MODEL_SSE_PARSE_ERROR_DIAGNOSTIC_LIMIT = 4
 
 _ResponseChunkParser = Callable[[bytes], None]
 _SseUsageParseErrorLogger = Callable[[str, str], None]
@@ -165,15 +165,13 @@ def _make_model_sse_parse_error_logger(
     usage_protocol: str,
 ) -> _SseUsageParseErrorLogger:
     proxy_log_path = flow_metadata.proxy_log_path(flow.metadata)
-    diagnostics_remaining = _MODEL_SSE_PARSE_ERROR_DIAGNOSTIC_LIMIT
+    warning_budget = ParseErrorWarningBudget()
 
     def log_parse_error(event: str, error: str) -> None:
-        nonlocal diagnostics_remaining
-        if diagnostics_remaining == _MODEL_SSE_PARSE_ERROR_DIAGNOSTIC_LIMIT:
+        if warning_budget.is_unused:
             run_usage.mark(flow, "parse_error")
-        if diagnostics_remaining == 0:
+        if not warning_budget.take():
             return
-        diagnostics_remaining -= 1
         log_proxy_entry(
             proxy_log_path,
             "warn",
