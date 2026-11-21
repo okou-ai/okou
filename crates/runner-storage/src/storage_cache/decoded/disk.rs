@@ -416,7 +416,7 @@ fn read_locked_entry(
     {
         return Err(invalid("decoded cache identity or admission mismatch"));
     }
-    let Some(metadata) = index.files else {
+    let Some(mut metadata) = index.files else {
         key.touch(home, &root);
         return Ok(LookupOutcome::Rejected);
     };
@@ -427,9 +427,9 @@ fn read_locked_entry(
         return Err(invalid("invalid decoded cache file count"));
     }
     let mut files = metadata
-        .iter()
+        .iter_mut()
         .map(|entry| StorageFile {
-            path: entry.path.clone(),
+            path: std::mem::take(&mut entry.path),
             mode: entry.mode,
             mtime: entry.mtime,
             content: Vec::new(),
@@ -479,9 +479,10 @@ fn read_locked_entry(
         check_cancel(cancel)?;
         file.content = vec![0; entry.size];
         data.read_exact(&mut file.content)?;
-        if file.content.len() != entry.size
-            || hex::encode(Sha256::digest(&file.content)) != entry.sha256
-        {
+        let mut digest = [0; 64];
+        hex::encode_to_slice(Sha256::digest(&file.content), &mut digest)
+            .map_err(io::Error::other)?;
+        if digest != entry.sha256.as_bytes() {
             return Err(invalid("decoded cache content mismatch"));
         }
     }
