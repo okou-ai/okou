@@ -12,10 +12,7 @@ import androidx.test.core.graphics.writeToTestStorage
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
-import androidx.test.uiautomator.Condition
-import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
-import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.UiScrollable
 import androidx.test.uiautomator.UiSelector
 import androidx.test.uiautomator.Until
@@ -185,31 +182,24 @@ class NativeChatListTest {
             }
             fun clickText(value: String) = click(UiSelector().text(value))
             fun revealText(value: String) {
-                val target = By.pkg(app.packageName).text(value)
-                val scrollable = By.pkg(app.packageName).scrollable(true)
-                assertTrue(
-                    device.wait(
-                        object : Condition<UiDevice, Boolean> {
-                            override fun apply(device: UiDevice) =
-                                device.hasObject(target) || device.hasObject(scrollable)
-                        },
-                        10_000,
-                    )
-                )
-                // The whole list can fit after collapse; only scroll when it is necessary.
-                val container = device.findObject(scrollable)
-                if (!device.hasObject(target) && container != null) {
-                    val visible =
-                        object : Condition<UiObject2, Boolean> {
-                            // Resolve virtual descendants from the current window after scrolls.
-                            override fun apply(container: UiObject2) = device.hasObject(target)
-                        }
-                    if (!container.scrollUntil(Direction.UP, visible)) {
-                        container.scrollUntil(Direction.DOWN, visible)
-                    }
+                // Back can leave the conversation scrollable visible briefly. Wait for Chats.
+                device.awaitChatList(app)
+                val target = chatListRegion(app).hasDescendant(By.pkg(app.packageName).text(value))
+                if (!device.hasObject(target)) {
+                    val list =
+                        UiScrollable(
+                                UiSelector()
+                                    .packageName(app.packageName)
+                                    .description(app.getString(R.string.chat_list_title))
+                                    .scrollable(true)
+                            )
+                            .setAsVerticalList()
+                    if (list.exists()) list.scrollIntoView(UiSelector().text(value))
                 }
-                // A scroll result is not a receipt for Compose's eventual visible outcome.
-                text(value)
+                assertTrue(
+                    "Expected $value in the chat list",
+                    device.wait(Until.hasObject(target), 10_000),
+                )
             }
             device.awaitChatList(app)
             scenario.onActivity { activity ->
