@@ -187,7 +187,6 @@ async function ordinaryDelegationScenario() {
       [200],
     );
     const sent = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "Delegate a workflow",
     });
     const source = await launchBudgetRun(context, owned, sent);
@@ -690,7 +689,6 @@ describe("Workflow Run admission", () => {
       throw new Error("Expected the first Workflow");
     }
     const first = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "Use available Workflows",
     });
     const revised = "Read the revised first publication.";
@@ -708,7 +706,6 @@ describe("Workflow Run admission", () => {
       const current =
         run ??
         (await owned.sendChatRun(owned.actor, {
-          agentId: owned.agentId,
           prompt: "Use current Workflows again",
         }));
       const { execution, sandboxHeaders } = await owned.runExecution(

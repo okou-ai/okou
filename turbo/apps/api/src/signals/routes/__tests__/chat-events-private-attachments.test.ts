@@ -50,7 +50,7 @@ describe("private attachments through normal chat send", () => {
     { name: "repeated file", count: 1, references: [0, 0], annotated: false },
     { name: "annotated file", count: 2, references: [0], annotated: true },
   ])("preserves $name in the input and run", async (scenario) => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     await api.updateUserModelPreference(actor, "claude-fable-5-1");
     const storage = installS3Fixture(context);
     const files: { id: string; filename: string; contentType: string }[] = [];
@@ -103,7 +103,7 @@ describe("private attachments through normal chat send", () => {
       parts: [...fileParts, { type: "text", text: prompt }],
     };
     const beforeSend = context.mocks.s3.send.mock.calls.length;
-    const sent = await sendChatRun(actor, { agentId, prompt, userMessage });
+    const sent = await sendChatRun(actor, { prompt, userMessage });
     const attachmentHeads = context.mocks.s3.send.mock.calls
       .slice(beforeSend)
       .filter(([command]) => {
@@ -153,7 +153,7 @@ describe("private attachments through normal chat send", () => {
   });
 
   it("reuses completed metadata across same-length PUT retries and repeated sends", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const storage = installS3Fixture(context);
     const file = { filename: "retry.txt", contentType: "text/plain", size: 5 };
     const prepared = await chat.prepareUpload(actor, file);
@@ -209,7 +209,6 @@ describe("private attachments through normal chat send", () => {
     );
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const sent = await sendChatRun(actor, {
-        agentId,
         prompt: "read the same completed file again",
         userMessage: { version: 1, parts },
       });
@@ -221,7 +220,7 @@ describe("private attachments through normal chat send", () => {
   });
 
   it("verifies a pending upload once before reusing its registered metadata", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const storage = installS3Fixture(context);
     const file = {
       filename: "pending.txt",
@@ -247,7 +246,6 @@ describe("private attachments through normal chat send", () => {
     });
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const sent = await sendChatRun(actor, {
-        agentId,
         prompt: "read without a separate complete call",
         userMessage: {
           version: 1,
@@ -270,7 +268,7 @@ describe("private attachments through normal chat send", () => {
   });
 
   it("reuses completed multipart metadata after part upload credentials stop writing", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const storage = installS3Fixture(context);
     createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
     const uploads = setupApp({
@@ -335,7 +333,6 @@ describe("private attachments through normal chat send", () => {
       return original(command);
     });
     const sent = await sendChatRun(actor, {
-      agentId,
       prompt: "read multipart input",
       userMessage: {
         version: 1,
@@ -351,7 +348,7 @@ describe("private attachments through normal chat send", () => {
   });
 
   it("keeps verifying completed private uploads without the bounded-size protocol", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const storage = installS3Fixture(context);
     createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
     const prepared = await accept(
@@ -377,7 +374,6 @@ describe("private attachments through normal chat send", () => {
     const key = `private-artifacts/${prepared.body.uploadId}/unbounded.txt`;
     const beforeSend = context.mocks.s3.send.mock.calls.length;
     const sent = await sendChatRun(actor, {
-      agentId,
       prompt: "read a mutable integration upload",
       userMessage: {
         version: 1,
@@ -405,7 +401,7 @@ describe("private attachments through normal chat send", () => {
   });
 
   it("accepts an uppercase private UUID without changing its reference", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     await api.updateUserModelPreference(actor, "claude-fable-5-1");
     const storage = installS3Fixture(context);
     const filename = "uppercase.txt";
@@ -417,7 +413,6 @@ describe("private attachments through normal chat send", () => {
       Buffer.from("case insensitive UUID"),
     );
     const sent = await sendChatRun(actor, {
-      agentId,
       prompt: "Read the uppercase reference",
       userMessage: {
         version: 1,
@@ -440,7 +435,7 @@ describe("private attachments through normal chat send", () => {
   it.each(["before selection", "after selection"] as const)(
     "handles private attachment withdrawal %s",
     async (when) => {
-      const { actor, agentId } = await entitledChatActor();
+      const { actor } = await entitledChatActor();
       await api.updateUserModelPreference(actor, "claude-fable-5-1");
       const storage = installS3Fixture(context);
       const file = {
@@ -501,9 +496,8 @@ describe("private attachments through normal chat send", () => {
           [200],
         );
       }
-      const thread = await chat.createThread(actor, { agentId });
+      const thread = await chat.createThread(actor, {});
       const sending = requestSendEventRaw(actor, {
-        agentId,
         threadId: thread.id,
         prompt: "read the accepted attachments",
         userMessage: {
@@ -568,7 +562,7 @@ describe("private attachments through normal chat send", () => {
   it.each(["missing object", "foreign owner"] as const)(
     "rejects a set containing a %s without publishing its input",
     async (failure) => {
-      const { actor, agentId } = await entitledChatActor();
+      const { actor } = await entitledChatActor();
       const uploadActor =
         failure === "foreign owner" ? (await entitledChatActor()).actor : actor;
       const storage = installS3Fixture(context);
@@ -594,7 +588,6 @@ describe("private attachments through normal chat send", () => {
       const prompt = `Reject ${failure}`;
       const clientThreadId = randomUUID();
       const response = await requestSendEventRaw(actor, {
-        agentId,
         clientThreadId,
         model: "claude-fable-5-1",
         prompt,
@@ -631,7 +624,7 @@ describe("private attachments through normal chat send", () => {
   );
 
   it("accepts completion of a private upload while its send HEAD is pending", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     await api.updateUserModelPreference(actor, "claude-fable-5-1");
     const storage = installS3Fixture(context);
     const file = {
@@ -662,7 +655,6 @@ describe("private attachments through normal chat send", () => {
       return response;
     });
     const sent = sendChatRun(actor, {
-      agentId,
       prompt: "Read the concurrently completed file",
       userMessage: {
         version: 1,

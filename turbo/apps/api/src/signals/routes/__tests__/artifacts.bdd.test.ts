@@ -55,7 +55,6 @@ async function artifactActor(
 async function sendChatRun(
   actor: ApiTestUser,
   body: {
-    readonly agentId: string;
     readonly prompt: string;
     readonly threadId?: string;
   },
@@ -126,7 +125,6 @@ describe("GET /api/chat-threads/:threadId/artifacts", () => {
       actor,
     );
     const run = await sendChatRun(actor, {
-      agentId: owner.agentId,
       prompt: "publish two hosted sites",
     });
     const { execution: receivedExecution } = await runExecution(
@@ -187,7 +185,6 @@ describe("hosted artifacts without a supplied cover", () => {
   it("publishes an artifact in the catalog and its chat thread", async () => {
     const owner = await artifactActor("Hosted publication without a cover");
     const run = await sendChatRun(owner.actor, {
-      agentId: owner.agentId,
       prompt: "Publish a site without a supplied cover",
     });
     const { execution: receivedExecution, sandboxHeaders } = await runExecution(

@@ -1126,7 +1126,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: randomUUID(),
           title: "Deep dive on P2",
           model: OTHER_WORKSPACE_MODEL,
         },

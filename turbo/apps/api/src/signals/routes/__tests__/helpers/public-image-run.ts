@@ -343,11 +343,7 @@ export async function createImageRun(
   chat.api.acceptTelemetryIngest();
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   chat.chatCallbacks.disableVapid();
-  const {
-    customerId,
-    defaultAgentId: agentId,
-    credits: startingCredits,
-  } = await run(() => {
+  const { customerId, credits: startingCredits } = await run(() => {
     return chat.api.grantProEntitlement(actor, {
       onExternalStateReady: (restore) => {
         restoreSetupExternalState = restore;
@@ -406,7 +402,6 @@ export async function createImageRun(
   }
   const sent = await run(() => {
     return chat.sendChatRun(actor, {
-      agentId,
       prompt: "Generate an image for this Run",
       model: "claude-fable-5-1",
     });

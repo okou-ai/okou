@@ -17,7 +17,6 @@ describe("authorized connector admission", () => {
   it("claims the exact normally connected account for an enabled connector", async () => {
     const {
       actor,
-      agentId,
       run: own,
       sendChatRun,
       runExecution,
@@ -31,7 +30,6 @@ describe("authorized connector admission", () => {
       });
     });
     const run = await sendChatRun(actor, {
-      agentId,
       prompt: "use the enabled OpenAI connection",
     });
     const execution = await runExecution(run.runId);
@@ -46,7 +44,6 @@ describe("authorized connector admission", () => {
   it("lists the exact admitted manual MCP account for a dispatched Run", async () => {
     const {
       actor,
-      agentId,
       run: own,
       sendChatRun,
       runExecution,
@@ -60,7 +57,6 @@ describe("authorized connector admission", () => {
       });
     });
     const run = await sendChatRun(actor, {
-      agentId,
       prompt: "admit the builtin MCP account",
     });
     const { execution, sandboxHeaders } = await runExecution(run.runId);

@@ -43,24 +43,20 @@ test("publishes scoped sidebars with pinned and archived threads", async () => {
   const otherOrg = bdd.user({ userId: actor.userId });
   await runs.ensurePersonalSubscriptionModel(actor);
   await runs.ensurePersonalSubscriptionModel(otherOrg);
-  const agent = await bdd.createAgent(actor, { displayName: "Sidebar Agent" });
-  const otherAgent = await bdd.createAgent(otherOrg, {
+  await bdd.createAgent(actor, { displayName: "Sidebar Agent" });
+  await bdd.createAgent(otherOrg, {
     displayName: "Other organization Agent",
   });
   const pinned = await chat.createThread(actor, {
-    agentId: agent.agentId,
     title: "Pinned sidebar thread",
   });
   const archived = await chat.createThread(actor, {
-    agentId: agent.agentId,
     title: "Archived sidebar thread",
   });
   const ordinary = await chat.createThread(actor, {
-    agentId: agent.agentId,
     title: "Ordinary sidebar thread",
   });
   const foreign = await chat.createThread(otherOrg, {
-    agentId: otherAgent.agentId,
     title: "Other organization thread",
   });
   await chat.pinThread(actor, pinned.id);

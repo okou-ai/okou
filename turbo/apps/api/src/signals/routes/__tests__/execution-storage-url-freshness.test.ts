@@ -47,7 +47,6 @@ describe("Execution Storage URL freshness", () => {
       const queued = await createChatEventsFixture(context).queueChatRun(
         fixture.actor,
         {
-          agentId,
           prompt: "Cross the URL cache margin",
           model: "claude-fable-5-1",
         },

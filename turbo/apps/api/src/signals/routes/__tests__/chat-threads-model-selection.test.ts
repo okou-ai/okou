@@ -79,7 +79,6 @@ async function seedChatThread(title: string): Promise<ChatThreadFixture> {
   const agent = created.body;
   await api.ensurePersonalSubscriptionModel(actor);
   const thread = await chat.createThread(actor, {
-    agentId: agent.agentId,
     title,
     model: "claude-sonnet-5-5",
   });

@@ -479,9 +479,10 @@ fn read_locked_entry(
         check_cancel(cancel)?;
         file.content = vec![0; entry.size];
         data.read_exact(&mut file.content)?;
-        if file.content.len() != entry.size
-            || hex::encode(Sha256::digest(&file.content)) != entry.sha256
-        {
+        let mut digest = [0; 64];
+        hex::encode_to_slice(Sha256::digest(&file.content), &mut digest)
+            .map_err(io::Error::other)?;
+        if digest != entry.sha256.as_bytes() {
             return Err(invalid("decoded cache content mismatch"));
         }
     }

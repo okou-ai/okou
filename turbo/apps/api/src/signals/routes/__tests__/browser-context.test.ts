@@ -33,9 +33,7 @@ function client() {
 }
 
 async function createThread(f: Fixture, cloudBrowserEnabled = true) {
-  const thread = await chat.createThread(f.owned.actor, {
-    agentId: f.owned.agentId,
-  });
+  const thread = await chat.createThread(f.owned.actor, {});
   await chat.updateThreadComputerUseHost(f.owned.actor, thread.id, null, {
     cloudBrowserEnabled,
   });

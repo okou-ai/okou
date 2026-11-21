@@ -42,9 +42,7 @@ describe("chat-thread connector account ownership", () => {
     const access = app(chatConnectorAccessContract);
     const accounts = app(connectorAccountsContract);
     const owner = bdd.user();
-    bdd.acceptAgentStorageWrites();
     await runs.ensurePersonalSubscriptionModel(owner);
-    const agent = await bdd.createAgent(owner);
     const builtin = await connectors.connectManualGrant(
       owner,
       "openai",
@@ -94,7 +92,6 @@ describe("chat-thread connector account ownership", () => {
       { connectionId: custom.connectionId, target: customTarget },
     ];
     const createBody = {
-      agentId: agent.agentId,
       model: "claude-fable-5-1",
     };
     const created = await accept(

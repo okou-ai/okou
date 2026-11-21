@@ -28,20 +28,6 @@ function preferencesClient() {
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 describe("new chat event member defaults", () => {
-  it.each([undefined, "00000000-0000-4000-8000-000000000099"])(
-    "admits a member chat when the legacy Agent ID is %s",
-    async (agentId) => {
-      const { actor } = await entitledNativeChatActor();
-      const run = await sendChatRun(actor, {
-        agentId,
-        prompt: "start a member-owned thread",
-      });
-      const thread = await chat.readThreadMetadata(actor, run.threadId);
-      expect(thread.id).toBe(run.threadId);
-      await cancelChatRun(actor, run.runId);
-    },
-  );
-
   it("uses empty model settings and enables cloud browser without a saved member preference", async () => {
     const owner = await entitledNativeChatActor();
     const actor = bdd.user({ orgId: owner.actor.orgId, orgRole: "org:member" });
@@ -86,7 +72,7 @@ describe("new chat event member defaults", () => {
   it.each([true, false])(
     "captures saved model settings and cloud browser (%s), retaining them on continuation",
     async (enabled) => {
-      const { actor, agentId } = await entitledNativeChatActor();
+      const { actor } = await entitledNativeChatActor();
       await misc.updatePreferences(
         actor,
         { cloudBrowserEnabledByDefault: enabled },
@@ -104,7 +90,6 @@ describe("new chat event member defaults", () => {
         [200],
       );
       const first = await sendChatRun(actor, {
-        agentId,
         prompt: "capture saved member defaults",
       });
       await expect(
@@ -148,7 +133,6 @@ describe("new chat event member defaults", () => {
       });
 
       const next = await sendChatRun(actor, {
-        agentId,
         prompt: "observe the next member snapshot",
       });
       await expect(

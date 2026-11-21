@@ -1058,7 +1058,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
 
   it("refreshes an active Run after shared permission and account authority change", async () => {
     const fixture = await publicChatActor(context);
-    const { actor: owner, agentId, run: own } = fixture;
+    const { actor: owner, run: own } = fixture;
     const runBase = "https://prod.api.reap.global/v1";
     const changedBase = "https://changed.api.reap.global/v1";
     const connected = await own(() => {
@@ -1069,7 +1069,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
     });
     const connectorId = connected.id;
     const sent = await fixture.sendChatRun(owner, {
-      agentId,
       prompt: "Use the admitted Reap base",
     });
     const execution = await fixture.runExecution(sent.runId);
@@ -1439,7 +1438,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
   describe("run-admitted custom connector diagnostics", () => {
     it("returns unsafe input when a configured prefix exceeds analysis capacity", async () => {
       const fixture = await publicChatActor(context);
-      const { actor, agentId, run: own } = fixture;
+      const { actor, run: own } = fixture;
       await own(async () => {
         const authority = `https://${randomUUID()}.analysis-capacity.test`;
         const definition = await connectorsApi.createCustomConnector(
@@ -1456,7 +1455,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
           { key: "secret", kind: "secret", value: "analysis-fixture-secret" },
         ]);
         const sent = await fixture.sendChatRun(actor, {
-          agentId,
           prompt: "Inspect the admitted encoded prefix",
         });
         const execution = await fixture.runExecution(sent.runId);
@@ -1840,7 +1838,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
   it("reads a real registration and rejects diagnostics after normal Run cancellation", async () => {
     const {
       actor,
-      agentId,
       run: own,
       sendChatRun,
       runExecution,
@@ -1848,7 +1845,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
     await own(async () => {
       await runsApi.updateUserModelPreference(actor, "claude-fable-5-1");
       const sent = await sendChatRun(actor, {
-        agentId,
         prompt: "Inspect active connector registration",
       });
       const execution = await runExecution(sent.runId);

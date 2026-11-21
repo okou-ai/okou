@@ -33,7 +33,7 @@ async function expectAgentTokenThreadOwnershipBoundaries(args: {
 }): Promise<void> {
   const crossUser = bdd.user({ orgId: args.orgId });
   const crossUserThread = await args.own(() => {
-    return chat.createThread(crossUser, { agentId: args.agentId });
+    return chat.createThread(crossUser, {});
   });
   const crossUserSend = await args.own(() => {
     return requestSendEventWithBearer(
@@ -49,7 +49,7 @@ async function expectAgentTokenThreadOwnershipBoundaries(args: {
 
   const crossOrg = await publicChatActor(context);
   const crossOrgThread = await crossOrg.run(() => {
-    return chat.createThread(crossOrg.actor, { agentId: crossOrg.agentId });
+    return chat.createThread(crossOrg.actor, {});
   });
   const crossOrgSend = await crossOrg.run(() => {
     return requestSendEventWithBearer(
@@ -130,7 +130,7 @@ describe("CHAT-02: model-first routing", () => {
       });
     });
     const sourceThread = await own(() => {
-      return chat.createThread(actor, { agentId });
+      return chat.createThread(actor, {});
     });
     const source = await sendChatRun(actor, {
       threadId: sourceThread.id,
@@ -140,7 +140,7 @@ describe("CHAT-02: model-first routing", () => {
     const sourceExecution = await runExecution(source.runId);
     const sourceToken = okouTokenFromExecution(sourceExecution.execution);
     const targetThread = await own(async () => {
-      return await chat.createThread(actor, { agentId });
+      return await chat.createThread(actor, {});
     });
 
     await own(async () => {

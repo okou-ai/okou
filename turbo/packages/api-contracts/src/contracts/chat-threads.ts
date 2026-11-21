@@ -411,7 +411,6 @@ const chatThreadMetadataSchema = object({
 export type ComposerDraft = zInfer<typeof composerDraftSchema>;
 
 const chatThreadCreateBodySchema = object({
-  agentId: string().min(1).optional(),
   projectId: uuid().optional(),
   clientThreadId: uuid().optional(),
   eventId: chatThreadEventIdSchema.optional(),
@@ -445,7 +444,7 @@ const chatThreadCreateBodySchema = object({
   /** Concrete override for the selected model; omission keeps its default. */
   reasoningEffort: reasoningEffortSchema.optional(),
   title: string().optional(),
-});
+}).strict();
 
 const chatThreadModelSelectionUpdateBodySchema = object({
   /** Selected model id, or null for Auto. */

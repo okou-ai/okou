@@ -1100,7 +1100,6 @@ describe("POST /api/user-templates", () => {
     ownedTemplates.add(published.body.id);
     const consumedFiles = async () => {
       const { runId } = await chatEvents.sendChatRun(actor, {
-        agentId: agent.agentId,
         prompt: "Use the selected presentation guidance",
         model: "claude-fable-5-1",
         template: {

@@ -58,7 +58,7 @@ async function diagnosticFixture() {
       const clientEventId = randomUUID();
       const sent = await chat.requestSendEvent(
         actor,
-        { agentId, prompt, clientEventId, model: "claude-fable-5-1" },
+        { prompt, clientEventId, model: "claude-fable-5-1" },
         [201],
         { extraHeaders: { "x-vercel-protection-bypass": previewBypass } },
       );

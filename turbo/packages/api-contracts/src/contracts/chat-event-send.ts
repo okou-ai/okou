@@ -22,7 +22,6 @@ import {
 const c = initContract();
 
 export const chatNormalSendBodyShape = {
-  agentId: string().min(1).optional(),
   prompt: string().min(1),
   threadId: string().optional(),
   clientThreadId: uuid().optional(),
@@ -32,7 +31,7 @@ export const chatNormalSendBodyShape = {
   chatThreadSortEventId: chatThreadEventIdSchema.optional(),
   /**
    * Run whose selected output the user is forwarding. The server resolves the
-   * run to authoritative thread and agent provenance before persisting it.
+   * run to authoritative thread and member provenance before persisting it.
    */
   sourceRunId: uuid().optional(),
   /**
@@ -96,7 +95,6 @@ export const chatEventsContract = c.router({
     body: union([
       chatEventNormalSendBodySchema,
       object({
-        agentId: string().min(1).optional(),
         threadId: string().min(1),
         revokesEventId: string().min(1),
         clientEventId: uuid().optional(),
@@ -115,7 +113,6 @@ export const chatEventsContract = c.router({
         interruptsRunId: zNever().optional(),
       }).strict(),
       object({
-        agentId: string().min(1).optional(),
         threadId: string().min(1),
         interruptsRunId: uuid().toLowerCase(),
         clientEventId: uuid().optional(),

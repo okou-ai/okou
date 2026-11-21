@@ -48,13 +48,13 @@ describe("chat search publication", () => {
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
     await bdd.readOnboardingStatus(owner);
     await bdd.completeOnboarding(owner);
-    const agent = await bdd.createAgent(owner, {
+    await bdd.createAgent(owner, {
       displayName: "Recalled search publication",
       visibility: "private",
     });
     const opened = await chat.requestSendEvent(
       owner,
-      { agentId: agent.agentId, model: null, prompt: "Start the conversation" },
+      { model: null, prompt: "Start the conversation" },
       [201],
     );
     if (opened.status !== 201) {
@@ -66,7 +66,7 @@ describe("chat search publication", () => {
     const threadId = opened.body.threadId;
     await chat.requestSendEvent(
       owner,
-      { agentId: agent.agentId, threadId, clientEventId, prompt: keyword },
+      { threadId, clientEventId, prompt: keyword },
       [201],
     );
     await flushWaitUntilForTest();
@@ -79,7 +79,7 @@ describe("chat search publication", () => {
 
     await chat.requestSendEvent(
       owner,
-      { agentId: agent.agentId, threadId, revokesEventId: clientEventId },
+      { threadId, revokesEventId: clientEventId },
       [201],
     );
     await flushWaitUntilForTest();
@@ -90,7 +90,6 @@ describe("chat search publication", () => {
     await chat.requestSendEvent(
       owner,
       {
-        agentId: agent.agentId,
         threadId,
         clientEventId: racingEventId,
         prompt: keyword,
@@ -102,12 +101,12 @@ describe("chat search publication", () => {
     await Promise.all([
       chat.requestSendEvent(
         owner,
-        { agentId: agent.agentId, threadId, revokesEventId: racingEventId },
+        { threadId, revokesEventId: racingEventId },
         [201],
       ),
       chat.requestSendEvent(
         owner,
-        { agentId: agent.agentId, threadId, prompt: survivingKeyword },
+        { threadId, prompt: survivingKeyword },
         [201],
       ),
     ]);
@@ -167,7 +166,7 @@ describe("chat search publication", () => {
     for (const agentId of [named.agentId, shared.agentId]) {
       const sent = await chat.requestSendEvent(
         owner,
-        { agentId, model: null, prompt: `${keyword} owner ${agentId}` },
+        { model: null, prompt: `${keyword} owner ${agentId}` },
         [201],
       );
       if (sent.status !== 201) {
@@ -182,7 +181,7 @@ describe("chat search publication", () => {
     ] as const) {
       await chat.requestSendEvent(
         actor,
-        { agentId, model: null, prompt: `${keyword} isolated ${agentId}` },
+        { model: null, prompt: `${keyword} isolated ${agentId}` },
         [201],
       );
       await flushWaitUntilForTest();
@@ -416,7 +415,7 @@ describe("chat search publication", () => {
         examples.map(async (example) => {
           const sent = await chat.requestSendEvent(
             owner,
-            { agentId: agent.agentId, model: null, prompt: example.content },
+            { model: null, prompt: example.content },
             [201],
           );
           if (sent.status !== 201) {
@@ -535,7 +534,7 @@ describe("chat search publication", () => {
       async () => {
         const opened = await chat.requestSendEvent(
           owner,
-          { agentId: agent.agentId, model: null, prompt: "Ordering setup" },
+          { model: null, prompt: "Ordering setup" },
           [201],
         );
         if (opened.status !== 201) {
@@ -554,7 +553,6 @@ describe("chat search publication", () => {
         await chat.requestSendEvent(
           owner,
           {
-            agentId: agent.agentId,
             threadId,
             prompt: `${keyword} ${marker.label}`,
           },

@@ -223,7 +223,7 @@ describe("SSH chat authorization", () => {
     await accept(api().approve({ headers, params, body: {} }), [200]);
     const otherChat = await createChatFilesBddApi(context).createThread(
       s.run.actor,
-      { agentId: s.run.agentId },
+      {},
     );
     authenticate(s.owner);
     const otherAccess = await accept(

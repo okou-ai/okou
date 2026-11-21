@@ -356,7 +356,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       const { agentId } = await scenario.prepareActor(actor);
       const sent = await scenario.run(() => {
         return chatApi.sendAndLaunch(actor, {
-          agentId,
           prompt: "Create a run for Slack upload completion",
           model: "claude-fable-5-1",
         });
@@ -2263,11 +2262,9 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       const { seedRunScoped, okouToken, sandboxToken, readRunExecution } =
         fixture;
       await fixture.run(async () => {
-        const { orgId, userId, runId, threadId, agentId } = await fixture.run(
-          () => {
-            return seedRunScoped();
-          },
-        );
+        const { orgId, userId, runId, threadId } = await fixture.run(() => {
+          return seedRunScoped();
+        });
         const objectStore = chatCallbacks.acceptChatObjectStorage();
         const operationId = randomUUID();
         const token = okouToken({
@@ -2448,7 +2445,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           return chatApi.requestSendEvent(
             actorFor({ orgId, userId }),
             {
-              agentId,
               prompt: "Reuse the existing output as an attachment",
               userMessage: {
                 version: 1,
@@ -2729,7 +2725,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         })(artifactGoogleDriveContract);
         const destination = await fixture.run(() => {
           return chatApi.sendAndLaunch(actor, {
-            agentId,
             prompt: "Upload an existing artifact from another conversation",
             model: "claude-fable-5-1",
           });

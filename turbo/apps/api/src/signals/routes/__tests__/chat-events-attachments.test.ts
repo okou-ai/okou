@@ -157,7 +157,7 @@ async function publishPrivateChatTemplates(actor: ApiTestUser) {
 
 describe("CHAT-02: generation templates and attachments", () => {
   it("uses the userMessage document for the runtime prompt", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
     if (!style) {
@@ -236,7 +236,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     chat.mockCompletedUploadObject(actor, fileId, "brief.pdf", 42);
 
     const sent = await sendChatRun(actor, {
-      agentId,
       prompt,
       userMessage,
     });
@@ -281,7 +280,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 90_000);
 
   it("lists the agents and chat threads the message links", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     const referencedAgentId = randomUUID();
     const referencedThreadId = randomUUID();
@@ -309,7 +308,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       ],
     };
 
-    const thread = await chat.createThread(actor, { agentId });
+    const thread = await chat.createThread(actor, {});
     const sent = await sendChatRun(actor, {
       threadId: thread.id,
       prompt: "legacy fallback",
@@ -333,7 +332,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 90_000);
 
   it("projects referenced passages without requiring every feedback note", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     const userMessage: UserMessageInputDocument = {
       version: 1,
@@ -356,7 +355,6 @@ describe("CHAT-02: generation templates and attachments", () => {
       "> Second quote";
 
     const sent = await sendChatRun(actor, {
-      agentId,
       prompt: "legacy fallback",
       userMessage,
     });
@@ -387,14 +385,13 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 90_000);
 
   it("projects forwarded passages from the authoritative source title", async () => {
-    const { actor, defaultAgentId: agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     const source = await sendChatRun(actor, {
-      agentId,
       prompt: "source content selected for forwarding",
     });
     await chat.renameThread(actor, source.threadId, "Source launch plan");
-    const targetThread = await chat.createThread(actor, { agentId });
+    const targetThread = await chat.createThread(actor, {});
     const userMessage: UserMessageInputDocument = {
       version: 1,
       parts: [
@@ -412,7 +409,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     const forwarded = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: targetThread.id,
         prompt: "legacy fallback",
         userMessage,
@@ -455,10 +451,9 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 90_000);
 
   it("preserves common mail identifiers in forwarded prompts", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     const source = await chat.sendAndLaunch(actor, {
-      agentId,
       prompt: "source content selected for forwarded mail feedback",
     });
     await chat.renameThread(actor, source.threadId, "Source launch plan");
@@ -554,12 +549,11 @@ describe("CHAT-02: generation templates and attachments", () => {
     ];
 
     for (const scenario of cases) {
-      const targetThread = await chat.createThread(actor, { agentId });
+      const targetThread = await chat.createThread(actor, {});
       const forwardedEventId = randomUUID();
       const forwarded = await chat.requestSendEvent(
         actor,
         {
-          agentId,
           threadId: targetThread.id,
           prompt: "legacy fallback",
           userMessage: scenario.userMessage,
@@ -605,7 +599,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 90_000);
 
   it("projects multiple inline templates into one ordered prompt and one shared context", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
     const workflow = WORKFLOW_TEMPLATE_ITEMS[0];
@@ -667,7 +661,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     };
 
     const sent = await sendChatRun(actor, {
-      agentId,
       prompt: "legacy fallback",
       userMessage,
     });
@@ -729,7 +722,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   it.each([undefined, "html", "pptx"] as const)(
     "routes an attached presentation to its %s format package and preserves the selection",
     async (outputFormat) => {
-      const { actor, agentId } = await entitledChatActor();
+      const { actor } = await entitledChatActor();
       const template: GenerationTemplateRequest = {
         type: "presentation",
         selection: {
@@ -746,7 +739,6 @@ describe("CHAT-02: generation templates and attachments", () => {
         ],
       };
       const sent = await sendChatRun(actor, {
-        agentId,
         prompt: "Prepare a school community briefing",
         userMessage,
       });
@@ -793,7 +785,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   );
 
   it("uses runbook names for presentation prompts while preserving picker titles in chat history", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const userMessage: UserMessageInputDocument = {
       version: 1,
       parts: [
@@ -817,7 +809,6 @@ describe("CHAT-02: generation templates and attachments", () => {
       ],
     };
     const sent = await sendChatRun(actor, {
-      agentId,
       prompt: "Compare these presentation templates",
       userMessage,
     });
@@ -852,12 +843,11 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 90_000);
 
   it("preserves the attachment userMessage order in the runtime prompt", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     const fileId = randomUUID();
     chat.mockCompletedUploadObject(actor, fileId, "api-input.txt", 12);
     const sent = await sendChatRun(actor, {
-      agentId,
       prompt: "plain API attachment",
       userMessage: {
         version: 1,
@@ -920,7 +910,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 60_000);
 
   it("uses only the canonical template part", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
     if (!style) {
@@ -931,7 +921,6 @@ describe("CHAT-02: generation templates and attachments", () => {
       selection: { illustrationStyleId: style.illustrationStyleId },
     };
     const sent = await sendChatRun(actor, {
-      agentId,
       prompt: "draw a dog",
       template: generationTemplate,
     });
@@ -969,7 +958,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   ])(
     "preserves client-authored additional info in the agent prompt: %s",
     async (additionalInfo) => {
-      const { actor, agentId } = await entitledChatActor();
+      const { actor } = await entitledChatActor();
       const prompt = "Our launch brief";
       const userMessage: UserMessageInputDocument = {
         version: 1,
@@ -978,7 +967,7 @@ describe("CHAT-02: generation templates and attachments", () => {
           { type: "text", text: prompt },
         ],
       };
-      const sent = await sendChatRun(actor, { agentId, prompt, userMessage });
+      const sent = await sendChatRun(actor, { prompt, userMessage });
       const run = await api.readRun(actor, sent.runId);
       expect(run.prompt).toBe(`${additionalInfo}\n\n${prompt}`);
       const messages = await chat.listThreadEvents(actor, sent.threadId);
@@ -998,7 +987,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   );
 
   it("includes cover capture and publishing guidance for templates and revisions", async () => {
-    const { actor: owner, agentId } = await entitledChatActor();
+    const { actor: owner } = await entitledChatActor();
     if (!owner.orgId) {
       throw new Error("Expected an organization");
     }
@@ -1018,7 +1007,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     }
 
     const presentation = await sendChatRun(actor, {
-      agentId,
       prompt: "make a launch deck",
       template: {
         type: "presentation",
@@ -1062,7 +1050,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     await cancelAndCompleteChatRun(actor, presentation.runId);
 
     const revision = await sendChatRun(actor, {
-      agentId,
       threadId: presentation.threadId,
       prompt: "Revise the deck and publish the updated HTML",
     });
@@ -1078,7 +1065,6 @@ describe("CHAT-02: generation templates and attachments", () => {
       throw new Error("Expected a registered website template");
     }
     const website = await sendChatRun(actor, {
-      agentId,
       prompt: "make a campaign landing page",
       template: {
         type: "website",
@@ -1109,7 +1095,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 90_000);
 
   it("keeps selected templates usable without recommending disabled managed image generation", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     await setPaidToolDisabled(context, actor, "image-generation", true);
     const presentation = PRESENTATION_TEMPLATE_PICKER_ITEMS.find((item) => {
       return item.slug === "playful-launch-presentation";
@@ -1132,7 +1118,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     ];
     for (const template of templates) {
       const run = await sendChatRun(actor, {
-        agentId,
         prompt: "use this template",
         template,
       });
@@ -1154,7 +1139,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   });
 
   it("uses R2 for archive-backed styles", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const style = ILLUSTRATION_TEMPLATE_ITEMS.find((item) => {
       return item.illustrationStyleId === "image-style:ink-storefront";
     });
@@ -1163,7 +1148,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     }
 
     const defaultR2Run = await sendChatRun(actor, {
-      agentId,
       prompt: "draw a flower shop from the default R2 source",
       template: {
         type: "illustration",
@@ -1180,7 +1164,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 90_000);
 
   it("is one-shot: a follow-up without re-attaching the style gets no template context", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
     if (!style) {
       throw new Error("Expected a registered illustration style");
@@ -1188,7 +1172,6 @@ describe("CHAT-02: generation templates and attachments", () => {
 
     // Turn 1: the user explicitly attaches the style — the live block is present.
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: "draw a fox",
       template: {
         type: "illustration",
@@ -1222,7 +1205,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     // Turn 2: a follow-up without re-attaching the style gets no template
     // context.
     const second = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "another one",
     });
@@ -1245,7 +1227,6 @@ describe("CHAT-02: generation templates and attachments", () => {
       throw new Error("Expected a registered website template");
     }
     const third = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "now make a website",
       template: {
@@ -1265,7 +1246,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     await cancelAndCompleteChatRun(actor, third.runId);
 
     // A brand-new thread starts clean: neither template carries over.
-    const fresh = await sendChatRun(actor, { agentId, prompt: "draw a cat" });
+    const fresh = await sendChatRun(actor, { prompt: "draw a cat" });
     const freshPrompt = (await api.executionInput(fresh.runId))
       .appendSystemPrompt;
     expect(freshPrompt).not.toContain("# Inline Templates");
@@ -1277,7 +1258,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 120_000);
 
   it("injects workflow templates as one-shot context without prior template selections", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
     const workflowTemplate = WORKFLOW_TEMPLATE_ITEMS[0];
     if (!style) {
@@ -1288,7 +1269,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     }
 
     const illustration = await sendChatRun(actor, {
-      agentId,
       prompt: "draw a labeled inbox",
       template: {
         type: "illustration",
@@ -1302,7 +1282,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     await cancelAndCompleteChatRun(actor, illustration.runId);
 
     const workflow = await sendChatRun(actor, {
-      agentId,
       threadId: illustration.threadId,
       prompt: "create the workflow version",
       template: {
@@ -1329,7 +1308,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     await cancelAndCompleteChatRun(actor, workflow.runId);
 
     const followUp = await sendChatRun(actor, {
-      agentId,
       threadId: illustration.threadId,
       prompt: "continue the thread",
     });
@@ -1347,7 +1325,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 120_000);
 
   it("rejects unavailable templates at pick and launches all templates once they are shared", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const orgId = actor.orgId;
     if (!orgId) {
       throw new Error("Expected a chat organization");
@@ -1409,7 +1387,6 @@ describe("CHAT-02: generation templates and attachments", () => {
       const rejected = await chat.requestSendEvent(
         actor,
         {
-          agentId,
           clientEventId,
           prompt: "use both selected templates",
           userMessage: {
@@ -1499,7 +1476,6 @@ describe("CHAT-02: generation templates and attachments", () => {
       [200],
     );
     const sent = await sendChatRun(actor, {
-      agentId,
       prompt: "use all three selected templates",
       userMessage: {
         version: 1,
@@ -1529,13 +1505,12 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 60_000);
 
   it("injects the pinned public source for a Document template", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const template: GenerationTemplateRequest = {
       type: "document",
       selection: { documentTemplateId: "document-template:simple-invoice" },
     };
     const sent = await sendChatRun(actor, {
-      agentId,
       prompt: "Prepare my invoice",
       template,
     });
@@ -1547,7 +1522,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 60_000);
 
   it("preserves multiple Document references and their pinned sources in the run", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const references = [
       {
         id: "document-template:creative-brief",
@@ -1607,7 +1582,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         ),
       ],
     };
-    const sent = await sendChatRun(actor, { agentId, prompt, userMessage });
+    const sent = await sendChatRun(actor, { prompt, userMessage });
     const run = await api.executionInput(sent.runId);
     const systemPrompt = run.appendSystemPrompt;
     expect(systemPrompt).toBeDefined();
@@ -1748,7 +1723,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 60_000);
 
   it("rejects an unknown thread before accessing attachment storage", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const fileId = randomUUID();
     const filename = "unknown-thread.txt";
     const exactKey = buildArtifactKeyV2(fileId, filename);
@@ -1768,7 +1743,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     const response = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: randomUUID(),
         prompt: "report the missing thread",
         userMessage: {
@@ -1792,7 +1766,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 30_000);
 
   it("refills attachment lookup slots while preserving order and concurrency four", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const files = Array.from({ length: 5 }, (_, index) => {
       return {
         id: randomUUID(),
@@ -1888,7 +1862,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     const send = chat.requestSendEvent(
       actor,
       {
-        agentId,
         prompt,
         clientEventId,
         userMessage: {
@@ -1971,7 +1944,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 60_000);
 
   it("falls back to v2 listing when the attachment filename hint is stale", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const fileId = randomUUID();
     const filenameSnapshot = "stale-extension.txt";
     const storedFilename = "current-extension.png";
@@ -2023,7 +1996,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     );
 
     const run = await sendChatRun(actor, {
-      agentId,
       prompt: "read the stale filename attachment",
       userMessage: {
         version: 1,
@@ -2045,7 +2017,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 60_000);
 
   it("uses the v2 listing size with one head of the attachment", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const fileId = randomUUID();
     const filename = "incomplete-head.txt";
     const key = buildArtifactKeyV2(fileId, filename);
@@ -2085,7 +2057,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     );
 
     const run = await sendChatRun(actor, {
-      agentId,
       prompt: "read the incomplete head attachment",
       userMessage: {
         version: 1,
@@ -2112,7 +2083,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 60_000);
 
   it("does not create a run when an attachment is missing", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const fileId = randomUUID();
     const filename = "missing.txt";
     const exactKey = buildArtifactKeyV2(fileId, filename);
@@ -2141,7 +2112,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     const model = await chat.getDefaultCreateThreadModel(actor);
     const prompt = "reject the missing attachment";
     const response = await requestSendEventRaw(actor, {
-      agentId,
       model,
       prompt,
       userMessage: {
@@ -2173,14 +2143,13 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 60_000);
 
   it("does not create a run when attachment storage fails", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const model = await chat.getDefaultCreateThreadModel(actor);
     context.mocks.s3.send.mockRejectedValue(
       new Error("object storage unavailable"),
     );
     const prompt = "reject the failed attachment lookup";
     const response = await requestSendEventRaw(actor, {
-      agentId,
       model,
       prompt,
       userMessage: {
@@ -2211,7 +2180,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 60_000);
 
   it("does not create a run when attachment resolution is aborted", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const model = await chat.getDefaultCreateThreadModel(actor);
     const controller = new AbortController();
     const abortError = new Error(
@@ -2228,7 +2197,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     const response = await requestSendEventRaw(
       actor,
       {
-        agentId,
         model,
         prompt,
         userMessage: {
@@ -2262,13 +2230,12 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 60_000);
 
   it("persists attachments and injects them into the run prompt", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const fileId = randomUUID();
     const filename = "diagram final 100%.png";
     chat.mockCompletedUploadObject(actor, fileId, filename, 42);
 
     const run = await sendChatRun(actor, {
-      agentId,
       prompt: "read this file",
       userMessage: {
         version: 1,
@@ -2320,7 +2287,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 60_000);
 
   it("accepts repeated references to one uploaded file in the same input", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const filename = "repeated attachment.png";
     const fixture = installS3Fixture(context);
     const fileId = await uploadTemplateFile(
@@ -2349,7 +2316,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     };
     const otherSnapshot = { ...file, contentType: "application/octet-stream" };
     const run = await sendChatRun(actor, {
-      agentId,
       prompt: "compare both references",
       userMessage: {
         version: 1,
@@ -2386,7 +2352,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     await cancelAndCompleteChatRun(actor, run.runId);
 
     const next = await sendChatRun(actor, {
-      agentId,
       prompt: "resolve the object again in a new send",
       userMessage: { version: 1, parts: [file] },
     });
@@ -2396,7 +2361,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 60_000);
 
   it("projects one structured annotated file through its rendered derivative", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const fileId = randomUUID();
     const annotatedFileId = randomUUID();
     const filename = "billing-page.png";
@@ -2425,7 +2390,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     };
 
     const run = await sendChatRun(actor, {
-      agentId,
       prompt: "fix this",
       userMessage: {
         version: 1,
@@ -2475,13 +2439,12 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 60_000);
 
   it("keeps a legacy-layout attachment on the legacy CDN for a new send", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const fileId = randomUUID();
     const filename = "legacy-brand.txt";
     chat.mockCompletedUploadObject(actor, fileId, filename, 24);
 
     const run = await sendChatRun(actor, {
-      agentId,
       prompt: "read the legacy attachment",
       userMessage: {
         version: 1,
@@ -2507,10 +2470,9 @@ describe("CHAT-02: generation templates and attachments", () => {
 
 describe("CHAT-02: queued attachments on auto-send", () => {
   it("preserves structured part order when a queued message is promoted", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     const anchor = await sendChatRun(actor, {
-      agentId,
       prompt: "anchor before the structured queue item",
     });
     const anchorExecution = await runExecution(anchor.runId);
@@ -2542,7 +2504,6 @@ describe("CHAT-02: queued attachments on auto-send", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: anchor.threadId,
         prompt: queuedPrompt,
         userMessage,
@@ -2598,10 +2559,9 @@ describe("CHAT-02: queued attachments on auto-send", () => {
   }, 90_000);
 
   it("carries queued attachments into the auto-sent follow-up run", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     const anchor = await sendChatRun(actor, {
-      agentId,
       prompt: "anchor before the queued attachment",
     });
     const anchorExecution = await runExecution(anchor.runId);
@@ -2616,7 +2576,6 @@ describe("CHAT-02: queued attachments on auto-send", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: anchor.threadId,
         prompt: "queued with attachment",
         clientEventId: queuedId,

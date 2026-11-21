@@ -467,7 +467,6 @@ describe("workflow queue", () => {
     await expect(
       owned.run(async () => {
         await owned.queueChatRun(owned.actor, {
-          agentId: owned.agentId,
           prompt: "Keep this input waiting when the operation fails",
           model: "claude-fable-5-1",
         });

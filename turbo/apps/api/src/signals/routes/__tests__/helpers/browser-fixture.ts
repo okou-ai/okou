@@ -205,7 +205,6 @@ export function createBrowserFixtures(context: TestContext) {
     async function start(browserEnabled = true) {
       return await owned.run(async () => {
         const sent = await chat.sendAndLaunch(owned.actor, {
-          agentId: owned.agentId,
           model: owned.model,
           prompt: "Prepare my chat-owned Browser lifetime",
           cloudBrowserEnabled: browserEnabled,

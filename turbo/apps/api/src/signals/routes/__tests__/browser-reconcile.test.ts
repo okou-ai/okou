@@ -58,9 +58,7 @@ test("checks one instance over one native wire while preserving independent wind
     for (let index = 0; index < 3; index++) {
       const thread = await createChatFilesBddApi(context).createThread(
         f.owned.actor,
-        {
-          agentId: f.owned.agentId,
-        },
+        {},
       );
       await accept(
         setupApp({ context, routes: browserRoutes })(browserContract).open({

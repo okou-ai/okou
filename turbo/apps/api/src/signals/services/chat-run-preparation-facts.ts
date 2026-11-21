@@ -5,7 +5,6 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 export const pickedThreadColumns = Object.freeze({
   id: chatThreads.id,
   userId: chatThreads.userId,
-  agentId: chatThreads.agentId,
   projectId: chatThreads.projectId,
   computerUseHostId: chatThreads.computerUseHostId,
   cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,

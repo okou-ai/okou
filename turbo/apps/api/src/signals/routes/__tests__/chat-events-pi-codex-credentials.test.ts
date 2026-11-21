@@ -87,7 +87,6 @@ describe("Pi Codex subscription admission", () => {
     const response = await chat.requestSendEvent(
       f.actor,
       {
-        agentId: f.agentId,
         model: "gpt-6-luna",
         prompt: "do not reuse the deleted codex account",
         clientEventId,
@@ -143,7 +142,6 @@ describe("ChatGPT subscription credentials at launch", () => {
         return Promise.reject(new Error("KMS decryption unavailable"));
       });
       const run = await sendChatRun(f.actor, {
-        agentId: f.agentId,
         model: selectedModel,
         prompt: "launch with the connected ChatGPT account",
       });
@@ -164,7 +162,6 @@ describe("ChatGPT auth.json credentials at launch", () => {
         return Promise.reject(new Error("KMS decryption unavailable"));
       });
       const run = await sendChatRun(f.actor, {
-        agentId: f.agentId,
         model: selectedModel,
         prompt: "launch with the ChatGPT auth.json account",
       });
@@ -176,7 +173,7 @@ describe("ChatGPT auth.json credentials at launch", () => {
   it("fails closed when a ChatGPT auth.json has no account id", async () => {
     // Native Codex routes by workspace account; a source without one is
     // refused when stored, so no launch can proceed without it.
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const rejected = await misc.upsertPersonalModelProvider(
       actor,
       {
@@ -193,7 +190,6 @@ describe("ChatGPT auth.json credentials at launch", () => {
     const response = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         model: "gpt-6-astra",
         prompt: "do not launch without a workspace account",
         clientEventId: randomUUID(),

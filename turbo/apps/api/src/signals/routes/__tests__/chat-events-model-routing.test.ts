@@ -106,7 +106,7 @@ async function waitForPickedInput(
 
 describe("CHAT-02: model-first routing", () => {
   it("adds Codex image upload guidance for web chat Codex sends", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const prompt =
       "generate an image in web chat using the aurora-21210 color palette";
 
@@ -122,7 +122,6 @@ describe("CHAT-02: model-first routing", () => {
     await api.updateUserModelPreference(actor, "gpt-6-astra");
 
     const run = await sendChatRun(actor, {
-      agentId,
       prompt,
       model: "gpt-6-astra",
     });
@@ -178,18 +177,16 @@ describe("CHAT-02: model-first routing", () => {
   });
 
   it("queues an existing-thread input with its model until the active run releases the thread", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
 
     const thread = await chat.createThread(actor, {
-      agentId,
       model: "claude-fable-5-1",
     });
     // Keep the thread busy so the follow-up stays queued after model selection.
     const active = await sendChatRun(actor, {
-      agentId,
       threadId: thread.id,
       prompt: "keep the thread busy",
     });
@@ -198,7 +195,6 @@ describe("CHAT-02: model-first routing", () => {
     const sent = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: thread.id,
         prompt: "enqueue with the thread model",
         clientEventId,
@@ -233,10 +229,10 @@ describe("CHAT-02: model-first routing", () => {
   }, 90_000);
 
   it("rejects personal model gpt-6-luna without the caller's subscription", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const response = await chat.requestCreateThread(
       actor,
-      { agentId, model: "gpt-6-luna" },
+      { model: "gpt-6-luna" },
       [400],
     );
     expect(response.status).toBe(400);
@@ -244,16 +240,14 @@ describe("CHAT-02: model-first routing", () => {
   });
 
   it("rejects the internal Auto run model as a send selection", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const thread = await chat.createThread(actor, {
-      agentId,
       model: "claude-fable-5-1",
     });
     for (const threadId of [undefined, thread.id]) {
       const response = await chat.requestSendEvent(
         actor,
         {
-          agentId,
           ...(threadId === undefined ? {} : { threadId }),
           prompt: "select Auto by its run model id",
           model: "okou-1.0",
@@ -280,11 +274,10 @@ describe("CHAT-02: model-first routing", () => {
         await flushWaitUntilForTest();
       },
     });
-    const { actor, agentId } = fixture;
+    const { actor } = fixture;
     await fixture.run(async () => {
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
       const anchor = await fixture.sendChatRun(actor, {
-        agentId,
         model: "claude-fable-5-1",
         prompt: "Keep the native run slot occupied",
       });
@@ -295,7 +288,6 @@ describe("CHAT-02: model-first routing", () => {
       const clientEventId = randomUUID();
       const prompt = "Queue this input with canonical Auto";
       const response = await requestSendEventRaw(actor, {
-        agentId,
         clientThreadId: threadId,
         clientEventId,
         prompt,
@@ -322,7 +314,7 @@ describe("CHAT-02: model-first routing", () => {
       expect(queued[0]?.runId).toBeUndefined();
       await chat.requestSendEvent(
         actor,
-        { agentId, threadId, revokesEventId: clientEventId },
+        { threadId, revokesEventId: clientEventId },
         [201],
       );
       await chat.requestDeleteThread(actor, threadId, [204]);
@@ -342,17 +334,15 @@ describe("CHAT-02: model-first routing", () => {
         await flushWaitUntilForTest();
       },
     });
-    const { actor, agentId } = fixture;
+    const { actor } = fixture;
     await fixture.run(async () => {
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
       const anchor = await fixture.sendChatRun(actor, {
-        agentId,
         model: "claude-fable-5-1",
         prompt: "Keep the native run slot occupied",
       });
       const { sandboxHeaders } = await fixture.runExecution(anchor.runId);
       const thread = await chat.createThread(actor, {
-        agentId,
         model: "claude-fable-5-1",
       });
       const threadId = thread.id;
@@ -361,7 +351,7 @@ describe("CHAT-02: model-first routing", () => {
       const prompt = "Queue this input with canonical Auto";
       const response = await fixture.requestSendEvent(
         actor,
-        { agentId, threadId, clientEventId, prompt, model: null },
+        { threadId, clientEventId, prompt, model: null },
         [201],
       );
       expect(response.status).toBe(201);
@@ -396,7 +386,7 @@ describe("CHAT-02: model-first routing", () => {
       expect(queued[0]?.runId).toBeUndefined();
       await chat.requestSendEvent(
         actor,
-        { agentId, threadId, revokesEventId: clientEventId },
+        { threadId, revokesEventId: clientEventId },
         [201],
       );
       await chat.requestDeleteThread(actor, threadId, [204]);
@@ -408,7 +398,6 @@ describe("CHAT-02: model-first routing", () => {
   it("rejects a disconnected thread subscription until its owner explicitly selects Auto", async () => {
     const {
       actor,
-      agentId,
       run: own,
       sendChatRun,
       runExecution,
@@ -418,7 +407,6 @@ describe("CHAT-02: model-first routing", () => {
         model: "claude-fable-5-1",
       });
       const first = await sendChatRun(actor, {
-        agentId,
         prompt: "start before the thread model is removed",
         model: "claude-fable-5-1",
       });
@@ -443,7 +431,6 @@ describe("CHAT-02: model-first routing", () => {
       await chat.requestSendEvent(
         actor,
         {
-          agentId,
           threadId: first.threadId,
           prompt: "continue through my disconnected subscription",
           clientEventId,
@@ -488,12 +475,11 @@ describe("CHAT-02: model-first routing", () => {
   }, 90_000);
 
   it("rejects a requested retired Claude alias once its subscription account is deleted", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
     const thread = await chat.createThread(actor, {
-      agentId,
       model: "claude-fable-5-1",
     });
     await misc.deletePersonalModelProvider(
@@ -506,7 +492,6 @@ describe("CHAT-02: model-first routing", () => {
     const sent = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: thread.id,
         prompt: "continue through my deleted subscription",
         model: "claude-fable-5",
@@ -531,14 +516,13 @@ describe("CHAT-02: model-first routing", () => {
   }, 90_000);
 
   it("keeps the enqueued model after thread and member defaults change", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
 
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: "establish the historical thread model",
       model: "claude-fable-5-1",
     });
@@ -546,7 +530,6 @@ describe("CHAT-02: model-first routing", () => {
     const queued = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: first.threadId,
         prompt: "continue using the model captured before defaults change",
         clientEventId: queuedEventId,
@@ -626,13 +609,12 @@ describe("CHAT-02: model-first routing", () => {
   }, 90_000);
 
   it("does not overwrite a concurrent explicit thread model selection", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
     const thread = await chat.createThread(actor, {
-      agentId,
       model: "claude-fable-5-1",
     });
     await api.updateUserModelPreference(actor, null);
@@ -642,7 +624,6 @@ describe("CHAT-02: model-first routing", () => {
       chat.requestSendEvent(
         actor,
         {
-          agentId,
           threadId: thread.id,
           prompt: "send while choosing a new sticky model",
           clientEventId: racedEventId,
@@ -674,7 +655,6 @@ describe("CHAT-02: model-first routing", () => {
     await cancelChatRun(actor, racedRunId, racedExecution.sandboxHeaders);
 
     const followUp = await sendChatRun(actor, {
-      agentId,
       threadId: thread.id,
       prompt: "continue on the explicit sticky model",
     });
@@ -709,7 +689,7 @@ describe("CHAT-02: model-first routing", () => {
   }, 90_000);
 
   it("launches Ultrafast without probing the selected Codex subscription", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     await misc.upsertPersonalModelProvider(
       actor,
       {
@@ -747,7 +727,6 @@ describe("CHAT-02: model-first routing", () => {
     mockPiResourceArchiveDownloads(true);
     mockPiObjectStore();
     const run = await sendChatRun(actor, {
-      agentId,
       model: "gpt-6.1-sol",
       prompt: "Use Ultrafast",
       runOptions: { codexServiceTier: "ultrafast" },
@@ -764,7 +743,6 @@ describe("CHAT-02: model-first routing", () => {
   it("passes Fast only on a supported personal Codex route", async () => {
     const {
       actor,
-      agentId,
       run: own,
       sendChatRun,
       runExecution,
@@ -778,7 +756,6 @@ describe("CHAT-02: model-first routing", () => {
       mockPiResourceArchiveDownloads(true);
       mockPiObjectStore();
       const fast = await sendChatRun(actor, {
-        agentId,
         prompt: "run codex fast",
         model: "gpt-6-sol",
         runOptions: { codexServiceTier: "fast" },
@@ -879,7 +856,6 @@ describe("CHAT-02: model-first routing", () => {
         }),
       );
       const standard = await sendChatRun(actor, {
-        agentId,
         threadId: fast.threadId,
         prompt: "run codex standard",
         model: "gpt-6.1-sol",
@@ -924,7 +900,6 @@ describe("CHAT-02: model-first routing", () => {
       const rejected = await chat.requestSendEvent(
         actor,
         {
-          agentId,
           prompt: "Claude cannot use Codex fast mode",
           clientThreadId: rejectedThreadId,
           model: "claude-sonnet-5-5",

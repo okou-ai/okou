@@ -81,7 +81,7 @@ describe("production-global sweep route contracts", () => {
     const chat = createChatFilesBddApi(context);
     const owner = bdd.user();
     bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(owner, {
+    await bdd.createAgent(owner, {
       displayName: "Sidebar snapshot agent",
     });
     mockEnv("R2_USER_STORAGES_BUCKET_NAME", `snapshot-${randomUUID()}`);
@@ -145,7 +145,6 @@ describe("production-global sweep route contracts", () => {
     }
 
     const thread = await chat.createThread(owner, {
-      agentId: agent.agentId,
       title: "Original title",
       model: null,
     });
@@ -158,7 +157,6 @@ describe("production-global sweep route contracts", () => {
     // A thread created and deleted between compactions advances the lifecycle
     // cursor while leaving the sidebar projection unchanged.
     const temporary = await chat.createThread(owner, {
-      agentId: agent.agentId,
       title: "Temporary thread",
       model: null,
     });

@@ -139,7 +139,6 @@ test.each([
       files: [{ path: "reference.md", content: "old attachment" }],
     });
     const queued = await chatFixture.queueChatRun(actor, {
-      agentId: agent.agentId,
       prompt: "Use the available workflows",
     });
     await accept(
@@ -279,7 +278,6 @@ test("re-evaluates private/public precedence without exposing another member's p
     instruction: "foreign private body",
   });
   const queued = await chatFixture.queueChatRun(actor, {
-    agentId: agent.agentId,
     prompt: "Use the available workflows",
   });
   const privateWorkflow = await createWorkflow(actor, agent.agentId, {
@@ -322,7 +320,6 @@ test.each(["sharing withdrawal", "rename", "deletion"] as const)(
       const sent = await chatFixture.chat.requestSendEvent(
         actor,
         {
-          agentId: agent.agentId,
           prompt: "Use the available workflows",
           clientEventId,
         },
@@ -582,7 +579,6 @@ test("runs a queued explicit invocation without its deleted Workflow", async () 
   const { actor, agent, group } = await fixture();
   const workflow = await createWorkflow(actor, agent.agentId);
   const queued = await chatFixture.queueChatRun(actor, {
-    agentId: agent.agentId,
     prompt: `/${workflow.name}`,
   });
   await accept(
@@ -607,7 +603,6 @@ test("mounts the current winner for a queued invocation whose slug is reused", a
   const { actor, agent, group, s3 } = await fixture();
   const workflow = await createWorkflow(actor, agent.agentId);
   const queued = await chatFixture.queueChatRun(actor, {
-    agentId: agent.agentId,
     prompt: `/${workflow.name}`,
   });
   const renamed = `${workflow.name}-renamed`;

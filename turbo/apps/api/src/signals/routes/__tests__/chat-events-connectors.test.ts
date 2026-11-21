@@ -64,7 +64,6 @@ async function selectedThreadConnectorFixture(
     { apiKey: `thread-runtime-overlap-${randomUUID()}` },
   );
   const thread = await chat.createThread(entitled.actor, {
-    agentId: entitled.agentId,
     title,
   });
   await accept(
@@ -95,7 +94,7 @@ async function configurePersonalRuntimeContext(
 
 describe("chat connector credential placeholders", () => {
   it("keeps firewall-only credentials deferred during Run preparation", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const figma = await connectors.connectManualGrant(
       actor,
       "figma",
@@ -107,7 +106,6 @@ describe("chat connector credential placeholders", () => {
     });
     const kms = useSecretKmsProbe();
     const run = await sendChatRun(actor, {
-      agentId,
       model: "claude-fable-5-1",
       prompt: "Use my firewall-only connectors",
     });
@@ -124,7 +122,7 @@ describe("chat connector credential placeholders", () => {
   });
 
   it("dispatches every connector secret as a placeholder and resolves values on demand", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const openai = await connectors.connectManualGrant(
       actor,
       "openai",
@@ -136,7 +134,6 @@ describe("chat connector credential placeholders", () => {
     });
     const kms = useSecretKmsProbe();
     const run = await sendChatRun(actor, {
-      agentId,
       model: "claude-fable-5-1",
       prompt: "Use request-time connector credentials",
     });
@@ -186,7 +183,7 @@ describe("chat connector credential placeholders", () => {
   });
 
   it("isolates an undecryptable unselected account from request-time selected account auth", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     let badAccount = true;
     const kms = useSecretKmsProbe(
       (request) => {
@@ -216,7 +213,6 @@ describe("chat connector credential placeholders", () => {
       { apiKey: "good-account-token" },
     );
     const thread = await chat.createThread(actor, {
-      agentId,
       title: "Credential failure isolation",
     });
     await accept(
@@ -232,7 +228,6 @@ describe("chat connector credential placeholders", () => {
     );
     const beforeLaunch = kms.decryptCalls;
     const run = await sendChatRun(actor, {
-      agentId,
       threadId: thread.id,
       model: "claude-fable-5-1",
       prompt: "Use only my selected healthy account",
@@ -297,7 +292,6 @@ describe("CHAT-02: thread connector account selection", () => {
       },
     ]);
     const run = await sendChatRun(fixture.actor, {
-      agentId: fixture.agentId,
       threadId: fixture.threadId,
       prompt: "Use the selected account from its current projection",
     });
@@ -328,7 +322,6 @@ describe("CHAT-02: thread connector account selection", () => {
       } as const;
       await access.setDefault(fixture.actor, selection, false);
       const run = await sendChatRun(fixture.actor, {
-        agentId: fixture.agentId,
         threadId: fixture.threadId,
         prompt: "Do not use the disabled account",
       });
@@ -339,7 +332,6 @@ describe("CHAT-02: thread connector account selection", () => {
       await cancelChatRun(fixture.actor, run.runId, execution.sandboxHeaders);
       await access.setDefault(fixture.actor, selection, true);
       const reauthorized = await sendChatRun(fixture.actor, {
-        agentId: fixture.agentId,
         threadId: fixture.threadId,
         prompt: "Use the preserved account after reauthorization",
       });
@@ -362,7 +354,6 @@ describe("CHAT-02: thread connector account selection", () => {
     );
     await configurePersonalRuntimeContext(fixture.actor);
     const run = await sendChatRun(fixture.actor, {
-      agentId: fixture.agentId,
       threadId: fixture.threadId,
       prompt: "Use the selected connector with my subscription",
     });
@@ -379,7 +370,7 @@ describe("CHAT-02: thread connector account selection", () => {
   it.each(["revocation", "reauthorization"] as const)(
     "uses the default connector account across %s without an override",
     async (transition) => {
-      const { actor, agentId } = await entitledChatActor();
+      const { actor } = await entitledChatActor();
       if (!actor.orgId) {
         throw new Error("Expected an organization-scoped chat actor");
       }
@@ -394,7 +385,6 @@ describe("CHAT-02: thread connector account selection", () => {
       if (transition === "revocation") {
         context.mocks.ably.publish.mockClear();
         const authorized = await sendChatRun(actor, {
-          agentId,
           prompt: "Use my OpenAI connector account",
         });
         const { execution, sandboxHeaders } = await runExecution(
@@ -424,7 +414,6 @@ describe("CHAT-02: thread connector account selection", () => {
         threadId = authorized.threadId;
       } else {
         const thread = await chat.createThread(actor, {
-          agentId,
           title: "Connector reauthorization",
         });
         threadId = thread.id;
@@ -437,7 +426,6 @@ describe("CHAT-02: thread connector account selection", () => {
       } as const;
       await access.setDefault(actor, selection, false);
       const unauthorized = await sendChatRun(actor, {
-        agentId,
         threadId,
         prompt: "Continue while OpenAI is unauthorized",
       });
@@ -458,7 +446,6 @@ describe("CHAT-02: thread connector account selection", () => {
 
       await access.setDefault(actor, selection, true);
       const reauthorized = await sendChatRun(actor, {
-        agentId,
         threadId,
         prompt: "Continue after OpenAI is authorized again",
       });
@@ -564,7 +551,6 @@ describe("CHAT-02: thread connector account selection", () => {
     }
 
     const run = await sendChatRun(actor, {
-      agentId,
       prompt: "Use my selected HTTP and MCP connector accounts",
     });
     cleanupRun = async () => {
@@ -654,7 +640,7 @@ describe("CHAT-02: thread connector account selection", () => {
 
   it("omits a custom connector whose current account cannot render the updated host template", async () => {
     const fixture = await publicChatActor(context);
-    const { actor, agentId, run: own } = fixture;
+    const { actor, run: own } = fixture;
     const body = {
       ...manualHttpCustomConnectorCreateBody({
         slug: `_host-fallback-${randomUUID()}`,
@@ -687,7 +673,7 @@ describe("CHAT-02: thread connector account selection", () => {
       );
     });
     const thread = await own(() => {
-      return chat.createThread(actor, { agentId });
+      return chat.createThread(actor, {});
     });
     await own(() => {
       return accept(
@@ -711,7 +697,6 @@ describe("CHAT-02: thread connector account selection", () => {
       });
     });
     const run = await fixture.sendChatRun(actor, {
-      agentId,
       threadId: thread.id,
       model: "claude-fable-5-1",
       prompt: "Use the available custom account after the host template update",
@@ -725,7 +710,7 @@ describe("CHAT-02: thread connector account selection", () => {
 
   it("starts the run when a selected custom connector becomes unavailable", async () => {
     const fixture = await publicChatActor(context);
-    const { actor, agentId, run: own } = fixture;
+    const { actor, run: own } = fixture;
     const orgId = actor.orgId;
     if (!orgId) {
       throw new Error("Expected an organization-scoped chat actor");
@@ -756,7 +741,6 @@ describe("CHAT-02: thread connector account selection", () => {
     const connectorId = connection.id;
 
     const first = await fixture.sendChatRun(actor, {
-      agentId,
       prompt: "Use my default custom connector account",
     });
     await own(() => {
@@ -820,7 +804,6 @@ describe("CHAT-02: thread connector account selection", () => {
     });
 
     const fallback = await fixture.sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "Continue despite the unavailable connector account",
     });

@@ -170,7 +170,6 @@ describe("Seed Skill bundles through sync-skills", () => {
       return storage;
     });
     const queued = await owned.queueChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "Inspect system skills",
       model: "claude-fable-5-1",
     });
@@ -241,7 +240,6 @@ describe("Seed Skill bundles through sync-skills", () => {
     });
     await owned.run(flushWaitUntilForTest);
     const next = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "Use the later Seed publication",
       model: "claude-fable-5-1",
     });
@@ -291,7 +289,6 @@ describe("Seed Skill bundle delivery", () => {
         return installWorkflowVolumeS3Fixture(context);
       });
       const run = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Inspect system skills",
         model: "gpt-6-luna",
       });
@@ -340,7 +337,6 @@ describe("Seed Skill bundle delivery", () => {
       return storage;
     });
     const run = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "Use permitted Seed skills",
     });
     const { execution, sandboxHeaders } = await owned.runExecution(run.runId);

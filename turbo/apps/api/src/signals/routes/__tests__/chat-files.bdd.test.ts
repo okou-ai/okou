@@ -38,9 +38,8 @@ const api = createChatFilesBddApi(context);
 describe("CHAT-01 chat thread lifecycle", () => {
   it("creates, mutates, searches, and deletes a thread through visible APIs", async () => {
     const actor = bdd.user();
-    const agent = await api.createAgentForChatThread(actor);
+    await api.createAgentForChatThread(actor);
     const created = await api.createThread(actor, {
-      agentId: agent.agentId,
       title: "Launch notes",
     });
 
@@ -161,9 +160,8 @@ describe("CHAT-01 chat thread lifecycle", () => {
     const owner = bdd.user({ orgId });
     const peer = bdd.user({ orgId });
     const outsider = bdd.user();
-    const agent = await api.createAgentForChatThread(owner);
+    await api.createAgentForChatThread(owner);
     const thread = await api.createThread(owner, {
-      agentId: agent.agentId,
       title: "Private planning",
     });
 
@@ -222,11 +220,10 @@ describe("CHAT-01 chat thread lifecycle", () => {
     const orgId = `org_${randomUUID()}`;
     const owner = bdd.user({ orgId });
     const peer = bdd.user({ orgId });
-    const agent = await bdd.createAgent(owner, {
+    await bdd.createAgent(owner, {
       displayName: "Pinned launch plan agent",
     });
     const thread = await api.createThread(owner, {
-      agentId: agent.agentId,
       title: "Owner launch plan",
     });
 
@@ -325,7 +322,7 @@ describe("CHAT-02 chat messages and visible validation", () => {
   it("sends chat messages through API-visible no-credit, recall, and interrupt branches", async () => {
     const actor = bdd.user();
     const peer = bdd.user({ orgId: actor.orgId });
-    const agent = await bdd.createAgent(actor, {
+    await bdd.createAgent(actor, {
       displayName: "No-credit chat branch agent",
     });
     const uploadId = randomUUID();
@@ -346,7 +343,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
     const sent = await api.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
         prompt: "Build a launch-plan presentation",
         userMessage: expectedUserMessage,
         hasTextContent: false,
@@ -405,7 +401,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
     const retried = await api.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
         threadId,
         prompt: "Retry the same client message",
         clientEventId,
@@ -421,13 +416,11 @@ describe("CHAT-02 chat messages and visible validation", () => {
     expect(afterRetry.events).toHaveLength(3);
 
     const secondThread = await api.createThread(actor, {
-      agentId: agent.agentId,
       title: "Duplicate client message id",
     });
     const duplicateAcrossThreads = await api.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
         threadId: secondThread.id,
         prompt: "Reuse the client message id in another thread",
         clientEventId,
@@ -450,7 +443,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
     const unavailableFollowup = await api.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
         threadId,
         prompt: "Use a stale recommended follow-up",
         revokesEventId: rejectedUserMessage.id,
@@ -466,7 +458,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
     const peerRecall = await api.requestSendEvent(
       peer,
       {
-        agentId: agent.agentId,
         threadId,
         revokesEventId: rejectedUserMessage.id,
       },
@@ -478,7 +469,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
     const recalled = await api.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
         threadId,
         revokesEventId: rejectedUserMessage.id,
         clientEventId: randomUUID(),
@@ -503,7 +493,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
     const repeatedRecall = await api.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
         threadId,
         revokesEventId: rejectedUserMessage.id,
       },
@@ -523,7 +512,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
     const interrupted = await api.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
         threadId,
         interruptsRunId: randomUUID(),
       },
@@ -538,7 +526,7 @@ describe("CHAT-02 chat messages and visible validation", () => {
 
   it("rejects invalid generation template and reused client thread ids through the send API", async () => {
     const actor = bdd.user();
-    const agent = await bdd.createAgent(actor, {
+    await bdd.createAgent(actor, {
       displayName: "Client-thread retry branch agent",
     });
 
@@ -546,7 +534,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
     const first = await api.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
         prompt: "First client-thread send",
         clientThreadId,
       },
@@ -562,7 +549,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
     const retry = await api.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
         prompt: "Retry the first client-thread send",
         clientThreadId,
       },
@@ -580,13 +566,12 @@ describe("CHAT-02 chat messages and visible validation", () => {
       }),
     ).toHaveLength(1);
 
-    const otherAgent = await bdd.createAgent(actor, {
+    await bdd.createAgent(actor, {
       displayName: "Client-thread mismatch branch agent",
     });
     const reusedClientThreadForOtherAgent = await api.requestSendEvent(
       actor,
       {
-        agentId: otherAgent.agentId,
         prompt: "Reuse a client thread id for another agent",
         clientThreadId,
       },
@@ -596,13 +581,11 @@ describe("CHAT-02 chat messages and visible validation", () => {
 
     const peer = bdd.user({ orgId: actor.orgId });
     const ownerThread = await api.createThread(actor, {
-      agentId: agent.agentId,
       title: "Owner-only send target",
     });
     const peerSendToOwnerThread = await api.requestSendEvent(
       peer,
       {
-        agentId: agent.agentId,
         threadId: ownerThread.id,
         prompt: "Post into another user's thread",
       },
@@ -614,7 +597,6 @@ describe("CHAT-02 chat messages and visible validation", () => {
     const modelSelected = await api.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
         prompt: "Persist the model selected at send time",
         model: "gpt-6-luna",
       },
@@ -640,9 +622,8 @@ describe("CHAT-02 chat messages and visible validation", () => {
   it("lists visible events and rejects invalid send requests without hidden fixtures", async () => {
     const actor = bdd.user();
     const peer = bdd.user({ orgId: actor.orgId });
-    const agent = await api.createAgentForChatThread(actor);
+    await api.createAgentForChatThread(actor);
     const thread = await api.createThread(actor, {
-      agentId: agent.agentId,
       title: "Message validation",
     });
 
@@ -651,7 +632,7 @@ describe("CHAT-02 chat messages and visible validation", () => {
 
     const unauthenticated = await api.requestSendEvent(
       null,
-      { agentId: randomUUID(), prompt: "hello" },
+      { prompt: "hello" },
       [401],
     );
     expectApiError(unauthenticated.body);
@@ -659,7 +640,7 @@ describe("CHAT-02 chat messages and visible validation", () => {
 
     const legacySend = await api.requestSendEvent(
       actor,
-      { agentId: randomUUID(), prompt: "hello" },
+      { prompt: "hello" },
       [201],
     );
     expect(legacySend.body).toHaveProperty("threadId");
@@ -676,9 +657,8 @@ describe("CHAT-02 chat messages and visible validation", () => {
     const orgId = `org_${randomUUID()}`;
     const owner = bdd.user({ orgId });
     const peer = bdd.user({ orgId });
-    const agent = await api.createAgentForChatThread(owner);
+    await api.createAgentForChatThread(owner);
     const thread = await api.createThread(owner, {
-      agentId: agent.agentId,
       title: "Empty message boundary",
     });
 
@@ -712,9 +692,8 @@ describe("CHAT-02 chat messages and visible validation", () => {
 describe("CHAT-03 artifacts", () => {
   it("exposes empty artifact state through the list API", async () => {
     const actor = bdd.user();
-    const agent = await api.createAgentForChatThread(actor);
+    await api.createAgentForChatThread(actor);
     const thread = await api.createThread(actor, {
-      agentId: agent.agentId,
       title: "Artifacts",
     });
 

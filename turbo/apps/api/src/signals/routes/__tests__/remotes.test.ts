@@ -134,10 +134,10 @@ describe("GET /api/remotes/overview", () => {
   it("keeps member browser defaults distinct from thread Computer Use and browser selections", async () => {
     const actor = owner();
     bdd.acceptAgentStorageWrites();
-    const agentId = await bdd.bootstrapLimitedFreeOnboarding(actor, {
+    await bdd.bootstrapLimitedFreeOnboarding(actor, {
       displayName: "Remote overview member",
     });
-    const thread = await chat.createThread(actor, { agentId });
+    const thread = await chat.createThread(actor, {});
     const host = await startHost(actor, "Selected Desktop");
     await chat.updateThreadComputerUseHost(actor, thread.id, host.hostId);
 
@@ -193,8 +193,8 @@ describe("GET /api/remotes/overview", () => {
     useSecretKmsProbe();
     const actor = owner();
     bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(actor, { visibility: "private" });
-    const thread = await chat.createThread(actor, { agentId: agent.agentId });
+    await bdd.createAgent(actor, { visibility: "private" });
+    const thread = await chat.createThread(actor, {});
     const sshId = await createSshHost(actor, "SSH server");
     vnc.authenticate(actor);
     const vncHost = await accept(

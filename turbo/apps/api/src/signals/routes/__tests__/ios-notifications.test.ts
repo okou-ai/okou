@@ -56,7 +56,6 @@ async function unreadConversation(actor: ApiTestUser) {
     visibility: "private",
   });
   const sent = await chat.sendAndLaunch(actor, {
-    agentId: agent.agentId,
     prompt: "Unread result",
   });
   await cancelStartedRun(actor, sent.runId);
@@ -161,7 +160,6 @@ describe("iOS notification read-state reconciliation", () => {
     const actor = bdd.user();
     const previous = await unreadConversation(actor);
     const sent = await chat.sendAndLaunch(actor, {
-      agentId: previous.agentId,
       threadId: previous.threadId,
       prompt: "A new result after archiving",
     });
@@ -344,7 +342,6 @@ describe("iOS notification read-state reconciliation", () => {
     const first = await unreadConversation(actor);
     await chat.markThreadRead(actor, first.threadId);
     const next = await chat.sendAndLaunch(actor, {
-      agentId: first.agentId,
       threadId: first.threadId,
       prompt: "A later unread result",
     });

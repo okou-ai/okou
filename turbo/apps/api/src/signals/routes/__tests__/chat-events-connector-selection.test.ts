@@ -22,7 +22,6 @@ describe("thread connector selection", () => {
   it("keeps active Run accounts and uses an allowed replacement for queued input", async () => {
     const {
       actor,
-      agentId,
       run: own,
       sendChatRun,
       sendWaitingChatInput,
@@ -65,7 +64,6 @@ describe("thread connector selection", () => {
     });
     const thread = await own(() => {
       return chat.createThread(actor, {
-        agentId,
         title: "Selected connector thread",
       });
     });
@@ -119,7 +117,6 @@ describe("thread connector selection", () => {
       },
     ]);
     const run = await sendChatRun(actor, {
-      agentId,
       threadId: thread.id,
       prompt: "Continue with the selected connections",
     });
@@ -169,7 +166,6 @@ describe("thread connector selection", () => {
     // The active run keeps its own account snapshot, but queued input must
     // observe thread selections during its later successful preparation.
     const waiting = await sendWaitingChatInput(actor, {
-      agentId,
       threadId: thread.id,
       prompt: "Use the account allowed when this queued input is picked",
     });

@@ -95,7 +95,7 @@ async function fixture() {
   const runnerGroup = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
-  const agent = await bdd.createAgent(actor, {
+  await bdd.createAgent(actor, {
     displayName: "Resource snapshot",
   });
   const originalSend = context.mocks.s3.send.getMockImplementation();
@@ -322,14 +322,9 @@ async function fixture() {
     omitted = "Unselected private information",
   ) {
     const { threadId, runId } = await chat.sendAndLaunch(actor, {
-      agentId: agent.agentId,
       prompt: content,
     });
-    await chat.requestSendEvent(
-      actor,
-      { agentId: agent.agentId, threadId, prompt: omitted },
-      [201],
-    );
+    await chat.requestSendEvent(actor, { threadId, prompt: omitted }, [201]);
     await flushWaitUntilForTest();
     const { events } = await chat.listThreadEvents(actor, threadId);
     const event = events.find((entry) => {

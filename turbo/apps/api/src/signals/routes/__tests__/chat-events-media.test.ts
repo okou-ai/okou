@@ -34,9 +34,8 @@ async function expectImageGuidance(
 
 describe("CHAT-02: run image model through public prompts", () => {
   it("keeps a run's image guidance stable and applies member changes to subsequent turns", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: "image model comes from the global default",
     });
     await expectImageGuidance(first.runId, "gpt-image-2.5-flare");
@@ -48,7 +47,6 @@ describe("CHAT-02: run image model through public prompts", () => {
       "fal-ai/flux-pro/v1.1",
     );
     const second = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "existing thread follows the member image model",
     });
@@ -69,7 +67,6 @@ describe("CHAT-02: run image model through public prompts", () => {
     await cancelChatRun(actor, second.runId);
 
     const third = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "next run sees the new image model",
     });
@@ -78,7 +75,7 @@ describe("CHAT-02: run image model through public prompts", () => {
   }, 90_000);
 
   it("uses the member image model when an organization slot releases", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     await chat.updateUserModelPreference(
       actor,
       "claude-fable-5-1",
@@ -86,11 +83,9 @@ describe("CHAT-02: run image model through public prompts", () => {
     );
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const blocker = await sendChatRun(actor, {
-      agentId,
       prompt: "occupy the organization slot",
     });
     const waiting = await sendWaitingChatInput(actor, {
-      agentId,
       prompt: "queued image model guidance",
     });
     await cancelChatRun(actor, blocker.runId);

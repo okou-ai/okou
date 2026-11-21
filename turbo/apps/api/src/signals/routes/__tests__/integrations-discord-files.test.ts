@@ -1068,11 +1068,10 @@ describe("Canonical Discord file publication and delivery", () => {
       await runs.ensurePersonalSubscriptionModel(fixture.actor);
       const runnerGroup = await runs.configureRunnerGroup();
       await runs.heartbeatRunner(runnerGroup);
-      const agent = await bdd.createAgent(fixture.actor, {
+      await bdd.createAgent(fixture.actor, {
         displayName: "File delivery identity test",
       });
       const sent = await chatFiles.sendAndLaunch(fixture.actor, {
-        agentId: agent.agentId,
         prompt: "Create a report",
       });
       const execution = await runs.executionInput(sent.runId);
@@ -1488,11 +1487,10 @@ describe("Canonical Discord file publication and delivery", () => {
     await runs.ensurePersonalSubscriptionModel(fixture.actor);
     const runnerGroup = await runs.configureRunnerGroup();
     await runs.heartbeatRunner(runnerGroup);
-    const agent = await bdd.createAgent(fixture.actor, {
+    await bdd.createAgent(fixture.actor, {
       displayName: "Discord file source test",
     });
     const sent = await chatFiles.sendAndLaunch(fixture.actor, {
-      agentId: agent.agentId,
       prompt: "Create a report for Discord",
     });
     const execution = await runs.executionInput(sent.runId);

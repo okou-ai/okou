@@ -86,7 +86,6 @@ async function observeCustomSkill(
   connectorId: string,
 ) {
   const sent = await fixture.sendChatRun(fixture.actor, {
-    agentId: fixture.agentId,
     prompt: "Read the current custom connector skill",
     model: "claude-fable-5-1",
   });
@@ -107,12 +106,11 @@ async function createBuiltinCredentialConsumer(
   fixture: Awaited<ReturnType<typeof publicChatActor>>,
   connectorSlug: string,
 ) {
-  const { actor, agentId, run: own } = fixture;
+  const { actor, run: own } = fixture;
   const runs = createRunsApi(context);
   const firewall = createFirewallApi(context);
   const callbacks = createWebhookCallbackApi(context);
   const sent = await fixture.sendChatRun(actor, {
-    agentId,
     prompt: "Consume the connected account's current credential",
   });
   const { execution, sandboxHeaders } = await fixture.runExecution(sent.runId);
@@ -2861,7 +2859,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       initialExpiresIn: 3600,
     });
     const fixture = await publicChatActor(context);
-    const { actor: admin, agentId, run: own } = fixture;
+    const { actor: admin, run: own } = fixture;
     const runs = createRunsApi(context);
     const callbacks = createWebhookCallbackApi(context);
     const firewall = createFirewallApi(context);
@@ -2950,7 +2948,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       );
     });
     const sent = await fixture.sendChatRun(admin, {
-      agentId,
       prompt: "Use the replacement manual credential",
     });
     const { execution, sandboxHeaders } = await fixture.runExecution(
@@ -4926,14 +4923,13 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
   it("lets an admin agent with an okou-scoped token create a manual definition that Connect can configure", async () => {
     const fixture = await publicChatActor(context);
-    const { actor: admin, agentId, run: own } = fixture;
+    const { actor: admin, run: own } = fixture;
     await own(async () => {
       if (!admin.orgId) {
         throw new Error("Expected an org-scoped admin");
       }
       mockClerkMembership(context, admin, "org:admin");
       const sent = await fixture.sendChatRun(admin, {
-        agentId,
         prompt: "Create the requested connector definition",
       });
       const { execution } = await fixture.runExecution(sent.runId);
@@ -5009,7 +5005,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
   it("sets all manual custom connector values through the values endpoint", async () => {
     const fixture = await publicChatActor(context);
-    const { actor: admin, agentId, run: own } = fixture;
+    const { actor: admin, run: own } = fixture;
     const firewall = createFirewallApi(context);
     const runs = createRunsApi(context);
     const callbacks = createWebhookCallbackApi(context);
@@ -5089,7 +5085,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     expectNoVisibleSecret(listed, "configured-secret");
     async function expectUsableValues(secret: string, subdomain: string) {
       const sent = await fixture.sendChatRun(admin, {
-        agentId,
         prompt: "Use the configured custom connector values",
       });
       const { execution, sandboxHeaders } = await fixture.runExecution(
@@ -5197,7 +5192,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
   it("revokes usable custom credentials when the member disconnects", async () => {
     const fixture = await publicChatActor(context);
-    const { actor: admin, agentId, run: own } = fixture;
+    const { actor: admin, run: own } = fixture;
     const firewall = createFirewallApi(context);
     await own(async () => {
       const created = await own(() => {
@@ -5254,7 +5249,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         },
       );
       const sent = await fixture.sendChatRun(admin, {
-        agentId,
         prompt: "Use the configured custom credential",
       });
       const { execution } = await fixture.runExecution(sent.runId);
@@ -5405,7 +5399,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
   it("isolates identical manual variable names by Custom connection", async () => {
     const fixture = await publicChatActor(context);
-    const { actor: admin, agentId, run: own } = fixture;
+    const { actor: admin, run: own } = fixture;
     const firewall = createFirewallApi(context);
     await own(async () => {
       const definition = {
@@ -5459,7 +5453,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       }
       expect(firstAccount.id).not.toBe(secondAccount.id);
       const sent = await fixture.sendChatRun(admin, {
-        agentId,
         prompt: "Use both independent regions",
       });
       const { execution } = await fixture.runExecution(sent.runId);
@@ -5521,7 +5514,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
   it("rolls back Custom values when a shared write fails", async () => {
     const fixture = await publicChatActor(context);
-    const { actor: admin, agentId, run: own } = fixture;
+    const { actor: admin, run: own } = fixture;
     const runs = createRunsApi(context);
     const firewall = createFirewallApi(context);
     await own(async () => {
@@ -5569,7 +5562,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       }
       const sent = await own(() => {
         return fixture.sendChatRun(admin, {
-          agentId,
           prompt: "Use the authorized custom connector",
         });
       });

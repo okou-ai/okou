@@ -65,7 +65,6 @@ describe("official connector runtime placeholders", () => {
 
       const decryptsBeforeRun = kms.decryptCalls;
       const run = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Use GitHub through request-time authentication",
       });
       const { execution, sandboxHeaders } = await owned.runExecution(run.runId);

@@ -946,8 +946,10 @@ describe("POST /api/integrations/feishu/message", () => {
   ] as const)(
     "authorizes a stored %s file (membership revoked: %s; other recipient DM: %s)",
     async (platform, revokeDuringUpload, otherRecipient) => {
-      const { actor, agentId, installationId } =
-        await createOnboardedFeishuInstallation(undefined, platform);
+      const { actor, installationId } = await createOnboardedFeishuInstallation(
+        undefined,
+        platform,
+      );
       await runsApi.grantProEntitlement(actor);
       await runsApi.ensurePersonalSubscriptionModel(actor);
       const runnerGroup = await runsApi.configureRunnerGroup();
@@ -957,7 +959,6 @@ describe("POST /api/integrations/feishu/message", () => {
       });
       const sent = await owner.run(() => {
         return chatApi.sendAndLaunch(actor, {
-          agentId,
           prompt: "Create a run for Feishu file upload completion",
         });
       });

@@ -1,7 +1,3 @@
-import {
-  legacyAgentDraftTransforms,
-  legacyThreadDraftTransforms,
-} from "./member-chat-drafts";
 import { iosChatUltrafastTransforms } from "./chat-ultrafast";
 import type { ClientResponseTransform } from "./types";
 import {
@@ -13,11 +9,6 @@ import {
 // their own transforms directly and never load this aggregate registry.
 export const iosResponseTransforms: readonly ClientResponseTransform[] = [
   ...Object.values(iosChatUltrafastTransforms),
-  ...[...legacyAgentDraftTransforms, ...legacyThreadDraftTransforms].filter(
-    (t) => {
-      return t.client === "ios";
-    },
-  ),
   iosEmailChatRowsTransform,
   iosEmailChatCatchUpTransform,
 ];

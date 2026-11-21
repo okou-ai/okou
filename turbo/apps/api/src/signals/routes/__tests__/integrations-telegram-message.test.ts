@@ -219,7 +219,6 @@ function sendExecutionModelMessage(model: FooterModel) {
       });
       expect(agent.displayName).toBe("Model footer sender");
       const thread = await chat.createThread(actor, {
-        agentId: agent.agentId,
         model,
       });
       await chat.updateThreadModelSelection(actor, thread.id, model, {

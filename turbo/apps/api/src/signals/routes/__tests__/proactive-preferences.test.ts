@@ -65,7 +65,6 @@ async function preferenceRun(suggestions = true) {
       },
     );
     const sent = await owned.sendChatRun(actor, {
-      agentId: defaultAgentId,
       prompt: "Manage my Proactive settings",
     });
     const { execution } = await owned.runExecution(sent.runId);

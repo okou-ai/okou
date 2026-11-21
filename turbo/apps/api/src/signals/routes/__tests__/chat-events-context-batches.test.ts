@@ -210,7 +210,6 @@ describe("shared context statement projections through normal sends", () => {
           );
         }
         const run = await sendChatRun(actor, {
-          agentId,
           ...(threadId ? { threadId } : {}),
           prompt: `${mode} ${flow}`,
         });

@@ -241,7 +241,6 @@ describe("CHAT-02: model-first routing", () => {
     ] as const;
 
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: prompts[0],
       model,
     });
@@ -271,7 +270,6 @@ describe("CHAT-02: model-first routing", () => {
     );
 
     const fast = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: prompts[1],
       model,
@@ -309,7 +307,6 @@ describe("CHAT-02: model-first routing", () => {
       );
     });
     const returned = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: prompts[2],
       model,
@@ -413,7 +410,6 @@ describe("CHAT-02: model-first routing", () => {
     const {
       run: own,
       actor,
-      agentId,
       runExecution,
       sendChatRun,
       requestSendEvent,
@@ -424,7 +420,6 @@ describe("CHAT-02: model-first routing", () => {
       return await api.updateUserModelPreference(actor, "claude-fable-5-1");
     });
     const anchor = await sendChatRun(actor, {
-      agentId,
       prompt: "hold the thread before queued fast Luna",
       model: "claude-fable-5-1",
     });
@@ -443,7 +438,6 @@ describe("CHAT-02: model-first routing", () => {
     const queued = await requestSendEvent(
       actor,
       {
-        agentId,
         threadId: anchor.threadId,
         prompt,
         clientEventId: queuedId,

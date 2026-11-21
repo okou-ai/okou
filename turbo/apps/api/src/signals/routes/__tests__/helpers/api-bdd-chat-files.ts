@@ -109,7 +109,6 @@ interface AuthHeaders {
 
 type BddSendEventBody =
   | {
-      readonly agentId?: string;
       readonly prompt: string;
       readonly threadId?: string;
       readonly clientThreadId?: string;
@@ -128,13 +127,11 @@ type BddSendEventBody =
       readonly sourceRunId?: string;
     }
   | {
-      readonly agentId?: string;
       readonly threadId: string;
       readonly revokesEventId: string;
       readonly clientEventId?: string;
     }
   | {
-      readonly agentId?: string;
       readonly threadId: string;
       readonly interruptsRunId: string;
       readonly clientEventId?: string;
@@ -529,7 +526,6 @@ export function createChatFilesBddApi(context: TestContext) {
     async createThread(
       actor: ApiTestUser,
       body: {
-        readonly agentId?: string;
         readonly title?: string;
         readonly clientThreadId?: string;
         readonly eventId?: string;
@@ -541,7 +537,6 @@ export function createChatFilesBddApi(context: TestContext) {
         threadsClient().create({
           headers: authenticate(context, actor),
           body: {
-            ...(body.agentId === undefined ? {} : { agentId: body.agentId }),
             ...(body.title === undefined ? {} : { title: body.title }),
             ...(body.clientThreadId === undefined
               ? {}
@@ -561,7 +556,6 @@ export function createChatFilesBddApi(context: TestContext) {
     async requestCreateThread(
       actor: ApiTestUser | null,
       body: {
-        readonly agentId?: string;
         readonly title?: string;
         readonly clientThreadId?: string;
         readonly eventId?: string;
@@ -574,7 +568,6 @@ export function createChatFilesBddApi(context: TestContext) {
         threadsClient().create({
           headers: authenticate(context, actor),
           body: {
-            ...(body.agentId === undefined ? {} : { agentId: body.agentId }),
             ...(body.title === undefined ? {} : { title: body.title }),
             ...(body.clientThreadId === undefined
               ? {}
@@ -1602,9 +1595,6 @@ export function createChatFilesBddApi(context: TestContext) {
               const selectedModel =
                 body.model === undefined ? defaultModel : body.model;
               return {
-                ...(body.agentId === undefined
-                  ? {}
-                  : { agentId: body.agentId }),
                 prompt: body.prompt,
                 ...(body.threadId === undefined
                   ? {}

@@ -76,9 +76,8 @@ describe("chat send authorization, validation and cancellation", () => {
   });
 
   it("rejects invalid model settings before resolving unavailable attachments", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const thread = await chat.createThread(actor, {
-      agentId,
       model: "claude-fable-5-1",
     });
     const before = await chat.listThreadEvents(actor, thread.id);
@@ -87,7 +86,6 @@ describe("chat send authorization, validation and cancellation", () => {
       new Error("attachment unavailable"),
     );
     const rejected = await requestSendEventRaw(actor, {
-      agentId,
       threadId: thread.id,
       prompt: "Reject before attachment preparation",
       runOptions: { reasoningEffort: "xhigh" },
@@ -120,8 +118,8 @@ describe("chat send authorization, validation and cancellation", () => {
   });
 
   it("does not enqueue when the caller aborts during attachment lookup", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
-    const thread = await chat.createThread(actor, { agentId });
+    const { actor } = await entitledNativeChatActor();
+    const thread = await chat.createThread(actor, {});
     if (!actor.orgId) {
       throw new Error("Expected an organization");
     }
@@ -138,7 +136,6 @@ describe("chat send authorization, validation and cancellation", () => {
     const rejected = await requestSendEventRaw(
       actor,
       {
-        agentId,
         threadId: thread.id,
         prompt: "abort before enqueue",
         hasTextContent: true,
@@ -168,9 +165,8 @@ describe("chat send authorization, validation and cancellation", () => {
   });
 
   it("rejects an unknown model without changing thread events", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: "early preload rejection anchor",
     });
     const execution = await runExecution(first.runId);
@@ -183,7 +179,6 @@ describe("chat send authorization, validation and cancellation", () => {
     const rejected = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: first.threadId,
         clientEventId: randomUUID(),
         model: "missing-preload-rejection-model",

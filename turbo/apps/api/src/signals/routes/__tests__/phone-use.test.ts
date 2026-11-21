@@ -356,10 +356,10 @@ test("chat consent stays owner-scoped and can be revoked without native readines
   const scenario = createPublicComputerUseScenario(context);
   const orgId = `org_${randomUUID()}`;
   const actor = scenario.user({ orgId });
-  const setup = await scenario.prepareActor(actor);
+  await scenario.prepareActor(actor);
   const chat = createChatFilesBddApi(context);
   const thread = await scenario.run(() => {
-    return chat.createThread(actor, { agentId: setup.agentId });
+    return chat.createThread(actor, {});
   });
   const nativeSession = `sess_native_${randomUUID()}`;
   const client = api();
@@ -458,11 +458,10 @@ test(
     const orgId = `org_${randomUUID()}`;
     const scenario = createPublicComputerUseScenario(context);
     const actor = scenario.user({ orgId });
-    const setup = await scenario.prepareActor(actor);
+    await scenario.prepareActor(actor);
     const chat = createChatFilesBddApi(context);
     const thread = await scenario.run(() => {
       return chat.createThread(actor, {
-        agentId: setup.agentId,
         title: "Phone task",
       });
     });

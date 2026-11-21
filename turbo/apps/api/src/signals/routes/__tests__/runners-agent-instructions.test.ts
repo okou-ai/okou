@@ -132,7 +132,6 @@ describe("Published member instructions in direct Runs", () => {
         return await send(command);
       });
       const { runId } = await chat.sendAndLaunch(member, {
-        agentId: owned.agentId,
         prompt: "Launch with my personal instructions",
         model: "gpt-6-luna",
         userMessage: {
