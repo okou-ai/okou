@@ -12,8 +12,12 @@ import android.os.Build
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -62,6 +66,47 @@ class AndroidUpdateClientTest {
                     } catch (error: UpdateException) {
                         assertEquals(UpdateProblem.Check, error.problem)
                     }
+                }
+        }
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun temporaryDiscoveryRejectionRetriesThroughThePublicClient() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            val directory = files.newFolder()
+            val info = AndroidUpdates(null, updateRelease())
+            server.enqueue(MockResponse().setResponseCode(503))
+            server.enqueue(MockResponse().setBody(Json.encodeToString(info)))
+            val client =
+                AndroidUpdateClient(
+                    ApplicationProvider.getApplicationContext(),
+                    server.url("/"),
+                    "0.12.0",
+                    directory,
+                )
+            AppUpdates(
+                    client,
+                    FileUpdateStore(directory),
+                    "0.12.0",
+                    35,
+                    StandardTestDispatcher(testScheduler),
+                )
+                .use { owner ->
+                    owner.check()
+                    val rejected =
+                        owner.state.first {
+                            it.check == UpdateCheck.Waiting || it.check == UpdateCheck.Failed
+                        }
+                    assertEquals(UpdateCheck.Waiting, rejected.check)
+                    advanceTimeBy(59_999)
+                    assertEquals(1, server.requestCount)
+
+                    advanceTimeBy(1)
+                    val confirmed = owner.state.first { it.check == UpdateCheck.Checked }
+                    assertEquals(info.release, confirmed.candidate)
+                    assertEquals(2, server.requestCount)
                 }
         }
     }

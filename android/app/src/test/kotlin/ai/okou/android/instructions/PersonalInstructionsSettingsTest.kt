@@ -5,15 +5,19 @@ import ai.okou.android.MainActivity
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.auth.SessionModel
 import android.content.Intent
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.text.TextRange
@@ -35,7 +39,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.model.MultipleFailureException
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 class InstructionsApplication : TestOkouApplication() {
     lateinit var fixture: InstructionsApiFixture
@@ -142,13 +148,52 @@ class PersonalInstructionsSettingsTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w240dp-h200dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun shortSettingsWindowAllowsEditingAndSavingAtLargeType() {
+        val app = compose.activity.application as InstructionsApplication
+        val originalFontScale = RuntimeEnvironment.getFontScale()
+        try {
+            RuntimeEnvironment.setFontScale(2f)
+            compose.activityRule.scenario.recreate()
+            compose.onNodeWithContentDescription("Chats").assertExists()
+            compose.onNodeWithContentDescription("Settings").performClick()
+            compose
+                .onNodeWithText("Personal Instructions")
+                .performScrollTo()
+                .assertIsDisplayed()
+                .performSemanticsAction(SemanticsActions.OnClick)
+            compose.onNodeWithText("Cancel").assertExists()
+            val editor =
+                compose.runOnIdle {
+                    val session = ViewModelProvider(compose.activity)[SessionModel::class.java]
+                    checkNotNull(session.uiState.value.ready).instructions.also {
+                        editorJob = it.viewModelScope.coroutineContext[Job]
+                    }
+                }
+            app.readGate.countDown()
+            compose.waitUntil(10_000) { compose.runOnIdle { !editor.uiState.value.busy } }
+            assertEquals(InstructionsPhase.Ready, editor.uiState.value.phase)
+            val input = compose.onNodeWithTag("instructions_editor")
+            input.performScrollTo().assertIsDisplayed().performTextReplacement("Short window draft")
+            val save = compose.onNodeWithText("Save")
+            if (!save.isDisplayed()) save.performScrollTo()
+            save.assertIsDisplayed().performClick()
+            compose.waitUntil(10_000) { compose.runOnIdle { editor.uiState.value.draft == null } }
+            assertEquals("Short window draft", app.fixture.saved.content)
+        } finally {
+            RuntimeEnvironment.setFontScale(originalFontScale)
+        }
+    }
+
+    @Test
     fun loadingLeavesSettingsUsableAndConflictsPreserveNativeSelectionUntilExplicitReload() {
         val app = compose.activity.application as InstructionsApplication
         compose.onNodeWithContentDescription("Chats").assertExists()
         compose.onNodeWithContentDescription("Settings").performClick()
-        compose.onNodeWithText("Appearance").assertExists()
-        compose.onNodeWithText("Instructions").performScrollTo().performClick()
-        compose.onNodeWithText("Loading Instructions…").assertExists()
+        compose.onNodeWithText("Display mode").assertExists()
+        compose.onNodeWithText("Personal Instructions").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Loading Instructions…").assertExists()
         val model =
             compose.runOnIdle {
                 checkNotNull(
@@ -179,14 +224,14 @@ class PersonalInstructionsSettingsTest {
             TextRange(5, 8),
             input.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
         )
-        compose.onNodeWithText("Save Instructions").assertIsNotEnabled()
+        compose.onNodeWithText("Save").assertIsNotEnabled()
         assertEquals(0, app.fixture.requests.count { it.method == "PUT" })
         compose.onNodeWithText("Reload latest and discard changes").performScrollTo().performClick()
         awaitPhase(InstructionsPhase.Ready)
-        input.assertTextEquals("Instructions", "Changed on Web")
+        input.assertTextEquals("Changed on Web")
         app.fixture.disconnectSave = true
         input.performScrollTo().performTextReplacement("Accepted despite lost response")
-        compose.onNodeWithText("Save Instructions").performScrollTo().performClick()
+        compose.onNodeWithText("Save").performClick()
         compose.waitUntil(10_000) {
             compose.runOnIdle {
                 model.uiState.value.phase == InstructionsPhase.Ready &&
@@ -195,6 +240,9 @@ class PersonalInstructionsSettingsTest {
         }
         assertEquals("Accepted despite lost response", app.fixture.saved.content)
         assertEquals(1, app.fixture.requests.count { it.method == "PUT" })
+        input.assertDoesNotExist()
+        compose.onNodeWithText("Personal Instructions").performScrollTo().performClick()
+        awaitPhase(InstructionsPhase.Ready)
         val large = "Personal instructions 👋 ".repeat(5_000)
         input.performScrollTo().performTextReplacement(large)
         input.performTextInputSelection(TextRange(13))
@@ -211,8 +259,8 @@ class PersonalInstructionsSettingsTest {
             TextRange(13),
             input.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
         )
-        compose.onNodeWithContentDescription("Back").performClick()
-        compose.onNodeWithText("Appearance").assertExists()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.onNodeWithText("Display mode").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithContentDescription("Chats").assertExists()
     }

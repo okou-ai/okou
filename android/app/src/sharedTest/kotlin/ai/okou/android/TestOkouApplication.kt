@@ -14,6 +14,7 @@ import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.auth.Authentication
 import ai.okou.android.auth.AuthenticationState
 import ai.okou.android.auth.MembershipAccess
+import ai.okou.android.auth.NativeAccount
 import ai.okou.android.auth.NativeSession
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceMembership
@@ -180,6 +181,7 @@ class PendingAuthenticationApplication : TestOkouApplication() {
 class TestAuthentication(initial: AuthenticationState = testAuthenticationState()) :
     Authentication {
     override val state = MutableStateFlow(initial)
+    override val account = MutableStateFlow<NativeAccount?>(null)
     var available =
         listOf(
             WorkspaceMembership("org-a", "Workspace A", "org:member"),

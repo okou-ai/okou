@@ -1,6 +1,7 @@
 package ai.okou.android
 
 import ai.okou.android.api.generated.UserPreferencesColorTheme
+import ai.okou.android.auth.NativeAccount
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.SemanticsActions
@@ -25,6 +26,22 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], qualifiers = "en-rUS", application = TestOkouApplication::class)
 class MainActivityTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+
+    @Test
+    fun settingsOnlyShowTheActiveAccountAndSignOutRequiresConfirmation() {
+        val app = compose.activity.application as TestOkouApplication
+        val auth = app.authentication as TestAuthentication
+        compose.runOnIdle { auth.account.value = NativeAccount("other-user", "other@okou.test") }
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithText("other@okou.test").assertDoesNotExist()
+        compose.runOnIdle { auth.account.value = NativeAccount("user-a", "current@okou.test") }
+        compose.onNodeWithText("current@okou.test").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Sign out").performScrollTo().performClick()
+        compose.onNodeWithText("Sign out?").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithText("Display mode").assertExists()
+        compose.runOnIdle { assertTrue(auth.state.value.session?.active == true) }
+    }
 
     @Test
     @Config(qualifiers = "en-rUS-w411dp-h731dp-notnight")

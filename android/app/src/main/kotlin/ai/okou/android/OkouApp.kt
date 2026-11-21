@@ -104,7 +104,9 @@ internal fun OkouApp(
     composer: ChatComposerModel?,
     controls: RunControlsModel?,
     projectExpansion: ProjectExpansionModel?,
-    settingsContent: @Composable (SettingsDestination, openInstructions: () -> Unit) -> Unit,
+    settingsContent:
+        @Composable
+        (SettingsDestination, openInstructions: () -> Unit, closeInstructions: () -> Unit) -> Unit,
     recovery: AssistantRecoveryModel? = null,
     workspaceAvatar: @Composable (() -> Unit)? = null,
     workspaceName: String? = null,
@@ -405,8 +407,8 @@ internal fun OkouApp(
 
     val title =
         when (settings) {
-            SettingsDestination.Overview -> stringResource(R.string.settings)
-            SettingsDestination.Instructions -> stringResource(R.string.instructions_title)
+            SettingsDestination.Overview,
+            SettingsDestination.Instructions -> stringResource(R.string.settings)
             null ->
                 when (target) {
                     WorkspaceTarget.List -> stringResource(R.string.app_name)
@@ -565,13 +567,15 @@ internal fun OkouApp(
     ) { insets ->
         Column(Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets)) {
             if (settings != null) {
-                val scroll =
-                    if (settings == SettingsDestination.Overview) settingsPosition
-                    else rememberScrollState()
-                SettingsPage(scroll) {
-                    settingsContent(settings) {
-                        navigation = navigation.copy(settings = SettingsDestination.Instructions)
-                    }
+                SettingsPage(settingsPosition) {
+                    settingsContent(
+                        settings,
+                        {
+                            navigation =
+                                navigation.copy(settings = SettingsDestination.Instructions)
+                        },
+                        ::back,
+                    )
                 }
             } else {
                 if (!showChatList && startupRecovery != null) {

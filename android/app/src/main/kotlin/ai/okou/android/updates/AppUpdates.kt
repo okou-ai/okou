@@ -5,8 +5,12 @@ import ai.okou.android.api.RequiredUpdate
 import ai.okou.android.api.generated.AndroidUpdates
 import ai.okou.android.api.generated.AndroidUpdatesRelease
 import java.io.Closeable
+import java.io.EOFException
 import java.io.File
 import java.io.IOException
+import java.io.InterruptedIOException
+import java.net.SocketException
+import java.net.UnknownHostException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -15,6 +19,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,12 +27,14 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 
@@ -36,6 +43,7 @@ enum class UpdateCheck {
     Checking,
     Checked,
     Failed,
+    Waiting,
 }
 
 sealed interface UpdateTransfer {
@@ -45,6 +53,8 @@ sealed interface UpdateTransfer {
 
     data class Downloading(val release: AndroidUpdatesRelease, val downloadedBytes: Long? = null) :
         UpdateTransfer
+
+    data class Waiting(val release: AndroidUpdatesRelease) : UpdateTransfer
 
     data class Ready(val release: AndroidUpdatesRelease) : UpdateTransfer
 
@@ -85,6 +95,7 @@ data class UpdateUiState(
             when (val transfer = transfer) {
                 is UpdateTransfer.Recovering -> transfer.release
                 is UpdateTransfer.Downloading -> transfer.release
+                is UpdateTransfer.Waiting -> transfer.release
                 is UpdateTransfer.Ready -> transfer.release
                 UpdateTransfer.Idle,
                 UpdateTransfer.Failed,
@@ -117,6 +128,7 @@ data class UpdateUiState(
                 UpdateTransfer.Interrupted -> candidate?.let(::isEligible) == true
                 is UpdateTransfer.Recovering,
                 is UpdateTransfer.Downloading,
+                is UpdateTransfer.Waiting,
                 is UpdateTransfer.Ready -> false
             }
 
@@ -130,6 +142,7 @@ data class UpdateUiState(
                 available &&
                 (deferred != displayedRelease?.version ||
                     transfer is UpdateTransfer.Downloading ||
+                    transfer is UpdateTransfer.Waiting ||
                     transfer is UpdateTransfer.Ready)
 }
 
@@ -195,7 +208,6 @@ class AppUpdates(
                     connectivityReady.complete(Unit)
                     if (reconnected) {
                         initialized.await()
-                        checkJob?.join()
                         check(manual = mutable.value.needsRequiredRelease)
                     }
                 }
@@ -254,30 +266,18 @@ class AppUpdates(
                 connectivityReady.await()
                 val snapshot = mutable.value
                 if (snapshot.offline) return@launch
-                val attemptTime = now()
-                val lastAttempt = attemptedAt
-                // Allow the first online check in a new app process even with a fresh cache.
-                if (!manual && lastAttempt != null) {
-                    if (attemptTime - lastAttempt in 0 until 60_000) return@launch
+                if (!manual) {
+                    val time = now()
+                    val lastAttempt = attemptedAt
+                    if (lastAttempt != null && time - lastAttempt in 0 until 60_000) return@launch
                     if (
                         !snapshot.needsRequiredRelease &&
                             checkedAt > 0 &&
-                            attemptTime - checkedAt in 0 until 86_400_000
+                            time - checkedAt in 0 until 86_400_000
                     )
                         return@launch
                 }
-                attemptedAt = attemptTime
-                mutable.update { it.copy(check = UpdateCheck.Checking) }
-                val info =
-                    try {
-                        service.check()
-                    } catch (error: Exception) {
-                        currentCoroutineContext().ensureActive()
-                        classify(error, UpdateProblem.Check)
-                        // A discovery failure leaves the selected package and its outcome intact.
-                        mutable.update { it.copy(check = UpdateCheck.Failed) }
-                        return@launch
-                    }
+                val info = readRelease() ?: return@launch
                 val floor = higherMinimum(mutable.value.minimum, info.minimumSupportedVersion)
                 val blocked =
                     mutable.value.required ||
@@ -298,6 +298,26 @@ class AppUpdates(
                     reportStorageFailure(error)
                 }
             }
+    }
+
+    private suspend fun readRelease(): AndroidUpdates? {
+        while (true) {
+            attemptedAt = now()
+            mutable.update { it.copy(check = UpdateCheck.Checking) }
+            try {
+                return service.check().also { currentCoroutineContext().ensureActive() }
+            } catch (error: Exception) {
+                currentCoroutineContext().ensureActive()
+                classify(error, UpdateProblem.Check)
+                val transient = error.isTemporaryNetworkFailure()
+                mutable.update {
+                    it.copy(check = if (transient) UpdateCheck.Waiting else UpdateCheck.Failed)
+                }
+                if (!transient) return null
+                delay(60_000)
+                state.first { !it.offline }
+            }
+        }
     }
 
     fun requireUpdate(requirement: RequiredUpdate) {
@@ -345,30 +365,56 @@ class AppUpdates(
                 mutable.update {
                     it.copy(transfer = UpdateTransfer.Downloading(release), problem = null)
                 }
-                try {
-                    persist()
-                    service.download(release) { bytes ->
-                        mutable.update {
-                            val transfer = it.transfer
-                            if (ticket == transferTicket && transfer is UpdateTransfer.Downloading)
-                                it.copy(transfer = transfer.copy(downloadedBytes = bytes))
-                            else it
-                        }
-                    }
-                    currentCoroutineContext().ensureActive()
-                    if (ticket == transferTicket)
-                        mutable.update { it.copy(transfer = UpdateTransfer.Ready(release)) }
-                } catch (error: Exception) {
-                    currentCoroutineContext().ensureActive()
-                    if (ticket == transferTicket) {
-                        val failure = classify(error, UpdateProblem.Download)
-                        mutable.update {
-                            it.copy(transfer = UpdateTransfer.Failed, problem = failure)
-                        }
-                    }
-                }
+                downloadSelected(release, ticket)
             }
         return true
+    }
+
+    private suspend fun downloadSelected(release: AndroidUpdatesRelease, ticket: Long) {
+        var backoff = 5_000L
+        while (ticket == transferTicket) {
+            try {
+                persist()
+                service.download(release) { bytes ->
+                    mutable.update {
+                        val transfer = it.transfer
+                        if (ticket == transferTicket && transfer is UpdateTransfer.Downloading)
+                            it.copy(transfer = transfer.copy(downloadedBytes = bytes))
+                        else it
+                    }
+                }
+                currentCoroutineContext().ensureActive()
+                if (ticket == transferTicket)
+                    mutable.update {
+                        it.copy(transfer = UpdateTransfer.Ready(release), problem = null)
+                    }
+                return
+            } catch (error: Exception) {
+                currentCoroutineContext().ensureActive()
+                if (ticket != transferTicket) return
+                val failure = classify(error, UpdateProblem.Download)
+                val transient = error.isTemporaryNetworkFailure()
+                mutable.update {
+                    it.copy(
+                        transfer =
+                            if (transient) UpdateTransfer.Waiting(release)
+                            else UpdateTransfer.Failed,
+                        problem = failure,
+                    )
+                }
+                if (!transient) return
+                withTimeoutOrNull(backoff) {
+                    state.first { it.offline }
+                    state.first { !it.offline }
+                }
+                state.first { !it.offline }
+                backoff = (backoff * 2).coerceAtMost(60_000)
+                if (ticket != transferTicket) return
+                mutable.update {
+                    it.copy(transfer = UpdateTransfer.Downloading(release), problem = null)
+                }
+            }
+        }
     }
 
     private fun discardTransfer() {
@@ -452,6 +498,7 @@ class AppUpdates(
         when (error) {
             is UpdateException -> error.problem
             is ApiFailure.Http -> fallback
+            is ApiFailure.Network -> fallback
             is IOException,
             is SerializationException -> fallback
             else -> throw error
@@ -462,6 +509,17 @@ class AppUpdates(
         service.close()
     }
 }
+
+private fun Exception.isTemporaryNetworkFailure(): Boolean =
+    when (this) {
+        is ApiFailure.Http -> status == 408 || status == 429 || status in 500..599
+        is ApiFailure.Network,
+        is InterruptedIOException,
+        is SocketException,
+        is UnknownHostException,
+        is EOFException -> true
+        else -> false
+    }
 
 private fun higherMinimum(first: String?, second: String?): String? =
     listOfNotNull(first, second).filter(::isAndroidVersion).maxWithOrNull { left, right ->

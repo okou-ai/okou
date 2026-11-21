@@ -1,5 +1,6 @@
 package ai.okou.android.updates
 
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.SignedTransferClient
 import ai.okou.android.api.bounded
 import ai.okou.android.api.closeTransport
@@ -8,6 +9,8 @@ import ai.okou.android.api.generated.AndroidUpdatesRelease
 import ai.okou.android.api.generated.ApiHeaders
 import ai.okou.android.api.generated.CanonicalApi
 import ai.okou.android.api.httpClient
+import ai.okou.android.api.httpRejection
+import ai.okou.android.api.retryAfter
 import ai.okou.android.api.validateTransportUrl
 import android.content.Context
 import android.content.pm.PackageInfo
@@ -83,7 +86,18 @@ class AndroidUpdateClient(
     override suspend fun check(): AndroidUpdates =
         withContext(dispatcher) {
             val info =
-                api.androidUpdates().body() ?: throw IOException("Empty Android update response")
+                try {
+                    api.androidUpdates().body()
+                } catch (error: IOException) {
+                    currentCoroutineContext().ensureActive()
+                    val rejection = error.httpRejection() ?: throw error
+                    throw ApiFailure.Http(
+                        rejection.status,
+                        null,
+                        null,
+                        retryAfter(rejection.retryAfter),
+                    )
+                } ?: throw IOException("Empty Android update response")
             validateRelease(info.release)
             if (
                 info.minimumSupportedVersion != null &&

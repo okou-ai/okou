@@ -98,21 +98,21 @@ class UpdateRootTest {
         app.fixture.heldCheck!!.complete(Unit)
         compose.waitUntil(10_000) { app.updates.state.value.available }
         compose.onNodeWithText("View update").performClick()
-        compose.onNodeWithText("A useful update").assertExists()
+        compose.onNodeWithText(app.getString(R.string.updates_version, "99.0.0")).assertExists()
         compose.onNodeWithText("Download update").performSemanticsAction(SemanticsActions.OnClick)
         compose.waitUntil(10_000) { app.fixture.progress != null }
         app.fixture.progress!!(617)
-        compose.onNodeWithText("Updating · 50%").assertExists()
+        compose.onNodeWithText("Downloading · 50%").assertExists()
         compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.OnClick)
         assertTrue(app.updates.state.value.transfer is UpdateTransfer.Downloading)
         app.updates.requireUpdate(RequiredUpdate("99.0.0"))
         compose.waitUntil(10_000) { app.updates.state.value.required }
         compose.onNodeWithText("Update Okou to continue").assertExists()
-        compose.onNodeWithText("Updating · 50%").assertExists()
+        compose.onNodeWithText("Downloading · 50%").assertExists()
         compose.onNodeWithText("Welcome to Okou").assertDoesNotExist()
         compose.activityRule.scenario.recreate()
         compose.onNodeWithText("Update Okou to continue").assertExists()
-        compose.onNodeWithText("Updating · 50%").assertExists()
+        compose.onNodeWithText("Downloading · 50%").assertExists()
         compose.onNodeWithText("Sign out").assertDoesNotExist()
     }
 
@@ -149,8 +149,8 @@ class UpdateRootTest {
             compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.OnClick)
             compose.activityRule.scenario.onActivity { it.onWindowFocusChanged(true) }
             finishDownload()
-            compose.onNodeWithText("Allow update installation").assertIsDisplayed()
-            compose.onNodeWithText("Later").performSemanticsAction(SemanticsActions.OnClick)
+            assertNoPlatformLaunch()
+            compose.onNodeWithText("Allow update installation").assertDoesNotExist()
             openDetails.performClick()
             val ready = compose.onNodeWithText("Continue installation")
             assertEquals(actionBounds, ready.assertIsDisplayed().getUnclippedBoundsInRoot())
@@ -198,7 +198,7 @@ class UpdateRootTest {
             compose
                 .onNodeWithText("Connect to the internet to check for updates.")
                 .assertIsDisplayed()
-            compose.onNodeWithText("Check for updates").assertIsNotEnabled()
+            compose.onNodeWithText("Waiting to check").assertIsNotEnabled()
             compose.onNodeWithText("You are up to date").assertDoesNotExist()
 
             app.online.value = true
@@ -270,7 +270,7 @@ class UpdateRootTest {
         assertTrue(intent.getBooleanExtra(Intent.EXTRA_RETURN_RESULT, false))
         returnFrom(install.requestCode, Activity.RESULT_FIRST_USER)
         compose.onNodeWithText("Android could not install the update.").assertIsDisplayed()
-        compose.onNodeWithText("Retry installation").assertIsEnabled().performClick()
+        compose.onNodeWithText("Continue installation").assertIsEnabled().performClick()
         val retry = nextLaunch()
         assertEquals(intent.data, retry.intent.data)
         returnFrom(retry.requestCode)
@@ -334,16 +334,13 @@ class UpdateRootTest {
         compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.OnClick)
         compose.activityRule.scenario.onActivity { it.onWindowFocusChanged(true) }
         finishDownload()
-        returnFrom(nextLaunch().requestCode)
         assertNoPlatformLaunch()
 
         openDetails.performClick()
         title.assertIsDisplayed()
         install.performSemanticsAction(SemanticsActions.OnClick)
         val pending = nextLaunch()
-        title.assertDoesNotExist()
         compose.activityRule.scenario.recreate()
-        title.assertDoesNotExist()
         returnFrom(pending.requestCode)
         title.assertIsDisplayed()
         install.assertIsDisplayed().assertIsEnabled()
@@ -352,7 +349,7 @@ class UpdateRootTest {
     }
 
     @Test
-    fun backgroundCompletionHandsOffOnlyAfterResuming() {
+    fun backgroundCompletionOutsideUpdatesAwaitsExplicitContinuationWhenResumed() {
         allowInstallAndDiscoverUpdate()
         compose.onNodeWithText("View update").performClick()
         compose.onNodeWithText("Download update").performSemanticsAction(SemanticsActions.OnClick)
@@ -367,7 +364,9 @@ class UpdateRootTest {
         compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
         // ActivityScenario changes the lifecycle separately from window focus.
         compose.activityRule.scenario.onActivity { it.onWindowFocusChanged(true) }
-        assertEquals(Intent.ACTION_VIEW, nextLaunch().intent.action)
+        assertNoPlatformLaunch()
+        compose.onNodeWithText("View update").performClick()
+        compose.onNodeWithText("Continue installation").assertIsEnabled()
         assertNoPlatformLaunch()
     }
 

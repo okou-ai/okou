@@ -73,7 +73,6 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import java.io.IOException
 import java.text.NumberFormat
 import java.util.Locale
 import kotlinx.coroutines.CompletableDeferred
@@ -167,7 +166,13 @@ class OkouAppTest {
                                         override suspend fun updatePreferences(
                                             update: UpdatePreferencesRequest
                                         ): UserPreferences {
-                                            if (failPreferenceSave()) throw IOException("offline")
+                                            if (failPreferenceSave())
+                                                throw ai.okou.android.api.ApiFailure.Http(
+                                                    400,
+                                                    null,
+                                                    null,
+                                                    null,
+                                                )
                                             return service.updatePreferences(update)
                                         }
                                     },
@@ -237,7 +242,7 @@ class OkouAppTest {
                                 models.first.second,
                                 controls,
                                 projectExpansion = null,
-                                settingsContent = { _, _ ->
+                                settingsContent = { _, _, _ ->
                                     SettingsScreen(
                                         workspacePreferences = {
                                             MemberPreferencesSettings(models.second)
@@ -350,8 +355,8 @@ class OkouAppTest {
     fun compactSettingsShowTheValueBelowTheTitle() {
         render()
         compose.onNodeWithContentDescription("Settings").performClick()
-        compose.onNodeWithText("Appearance").performScrollTo().assertIsDisplayed()
-        val title = compose.onNodeWithText("Appearance", useUnmergedTree = true)
+        compose.onNodeWithText("Display mode").performScrollTo().assertIsDisplayed()
+        val title = compose.onNodeWithText("Display mode", useUnmergedTree = true)
         val value = compose.onNodeWithText("Follow system", useUnmergedTree = true)
         assertTrue(
             value.assertIsDisplayed().getUnclippedBoundsInRoot().top >=
@@ -374,7 +379,7 @@ class OkouAppTest {
         compose.onNodeWithText("Mark all as read").assertIsNotEnabled()
         compose.onNodeWithText("Archived").performClick()
         compose.onNodeWithContentDescription("Settings").performClick()
-        compose.onNodeWithText("Appearance").assertExists()
+        compose.onNodeWithText("Display mode").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithTag("chat_filter_heading").assertIsDisplayed().assert(hasText("Archived"))
         compose.onNodeWithText("New chat").assertIsDisplayed()
@@ -417,12 +422,13 @@ class OkouAppTest {
         render(failPreferenceSave = { fail })
         compose.onNodeWithContentDescription("Settings").performClick()
         selectAppearance("Dark")
-        compose.onNodeWithText("Could not confirm the save. Try again or refresh.").assertExists()
+        compose
+            .onNodeWithText("Could not save your preferences. Your selections are still in use.")
+            .assertExists()
         compose.onNodeWithText("Dark").assertIsDisplayed()
-        compose.onNodeWithText("Refresh preferences").assertExists()
         compose.runOnIdle { fail = false }
         compose.onNodeWithText("Try again").performScrollTo().performClick()
-        compose.onNodeWithText("Appearance").performClick()
+        compose.onNodeWithText("Display mode").performClick()
         compose.onNode(isSelectable() and hasText("Dark")).assertIsSelected()
         compose
             .onNode(isSelectable() and hasText("Light"))
@@ -457,7 +463,7 @@ class OkouAppTest {
         compose.runOnIdle { org.junit.Assert.assertNotEquals(light, background) }
     }
 
-    private fun selectAppearance(mode: String, row: String = "Appearance") {
+    private fun selectAppearance(mode: String, row: String = "Display mode") {
         compose.onNodeWithText(row).performScrollTo().performClick()
         compose
             .onNode(isSelectable() and hasText(mode))
@@ -624,9 +630,9 @@ class OkouAppTest {
             }
         render(fontScale = 2f, chatService = chatService)
         compose.onNodeWithContentDescription("Einstellungen").assertIsDisplayed().performClick()
-        selectAppearance("Dunkel", row = "Erscheinungsbild")
+        selectAppearance("Dunkel", row = "Anzeigemodus")
         compose.onNodeWithText("Dunkel").assertIsDisplayed()
-        compose.onNodeWithText("Arbeitsbereichseinstellungen").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Gemeinsame Einstellungen").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Zurück").assertIsDisplayed().performClick()
         compose.onNodeWithContentDescription("Chats").assertIsDisplayed()
         compose.mainClock.advanceTimeBy(120)

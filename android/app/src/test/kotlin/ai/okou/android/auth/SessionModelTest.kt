@@ -294,7 +294,7 @@ class SessionModelTest {
     }
 
     @Test
-    fun lateTokenCannotEscapeAReplacedWorkspaceAndOldListStateIsDiscarded() {
+    fun lateTokenCannotEscapeAReplacedWorkspaceAndItsFilterRestoresOnlyOnReturn() {
         val auth = TestAuthentication()
         val token = CompletableDeferred<String>()
         check(auth) { model, resources ->
@@ -315,6 +315,15 @@ class SessionModelTest {
             token.complete("old-token")
             runCurrent()
             assertTrue(request.await().exceptionOrNull() is CancellationException)
+            model.chooseWorkspace("org-a", model.uiState.value.generation)
+            runCurrent()
+            val restored = requireNotNull(model.uiState.value.ready)
+            assertEquals("org-a", restored.identity.workspaceId)
+            assertNotSame(original.chats, restored.chats)
+            assertEquals(
+                ai.okou.android.chat.ChatListFilter.Muted,
+                restored.chats.uiState.value.filter,
+            )
         }
     }
 
