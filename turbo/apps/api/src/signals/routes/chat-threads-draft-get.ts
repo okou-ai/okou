@@ -1,4 +1,3 @@
-import { legacyThreadDraftTransforms } from "@okouai/api-contracts/client-transforms/member-chat-drafts";
 import { computed } from "ccstate";
 import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
 
@@ -27,7 +26,6 @@ const getThreadDraftInner$ = computed(async (get) => {
 export const chatThreadDraftGetRoutes: readonly RouteEntry[] = [
   {
     route: chatThreadDraftContract.get,
-    responseTransforms: legacyThreadDraftTransforms,
     handler: authRoute({ requireOrganization: true }, getThreadDraftInner$),
   },
 ];
