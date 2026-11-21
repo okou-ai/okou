@@ -222,7 +222,8 @@ class PendingWorkspaceRootTest {
         val startupBounds = searchEntry.getUnclippedBoundsInRoot()
         compose.runOnIdle { app.organizationResponse.complete(Unit) }
         awaitCachedRow()
-        toolEntries.forEach { it.assertIsDisplayed().assertIsNotEnabled() }
+        toolEntries.take(2).forEach { it.assertIsDisplayed().assertIsNotEnabled() }
+        toolEntries.last().assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithTag("chat_$CHAT_PERSONAL").assertIsEnabled().performClick()
         compose.waitUntil(10_000) {
             compose
