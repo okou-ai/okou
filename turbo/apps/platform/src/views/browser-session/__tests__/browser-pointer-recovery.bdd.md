@@ -3,6 +3,8 @@
 Baseline [b0a10287edf4](https://github.com/okou-ai/okou/tree/b0a10287edf4242383c28e39c6f7675053febb32).
 Source [browser-pointer-recovery.test.tsx](browser-pointer-recovery.test.tsx).
 
+Batch 37 accepted 002, 005 and 007. Selected ID 008 remains pending.
+
 ## browser-pointer-recovery-001
 
 Original test `An unacknowledged hover recovers after its session ends (target destroyed: false)`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-pointer-recovery.test.tsx#L127).

@@ -162,7 +162,7 @@ export function mockBrowserCdp(
     }
   }
 
-  function frame(data: string, sessionId?: string) {
+  function frame(data: string, sessionId?: string, rasterWidth?: number) {
     sessionId ??= [...capturing].reverse().find((id) => {
       return sessionTargets.get(id) === "example-page";
     });
@@ -173,17 +173,20 @@ export function mockBrowserCdp(
       return candidate.targetId === sessionTargets.get(sessionId);
     });
     if (target && crashedTargets.has(target.targetId)) {
-      return;
+      return false;
     }
     if (target && windowStates.get(target.windowId ?? 0) === "minimized") {
-      return;
+      return false;
     }
     const window = frameWindows.get(sessionId);
     if (options.enforceFrameWindow && window) {
       if (window.outstanding >= window.limit) {
-        return;
+        return false;
       }
       window.outstanding++;
+    }
+    if (rasterWidth !== undefined) {
+      bitmap?.resize(rasterWidth, viewport.height);
     }
     event(
       "Page.screencastFrame",
@@ -202,6 +205,7 @@ export function mockBrowserCdp(
       },
       sessionId,
     );
+    return true;
   }
 
   function addTarget(url: string, windowId?: number) {
