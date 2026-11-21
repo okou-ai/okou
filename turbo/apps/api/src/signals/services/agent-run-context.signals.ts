@@ -25,10 +25,6 @@ import {
 import { waitUntil } from "../context/wait-until";
 import { safeSync, settle } from "../utils";
 import {
-  createMemberMemoryHead,
-  type MemberMemoryHead,
-} from "./member-memory-head.service";
-import {
   connectorSourceSnapshotsFromRows,
   type ConnectorSourceIdentity,
   type ConnectorSourceResult,
@@ -88,7 +84,7 @@ import {
 import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
 
 import { now, nowDate } from "../../lib/time";
-import { createThreadConnectorSources } from "./thread-connector-sources.service";
+import { threadConnectorSourcesColumn } from "./thread-connector-sources.service";
 import {
   executionCreditBalance,
   type ExecutionCreditBalance,
@@ -107,20 +103,16 @@ export interface BootstrapFeatureSwitchContext {
   readonly overrides: Partial<Record<FeatureSwitchKey, boolean>>;
 }
 
-export interface BootstrapVariable {
-  readonly name: string;
-  readonly value: string;
-  readonly userId: string;
-}
-
-export interface BootstrapEnvironment {
-  readonly variables: readonly BootstrapVariable[];
-}
+type ChatRunContextIdentity = Pick<
+  AgentRunContextSignals,
+  "userId" | "orgId" | "chatThreadId"
+>;
 
 /** The only cross-graph read-only signal interface; no state or commands. */
 export interface AgentRunContextSignals {
   readonly userId: string;
   readonly orgId: string;
+  readonly chatThreadId: string;
   readonly orgRows$: Computed<Promise<ExecutionOrgRows>>;
   readonly orgMetadata$: Computed<Promise<RunOrgMetadata | null>>;
   readonly plan$: Computed<Promise<OrgPlanCapabilities | null>>;
@@ -134,12 +126,8 @@ export interface AgentRunContextSignals {
   readonly modelPricing$: ReturnType<typeof createModelPricing>;
   readonly memberMetadata$: Computed<Promise<ExecutionMemberMetadata>>;
   readonly selectedImageModel$: Computed<Promise<ImageModel>>;
-  /** Existing Thread preferences can start before its input is enqueued. */
-  readonly requestThreadConnectorIdentity$: Parameters<
-    typeof createThreadConnectorSources
-  >[0];
-  readonly requestThreadConnectorSources$: ReturnType<
-    typeof createThreadConnectorSources
+  readonly threadConnectorSources$: Computed<
+    Promise<BootstrapEnvironmentSnapshot["threadSources"]>
   >;
   /** Request candidate rows are consumed only by this exact picked input. */
   readonly requestTemplateInputId$: Computed<Promise<string | undefined>>;
@@ -158,10 +146,8 @@ export interface AgentRunContextSignals {
   readonly seedSkills$: ReturnType<
     typeof createGlobalModelContext
   >["seedSkills$"];
-  readonly memory$: Computed<Promise<MemberMemoryHead | null>>;
   readonly featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>;
   readonly disabledPaidTools$: Computed<Promise<readonly PaidToolId[]>>;
-  readonly environment$: Computed<Promise<BootstrapEnvironment>>;
   readonly customConnectorDefinitions$: Computed<
     Promise<readonly CustomConnectorExecutionDefinition[]>
   >;
@@ -262,30 +248,38 @@ export interface BootstrapConnectorAccount extends ConnectorSourceRow {
 
 interface RunContextRequestInputs {
   readonly inputId: string;
-  readonly chatThreadId?: string;
+  readonly newThread: boolean;
   readonly presentationIds: readonly string[];
   readonly userTemplateIds: readonly string[];
 }
 
 /** Compose the authoritative read definitions once per execution identity. */
 export function createAgentRunContextSignals(
-  userId: string,
-  orgId: string,
-  requestInputs?: RunContextRequestInputs,
+  identity: ChatRunContextIdentity,
+  requestInputs: RunContextRequestInputs,
 ): AgentRunContextSignals {
-  return createIdentityContext(userId, orgId, undefined, requestInputs);
+  return createIdentityContext(
+    { ...identity, chatThreadId: identity.chatThreadId.toLowerCase() },
+    undefined,
+    requestInputs,
+  );
 }
 
 /** Reuse by each group's authority key before wiring dependent computeds. */
 export function matchAgentRunContextSignals(
   supplied: AgentRunContextSignals | undefined,
-  userId: string,
-  orgId: string,
+  identity: ChatRunContextIdentity,
 ): AgentRunContextSignals {
-  if (supplied?.orgId === orgId && supplied.userId === userId) {
+  const { userId, orgId } = identity;
+  const chatThreadId = identity.chatThreadId.toLowerCase();
+  if (
+    supplied?.orgId === orgId &&
+    supplied.userId === userId &&
+    supplied.chatThreadId === chatThreadId
+  ) {
     return supplied;
   }
-  return createIdentityContext(userId, orgId, supplied);
+  return createIdentityContext({ userId, orgId, chatThreadId }, supplied);
 }
 
 // Private graph ownership metadata; no package cache or public interface change.
@@ -307,7 +301,8 @@ function capturedFeatureSwitchContext(
   overrides: BootstrapFeatureSwitchContext["overrides"],
 ): BootstrapFeatureSwitchContext {
   return {
-    ...scope,
+    userId: scope.userId,
+    orgId: scope.orgId,
     email: member.profile?.email ?? undefined,
     overrides,
     personalExecution: true,
@@ -426,43 +421,44 @@ function createSelectedImageModel(
 function createRequestInputSources(
   scope: ConnectorMember,
   requestInputs: RunContextRequestInputs | undefined,
+  sharedMember: AgentRunContextSignals | undefined,
 ) {
-  const requestThreadConnectorIdentity$ = computed(() => {
-    const chatThreadId = requestInputs?.chatThreadId;
-    return Promise.resolve(
-      chatThreadId === undefined ? null : { ...scope, chatThreadId },
-    );
-  });
-  const requestThreadConnectorSources$ = createThreadConnectorSources(
-    requestThreadConnectorIdentity$,
-  );
+  if (sharedMember) {
+    return {
+      requestTemplateInputId$: sharedMember.requestTemplateInputId$,
+      requestTemplateSources$: sharedMember.requestTemplateSources$,
+    };
+  }
   const requestTemplateInputId$ = computed(() => {
     return Promise.resolve(requestInputs?.inputId);
   });
   const requestTemplateSources$ = createRunTemplateSources(
     computed(() => {
       return Promise.resolve(
-        requestInputs ? { ...scope, ...requestInputs } : null,
+        requestInputs
+          ? {
+              userId: scope.userId,
+              orgId: scope.orgId,
+              presentationIds: requestInputs.presentationIds,
+              userTemplateIds: requestInputs.userTemplateIds,
+            }
+          : null,
       );
     }),
   );
   return {
-    requestThreadConnectorIdentity$,
-    requestThreadConnectorSources$,
     requestTemplateInputId$,
     requestTemplateSources$,
   };
 }
 
 function createIdentityContext(
-  userId: string,
-  orgId: string,
+  scope: ChatRunContextIdentity,
   supplied?: AgentRunContextSignals,
   requestInputs?: RunContextRequestInputs,
   preparedMemberContext?: ReturnType<typeof createExecutionOrgMemberContext>,
 ): OwnedAgentRunContext {
-  const scope = { userId, orgId };
-  const requestSources = createRequestInputSources(scope, requestInputs);
+  const { userId, orgId } = scope;
   const {
     memberContext,
     orgRows$,
@@ -478,6 +474,11 @@ function createIdentityContext(
     supplied?.orgId === orgId && supplied.userId === userId
       ? supplied
       : undefined;
+  const requestSources = createRequestInputSources(
+    scope,
+    requestInputs,
+    sharedMember,
+  );
   const memberMetadata$ =
     sharedMember?.memberMetadata$ ?? memberContext.metadata$;
   const credits$ =
@@ -499,14 +500,12 @@ function createIdentityContext(
         ]);
         return capturedFeatureSwitchContext(scope, member, overrides);
       });
-  const connectorContext = createConnectorContextGroups(userId, orgId);
-  const memory$ = sharedMember?.memory$ ?? createMemberMemoryHead(scope);
+  const connectorContext = createConnectorContext(
+    scope,
+    requestInputs?.newThread ?? false,
+  );
   const disabledPaidTools$ =
     sharedMember?.disabledPaidTools$ ?? memberContext.disabledPaidTools$;
-  const environment$ = computed(async (get) => {
-    const snapshot = await get(connectorContext.environmentSnapshot$);
-    return { variables: snapshot.variables };
-  });
   return {
     [globalModelOwner]: globalReferences.catalog$,
     ...scope,
@@ -523,12 +522,10 @@ function createIdentityContext(
     selectedImageModel$:
       sharedMember?.selectedImageModel$ ??
       createSelectedImageModel(memberMetadata$),
-    ...connectorContext.signals,
+    ...connectorContext,
     seedSkills$: globalReferences.seedSkills$,
-    memory$,
     featureSwitches$: featureSwitchContext$,
     disabledPaidTools$,
-    environment$,
   };
 }
 
@@ -545,12 +542,10 @@ export const preloadAgentRunContext$ = command(
     // All nodes start in this turn; the starter awaits none of them.
     const nodes: readonly Computed<Promise<unknown>>[] = [
       signals.modelFacts$,
-      signals.requestThreadConnectorSources$,
       signals.catalog$,
       signals.authorizedConnectors$,
       signals.connectors$,
       signals.requestTemplateSources$,
-      signals.memory$,
       signals.orgRows$,
       signals.orgMetadata$,
       signals.plan$,
@@ -561,12 +556,8 @@ export const preloadAgentRunContext$ = command(
       signals.memberRoutes$,
       signals.memberMetadata$,
       signals.selectedImageModel$,
-      signals.memberConnectorSelection$,
-      signals.permissionGrants$,
       signals.featureSwitches$,
       signals.disabledPaidTools$,
-      signals.environment$,
-      signals.customConnectorDefinitions$,
       signals.managedModelKeys$,
       signals.modelPricing$,
     ];
@@ -752,8 +743,11 @@ function bootstrapConnectorAccountRows(
     .where(and(eq(connectors.orgId, orgId), eq(connectors.userId, userId)));
 }
 
-/** Related accounts, definitions, bindings, values and grants share one observation. */
-function createAgentEnvironment(member: ConnectorMember) {
+/** Accounts, definitions, bindings, values, grants and Chat settings share one observation. */
+function createAgentEnvironment(
+  member: ChatRunContextIdentity,
+  newThread: boolean,
+) {
   return computed(async (get) => {
     const { userId, orgId } = member;
     const db = get(db$);
@@ -783,6 +777,7 @@ function createAgentEnvironment(member: ConnectorMember) {
           bootstrapAccountRowsDecoder,
         ),
         ...memberConnectorContextColumns(member, nowDate()),
+        threadSources: threadConnectorSourcesColumn(member, newThread),
       })
       .from(variableSnapshot);
     const acquisitionCapture: PgPoolAcquisitionCapture = { acquisitions: [] };
@@ -829,6 +824,7 @@ function createAgentEnvironment(member: ConnectorMember) {
       builtin: first.builtin,
       custom: first.custom,
       permissions: first.permissions,
+      threadSources: first.threadSources,
       observation: bootstrapEnvironmentObservation({
         query,
         materialize,
@@ -934,24 +930,19 @@ function bootstrapCredentialSnapshot(userId: string, orgId: string) {
   );
 }
 
-/** Connector groups share one account/environment statement and one catalog capture. */
-function createConnectorContextGroups(userId: string, orgId: string) {
-  const sources = createConnectorSources({ userId, orgId });
+/** Connector groups share one environment statement and one catalog capture. */
+function createConnectorContext(
+  member: ChatRunContextIdentity,
+  newThread: boolean,
+) {
+  const environmentSnapshot$ = createAgentEnvironment(member, newThread);
+  const threadConnectorSources$ = computed(async (get) => {
+    return (await get(environmentSnapshot$)).threadSources;
+  });
   const runVariables$ = computed(async (get) => {
-    const snapshot = await get(sources.environmentSnapshot$);
+    const snapshot = await get(environmentSnapshot$);
     return buildAgentRunVariables({ variables: snapshot.variables });
   });
-  return {
-    environmentSnapshot$: sources.environmentSnapshot$,
-    signals: {
-      ...sources.signals,
-      runVariables$,
-    },
-  };
-}
-
-function createConnectorSources(member: ConnectorMember) {
-  const environmentSnapshot$ = createAgentEnvironment(member);
   const { connectorSelection$, permissionGrants$ } =
     createExecutionConnectorContext(environmentSnapshot$);
   const customConnectorDefinitions$ = computed(async (get) => {
@@ -1019,15 +1010,14 @@ function createConnectorSources(member: ConnectorMember) {
     });
   });
   return {
-    environmentSnapshot$,
-    signals: {
-      memberConnectorSelection$: connectorSelection$,
-      authorizedConnectors$,
-      permissionGrants$,
-      customConnectorDefinitions$,
-      catalog$,
-      connectors$,
-      permissionPolicies$,
-    },
+    threadConnectorSources$,
+    runVariables$,
+    memberConnectorSelection$: connectorSelection$,
+    authorizedConnectors$,
+    permissionGrants$,
+    customConnectorDefinitions$,
+    catalog$,
+    connectors$,
+    permissionPolicies$,
   };
 }

@@ -1156,7 +1156,7 @@ const resolveSendThread$ = command(
     }
     return {
       kind: "new",
-      threadId: args.body.clientThreadId ?? randomUUID(),
+      threadId: args.body.clientThreadId ?? args.context.chatThreadId,
       clientThreadId: args.body.clientThreadId,
       runSettings,
       computerAccess,
@@ -2476,12 +2476,6 @@ const prepareNormalSendContext$ = command(
     // Shared input and template reads match PostgreSQL's canonical UUID form.
     const inputId = request.body.clientEventId?.toLowerCase() ?? randomUUID();
     const templates = projectUserMessage(request.body.userMessage).templates;
-    const requestInputs = {
-      inputId,
-      chatThreadId: request.body.threadId?.toLowerCase(),
-      presentationIds: selectedUserPresentationTemplateIds(templates),
-      userTemplateIds: selectedUserTemplateIds(templates),
-    };
     const existing =
       request.body.threadId === undefined
         ? undefined
@@ -2495,9 +2489,18 @@ const prepareNormalSendContext$ = command(
       return notFound("Chat thread not found");
     }
     const context = createAgentRunContextSignals(
-      request.userId,
-      request.orgId,
-      requestInputs,
+      {
+        userId: request.userId,
+        orgId: request.orgId,
+        chatThreadId:
+          existing?.id ?? request.body.clientThreadId ?? randomUUID(),
+      },
+      {
+        inputId,
+        newThread: existing === undefined,
+        presentationIds: selectedUserPresentationTemplateIds(templates),
+        userTemplateIds: selectedUserTemplateIds(templates),
+      },
     );
     const args = request;
     // A forwarded or agent-token send also awaits its source Run. The read is
