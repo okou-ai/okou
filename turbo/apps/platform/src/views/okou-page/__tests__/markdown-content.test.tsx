@@ -351,3 +351,34 @@ test("Markdown preserves content and iframe names without native hover hints", a
   expect(notes).not.toHaveAttribute("title");
   expect(screen.getByTitle("Report preview").tagName).toBe("IFRAME");
 });
+
+test("Long bare URLs show a short label and retain their destination", async () => {
+  const chat = createMarkdownChatFixture(context);
+  const short = "https://example.com/".padEnd(80, "a");
+  const long = short + "?callback=" + "b".repeat(200);
+  const named = "Read the full document";
+  const rows = completedMessageRows(
+    chat,
+    [short, long, `[${named}](${long})`].join("\n\n"),
+  );
+  chat.install({
+    rows: () => {
+      return rows;
+    },
+  });
+  await setupPage({ context, path: chat.path, host: "app.okou.ai" });
+
+  await waitFor(() => {
+    const links = queryAllByRoleFast("link");
+    for (const [name, href] of [
+      [short, short],
+      [long.slice(0, 77) + "...", long],
+      [named, long],
+    ] as const) {
+      const link = links.find((candidate) => {
+        return candidate.textContent === name;
+      });
+      expect(link).toHaveAttribute("href", href);
+    }
+  });
+});
