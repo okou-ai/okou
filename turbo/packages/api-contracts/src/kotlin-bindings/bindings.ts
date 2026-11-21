@@ -35,7 +35,7 @@ import { modelCatalogContract } from "../contracts/model-catalog";
 import { runModelsMainContract } from "../contracts/run-models";
 import { thirdPartySubscriptionsMainContract } from "../contracts/third-party-subscriptions";
 import { billingStatusContract } from "../contracts/billing";
-import { artifactCatalogRuntimeContract } from "../contracts/artifact-catalog";
+import { artifactCatalogRoutes } from "../contracts/artifact-catalog";
 import { artifactDownloadsContract } from "../contracts/artifact-downloads";
 import { artifactReferencesContract } from "../contracts/artifact-references";
 import { hostContract } from "../contracts/host";
@@ -124,6 +124,8 @@ const historyReadBindings = [
 ] satisfies readonly KotlinRouteBinding[];
 
 /** Only routes used by the installed native client, not every Web contract. */
+const artifactCatalog = artifactCatalogRoutes();
+
 export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
   {
     name: "connectedConnectors",
@@ -181,12 +183,12 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
   {
     name: "artifactCatalog",
     response: "ArtifactCatalog",
-    route: artifactCatalogRuntimeContract.list,
+    route: artifactCatalog.list,
   },
   {
     name: "artifactDetail",
     response: "ArtifactDetail",
-    route: artifactCatalogRuntimeContract.get,
+    route: artifactCatalog.get,
   },
   {
     name: "resolveArtifactReference",
@@ -456,12 +458,12 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   },
   {
     name: "ArtifactCatalog",
-    schema: artifactCatalogRuntimeContract.list.responses[200],
+    schema: artifactCatalog.list.responses[200],
     direction: "output",
   },
   {
     name: "ArtifactDetail",
-    schema: artifactCatalogRuntimeContract.get.responses[200],
+    schema: artifactCatalog.get.responses[200],
     direction: "output",
   },
   {
