@@ -185,7 +185,6 @@ function installDriveMocks(
       googleDriveSync: artifactSynced
         ? {
             status: "synced",
-            accountReady: true,
             id: "drive-file-1",
             name: filename,
             ...(mimeType ? { mimeType } : {}),
@@ -193,7 +192,7 @@ function installDriveMocks(
             webViewLink: "https://drive.google.test/file/drive-file-1",
           }
         : selectedAccountReady
-          ? { status: "not_synced", accountReady: true }
+          ? { status: "not_synced" }
           : {
               status: "disconnected",
               recovery:
@@ -608,7 +607,7 @@ test.each([
         ...(query.chatThreadId
           ? {
               googleDriveConnectionId: driveAccounts[query.chatThreadId],
-              googleDriveSync: { status: "not_synced", accountReady: true },
+              googleDriveSync: { status: "not_synced" },
             }
           : {}),
       });
@@ -1097,7 +1096,7 @@ test("Keep an artifact's Google editor link after uploading another artifact", a
         url,
       }),
       googleDriveConnectionId: SELECTED_DRIVE_CONNECTION_ID,
-      googleDriveSync: { status: "not_synced", accountReady: true },
+      googleDriveSync: { status: "not_synced" },
     });
   }
   mockArtifactConversation(context, { catalog, details });
@@ -1188,7 +1187,6 @@ test("Keep the selected Drive account's editor link when an earlier account fini
           connectionId === NEW_DRIVE_CONNECTION_ID
             ? {
                 status: "synced",
-                accountReady: true,
                 id: "existing-original",
                 name: filename,
                 mimeType: "text/plain",
@@ -1196,7 +1194,7 @@ test("Keep the selected Drive account's editor link when an earlier account fini
                 webViewLink:
                   "https://drive.google.test/file/d/existing-original/view",
               }
-            : { status: "not_synced", accountReady: true },
+            : { status: "not_synced" },
       };
     },
   });

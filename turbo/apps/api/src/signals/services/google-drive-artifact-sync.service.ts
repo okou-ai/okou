@@ -500,12 +500,10 @@ function resolveGoogleDriveArtifactSyncStatus(
     return { status: "disconnected", recovery: lookup.recovery };
   }
   if (lookup.type === "unknown") {
-    return { status: "unknown", accountReady: true };
+    return { status: "unknown" };
   }
   const synced = lookup.syncedByKey.get(artifactKey(runId, fileId));
-  return synced
-    ? { status: "synced", accountReady: true, ...synced }
-    : { status: "not_synced", accountReady: true };
+  return synced ? { status: "synced", ...synced } : { status: "not_synced" };
 }
 
 function googleDriveArtifactStatusFields(
