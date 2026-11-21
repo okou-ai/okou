@@ -3,6 +3,8 @@
 Baseline [b0a10287edf4](https://github.com/okou-ai/okou/tree/b0a10287edf4242383c28e39c6f7675053febb32).
 Source [browser-user-action-page.test.tsx](browser-user-action-page.test.tsx).
 
+Batch 39 accepted 001, 003, 007–019, 021, 026, 028, 034, 036, 039, 040, 041, 047, 049, 051 and 053. Selected 002 still lacks a separate fallback explanation. For 043 the editable form is present while preflight is pending, before the stale status replaces it. See the [batch evidence](../../../../test-rebuild-rework-checkpoint.md#batch-39-evidence).
+
 ## browser-user-action-page-001
 
 Original test `The standalone route completes native input (task context: true)`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-user-action/__tests__/browser-user-action-page.test.tsx#L433).

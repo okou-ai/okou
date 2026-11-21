@@ -249,3 +249,33 @@ test("browser-connection-diagnostics-05.03 a decorated abort token reports unkno
   expect(reportText(errors)).not.toContain("internal.example");
   expect(reportText(errors)).not.toContain("private-418");
 });
+
+test("browser-connection-diagnostics-06 a refused navigation reports safe protocol details and the viewer can navigate again", async () => {
+  const telemetry = observeDiagnostics();
+  const { cdp, openPage } = arrangeNativePage(context);
+  await openPage();
+  await expectStreamingAt("https://example.com");
+  const privateReason = "upstream account reference INV-1846";
+  cdp.failNext("Page.navigate", privateReason, -32_083);
+  submit("https://denied.example/invoice");
+  await screen.findByText(/browser action could not be completed/i);
+  await waitFor(() => {
+    expect(telemetry.reports).toContainEqual(
+      expect.objectContaining({
+        type: "exception",
+        error: expect.objectContaining({
+          cause: expect.objectContaining({
+            kind: "protocol",
+            request: { method: "Page.navigate", code: -32_083 },
+          }),
+        }),
+      }),
+    );
+  });
+  expect(reportText(telemetry.reports)).not.toContain(privateReason);
+  submit("https://receipts.example/next");
+  await screen.findByLabelText("receipts.example", {
+    selector: '[role="tab"][aria-selected="true"]',
+  });
+  await expectStreamingAt("https://receipts.example/next");
+});

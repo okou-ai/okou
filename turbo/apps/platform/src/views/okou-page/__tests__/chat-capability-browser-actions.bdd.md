@@ -3,6 +3,8 @@
 Baseline [b0a10287edf4](https://github.com/okou-ai/okou/tree/b0a10287edf4242383c28e39c6f7675053febb32).
 Source [chat-capability-browser-actions.test.tsx](chat-capability-browser-actions.test.tsx).
 
+Batch 39 accepted 012 and 025 from the withdrawn selection. The other eleven selected executions remain pending. See the [batch evidence](../../../../test-rebuild-rework-checkpoint.md#batch-39-evidence).
+
 ## chat-capability-browser-actions-001
 
 Original test `Render a live managed browser card`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-browser-actions.test.tsx#L375). · **intent review**
