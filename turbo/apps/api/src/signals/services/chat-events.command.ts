@@ -245,6 +245,7 @@ type OrganizationAuthContext = AuthContext & {
 interface NormalSendRequest {
   readonly enqueueTiming?: ChatEnqueueTimingCollector;
   readonly projectId?: string;
+  readonly projectReferences?: EnqueuedChatInputFacts["projectReferences"];
   readonly body: NormalSendBody;
   readonly auth: OrganizationAuthContext;
   readonly userId: string;
@@ -1052,6 +1053,9 @@ function normalSendInputFacts(
     modelSelection: event.modelSelection,
     requiredOfficialWorkflowIds: args.requiredOfficialWorkflowIds,
     captureNetworkBodies: Boolean(args.body.captureNetworkBodies),
+    ...(args.projectReferences?.length
+      ? { projectReferences: args.projectReferences }
+      : {}),
     ...(sourceAutonomyBudget === null ? {} : { sourceAutonomyBudget }),
     ...(args.requestReceivedAt === undefined
       ? {}
@@ -1543,18 +1547,6 @@ function newSendThreadInsertPlan(args: NormalSendArgs, thread: NewSendThread) {
     cloudBrowserEnabled: thread.computerAccess.cloudBrowserEnabled,
   });
 }
-
-const createdSendThreadSelection = Object.freeze({
-  id: chatThreads.id,
-  userId: chatThreads.userId,
-  title: chatThreads.title,
-  selectedModel: chatThreads.selectedModel,
-  modelSettings: chatThreads.modelSettings,
-  codexServiceTier: chatThreads.codexServiceTier,
-  computerUseHostId: chatThreads.computerUseHostId,
-  cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-  createdAt: chatThreads.createdAt,
-});
 
 interface NormalSendInput {
   readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
@@ -2068,13 +2060,12 @@ const appendNormalSendInput$ = command(
     const query = normalChatInputPublicationSql({
       ...prepared.plan,
       newThread: created
-        ? db
-            .with(...created.defaults)
-            .insert(chatThreads)
-            .values(created.values)
-            .onConflictDoNothing()
-            .returning(createdSendThreadSelection)
-            .getSQL()
+        ? normalChatInputInsertSql(
+            chatThreads,
+            created.values,
+            sql`true`,
+            sql`DO NOTHING`,
+          )
         : undefined,
     });
     const rows = await (async () => {
@@ -2489,33 +2480,32 @@ const prepareNormalSendContext$ = command(
     // Shared input and template reads match PostgreSQL's canonical UUID form.
     const inputId = request.body.clientEventId?.toLowerCase() ?? randomUUID();
     const templates = projectUserMessage(request.body.userMessage).templates;
-    const existing =
+    const existingRead =
       request.body.threadId === undefined
         ? undefined
-        : await set(
+        : set(
             loadExistingSendThreadRow$,
             request,
             request.body.threadId,
             signal,
           );
-    if (request.body.threadId !== undefined && !existing) {
-      return notFound("Chat thread not found");
-    }
     const context = createAgentRunContextSignals(
       {
         userId: request.userId,
         orgId: request.orgId,
         chatThreadId:
-          existing?.id ?? request.body.clientThreadId ?? randomUUID(),
+          request.body.threadId ?? request.body.clientThreadId ?? randomUUID(),
       },
       {
         inputId,
-        newThread: existing === undefined,
+        newThread: request.body.threadId === undefined,
         presentationIds: selectedUserPresentationTemplateIds(templates),
         userTemplateIds: selectedUserTemplateIds(templates),
       },
     );
     const args = request;
+    const models = settle(set(prepareNormalSendModels$, context, signal));
+    waitUntil(models);
     // A forwarded or agent-token send also awaits its source Run. The read is
     // scoped to the caller's user and organization, and its outcome is used
     // only after authorization.
@@ -2530,6 +2520,12 @@ const prepareNormalSendContext$ = command(
         signal,
       ),
     );
+    waitUntil(agentRunSource);
+    const existing = await existingRead;
+    signal.throwIfAborted();
+    if (request.body.threadId !== undefined && !existing) {
+      return notFound("Chat thread not found");
+    }
     // Start the remaining reads before authorization and reuse the same context in the picker.
     set(preloadAgentRunContext$, context, signal);
     waitUntil(settle(get(context.executionPackageSources$)));
@@ -2551,10 +2547,14 @@ const prepareNormalSendContext$ = command(
     if ("status" in prepared) {
       return prepared;
     }
-    const models = await set(prepareNormalSendModels$, context, signal);
+    const capturedModels = await models;
+    signal.throwIfAborted();
+    if (!capturedModels.ok) {
+      throw capturedModels.error;
+    }
     return {
       ...prepared,
-      ...models,
+      ...capturedModels.value,
       args,
       context,
       existing,
@@ -3307,7 +3307,14 @@ export const handleSendChatEvent$ = command(
     {
       body,
       projectId,
-    }: { readonly body: SendBody; readonly projectId?: string },
+      projectReferences,
+    }: {
+      readonly body: SendBody;
+      readonly projectId?: string;
+      readonly projectReferences: NonNullable<
+        EnqueuedChatInputFacts["projectReferences"]
+      >;
+    },
     signal: AbortSignal,
   ) => {
     const auth = get(organizationAuthContext$);
@@ -3341,6 +3348,7 @@ export const handleSendChatEvent$ = command(
       {
         enqueueTiming: timing,
         projectId,
+        projectReferences,
         body,
         auth: auth.tokenType === "oauth" ? { ...auth, clientName } : auth,
         userId: auth.userId,

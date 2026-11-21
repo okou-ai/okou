@@ -85,16 +85,15 @@ internal data class ChatListSection(
 
 internal fun chatListSections(
     groups: List<ChatListGroup>,
-    collapsed: List<String>,
+    expandedProjectIds: Set<String>,
     indicators: Map<String, IndicatorsThreadsValue>,
     unreadChatIds: Set<String>,
     provisionalByProject: Map<String?, List<ProvisionalChat>> = emptyMap(),
 ): List<ChatListSection> {
-    val foldedIds = collapsed.toSet()
     var row = 0
     return groups.map { group ->
         val foldedActivity =
-            if (group.project?.id in foldedIds) {
+            if (group.project != null && group.project.id !in expandedProjectIds) {
                 collapsedProjectActivity(group.threads, indicators, unreadChatIds)
             } else null
         val provisional = provisionalByProject[group.project?.id].orEmpty()

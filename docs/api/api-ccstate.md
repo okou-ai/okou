@@ -213,6 +213,19 @@ enqueue path, notifying a running run of pending input is one such task. When
 you move orchestration into entries, check every entry for these independent
 tasks.
 
+#### Run startup I/O
+
+From API receipt of a Run trigger through
+[Runner acceptance](../runner/runner-reactor-progress.md#ownership-and-shutdown),
+do not add outbound service calls to the work startup waits for. Preserve the
+authentication, authorization, input validation, database operations, and
+dispatch required to launch the Run.
+
+Reuse validated inputs already available to the Run. Optional enrichment,
+cache fills, and telemetry must not introduce a service call or a database
+round trip that launch waits for. Give this work an independent owner and keep
+its completion off the path to Agent spawn.
+
 ### 7. Cancellation
 
 - Pass `AbortSignal` as the final positional argument. Never put it in args

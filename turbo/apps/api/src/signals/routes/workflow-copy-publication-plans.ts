@@ -225,7 +225,6 @@ export function workflowCopyThreadPlan(args: WorkflowCopyPublicationArgs) {
   return prepareChatThreadInsert({
     orgId: args.orgId,
     userId: args.userId,
-    agentId: args.targetAgentId,
     title: args.threadPreparation.title,
     modelSettings: args.threadPreparation.modelSettings,
     cloudBrowserEnabled: args.threadPreparation.cloudBrowserEnabled,

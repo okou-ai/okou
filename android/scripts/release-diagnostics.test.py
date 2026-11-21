@@ -26,6 +26,55 @@ class ReleaseDiagnosticsTest(unittest.TestCase):
         self.assertFalse(surface('<hierarchy><node package="ai.okou.android" text=""/></hierarchy>'))
         self.assertFalse(surface('<hierarchy>'))
 
+    def test_relaunch_failure_retains_its_own_evidence(self):
+        run_launch = runpy.run_path(str(SCRIPTS / "release-smoke.py"))["run_launch"]
+
+        def check_once(_emulator, check, description, seconds):
+            self.assertEqual(seconds, 45)
+            if not check():
+                raise TimeoutError(description)
+
+        run_launch.__globals__["wait_until"] = check_once
+        launches = 0
+        screenshot = b"\x89PNG\r\n\x1a\nfixture"
+
+        def device(*args, **options):
+            nonlocal launches
+            if args[:3] == ("shell", "am", "force-stop"):
+                return subprocess.CompletedProcess(args, 0, "", "")
+            if args[:3] == ("shell", "am", "start"):
+                launches += 1
+                return subprocess.CompletedProcess(args, 0, f"Status: ok\nLaunch: {launches}", "")
+            if args[:1] == ("shell",) and "uiautomator dump" in args[1]:
+                if launches == 2:
+                    return subprocess.CompletedProcess(args, 1, "", "UI hierarchy unavailable")
+                return subprocess.CompletedProcess(args, 0, "", "")
+            if args[:2] == ("exec-out", "cat"):
+                self.assertEqual(launches, 1)
+                xml = '<hierarchy><node package="ai.okou.android" text="Continue to Okou"/></hierarchy>'
+                return subprocess.CompletedProcess(args, 0, xml, "")
+            self.assertEqual(launches, 2)
+            self.assertEqual(options["timeout"], 5)
+            if args[:2] == ("shell", "dumpsys"):
+                raise subprocess.TimeoutExpired(args, 5)
+            self.assertEqual(args, ("exec-out", "screencap", "-p"))
+            self.assertFalse(options["text"])
+            return subprocess.CompletedProcess(args, 0, screenshot, b"")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            cold_start = Path(temporary) / "cold-start"
+            relaunch = Path(temporary) / "relaunch"
+            component = "ai.okou.android/.MainActivity"
+            run_launch(device, None, cold_start, "cold start", (), component)
+            with self.assertRaisesRegex(TimeoutError, "relaunch auth surface"):
+                run_launch(device, None, relaunch, "relaunch", (), component)
+            self.assertIn("Launch: 1", (cold_start / "launcher.txt").read_text())
+            self.assertIn("Continue to Okou", (cold_start / "ui.xml").read_text())
+            self.assertIn("Launch: 2", (relaunch / "launcher.txt").read_text())
+            self.assertIn("UI hierarchy unavailable", (relaunch / "ui-probe.txt").read_text())
+            self.assertFalse((relaunch / "ui.xml").exists())
+            self.assertEqual((relaunch / "screen.png").read_bytes(), screenshot)
+
     def test_release_smoke_leaves_a_competing_emulator_untouched(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

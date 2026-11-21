@@ -233,6 +233,7 @@ class OkouAppTest {
                                 models.first.first,
                                 models.first.second,
                                 controls,
+                                projectExpansion = null,
                                 settingsContent = { _, _ ->
                                     SettingsScreen(
                                         workspacePreferences = {

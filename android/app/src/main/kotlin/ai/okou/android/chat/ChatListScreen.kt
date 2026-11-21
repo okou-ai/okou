@@ -82,6 +82,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.text.NumberFormat
 import kotlinx.coroutines.delay
 
@@ -96,8 +97,7 @@ internal fun ChatListScreen(
     openProvisional: (ProvisionalChat) -> Unit,
     performRowAction: (String, ChatRowAction) -> Unit,
     renameThread: (String, String) -> Unit,
-    collapsed: List<String>,
-    toggleProject: (String) -> Unit,
+    projectExpansion: ProjectExpansionModel?,
     listState: LazyListState,
     newChat: (String?) -> Unit,
     showInbox: () -> Unit,
@@ -152,9 +152,17 @@ internal fun ChatListScreen(
                     .groupBy { it.projectId?.takeIf(knownProjects::contains) }
             }
         }
+    val expansion = projectExpansion?.state?.collectAsStateWithLifecycle()?.value
+    val expandedProjectIds = expansion?.expandedIds.orEmpty()
     val sections =
-        remember(groups, collapsed, indicators, unreadChatIds, pendingByProject) {
-            chatListSections(groups, collapsed, indicators, unreadChatIds, pendingByProject)
+        remember(groups, expandedProjectIds, indicators, unreadChatIds, pendingByProject) {
+            chatListSections(
+                groups,
+                expandedProjectIds,
+                indicators,
+                unreadChatIds,
+                pendingByProject,
+            )
         }
     val runningKeys =
         remember(indicators, sections) {
@@ -290,6 +298,19 @@ internal fun ChatListScreen(
                     ChatAction(R.string.retry, retryIndicators)
                 }
             }
+            if (
+                projectExpansion != null &&
+                    expansion != null &&
+                    (expansion.readFailed || expansion.failedWrites.isNotEmpty())
+            ) {
+                item {
+                    ChatNotice(
+                        if (expansion.readFailed) R.string.chat_project_expansion_read_failed
+                        else R.string.chat_project_expansion_save_failed
+                    )
+                    ChatAction(R.string.retry, projectExpansion::retry)
+                }
+            }
             if (!state.offline && (metadataMissing || missingDefault))
                 item {
                     ChatNotice(R.string.chat_metadata_unavailable)
@@ -308,7 +329,9 @@ internal fun ChatListScreen(
                                 activity = section.foldedActivity,
                                 runningFrame = runningFrame,
                                 row = section.firstRow,
-                                toggle = { toggleProject(project.id) },
+                                toggle = {
+                                    projectExpansion?.setExpanded(project.id, foldedStatus != null)
+                                },
                                 newChat = if (newChatEnabled) ({ newChat(project.id) }) else null,
                             )
                         }

@@ -1,3 +1,4 @@
+import { normalChatInputInsertSql } from "./normal-chat-input-publication-sql";
 import { db$, writeDb$ } from "../external/db";
 import {
   deleteChatThreadDraft$,
@@ -983,16 +984,15 @@ export const createChatThread$ = command(
       }
       const prepared = preparedOrdinaryThread(args, plan, read);
       const db = set(writeDb$);
-      const insertion = db
-        .insert(chatThreads)
-        .values(prepared.values)
-        .onConflictDoNothing()
-        .returning({
-          id: chatThreads.id,
-          createdAt: chatThreads.createdAt,
-        });
+      const insertion = normalChatInputInsertSql(
+        chatThreads,
+        prepared.values,
+        sql`true`,
+        sql`DO NOTHING`,
+        sql`${chatThreads.id}, ${chatThreads.createdAt}`,
+      );
       const ctes = [
-        sql`created_chat_thread AS (${insertion.getSQL()})`,
+        sql`created_chat_thread AS (${insertion})`,
         ...createdChatRelationCtes(args),
         ...chatThreadInitializationCtes({
           orgId: args.orgId,

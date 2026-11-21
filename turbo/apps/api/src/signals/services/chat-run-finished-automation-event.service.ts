@@ -233,13 +233,12 @@ const admitChatRunFinishedAutomation$ = command(
     args: {
       readonly event: ChatRunFinishedEvent;
       readonly automation: typeof workflowAutomations.$inferSelect;
-      readonly agentId: string;
       readonly chatThreadId: string;
       readonly workflowName: string;
     },
     signal: AbortSignal,
   ) => {
-    const { event, automation, agentId, chatThreadId, workflowName } = args;
+    const { event, automation, chatThreadId, workflowName } = args;
     const context = chatRunFinishedTriggerContext({
       workflowName,
       automationId: automation.id,
@@ -250,7 +249,6 @@ const admitChatRunFinishedAutomation$ = command(
         runWorkflowAutomationNow$,
         {
           automation,
-          agentId,
           chatThreadId,
           automationContext: context,
           queueEventId: uuidv5(
@@ -307,7 +305,6 @@ const loadChatRunFinishedAutomationTargets$ = command(
     const automationRows = await set(writeDb$)
       .select({
         automation: workflowAutomationColumns(),
-        agentId: workflows.agentId,
         workflowName: workflows.name,
         workflowDisplayName: workflows.displayName,
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
@@ -349,7 +346,6 @@ const loadChatRunFinishedAutomationTargets$ = command(
 
 interface ChatRunFinishedAutomationTarget {
   readonly automation: typeof workflowAutomations.$inferSelect;
-  readonly agentId: string;
   readonly chatThreadId: string | null;
   readonly workflowName: string;
   readonly workflowDisplayName: string | null;
@@ -370,7 +366,6 @@ const resolveChatRunFinishedAutomationThread$ = command(
           orgId: row.automation.orgId,
           userId: row.automation.ownerUserId,
           workflowId: row.automation.workflowId,
-          agentId: row.agentId,
           workflowTitle: row.workflowDisplayName ?? row.workflowName,
           currentTime,
         },

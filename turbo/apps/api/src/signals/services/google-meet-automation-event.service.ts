@@ -94,7 +94,6 @@ interface GoogleMeetTranscriptEventContext {
 
 interface GoogleMeetEventAutomationRow {
   readonly automation: AutomationRow;
-  readonly agentId: string;
   readonly workflowName: string;
   readonly workflowTitle: string;
   readonly chatThreadId: string;
@@ -452,7 +451,6 @@ const loadGoogleMeetEventAutomations$ = command(
     const automationRows = await db
       .select({
         automation: workflowAutomationColumns(),
-        agentId: workflows.agentId,
         workflowName: workflows.name,
         workflowDisplayName: workflows.displayName,
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
@@ -505,7 +503,6 @@ const loadGoogleMeetEventAutomations$ = command(
             orgId: row.automation.orgId,
             userId: row.automation.ownerUserId,
             workflowId: row.automation.workflowId,
-            agentId: row.agentId,
             workflowTitle: row.workflowDisplayName ?? row.workflowName,
             currentTime,
           },
@@ -514,7 +511,6 @@ const loadGoogleMeetEventAutomations$ = command(
       signal.throwIfAborted();
       automations.push({
         automation: row.automation,
-        agentId: row.agentId,
         workflowName: row.workflowName,
         workflowTitle: row.workflowDisplayName ?? row.workflowName,
         chatThreadId,
@@ -653,7 +649,6 @@ const dispatchGoogleMeetTranscriptEventForAutomation$ = command(
         runWorkflowAutomationNow$,
         {
           automation: args.automation.automation,
-          agentId: args.automation.agentId,
           chatThreadId: args.automation.chatThreadId,
           automationContext: context,
           connectorSourceId: args.state.connectorId,
