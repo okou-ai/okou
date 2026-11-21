@@ -393,8 +393,7 @@ final class ThreadListStore {
             continue
           }
           activeThreadIDs = Set(result.threads.filter { $0.value == .active }.map(\.key))
-          let unreadThreads = threads.filter { result.threads[$0.id] == .unread }
-          unreadAgentIDs = Set(unreadThreads.compactMap(\.agentID))
+          unreadAgentIDs = result.unreadAgentIDs(in: threads)
           threads = threads.map { thread in
             var updated = thread
             updated.indicator = result.threads[thread.id]
@@ -468,6 +467,10 @@ final class ThreadListStore {
 
   func dismissError() {
     actions.dismissError()
+  }
+
+  func canUpdate(_ id: String) -> Bool {
+    actions.canUpdate(id)
   }
 
   @discardableResult
@@ -566,10 +569,6 @@ final class ThreadListStore {
 }
 
 extension ThreadListStore {
-  func canUpdate(_ id: String) -> Bool {
-    actions.canUpdate(id)
-  }
-
   func canWrite(_ id: String) -> Bool {
     actions.canWrite(id)
   }
