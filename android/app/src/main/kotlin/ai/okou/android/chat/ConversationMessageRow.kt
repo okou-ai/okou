@@ -13,6 +13,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,24 +32,31 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.LongState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.ClipEntry
@@ -371,38 +379,55 @@ private fun MessageBody(
     val style =
         if (compact) typography.bodyMedium
         else typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 28.sp, letterSpacing = 0.sp)
-    val revealModifier =
-        if (onReveal != null) {
-            val reveal = remember { BringIntoViewRequester() }
-            var placed by remember { mutableStateOf(false) }
-            LaunchedEffect(placed) {
-                if (placed) {
-                    reveal.bringIntoView()
-                    onReveal()
-                }
-            }
-            Modifier.bringIntoViewRequester(reveal).onGloballyPositioned { placed = true }
-        } else Modifier
+    val colors = MaterialTheme.colorScheme
+    val bodyColor = if (highlighted) colors.onSecondaryContainer else colors.onSurface
     val highlight =
         if (highlighted) {
-            Modifier.background(
-                MaterialTheme.colorScheme.secondaryContainer,
-                RoundedCornerShape(4.dp),
-            )
-        } else Modifier
-    SelectionContainer(modifier = highlight.then(revealModifier)) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            for (block in message.blocks) {
-                when (block.kind) {
-                    HistoryBlockKind.Unsupported ->
-                        ConversationMeta(stringResource(R.string.history_unsupported))
-                    HistoryBlockKind.Reference ->
-                        ConversationMeta(stringResource(R.string.history_reference))
-                    else -> Unit
+            val reveal = remember { BringIntoViewRequester() }
+            val focus = remember { FocusRequester() }
+            val complete by rememberUpdatedState(onReveal)
+            var placed by remember { mutableStateOf(false) }
+            LaunchedEffect(placed, onReveal != null) {
+                if (placed && complete != null) {
+                    reveal.bringIntoView()
+                    focus.requestFocus()
+                    complete?.invoke()
                 }
-                if (block.kind == HistoryBlockKind.Text && message.role == HistoryRole.Assistant)
-                    HistoryMarkdown(block.text, style)
-                else Text(block.text, style = style, color = MaterialTheme.colorScheme.onSurface)
+            }
+            Modifier.drawBehind {
+                    val outline = 2.dp.toPx()
+                    drawRoundRect(
+                        colors.secondaryContainer,
+                        topLeft = Offset(-outline, -outline),
+                        size = Size(size.width + 2 * outline, size.height + 2 * outline),
+                        cornerRadius = CornerRadius(4.dp.toPx() + outline),
+                    )
+                }
+                .bringIntoViewRequester(reveal)
+                .focusRequester(focus)
+                .focusable()
+                .onGloballyPositioned { placed = true }
+                .testTag("search_message_hit")
+        } else Modifier
+    SelectionContainer(modifier = highlight) {
+        CompositionLocalProvider(
+            LocalContentColor provides if (highlighted) bodyColor else LocalContentColor.current
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                for (block in message.blocks) {
+                    when (block.kind) {
+                        HistoryBlockKind.Unsupported ->
+                            ConversationMeta(stringResource(R.string.history_unsupported))
+                        HistoryBlockKind.Reference ->
+                            ConversationMeta(stringResource(R.string.history_reference))
+                        else -> Unit
+                    }
+                    if (
+                        block.kind == HistoryBlockKind.Text && message.role == HistoryRole.Assistant
+                    )
+                        HistoryMarkdown(block.text, style)
+                    else Text(block.text, style = style, color = bodyColor)
+                }
             }
         }
     }

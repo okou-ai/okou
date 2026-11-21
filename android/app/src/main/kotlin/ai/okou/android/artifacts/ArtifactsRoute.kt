@@ -168,7 +168,7 @@ internal fun ArtifactsRoute(
                         if (searchArtifactId == null) R.string.artifact_title
                         else R.string.chat_search_artifact_preview,
                         if (searchArtifactId == null) R.string.artifact_return_list
-                        else R.string.back,
+                        else R.string.chat_search_close_artifact_preview,
                         ::back,
                     )
                 }

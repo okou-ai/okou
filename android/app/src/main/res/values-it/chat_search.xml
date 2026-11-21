@@ -25,4 +25,5 @@
     <string name="chat_search_workflow_details">Visualizza i dettagli del workflow</string>
     <string name="chat_search_workflow_shadowed">Un workflow privato usa questo comando</string>
     <string name="chat_search_artifact_preview">Anteprima dell’artefatto</string>
+    <string name="chat_search_close_artifact_preview">Chiudi anteprima dell’artefatto</string>
 </resources>

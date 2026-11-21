@@ -149,14 +149,14 @@ class ScreenshotScenario {
             fun reply(id: String, seq: Long, run: String, body: String) =
                 historyEventWire(id, seq, thread, payload = """{"content":"$body"}""", run = run)
             return listOf(
-                    10L to prompt("older-prompt", 10, olderRun, "Check last week's notes"),
-                    11L to reply("older-process", 11, olderRun, hiddenReply),
-                    12L to reply("older-end", 12, olderRun, "Previous launch summary"),
-                    17L to prompt("launch-prompt", 17, HISTORY_RUN, "Prepare the launch brief"),
-                    22L to reply("launch-process", 22, HISTORY_RUN, earlierReply),
-                    23L to reply("launch-end", 23, HISTORY_RUN, finalReply),
-                    37L to historyEventWire(HISTORY_LAST_EVENT, 37, thread, "run.completed", "null"),
-                )
+                10L to prompt("older-prompt", 10, olderRun, "Check last week's notes"),
+                11L to reply("older-process", 11, olderRun, hiddenReply),
+                12L to reply("older-end", 12, olderRun, "Previous launch summary"),
+                17L to prompt("launch-prompt", 17, HISTORY_RUN, "Prepare the launch brief"),
+                22L to reply("launch-process", 22, HISTORY_RUN, earlierReply),
+                23L to reply("launch-end", 23, HISTORY_RUN, finalReply),
+                37L to historyEventWire(HISTORY_LAST_EVENT, 37, thread, "run.completed", "null"),
+            )
         }
         fixture.historyRows = { request ->
             val address = checkNotNull(request.requestUrl)
@@ -169,13 +169,15 @@ class ScreenshotScenario {
         }
         fixture.historyCatchUp = { request ->
             val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonArray
-            val events = body.joinToString(",") { cursor ->
-                val (thread, sequence) = cursor.jsonArray
-                val rows = history(thread.jsonPrimitive.content)
-                    .filter { it.first > sequence.jsonPrimitive.long }
-                    .joinToString(",") { it.second }
-                """$thread:[$rows]"""
-            }
+            val events =
+                body.joinToString(",") { cursor ->
+                    val (thread, sequence) = cursor.jsonArray
+                    val rows =
+                        history(thread.jsonPrimitive.content)
+                            .filter { it.first > sequence.jsonPrimitive.long }
+                            .joinToString(",") { it.second }
+                    """$thread:[$rows]"""
+                }
             jsonResponse("""{"events":{$events},"notFoundThreads":[]}""")
         }
         fixture.searchMessages = { request ->
@@ -271,7 +273,7 @@ class ScreenshotScenario {
                     text(finalReply)
                     button(R.string.artifact_return_preview).click()
                     contains("Positioning:")
-                    button(R.string.back).click()
+                    button(R.string.chat_search_close_artifact_preview).click()
                     assertEquals("launch", field().text)
                     text(artifacts.summary.title)
 

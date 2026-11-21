@@ -25,4 +25,5 @@
     <string name="chat_search_workflow_details">View workflow details</string>
     <string name="chat_search_workflow_shadowed">A private workflow uses this command</string>
     <string name="chat_search_artifact_preview">Artifact preview</string>
+    <string name="chat_search_close_artifact_preview">Close artifact preview</string>
 </resources>

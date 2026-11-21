@@ -7,9 +7,12 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -41,6 +44,7 @@ class WorkflowRootApplication : TestOkouApplication() {
         fixture.beforeCatalog = { gate.await() }
         chatService = fixture.service
         composerService = fixture.service
+        searchService = fixture.service
         workflows = fixture.service
         journalStore =
             ComposerJournalStore(this, noBackupFilesDir.resolve("workflow-${UUID.randomUUID()}"))
@@ -74,6 +78,7 @@ class WorkflowRootTest {
                             listOfNotNull(
                                 it.chats.viewModelScope.coroutineContext[Job],
                                 it.composer.viewModelScope.coroutineContext[Job],
+                                it.search.viewModelScope.coroutineContext[Job],
                                 it.workflows?.viewModelScope?.coroutineContext?.get(Job),
                             )
                         }
@@ -94,7 +99,7 @@ class WorkflowRootTest {
         waitFor("Release checklist")
         val row = compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").getUnclippedBoundsInRoot()
         assertTrue(row.bottom - row.top >= 80.dp)
-        compose.onNodeWithText("Workspace shared").performClick()
+        compose.onNode(hasText("Workspace shared") and isSelectable()).performClick()
         compose.onNodeWithText("Release checklist").assertDoesNotExist()
         compose.onNodeWithTag("workflow_row_$WORKFLOW_SHARED").performClick()
         waitForTag("workflow_detail_title")
@@ -137,6 +142,41 @@ class WorkflowRootTest {
         compose.onNodeWithText("Enabled").assertIsDisplayed()
         back()
         compose.onNodeWithTag("workflow_query").assertTextContains("/release-review")
+    }
+
+    @Test
+    fun searchWorkflowDetailsAndDraftReturnToTheSameSearch() {
+        app.gate.countDown()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        val scope = compose.onNodeWithTag("search_type_Workflows")
+        val query = compose.onNodeWithTag("chat_search_query")
+        scope.performClick()
+        query.performTextInput("launch")
+        waitFor(app.fixture.releaseTitle)
+        compose.onNodeWithText(app.fixture.releaseTitle).performClick()
+        waitFor("View workflow details")
+        compose.onNodeWithText("View workflow details").performClick()
+        waitForTag("workflow_detail_title")
+        back()
+        query.assertTextContains("launch")
+        scope.assertIsSelected()
+        compose.onNodeWithText(app.fixture.releaseTitle).performClick()
+        waitFor("Add to new chat draft")
+        compose.onNodeWithText("Add to new chat draft").performClick()
+        waitForTag("message_input")
+        compose
+            .onNodeWithTag("message_input")
+            .assertTextContains("/release-review Keep my existing draft")
+        assertFalse(
+            app.fixture.requests.any {
+                it.method == "POST" &&
+                    it.requestUrl?.encodedPath in setOf("/api/chat-threads", "/api/chat/events")
+            }
+        )
+        back()
+        query.assertTextContains("launch")
+        scope.assertIsSelected()
+        compose.onNodeWithText(app.fixture.releaseTitle).assertIsDisplayed()
     }
 
     private fun waitFor(label: String) =
