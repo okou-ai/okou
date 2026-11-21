@@ -1579,13 +1579,6 @@ export function createThreadClaimRunObjects(
   const isAutomation$ = computed(async (get) => {
     return (await get(head$)).contextType === "automation";
   });
-  const inputResources$ = computed(async (get) => {
-    if (await get(isAutomation$)) {
-      await settle(get(automationModel$));
-      return;
-    }
-    await get(threadContext.inputResources$);
-  });
   const assembly$ = computed(async (get) => {
     return get(
       (await get(isAutomation$)) ? automationAssembly$ : promptAssembly$,
@@ -1694,6 +1687,21 @@ export function createThreadClaimRunObjects(
     bootstrap,
     threadContext,
   );
+  const inputResources$ = computed(async (get) => {
+    if (await get(isAutomation$)) {
+      if ((await get(automationSource$)).kind === "ready") {
+        await Promise.allSettled([
+          get(automationModel$),
+          get(connectorAdmission$),
+        ]);
+      }
+      return;
+    }
+    await Promise.allSettled([
+      get(threadContext.inputResources$),
+      get(connectorAdmission$),
+    ]);
+  });
   const officialWorkflow$ = createOfficialWorkflowSignal(
     pickedEvent$,
     threadContext,
