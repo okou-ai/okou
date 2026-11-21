@@ -200,5 +200,5 @@ Notes:
   - Banking grants never apply to automation runs
   - Authenticates via OKOU_TOKEN (requires banking:read capability)
   - Finicity credentials and app tokens stay on the Okou API server
-  - Access is limited to accounts enabled for the current agent`,
+  - Access is limited to accounts you have authorized for Banking`,
   );

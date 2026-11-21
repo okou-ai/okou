@@ -53,7 +53,7 @@ export const deleteCustomConnectorCommand = new Command("delete")
       const payload = decodeSandboxTokenPayload();
       if (payload && !payload.capabilities.includes("connector:write"))
         throw new Error(
-          "Custom connector deletion is not enabled for this agent run",
+          "Custom connector deletion is not enabled for this Run",
         );
       const id = await resolveCustomConnectorId(selector);
       await deleteCustomConnector(id);

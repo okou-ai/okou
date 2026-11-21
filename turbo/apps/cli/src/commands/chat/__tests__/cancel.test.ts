@@ -6,7 +6,6 @@ import { server } from "../../../mocks/server";
 import { chatCommand } from "../index";
 
 const THREAD_ID = "00000000-0000-4000-8000-000000000001";
-const AGENT_ID = "00000000-0000-4000-8000-000000000010";
 const RUN_ID = "00000000-0000-4000-8000-000000000020";
 const EVENT_ID = "00000000-0000-4000-8000-000000000030";
 const METADATA_URL = `http://localhost:3000/api/chat-threads/${THREAD_ID}/metadata`;
@@ -30,7 +29,6 @@ describe("okou chat cancel command", () => {
       http.get(METADATA_URL, () => {
         return HttpResponse.json({
           id: THREAD_ID,
-          agentId: AGENT_ID,
           title: "Launch plan",
           selectedModel: null,
         });
@@ -51,7 +49,6 @@ describe("okou chat cancel command", () => {
       http.post(SEND_URL, async ({ request }) => {
         const body = (await request.json()) as Record<string, unknown>;
         controlEventId = String(body.clientEventId);
-        expect(body).not.toHaveProperty("agentId");
         expect(body).toStrictEqual({
           threadId: THREAD_ID,
           interruptsRunId: RUN_ID,
@@ -91,7 +88,6 @@ describe("okou chat cancel command", () => {
     server.use(
       http.post(SEND_URL, async ({ request }) => {
         const body = (await request.json()) as Record<string, unknown>;
-        expect(body).not.toHaveProperty("agentId");
         expect(body).toMatchObject({
           threadId: THREAD_ID,
           revokesEventId: EVENT_ID,

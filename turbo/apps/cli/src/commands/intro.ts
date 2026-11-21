@@ -3,7 +3,7 @@ import { Command } from "commander";
 const INTRO = `
 # Okou Intro
 
-Okou is an AI agent that works from cloud computers to complete real work: deep research, polished artifacts, lightweight coding, connector-backed automation, and 24/7 recurring workflows.
+Okou is an AI assistant that works from cloud computers to complete real work: deep research, polished artifacts, lightweight coding, connector-backed automation, and 24/7 recurring workflows.
 
 ## Cloud Computer and 24/7 Automation
 

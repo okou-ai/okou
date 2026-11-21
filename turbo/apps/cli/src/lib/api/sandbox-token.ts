@@ -1,7 +1,6 @@
 import { getOkouToken } from "../okou-env.js";
-import type { SingleAgentRuntimeContext } from "@okouai/api-contracts/contracts/single-agent";
 
-export interface SandboxTokenPayload extends SingleAgentRuntimeContext {
+export interface SandboxTokenPayload {
   userId: string;
   runId: string;
   orgId: string;

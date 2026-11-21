@@ -517,9 +517,7 @@ function verifyDeck(rendered: Rendered): VerifyReport {
 function requirePresentationConvertCapability(): void {
   const payload = decodeSandboxTokenPayload();
   if (payload && !payload.capabilities.includes("presentation-convert:write")) {
-    throw new Error(
-      "Presentation conversion is not enabled for this agent run",
-    );
+    throw new Error("Presentation conversion is not enabled for this Run");
   }
 }
 
