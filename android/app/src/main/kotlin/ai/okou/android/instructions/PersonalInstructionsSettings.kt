@@ -34,11 +34,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -205,6 +208,7 @@ internal fun PersonalInstructionsSettings(
                 val restoreFocus = remember { editorFocused }
                 val restoreKeyboard = remember { editorKeyboardVisible }
                 val keyboard = LocalSoftwareKeyboardController.current
+                val window = LocalWindowInfo.current
                 val keyboardVisible = WindowInsets.isImeVisible
                 SideEffect {
                     if (editorFocused && lifecycle.currentState == Lifecycle.State.RESUMED) {
@@ -212,7 +216,15 @@ internal fun PersonalInstructionsSettings(
                     }
                 }
                 LaunchedEffect(focus) {
-                    if (restoreFocus && focus.requestFocus() && !restoreKeyboard) keyboard?.hide()
+                    if (
+                        restoreFocus && focus.requestFocus() && !restoreKeyboard && keyboard != null
+                    ) {
+                        // The field starts its input session on the next frame in the focused
+                        // window.
+                        snapshotFlow { window.isWindowFocused }.first { it }
+                        withFrameNanos {}
+                        keyboard.hide()
+                    }
                 }
                 OutlinedTextField(
                     value = editing.value,
