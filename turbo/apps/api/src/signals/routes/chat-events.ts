@@ -18,6 +18,7 @@ import { measureChatEnqueue } from "../services/chat-enqueue-timing.service";
 import {
   handleSendChatEvent$,
   chatEnqueueTiming$,
+  startNormalSendBootstrap$,
 } from "../services/chat-events.command";
 import { captureProjectReferences } from "../services/project-reference.service";
 import {
@@ -38,7 +39,12 @@ export const sendValidatedChatEvent$ = command(
     {
       data,
       projectId,
-    }: { readonly data: ChatEventSendBody; readonly projectId?: string },
+      requireVisibleThread,
+    }: {
+      readonly data: ChatEventSendBody;
+      readonly projectId?: string;
+      readonly requireVisibleThread?: boolean;
+    },
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
@@ -49,16 +55,20 @@ export const sendValidatedChatEvent$ = command(
       return resourceUnavailable("Insufficient scope");
     }
     const timing = get(chatEnqueueTiming$);
-    const projectReferences = await measureChatEnqueue(
-      timing,
-      "references",
-      () => {
-        return get(captureProjectReferences(auth, data.userMessage));
-      },
-    );
+    const referenceRead = measureChatEnqueue(timing, "references", () => {
+      return get(captureProjectReferences(auth, data.userMessage, projectId));
+    });
+    const bootstrap = set(startNormalSendBootstrap$, {
+      body: data,
+      auth,
+      requireVisibleThread,
+    });
+    const projectReferences = await referenceRead;
     signal.throwIfAborted();
     if (projectReferences === null) {
-      return notFound("Project or conversation not found");
+      return notFound(
+        projectId ? "Project not found" : "Project or conversation not found",
+      );
     }
     const candidate =
       auth.tokenType === "session" &&
@@ -102,7 +112,7 @@ export const sendValidatedChatEvent$ = command(
     }
     const result = await set(
       handleSendChatEvent$,
-      { body: data, projectId, projectReferences },
+      { body: data, projectId, projectReferences, bootstrap },
       signal,
     );
     if (custom && result.status === 201 && data.clientEventId) {

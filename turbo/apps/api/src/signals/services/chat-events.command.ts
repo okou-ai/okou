@@ -52,7 +52,7 @@ import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
 import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
-import { command, computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import {
   and,
   asc,
@@ -242,6 +242,7 @@ type OrganizationAuthContext = AuthContext & {
 };
 interface NormalSendRequest {
   readonly enqueueTiming?: ChatEnqueueTimingCollector;
+  readonly bootstrap?: NormalSendBootstrap;
   readonly projectId?: string;
   readonly projectReferences?: EnqueuedChatInputFacts["projectReferences"];
   readonly body: NormalSendBody;
@@ -2395,30 +2396,6 @@ function settledNormalSendResponse(
   }
   return acceptedSendResponse(threadId, createdAt, false);
 }
-const validateSendThreadRevocation$ = command(
-  async (
-    { set },
-    args: NormalSendArgs,
-    thread: SendThread,
-    signal: AbortSignal,
-  ) => {
-    if (thread.kind !== "existing") {
-      return null;
-    }
-    const revocation = await set(
-      validateNormalRevocationTarget$,
-      {
-        threadId: thread.threadId,
-        revokesEventId: args.body.revokesEventId,
-        clientEventId: args.body.clientEventId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    return revocation;
-  },
-);
-
 const prepareNormalSendModels$ = command(
   async ({ get }, context: AgentRunContextSignals, signal: AbortSignal) => {
     const [orgModels, memberModels, memberMetadata] = await Promise.all([
@@ -2438,34 +2415,78 @@ const prepareNormalSendModels$ = command(
   },
 );
 
+function forgedMcpSource(body: NormalSendBody): boolean {
+  return body.userMessage.parts.some((part) => {
+    return part.type === "source" && part.kind === "mcp";
+  });
+}
+
+interface NormalSendBootstrap {
+  readonly context: AgentRunContextSignals;
+  readonly existingThread$: Computed<Promise<ExistingSendThreadRow | null>>;
+  readonly inputId: string;
+}
+
+function createNormalSendBootstrap(
+  owner: Pick<OrganizationAuthContext, "userId" | "orgId">,
+  body: NormalSendBody,
+  requireVisibleThread?: boolean,
+): NormalSendBootstrap {
+  // Shared input and template reads match PostgreSQL's canonical UUID form.
+  const inputId = body.clientEventId?.toLowerCase() ?? randomUUID();
+  const templates = projectUserMessage(body.userMessage).templates;
+  const graph = createAgentRunContextSignals(
+    {
+      userId: owner.userId,
+      orgId: owner.orgId,
+      chatThreadId: body.threadId ?? body.clientThreadId ?? randomUUID(),
+    },
+    {
+      inputId,
+      newThread: body.threadId === undefined,
+      requireVisibleThread,
+      presentationIds: selectedUserPresentationTemplateIds(templates),
+      userTemplateIds: selectedUserTemplateIds(templates),
+    },
+  );
+  return { ...graph, inputId };
+}
+
+export const startNormalSendBootstrap$ = command(
+  (
+    { get },
+    args: {
+      readonly auth: OrganizationAuthContext;
+      readonly body: SendBody;
+      readonly requireVisibleThread?: boolean;
+    },
+  ) => {
+    const { body } = args;
+    if (
+      !isNormalSendBody(body) ||
+      isInterruptSendBody(body) ||
+      forgedMcpSource(body)
+    ) {
+      return undefined;
+    }
+    const bootstrap = createNormalSendBootstrap(
+      args.auth,
+      body,
+      args.requireVisibleThread,
+    );
+    waitUntil(settle(get(bootstrap.context.modelFacts$)));
+    waitUntil(settle(get(bootstrap.context.memberMetadata$)));
+    return bootstrap;
+  },
+);
+
 const prepareNormalSendContext$ = command(
   async ({ get, set }, request: NormalSendRequest, signal: AbortSignal) => {
-    // MCP attribution is server-owned. Reject a forged source even on an
-    // idempotent retry, before any read starts.
-    if (
-      request.body.userMessage.parts.some((part) => {
-        return part.type === "source" && part.kind === "mcp";
-      })
-    ) {
+    if (forgedMcpSource(request.body)) {
       return badRequestMessage("MCP source annotations are server-managed");
     }
-    // Shared input and template reads match PostgreSQL's canonical UUID form.
-    const inputId = request.body.clientEventId?.toLowerCase() ?? randomUUID();
-    const templates = projectUserMessage(request.body.userMessage).templates;
-    const { context, existingThread$ } = createAgentRunContextSignals(
-      {
-        userId: request.userId,
-        orgId: request.orgId,
-        chatThreadId:
-          request.body.threadId ?? request.body.clientThreadId ?? randomUUID(),
-      },
-      {
-        inputId,
-        newThread: request.body.threadId === undefined,
-        presentationIds: selectedUserPresentationTemplateIds(templates),
-        userTemplateIds: selectedUserTemplateIds(templates),
-      },
-    );
+    const { context, existingThread$, inputId } =
+      request.bootstrap ?? createNormalSendBootstrap(request, request.body);
     const existingRead =
       request.body.threadId === undefined ? undefined : get(existingThread$);
     const args = request;
@@ -2511,6 +2532,29 @@ const prepareNormalSendContext$ = command(
     if ("status" in prepared) {
       return prepared;
     }
+    const revocation =
+      existing && args.body.revokesEventId
+        ? settleIncludingAbort(() => {
+            return measureChatEnqueue(
+              args.enqueueTiming,
+              "followup_validation",
+              () => {
+                return set(
+                  validateNormalRevocationTarget$,
+                  {
+                    threadId: existing.id,
+                    revokesEventId: args.body.revokesEventId,
+                    clientEventId: args.body.clientEventId,
+                  },
+                  signal,
+                );
+              },
+            );
+          })
+        : undefined;
+    if (revocation) {
+      waitUntil(revocation);
+    }
     return {
       ...prepared,
       models,
@@ -2519,6 +2563,7 @@ const prepareNormalSendContext$ = command(
       existing,
       inputId,
       attachmentRecords,
+      revocation,
     };
   },
 );
@@ -2699,19 +2744,12 @@ const prepareNormalSendPublicationInput$ = command(
       if ("status" in resolvedThread) {
         return resolvedThread;
       }
-      const revocation = await measureChatEnqueue(
-        args.enqueueTiming,
-        "followup_validation",
-        async () => {
-          return await set(
-            validateSendThreadRevocation$,
-            args,
-            resolvedThread,
-            signal,
-          );
-        },
-      );
+      const checkedRevocation = await prepared.revocation;
       signal.throwIfAborted();
+      if (checkedRevocation && !checkedRevocation.ok) {
+        throw checkedRevocation.error;
+      }
+      const revocation = checkedRevocation?.value;
       if (revocation && "status" in revocation) {
         return revocation;
       }
@@ -3345,9 +3383,11 @@ export const handleSendChatEvent$ = command(
       body,
       projectId,
       projectReferences,
+      bootstrap,
     }: {
       readonly body: SendBody;
       readonly projectId?: string;
+      readonly bootstrap?: NormalSendBootstrap;
       readonly projectReferences: NonNullable<
         EnqueuedChatInputFacts["projectReferences"]
       >;
@@ -3376,6 +3416,7 @@ export const handleSendChatEvent$ = command(
         enqueueTiming: timing,
         projectId,
         projectReferences,
+        bootstrap,
         body,
         auth,
         userId: auth.userId,

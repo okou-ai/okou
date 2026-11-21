@@ -61,6 +61,7 @@ export function createExecutionOrgMemberContext(
   owner: ExecutionMemberIdentity,
   includeOrg: boolean,
   existingThreadId?: string,
+  requireVisibleThread?: boolean,
 ) {
   const sources = memberModelSourcesAggregate(owner.orgId, owner.userId);
   const snapshot$ = computed(async (get) => {
@@ -103,6 +104,7 @@ export function createExecutionOrgMemberContext(
               eq(chatThreads.id, existingThreadId),
               eq(chatThreads.userId, owner.userId),
               chatThreadOrganizationCondition(owner.orgId),
+              requireVisibleThread ? eq(chatThreads.hidden, false) : undefined,
             ),
           ));
     if (!row) {
