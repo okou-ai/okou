@@ -248,7 +248,8 @@ internal fun SettingsSheet(
                     end = 16.dp,
                     top = if (centered) 16.dp else 0.dp,
                     bottom = 16.dp,
-                ),
+                )
+                .verticalScroll(scroll),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
@@ -258,7 +259,7 @@ internal fun SettingsSheet(
                     MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, lineHeight = 28.sp),
             )
             Column(
-                Modifier.weight(1f, fill = false).fillMaxWidth().verticalScroll(scroll),
+                Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 content = content,
             )

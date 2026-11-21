@@ -100,7 +100,7 @@ class MemberPreferencesModel(
     private var retryDelay = 5_000L
     private var readRequested = false
     private var settingsVisible = false
-    private var verifyFailedWrite = false
+    private var needsWriteReadback = false
 
     init {
         viewModelScope.launch {
@@ -181,7 +181,7 @@ class MemberPreferencesModel(
         if (change == null && !readRequested) return
         readRequested = false
         val saving = change != null
-        val verifying = saving && verifyFailedWrite
+        val verifying = saving && needsWriteReadback
         mutable.value =
             mutable.value.copy(
                 status = if (saving) PreferenceStatus.Saving else PreferenceStatus.Refreshing,
@@ -193,7 +193,11 @@ class MemberPreferencesModel(
                 try {
                     val confirmed =
                         if (change == null || verifying) service.preferences()
-                        else service.updatePreferences(change.request())
+                        else {
+                            // A failed or unreadable reply can follow a committed write.
+                            needsWriteReadback = true
+                            service.updatePreferences(change.request())
+                        }
                     currentCoroutineContext().ensureActive()
                     if (current()) {
                         val latest = mutable.value.pending
@@ -203,7 +207,7 @@ class MemberPreferencesModel(
                                 change != null -> latest?.after(change)
                                 else -> latest
                             }
-                        verifyFailedWrite = false
+                        needsWriteReadback = false
                         mutable.value = MemberPreferencesState(confirmed, pending)
                         retryDelay = 5_000L
                         success = true
@@ -241,7 +245,6 @@ class MemberPreferencesModel(
                     error.status == 408 || error.status == 429 || error.status in 500..599
                 else -> false
             }
-        if (saving && recoverable) verifyFailedWrite = true
         mutable.value =
             mutable.value.copy(
                 status =

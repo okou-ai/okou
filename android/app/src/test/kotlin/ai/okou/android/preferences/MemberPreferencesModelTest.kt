@@ -1,6 +1,7 @@
 package ai.okou.android.preferences
 
 import ai.okou.android.TestChatService
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequestTheme
 import ai.okou.android.api.generated.UserPreferences
@@ -250,6 +251,35 @@ class MemberPreferencesModelTest {
             runCurrent()
             assertEquals(UserPreferencesLocale.JA_JP, model.uiState.value.confirmed.locale)
             assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
+        }
+    }
+
+    @Test
+    fun retryReadsTheCanonicalPreferenceWhenTheSaveResponseCannotBeDecoded() {
+        val service =
+            Service().apply {
+                val commit = write
+                write = { request ->
+                    commit(request)
+                    throw ApiFailure.IncompatibleResponse()
+                }
+            }
+        check(service) { model, api, _ ->
+            model.selectColorTheme(UserPreferencesColorTheme.DEEP_LAGOON)
+            runCurrent()
+            assertEquals(PreferenceStatus.SaveFailed, model.uiState.value.status)
+            assertEquals(UserPreferencesColorTheme.DEEP_LAGOON, model.uiState.value.colorTheme)
+
+            model.retry()
+            runCurrent()
+
+            assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
+            assertEquals(
+                UserPreferencesColorTheme.DEEP_LAGOON,
+                model.uiState.value.confirmed.colorTheme,
+            )
+            assertNull(model.uiState.value.pending)
+            assertEquals(1, api.requests.size)
         }
     }
 
