@@ -1,7 +1,3 @@
-import {
-  agentsByIdContract,
-  type AgentResponse,
-} from "@okouai/api-contracts/contracts/agents";
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -9,33 +5,6 @@ import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-
-const AGENT_ID = "c0000000-0000-4000-a000-000000000002";
-
-function mountedAgent(agentIds: string[]): void {
-  const agents = agentIds.map((agentId): AgentResponse => {
-    return {
-      agentId,
-      isDefaultAgent: agentId === AGENT_ID,
-      ownerId: "test-user-123",
-      displayName: agentId === AGENT_ID ? "Nova" : "Orion",
-      description: null,
-      sound: null,
-      avatarUrl: null,
-      visibility: "public",
-    };
-  });
-  context.mocks.data.agents(agents);
-  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-    const agent = agents.find((candidate) => {
-      return candidate.agentId === params.id;
-    });
-    if (!agent) {
-      throw new Error(`Unexpected agent requested: ${params.id}`);
-    }
-    return respond(200, agent);
-  });
-}
 
 async function greeting() {
   const tagline = await screen.findByTestId("chat-tagline");
@@ -55,12 +24,11 @@ function tokens(text: Element): HTMLElement[] {
 }
 
 test("The greeting shows its complete sentence, one box per word", async () => {
-  mountedAgent([AGENT_ID]);
   context.mocks.browser.matchMedia(false);
 
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat?compose=1`,
+    path: `/?compose=1`,
   });
 
   const { tagline, fullLine, text } = await greeting();
@@ -78,12 +46,11 @@ test("The greeting shows its complete sentence, one box per word", async () => {
 });
 
 test("The avatar leads the sentence", async () => {
-  mountedAgent([AGENT_ID]);
   context.mocks.browser.matchMedia(false);
 
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat?compose=1`,
+    path: `/?compose=1`,
   });
 
   const row = await screen.findByTestId("chat-greeting");

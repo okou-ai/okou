@@ -29,7 +29,6 @@ import { serializeChatThreadMention } from "./chat-thread-suggestion-domain.ts";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import { findPresentationRunbookPackage } from "@okouai/core/resource-registry";
 import type { PresentationOutputFormat } from "@okouai/core/presentation-output-format";
-import { legacyAgentMentionsToText } from "@okouai/core/legacy-agent-mention";
 
 export const PROJECT_MENTION_NODE_NAME = "projectMention";
 export const CHAT_THREAD_MENTION_NODE_NAME = "chatThreadMention";
@@ -350,7 +349,6 @@ function feedbackPart(node: ProseMirrorNode): UserMessagePart | null {
         part.type === "text" ||
         part.type === "chat_thread" ||
         part.type === "project" ||
-        part.type === "agent" ||
         part.type === "template"
       );
     })
@@ -669,16 +667,13 @@ function feedbackNoteToPrompt(note: readonly FeedbackNotePart[]): string {
   return note
     .map((part) => {
       if (part.type === "text") {
-        return legacyAgentMentionsToText(part.text);
+        return part.text;
       }
       if (part.type === "chat_thread") {
         return serializeChatThreadMention(part.threadId, part.titleSnapshot);
       }
       if (part.type === "project") {
         return `[${part.nameSnapshot}](/projects/${part.projectId})`;
-      }
-      if (part.type === "agent") {
-        return part.nameSnapshot;
       }
       return `Select ${part.titleSnapshot} ${part.template.type} template`;
     })
@@ -724,17 +719,12 @@ function feedbackNoteContent(note: readonly FeedbackNotePart[]): JSONContent[] {
       trailingParagraph = false;
       continue;
     }
-    if (part.type === "agent") {
-      paragraphContent.push({ type: "text", text: part.nameSnapshot });
-      trailingParagraph = false;
-      continue;
-    }
     const lines = part.text.split("\n");
     for (const [index, line] of lines.entries()) {
       if (line.length > 0) {
         paragraphContent.push({
           type: "text",
-          text: legacyAgentMentionsToText(line),
+          text: line,
         });
         trailingParagraph = false;
       }
@@ -803,7 +793,7 @@ function appendRestoredText(state: RestoredEditorState, text: string): void {
     if (line.length > 0) {
       state.paragraphContent.push({
         type: "text",
-        text: legacyAgentMentionsToText(line),
+        text: line,
       });
       state.trailingParagraph = false;
     }
@@ -847,11 +837,6 @@ function restoredEditorDoc(userMessage: UserMessageDocument): JSONContent {
         type: PROJECT_MENTION_NODE_NAME,
         attrs: { projectId: part.projectId, name: part.nameSnapshot },
       });
-      state.trailingParagraph = false;
-      continue;
-    }
-    if (part.type === "agent") {
-      state.paragraphContent.push({ type: "text", text: part.nameSnapshot });
       state.trailingParagraph = false;
       continue;
     }
@@ -972,7 +957,7 @@ export function messageDocumentToPrompt(value: unknown): string | null {
     }
     flushFeedback();
     if (part.type === "text") {
-      inlineText += legacyAgentMentionsToText(part.text);
+      inlineText += part.text;
     } else if (part.type === "chat_thread") {
       inlineText += serializeChatThreadMention(
         part.threadId,
@@ -980,8 +965,6 @@ export function messageDocumentToPrompt(value: unknown): string | null {
       );
     } else if (part.type === "project") {
       inlineText += `[${part.nameSnapshot}](/projects/${part.projectId})`;
-    } else if (part.type === "agent") {
-      inlineText += part.nameSnapshot;
     } else if (part.type === "template") {
       inlineText += `Select ${part.titleSnapshot} ${part.template.type} template`;
     }
@@ -1036,7 +1019,7 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
     }
     flushFeedback();
     if (part.type === "text") {
-      inlineText += legacyAgentMentionsToText(part.text);
+      inlineText += part.text;
       continue;
     }
     if (part.type === "chat_thread") {
@@ -1046,10 +1029,6 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
         },
         { title: part.titleSnapshot },
       );
-      continue;
-    }
-    if (part.type === "agent") {
-      inlineText += part.nameSnapshot;
       continue;
     }
     if (

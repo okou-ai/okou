@@ -4177,8 +4177,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await integrations.configureNativeSubscriptionModels(actor);
-    const onboarding = await bdd.readOnboardingStatus(actor);
-    if (!onboarding.defaultAgentId) {
+    const onboardingAgentId = await bdd.readDefaultAgentId(actor);
+    if (!onboardingAgentId) {
       throw new Error("Expected onboarding to configure a default agent");
     }
     const slackUserId = uniqueSlackUserId();
@@ -4569,8 +4569,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await bdd.bootstrapLimitedFreeOnboarding(actor, {
       displayName: "BDD Slack Default Agent",
     });
-    const status = await bdd.readOnboardingStatus(actor);
-    const defaultAgentId = status.defaultAgentId;
+    const defaultAgentId = await bdd.readDefaultAgentId(actor);
     if (!defaultAgentId) {
       throw new Error("Expected onboarding to configure a default agent");
     }
@@ -4987,10 +4986,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       }
       await integrations.configureNativeSubscriptionModels(actor);
       const onboarding = await bdd.readOnboardingStatus(actor);
-      expect(onboarding).toMatchObject({
-        hasDefaultAgent: true,
-        defaultAgentId: expect.any(String),
-      });
+      expect(onboarding).toMatchObject({});
       await plan.update("canceled");
       const slackUserId = uniqueSlackUserId();
       const { teamId } = await integrations.installSlackWorkspace(actor, {

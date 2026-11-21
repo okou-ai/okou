@@ -520,8 +520,6 @@ describe("canonical Discord ingress", () => {
       isAvailable: true,
       isConnected: true,
       discordUserId: actor.discordUserId,
-      defaultAgentId: null,
-      defaultAgentName: null,
     });
     expect(status.dmBindings).toStrictEqual([
       {

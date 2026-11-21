@@ -149,49 +149,6 @@ final class ChatComposerMentionTests: XCTestCase {
     XCTAssertTrue(workspace.newChatDraft.hasSuffix("missing\n"))
   }
 
-  func testReferenceOnlySendAndUncertainRetryKeepCanonicalPartsAndCurrentAgent() async throws {
-    let fixture = AttachmentFlowFixture(failSend: true)
-    let conversation = fixture.conversation()
-    let navigation = MentionNavigationFixture()
-    let workspace = try await navigation.workspace()
-    defer {
-      conversation.close()
-      workspace.close()
-    }
-    let reference: MessageJSON = .object([
-      "type": .string("agent"), "agentId": .string(MentionNavigationFixture.agent(1)),
-      "nameSnapshot": .string("Planner")
-    ])
-    let draft = ChatDraftDocument(parts: [
-      reference, .object(["type": .string("text"), "text": .string(" ")])
-    ])
-    let expected = ChatDraftDocument(parts: [reference])
-    let block = try XCTUnwrap(conversation.composer.editorBlocks.first)
-    conversation.composer.editBlock(block.id, document: draft)
-    XCTAssertEqual(conversation.composer.document, draft)
-    XCTAssertTrue(conversation.composer.hasContent)
-    XCTAssertEqual(conversation.draft.trimmingCharacters(in: .whitespacesAndNewlines), "")
-    await conversation.send()
-    let pending = try XCTUnwrap(conversation.pending.first)
-    XCTAssertTrue(pending.needsRetry)
-    XCTAssertEqual(pending.document, expected)
-    conversation.draft = "Next draft"
-    await conversation.retry(pending)
-    let sends = try fixture.state.value.withLock { $0.messages }.map {
-      try JSONDecoder().decode(MentionSend.self, from: $0)
-    }
-    XCTAssertEqual(sends.count, 2)
-    XCTAssertTrue(sends.allSatisfy(\.hasTextContent))
-    XCTAssertEqual(
-      sends.map(\.agentId), [nil, nil])
-    XCTAssertEqual(sends[0].clientEventId, sends[1].clientEventId)
-    XCTAssertEqual(sends[1].userMessage, expected)
-    XCTAssertEqual(conversation.draft, "Next draft")
-    XCTAssertTrue(conversation.pending.isEmpty)
-    let sent = try XCTUnwrap(conversation.messages.first { $0.role == .user })
-    XCTAssertEqual(sent.userMessage?.parts.first?.agentId, MentionNavigationFixture.agent(1))
-  }
-
   func testQuotedNotesMixReferencesAndAttachmentsWithoutChangingQuoteSource() async throws {
     let fixture = AttachmentFlowFixture()
     let conversation = fixture.conversation()
@@ -210,15 +167,9 @@ final class ChatComposerMentionTests: XCTestCase {
     let block = try XCTUnwrap(conversation.composer.addFeedback(quote))
     let source = workspace.mentionTestSource
     let chat = try XCTUnwrap(source.suggestions(for: "plan").first)
-    let agent: MessageJSON = .object([
-      "type": .string("agent"), "agentId": .string(MentionNavigationFixture.agent(1)),
-      "nameSnapshot": .string("Planner")
-    ])
     let note = ChatDraftDocument(parts: [
       .object(["type": .string("text"), "text": .string("Compare ")]),
       chat.part,
-      .object(["type": .string("text"), "text": .string(" with ")]),
-      agent,
       .object(["type": .string("text"), "text": .string(" ")])
     ])
     conversation.composer.editBlock(block, document: note)
@@ -237,9 +188,8 @@ final class ChatComposerMentionTests: XCTestCase {
       return XCTFail("Missing note")
     }
     XCTAssertEqual(
-      parts.map { $0["type"]?.string }, ["text", "chat_thread", "text", "agent", "text"])
+      parts.map { $0["type"]?.string }, ["text", "chat_thread", "text"])
     XCTAssertEqual(parts[1]["threadId"]?.string, MentionNavigationFixture.thread(31))
-    XCTAssertEqual(parts[3]["agentId"]?.string, MentionNavigationFixture.agent(1))
     XCTAssertEqual(expected?.parts.last?["fileId"]?.string, AttachmentFlowFixture.fileID)
     await conversation.send()
     let send = try JSONDecoder().decode(
@@ -327,7 +277,7 @@ final class ChatComposerMentionTests: XCTestCase {
     let started = expectation(description: "Structured clipboard provider started")
     let delivery = DelayedProviderTasks(owner: self)
     let data = Data(
-      #"{"version":1,"parts":[{"type":"agent","agentId":"73000000-0000-4000-8000-000000000003","nameSnapshot":"Notes"}]}"#
+      #"{"version":1,"parts":[{"type":"chat_thread","threadId":"74000000-0000-4000-8000-000000000003","titleSnapshot":"Notes"}]}"#
         .utf8)
     let provider = NSItemProvider()
     provider.registerDataRepresentation(
@@ -345,7 +295,7 @@ final class ChatComposerMentionTests: XCTestCase {
     delivery.release()
     try await waitForBusinessResult {
       originalComposer.document.parts.contains {
-        $0["type"]?.string == "agent" && $0["agentId"]?.string == MentionNavigationFixture.agent(3)
+        $0["type"]?.string == "chat_thread" && $0["threadId"]?.string == MentionNavigationFixture.thread(3)
       }
     }
     try await eventually { mentionTable(in: host.view) == nil }
@@ -357,7 +307,6 @@ final class ChatComposerMentionTests: XCTestCase {
 
 struct MentionSend: Decodable {
   let userMessage: ChatDraftDocument
-  let agentId: String?
   let clientEventId: String
   let hasTextContent: Bool
 }

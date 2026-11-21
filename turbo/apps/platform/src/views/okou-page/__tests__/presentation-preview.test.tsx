@@ -18,19 +18,12 @@ import {
 
 const context = testContext();
 
-const AGENT_ID = "c0000000-0000-4000-a000-000000000071";
 const PRESENTATION_URL =
   "https://static.vm0.io/vm0/artifact-templates/presentation/daf7c2d1-5195-4c09-ad4b-8d85778fc104/playful-launch-presentation.html";
 const TEMPLATE_NAME = "Sunburst playroom";
 const PREVIEW_TITLE = `${TEMPLATE_NAME} HTML preview`;
 
 function arrangePresentation(html: string): void {
-  context.mocks.data.agents([
-    {
-      agentId: AGENT_ID,
-      displayName: "Presentation Agent",
-    },
-  ]);
   context.mocks.http.get(PRESENTATION_URL, () => {
     return HttpResponse.text(html, {
       headers: { "Content-Type": "text/html; charset=utf-8" },
@@ -183,7 +176,7 @@ test("Selecting a slide preserves its authored layout", async () => {
     locale: "en-US",
     context,
     host: "app.okou.ai",
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const initialFrame = await openPresentationDetail(true);
@@ -234,7 +227,7 @@ test("A generically authored deck still previews", async () => {
   await setupPage({
     context,
     host: "app.okou.ai",
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
 
   await openPresentationDetail();
@@ -266,7 +259,7 @@ test("A presentation slide fills its preview frame cleanly", async () => {
   await setupPage({
     context,
     host: "app.okou.ai",
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const { document: frameDocument } = await openReadyPresentation();
@@ -315,7 +308,7 @@ test("Presentation previews preserve the selected theme", async () => {
   await setupPage({
     context,
     host: "app.okou.ai",
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const { document: frameDocument } = await openReadyPresentation();

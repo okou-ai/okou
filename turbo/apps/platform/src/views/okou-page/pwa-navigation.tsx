@@ -36,7 +36,6 @@ function PwaBackLink({
   );
 }
 
-// My Okou's chats tab is `/`; otherwise it opens the current agent's chat.
 
 export function PwaBackToChats() {
   const { t } = useTranslation();

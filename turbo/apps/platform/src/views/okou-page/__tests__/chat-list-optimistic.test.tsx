@@ -20,14 +20,12 @@ import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import {
-  CHAT_LIST_AGENT_ID,
   cachedChatListEvents,
   chatListAuth,
   chatListEvent,
   chatListThread,
   fastButton,
   installActiveChatBoundaries,
-  installChatListAgent,
   installChatListRunModels,
   installChatListStream,
   sidebarThreadLinks,
@@ -61,7 +59,6 @@ function composerFileInput(): HTMLInputElement {
 }
 
 function installNewThreadDefaults(): void {
-  installChatListAgent(context);
   installChatListRunModels(context);
   context.mocks.data.userModelPreference({
     selectedModel: "gpt-5.6-luna",
@@ -132,7 +129,7 @@ async function openUnconfirmedConversation() {
 
   await setupPage({
     context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat?compose=1`,
+    path: `/?compose=1`,
     auth,
     cachedChatThreadEvents: cachedChatListEvents(9, []),
   });
@@ -273,7 +270,7 @@ test("Sending in an older conversation moves it to the top", async () => {
   const newer = chatListThread(46, "Newer cached thread");
   const send = context.mocks.deferred<void>();
   let sentPrompt: string | undefined;
-  installChatListAgent(context);
+
   installChatListRunModels(context);
   installChatListStream(context, {
     caseId: 12,
@@ -351,7 +348,7 @@ test("Server confirmation settles a new conversation without duplication", async
 
   await setupPage({
     context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    path: `/`,
     auth,
     cachedChatThreadEvents: cachedChatListEvents(13, []),
   });

@@ -689,16 +689,12 @@ export {
   onboardingRecommendationSchema,
   onboardingRecommendationStatusSchema,
   onboardingUserProfileSchema,
-  onboardingStatusContract,
-  onboardingStatusResponseSchema,
   type OnboardingCompleteContract,
   type OnboardingRecommendation,
   type OnboardingRecommendationConnectorSlug,
   type OnboardingRecommendationContract,
   type OnboardingRecommendationStatus,
   type OnboardingUserProfile,
-  type OnboardingStatusContract,
-  type OnboardingStatusResponse,
 } from "./onboarding";
 export { skillFrontmatterSchema } from "./skills";
 export {
@@ -950,10 +946,6 @@ export {
   thirdPartySubscriptionsMainContract,
   type ThirdPartySubscriptionsMainContract,
 } from "./third-party-subscriptions";
-export {
-  userPreferencesContract,
-  type UserPreferencesContract,
-} from "./user-preferences";
 export {
   featureSwitchesContract,
   type FeatureSwitchesContract,

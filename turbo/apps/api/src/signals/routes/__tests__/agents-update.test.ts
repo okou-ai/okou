@@ -12,7 +12,7 @@ import {
   cliAuthDeviceContract,
   cliAuthTokenContract,
 } from "@okouai/api-contracts/contracts/cli-auth";
-import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
+import { memberOnboardingContract } from "@okouai/api-contracts/contracts/onboarding";
 import { createStore } from "ccstate";
 
 import { mockNow } from "../../../lib/time";
@@ -95,7 +95,7 @@ function agentsCollectionClient() {
 
 function onboardingStatusClient() {
   return setupApp({ context, routes: onboardingStatusRoutes })(
-    onboardingStatusContract,
+    memberOnboardingContract,
   );
 }
 
@@ -353,11 +353,17 @@ describe("PUT /api/agents/:id", () => {
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.test/default-agent.tar.gz?signature=test",
     );
-    const onboarding = await accept(
+    await accept(
       onboardingStatusClient().getStatus({ headers: authHeaders() }),
       [200],
     );
-    const agentId = onboarding.body.defaultAgentId;
+    const listed = await accept(
+      agentsCollectionClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    const agentId = listed.body.find((entry) => {
+      return entry.isDefaultAgent;
+    })?.agentId;
     if (!agentId) {
       throw new Error("Expected onboarding to create a default Agent");
     }
@@ -640,11 +646,17 @@ describe("PATCH /api/agents/:id", () => {
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.test/default-agent.tar.gz?signature=test",
     );
-    const onboarding = await accept(
+    await accept(
       onboardingStatusClient().getStatus({ headers: authHeaders() }),
       [200],
     );
-    const agentId = onboarding.body.defaultAgentId;
+    const listed = await accept(
+      agentsCollectionClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    const agentId = listed.body.find((entry) => {
+      return entry.isDefaultAgent;
+    })?.agentId;
     if (!agentId) {
       throw new Error("Expected onboarding to create a default agent");
     }
@@ -804,11 +816,17 @@ describe("PATCH /api/agents/:id", () => {
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.test/default-agent.tar.gz?signature=test",
     );
-    const onboarding = await accept(
+    await accept(
       onboardingStatusClient().getStatus({ headers: authHeaders() }),
       [200],
     );
-    const agentId = onboarding.body.defaultAgentId;
+    const listed = await accept(
+      agentsCollectionClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    const agentId = listed.body.find((entry) => {
+      return entry.isDefaultAgent;
+    })?.agentId;
     if (!agentId) {
       throw new Error("Expected onboarding to create a default Agent");
     }

@@ -19,12 +19,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.encodeToStream
-import kotlinx.serialization.json.jsonPrimitive
 
 enum class ComposerCommit {
     Committed,
@@ -51,6 +47,7 @@ class ComposerJournalStore(
     private val editors = mutableMapOf<String, ChatComposerOwner>()
     private var closed = false
     private val json = Json {
+        ignoreUnknownKeys = true
         encodeDefaults = false
         explicitNulls = true
     }
@@ -127,32 +124,7 @@ class ComposerJournalStore(
             return ComposerJournal()
         return file
             .openRead()
-            .use { stream ->
-                val stored = json.decodeFromStream<JsonObject>(stream)
-                val previous = stored["defaultAgentId"]?.jsonPrimitive?.contentOrNull
-                val journal =
-                    json.decodeFromJsonElement<ComposerJournal>(
-                        JsonObject(stored - "defaultAgentId")
-                    )
-                val old = journal.drafts.filterKeys { it.startsWith("agent:") }
-                if (old.isEmpty()) journal
-                else {
-                    val drafts = (journal.drafts - old.keys).toMutableMap()
-                    val retained = journal.retainedDrafts.toMutableMap()
-                    for ((key, draft) in old) {
-                        if (key == "agent:$previous" && drafts["new:"] == null)
-                            drafts["new:"] = draft
-                        else if (draft.text.isNotEmpty()) {
-                            var candidate = key
-                            while (
-                                candidate in retained && retained[candidate] != draft.text
-                            ) candidate += ":saved"
-                            retained[candidate] = draft.text
-                        }
-                    }
-                    journal.copy(drafts = drafts, retainedDrafts = retained)
-                }
-            }
+            .use { stream -> json.decodeFromStream<ComposerJournal>(stream) }
             .also {
                 if (
                     it.format !in 1..3 ||

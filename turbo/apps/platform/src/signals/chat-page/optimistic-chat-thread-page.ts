@@ -304,8 +304,7 @@ const routeMainChatThread$ = command(
     if (next.get(SIDEBAR_PARAM) === args.threadId) {
       next.delete(SIDEBAR_PARAM);
     }
-    // The mobile composer request belongs to the agent chat URL, not to the
-    // thread it starts.
+    // The mobile compose parameter applies only on the start page.
     next.delete(PWA_COMPOSE_PARAM);
     set(detachedNavigateTo$, "/chats/:threadId", {
       pathParams: { threadId: args.threadId },

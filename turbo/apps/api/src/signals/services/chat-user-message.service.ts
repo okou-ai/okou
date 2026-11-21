@@ -1,4 +1,3 @@
-import { legacyAgentMentionsToText } from "@okouai/core/legacy-agent-mention";
 import {
   readSuggestionContext,
   suggestionFeedbacks,
@@ -118,10 +117,6 @@ export interface UserMessageReferences {
     readonly projectId: string;
     readonly nameSnapshot: string;
   }[];
-  readonly agents: readonly {
-    readonly agentId: string;
-    readonly nameSnapshot: string;
-  }[];
   readonly chatThreads: readonly {
     readonly threadId: string;
     readonly titleSnapshot: string;
@@ -129,21 +124,17 @@ export interface UserMessageReferences {
 }
 
 /**
- * Agents and chat threads the user linked in the message, including links in
+ * Projects and chat threads the user linked in the message, including links in
  * quoted feedback notes, deduplicated in first-mention order.
  */
 export function userMessageReferences(
   document: UserMessageDocument,
 ): UserMessageReferences {
-  const agents = new Map<string, string>();
   const chatThreads = new Map<string, string>();
   const projects = new Map<string, string>();
   const collect = (part: UserMessagePart | FeedbackNotePart) => {
     if (part.type === "project") {
       projects.set(part.projectId, part.nameSnapshot);
-    }
-    if (part.type === "agent" && !agents.has(part.agentId)) {
-      agents.set(part.agentId, part.nameSnapshot);
     }
     if (part.type === "chat_thread" && !chatThreads.has(part.threadId)) {
       chatThreads.set(part.threadId, part.titleSnapshot);
@@ -161,9 +152,6 @@ export function userMessageReferences(
   return {
     projects: [...projects].map(([projectId, nameSnapshot]) => {
       return { projectId, nameSnapshot };
-    }),
-    agents: [...agents].map(([agentId, nameSnapshot]) => {
-      return { agentId, nameSnapshot };
     }),
     chatThreads: [...chatThreads].map(([threadId, titleSnapshot]) => {
       return { threadId, titleSnapshot };
@@ -291,13 +279,10 @@ export function serializeFeedbackNote(
   return parts
     .map((part) => {
       if (part.type === "text") {
-        return legacyAgentMentionsToText(part.text);
+        return part.text;
       }
       if (part.type === "chat_thread") {
         return serializeChatThreadMention(part.threadId, part.titleSnapshot);
-      }
-      if (part.type === "agent") {
-        return part.nameSnapshot;
       }
       if (part.type === "project") {
         return `[${part.nameSnapshot}](/projects/${part.projectId})`;
@@ -591,7 +576,7 @@ export function projectUserMessage(
         followsDroppedTemplate && inlinePrompt.endsWith(" ")
           ? part.text.replace(/^ +/u, "")
           : part.text;
-      inlineDisplayText += legacyAgentMentionsToText(part.text);
+      inlineDisplayText += part.text;
       hasTextContent ||= part.text.trim().length > 0;
       continue;
     }
@@ -602,12 +587,6 @@ export function projectUserMessage(
       );
       inlinePrompt += serialized;
       inlineDisplayText += `[Chat thread: ${part.titleSnapshot}]`;
-      hasTextContent = true;
-      continue;
-    }
-    if (part.type === "agent") {
-      inlinePrompt += part.nameSnapshot;
-      inlineDisplayText += part.nameSnapshot;
       hasTextContent = true;
       continue;
     }
@@ -675,19 +654,13 @@ export function projectUserMessageForPublicShare(
             if (notePart.type === "text") {
               return {
                 type: "text",
-                text: legacyAgentMentionsToText(notePart.text),
+                text: notePart.text,
               };
             }
             if (notePart.type === "chat_thread") {
               return {
                 type: "text",
                 text: `[Chat thread: ${notePart.titleSnapshot}]`,
-              };
-            }
-            if (notePart.type === "agent") {
-              return {
-                type: "text",
-                text: notePart.nameSnapshot,
               };
             }
             if (notePart.type === "project") {

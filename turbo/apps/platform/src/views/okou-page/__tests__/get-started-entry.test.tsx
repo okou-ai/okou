@@ -15,7 +15,6 @@ import {
   isOneClickConnectorGrantKind,
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
-import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
@@ -50,7 +49,6 @@ import {
   type TestContext,
 } from "../../../signals/__tests__/test-helpers.ts";
 
-const QUEST_AGENT_ID = "c0000000-0000-4000-a000-000000000002";
 const context = testContext();
 
 test("The gift opens invitations independently of credit quests and copies the invitation link", async () => {
@@ -401,17 +399,6 @@ function configureQuestPage(
     name: "Quest Workspace",
     role,
   });
-  context.mocks.data.agents([
-    {
-      agentId: QUEST_AGENT_ID,
-      ownerId: "test-user-123",
-      displayName: null,
-      description: null,
-      sound: null,
-      avatarUrl: null,
-      visibility: "private",
-    },
-  ]);
   context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
     return respond(200, slackInstalled());
   });
@@ -1112,21 +1099,6 @@ test("The Slack entry forwards an existing prompt and retains same-origin previe
   // bypass query on the corresponding API origin, never arbitrary links.
   context.mocks.browser.cookie("x-vercel-protection-bypass=preview-secret");
   const releaseAgents = context.mocks.deferred<void>();
-  context.mocks.api(agentsMainContract.list, async ({ respond }) => {
-    await releaseAgents.promise;
-    return respond(200, [
-      {
-        agentId: QUEST_AGENT_ID,
-        isDefaultAgent: false,
-        ownerId: "test-user-123",
-        displayName: null,
-        description: null,
-        sound: null,
-        avatarUrl: null,
-        visibility: "private",
-      },
-    ]);
-  });
   // The page is interactive before its pending agent read consumes the prompt.
   const page = await startPage({
     context,

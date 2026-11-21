@@ -269,7 +269,7 @@ async function createTelegramPostFixture(
     throw new Error("Expected an organization for the Telegram poster");
   }
   await authOrgApi.completeOnboarding(actor);
-  const { defaultAgentId } = await authOrgApi.readOnboardingStatus(actor);
+  const defaultAgentId = await authOrgApi.readDefaultAgentId(actor);
   if (!defaultAgentId) {
     throw new Error("Expected onboarding to create a default agent");
   }
@@ -980,7 +980,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     const runnerGroup = await configureCanonicalTelegramRunner();
     configureOfficialBotEnv();
     const actor = authOrgApi.user();
-    const { defaultAgentId } = await authOrgApi.readOnboardingStatus(actor);
+    const defaultAgentId = await authOrgApi.readDefaultAgentId(actor);
     if (!actor.orgId || !defaultAgentId) {
       throw new Error("Expected onboarding to create the Telegram Agent");
     }
@@ -1215,7 +1215,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     const runs = createRunsApi(foreground);
     const prepared = owned.run(async () => {
       await authOrg.completeOnboarding(actor);
-      const { defaultAgentId } = await authOrg.readOnboardingStatus(actor);
+      const defaultAgentId = await authOrg.readDefaultAgentId(actor);
       if (!defaultAgentId) {
         throw new Error("Expected onboarding to create a default agent");
       }
@@ -2053,7 +2053,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       const runnerGroup = await configureCanonicalTelegramRunner();
       configureOfficialBotEnv();
       const actor = authOrgApi.user();
-      const { defaultAgentId } = await authOrgApi.readOnboardingStatus(actor);
+      const defaultAgentId = await authOrgApi.readDefaultAgentId(actor);
       if (!actor.orgId || !defaultAgentId) {
         throw new Error("Expected onboarding to create the Telegram Agent");
       }

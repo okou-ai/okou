@@ -1,4 +1,3 @@
-import { legacyAgentMentionsToText } from "@okouai/core/legacy-agent-mention";
 import {
   userMessageDocumentSchema,
   resolveChatEventRecommendedFollowups,
@@ -1032,7 +1031,7 @@ function feedbackNoteRenderPart(
 ): UserMessageFeedbackNoteRenderPart {
   switch (part.type) {
     case "text": {
-      const text = legacyAgentMentionsToText(part.text);
+      const text = part.text;
       return {
         type: "text",
         part: text === part.text ? part : { ...part, text },
@@ -1046,9 +1045,6 @@ function feedbackNoteRenderPart(
     }
     case "template": {
       return { type: "template", part };
-    }
-    case "agent": {
-      return { type: "text", part: { type: "text", text: part.nameSnapshot } };
     }
   }
 }
@@ -1066,7 +1062,7 @@ const registerUserMessageRenderPart$ = command(
     const { artifactCardSignals } = registries;
     switch (part.type) {
       case "text": {
-        const text = legacyAgentMentionsToText(part.text);
+        const text = part.text;
         return {
           type: "text",
           part: text === part.text ? part : { ...part, text },
@@ -1086,12 +1082,6 @@ const registerUserMessageRenderPart$ = command(
       }
       case "model": {
         return { type: "model", part };
-      }
-      case "agent": {
-        return {
-          type: "text",
-          part: { type: "text", text: part.nameSnapshot },
-        };
       }
       case "source": {
         return part.kind === "agent"

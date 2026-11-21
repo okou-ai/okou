@@ -1309,8 +1309,8 @@ async function readHistoricalTeamsDownloadExecution(
   await owned.run(() => {
     return authOrgApi.completeOnboarding(actor);
   });
-  const { defaultAgentId } = await owned.run(() => {
-    return authOrgApi.readOnboardingStatus(actor);
+  const defaultAgentId = await owned.run(() => {
+    return authOrgApi.readDefaultAgentId(actor);
   });
   if (!defaultAgentId) {
     throw new Error("Expected the normal onboarding Agent");
@@ -2961,10 +2961,9 @@ describe("POST /api/webhooks/teams/bot", () => {
       const subscription = await runsApi.grantProEntitlement(actor, {
         subscriptionId: owned.subscriptionId,
       });
-      expect(
-        (await createBddApi(context).readOnboardingStatus(actor))
-          .defaultAgentId,
-      ).toBe(defaultAgent.body.agentId);
+      await expect(
+        createBddApi(context).readDefaultAgentId(actor),
+      ).resolves.toBe(defaultAgent.body.agentId);
       await webhooksApi.postStripeEvent(
         {
           type: "customer.subscription.updated",
@@ -3645,13 +3644,13 @@ describe("POST /api/webhooks/teams/bot", () => {
         await removeTeamsForTest(context.signal, fixture);
       });
       const { runnerGroup } = await scenario.prepareActor(actor);
-      const onboarding = await scenario.run(() => {
-        return authOrgApi.readOnboardingStatus(actor);
+      const onboardingAgentId = await scenario.run(() => {
+        return authOrgApi.readDefaultAgentId(actor);
       });
-      if (!onboarding.defaultAgentId) {
+      if (!onboardingAgentId) {
         throw new Error("Expected the normal Teams default Agent");
       }
-      const defaultAgentId = onboarding.defaultAgentId;
+      const defaultAgentId = onboardingAgentId;
       await scenario.run(() => {
         return authOrgApi.readAgent(actor, defaultAgentId);
       });

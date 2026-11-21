@@ -19,7 +19,6 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 import {
-  AGENT_ID,
   THREAD_ID,
   createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
@@ -70,10 +69,7 @@ function button(name: string, container: ParentNode = document.body) {
   return result;
 }
 
-async function openSlashCategory(
-  category: string,
-  path = `/agents/${AGENT_ID}/chat`,
-) {
+async function openSlashCategory(category: string, path = `/`) {
   context.mocks.browser.matchMedia(true);
   await setupPage({
     context,
@@ -124,13 +120,13 @@ const CATEGORIES = [
     category: "Illustration",
     kind: "illustration",
     builtInTitle: ILLUSTRATION_TEMPLATE_ITEMS[0]!.title,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   },
   {
     category: "Document",
     kind: "document",
     builtInTitle: DOCUMENT_TEMPLATE_ITEMS[0]!.title,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   },
 ] as const;
 

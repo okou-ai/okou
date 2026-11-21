@@ -17,8 +17,7 @@ function mockDisconnectedDiscord(): void {
       guildId: null,
       guildName: null,
       discordUserId: null,
-      defaultAgentId: null,
-      defaultAgentName: null,
+
       onboarding: "oauth",
       dmSelectionConnectionId: null,
       dmBindings: [],

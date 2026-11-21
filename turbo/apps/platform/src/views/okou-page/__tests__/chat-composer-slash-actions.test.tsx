@@ -23,7 +23,6 @@ import {
   scheduledAutomationChatPrompt,
 } from "../../../signals/chat-page/workflow-prompt-action.ts";
 import {
-  AGENT_ID,
   composerWorkflow,
   findComposerEditor,
   tabByText,
@@ -34,14 +33,14 @@ import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 
 const context = testContext();
-const { mockAgent, mockBillingCapabilities, mockPersonalModelRoutes } =
+const { mockBillingCapabilities, mockPersonalModelRoutes } =
   createChatComposerHelpers(context);
 
 const THREAD_ID = "b0000000-0000-4000-a000-000000000930";
 const WORKFLOWS = ["axiom-red", "axiom-status", "axiom-traces"] as const;
 
 async function openSlashActions({
-  path = `/agents/${AGENT_ID}/chat?compose=1`,
+  path = `/?compose=1`,
   enabled = true,
   noModelChoice = false,
   noEffort = false,
@@ -52,7 +51,6 @@ async function openSlashActions({
   /** The chat model runs without a runtime route, so it has no levels. */
   readonly noEffort?: boolean;
 } = {}) {
-  mockAgent();
   mockPersonalModelRoutes();
   mockBillingCapabilities({ restrictedBuiltInModels: false });
   context.mocks.data.userModelPreference({
@@ -542,7 +540,6 @@ test("A slash typed in the composer's right half puts the menu at the right edge
   context.mocks.browser.matchMedia((query) => {
     return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
   });
-  mockAgent();
   mockPersonalModelRoutes();
   mockBillingCapabilities({ restrictedBuiltInModels: false });
   context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
@@ -556,7 +553,7 @@ test("A slash typed in the composer's right half puts the menu at the right edge
   mockChatLifecycle(context, { threadId: THREAD_ID });
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     featureSwitches: { [FeatureSwitchKey.SlashActions]: true },
   });
   const editor = await findComposerEditor();

@@ -27,7 +27,7 @@ test("keeps the Morning Brief switch on while the platform recovers its schedule
       return respond(200, preference);
     },
   );
-  await setupPage({ context, path: "/agents?settings=preference" });
+  await setupPage({ context, path: "/?settings=preference" });
   const card = await screen.findByTestId("morning-brief-preference");
   await expect(
     within(card).findByText("Temporarily unavailable."),
@@ -102,7 +102,7 @@ describe("unified preference settings", () => {
 
     await setupPage({
       context,
-      path: "/agents?settings=preference",
+      path: "/?settings=preference",
     });
 
     const dialog = await screen.findByRole("dialog", { name: "Settings" });
@@ -144,7 +144,7 @@ describe("unified preference settings", () => {
 
     await setupPage({
       context,
-      path: "/agents?settings=preference",
+      path: "/?settings=preference",
     });
     const toggle = await screen.findByRole("switch", {
       name: "Morning brief",
@@ -186,7 +186,7 @@ test("shows pending Morning Brief enrollment and accepts cancellation", async ()
       return respond(200, preference);
     },
   );
-  await setupPage({ context, path: "/agents?settings=preference" });
+  await setupPage({ context, path: "/?settings=preference" });
   const card = await screen.findByTestId("morning-brief-preference");
   await expect(
     within(card).findByText(

@@ -1,5 +1,4 @@
 import {
-  AGENT_ID,
   ARCHIVED_THREAD_ID,
   AUTOMATION_THREAD_ID,
   buttonByText,
@@ -13,13 +12,11 @@ import {
   openChatListMenu,
   openThreadMenu,
   queryMenuItemByText,
-  RESEARCH_AGENT_ID,
   RESEARCH_THREAD_ID,
   scrollToArchivedContext,
   setupSidebarPage,
   sidebar,
   type SidebarThread,
-  SUPPORT_AGENT_ID,
   threadLinkByTitle,
   titleRevealClip,
   visibleThreadTitles,
@@ -66,8 +63,6 @@ const {
   mockChatThreadSnapshot,
   mockLongSidebarHistory,
   mockSidebarThreadStory,
-  prepareAgents,
-  prepareDefaultAgent,
 } = createSidebarHelpers(context);
 
 function pressArchiveShortcut(): void {
@@ -94,7 +89,6 @@ test("Browse a long sidebar chat history", async () => {
 });
 
 test("Delete a chat after reviewing the impact", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(INCIDENT_THREAD_ID, "Incident notes"),
@@ -153,7 +147,6 @@ test("Delete a chat after reviewing the impact", async () => {
 });
 
 test("Deleting the last chat opens a new chat", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
 
   await setupSidebarPage({
@@ -183,7 +176,6 @@ test("Deleting the last chat opens a new chat", async () => {
 });
 
 test("Deleting another chat keeps the current chat open", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(INCIDENT_THREAD_ID, "Incident notes"),
@@ -254,7 +246,6 @@ test("Reveal chat titles from whole-link pointer and keyboard intent", async () 
       }),
     ),
   );
-  prepareDefaultAgent();
   mockSidebarThreadStory(
     titles.map(({ id, title }) => {
       return createThread(id, title);
@@ -307,7 +298,6 @@ test("Reveal chat titles from whole-link pointer and keyboard intent", async () 
 });
 
 test("Filter unread conversations using indicator timestamps", async () => {
-  prepareDefaultAgent();
   const pinnedUnreadThread = createThread(
     AUTOMATION_THREAD_ID,
     "Pinned incident",
@@ -375,7 +365,6 @@ test("Filter unread conversations using indicator timestamps", async () => {
 });
 
 test("Filter chats by Inbox, Unread, or Archived", async () => {
-  prepareDefaultAgent();
   const currentThread = createThread(EXISTING_THREAD_ID, "Release plan");
   // A check-mark icon is an ordinary emoji; only the archived flag archives.
   const checkMarkThread = createThread(RESEARCH_THREAD_ID, "✅ Shipped notes");
@@ -468,7 +457,6 @@ test("Filter chats by Inbox, Unread, or Archived", async () => {
 });
 
 test("Selecting a filter skips the chat open in the right pane", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(ARCHIVED_THREAD_ID, "Archived context", { archived: true }),
@@ -494,7 +482,6 @@ test("Selecting a filter skips the chat open in the right pane", async () => {
 });
 
 test("Mute and unmute a chat without hiding or reordering it", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(INCIDENT_THREAD_ID, "Quiet task"),
@@ -538,7 +525,6 @@ function mockUnreadThreads(threadIds: readonly string[]): void {
 }
 
 test("Archive an unread chat without changing reading state", async () => {
-  prepareAgents();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(INCIDENT_THREAD_ID, "Review later"),
@@ -588,7 +574,6 @@ test("Archive an unread chat without changing reading state", async () => {
 });
 
 test("Mute an unread chat with feedback and undo it from the toast", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(INCIDENT_THREAD_ID, "Quiet task"),
@@ -625,7 +610,6 @@ test("Mute an unread chat with feedback and undo it from the toast", async () =>
 });
 
 test("Unmute a chat without resurfacing replies that arrived while it was muted", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(RESEARCH_THREAD_ID, "Incident notes"),
@@ -657,7 +641,6 @@ test("Unmute a chat without resurfacing replies that arrived while it was muted"
 });
 
 async function prepareMutedChatFilter() {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(RESEARCH_THREAD_ID, "Quiet task", { muted: true }),
@@ -750,7 +733,6 @@ test("Switch from muted chats to Inbox without losing filter state", async () =>
 });
 
 test("Show an empty muted filter after unmuting its last chat", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(INCIDENT_THREAD_ID, "Quiet task", { muted: true }),
@@ -782,7 +764,6 @@ test("Show an empty muted filter after unmuting its last chat", async () => {
 });
 
 test("Running indicators take precedence over the muted icon", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory(
     [
       createThread(EXISTING_THREAD_ID, "Release plan"),
@@ -803,7 +784,6 @@ test("Running indicators take precedence over the muted icon", async () => {
 });
 
 test("Hide the current chat after archiving it without changing its title", async () => {
-  prepareDefaultAgent();
   const untitledThread: SidebarThread = {
     ...createThread(EXISTING_THREAD_ID, "Unused title"),
     title: null,
@@ -861,7 +841,6 @@ test("Hide the current chat after archiving it without changing its title", asyn
 });
 
 test("Archive and unarchive the current chat with the keyboard shortcut", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
 
   await setupSidebarPage({
@@ -909,7 +888,6 @@ test("Archive and unarchive the current chat with the keyboard shortcut", async 
 });
 
 test("Undo an archive from its toast and explain the muted exception", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(INCIDENT_THREAD_ID, "Quiet task", { muted: true }),
@@ -937,7 +915,6 @@ test("Undo an archive from its toast and explain the muted exception", async () 
 });
 
 test("Find archived chats in All and Chats workspace search results", async () => {
-  prepareDefaultAgent();
   const currentThread = createThread(EXISTING_THREAD_ID, "Release plan");
   const archivedThread = createThread(ARCHIVED_THREAD_ID, "Archived context", {
     archived: true,
@@ -980,20 +957,15 @@ test("Find archived chats in All and Chats workspace search results", async () =
 });
 
 test("Find conversations by title in workspace search", async () => {
-  prepareAgents();
   const defaultThread = createThread(EXISTING_THREAD_ID, "Incident notes");
-  const researchThread = createThread(RESEARCH_THREAD_ID, "Research kickoff", {
-    agent: { id: RESEARCH_AGENT_ID, avatarUrl: null },
-  });
-  const supportThread = createThread(INCIDENT_THREAD_ID, "Support escalation", {
-    agent: { id: SUPPORT_AGENT_ID, avatarUrl: null },
-  });
+  const researchThread = createThread(RESEARCH_THREAD_ID, "Research kickoff");
+  const supportThread = createThread(INCIDENT_THREAD_ID, "Support escalation");
   mockSidebarThreadStory(
     [defaultThread, researchThread, supportThread],
     [],
     [INCIDENT_THREAD_ID],
   );
-  await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupSidebarPage({ context, path: `/` });
 
   await waitFor(() => {
     expect(sidebar()).toBeInTheDocument();
@@ -1041,11 +1013,8 @@ test("Find conversations by title in workspace search", async () => {
 });
 
 test("Open a new My Okou Chat from a retained conversation", async () => {
-  prepareAgents();
   mockSidebarThreadStory([
-    createThread(RESEARCH_THREAD_ID, "Research conversation", {
-      agent: { id: RESEARCH_AGENT_ID, avatarUrl: null },
-    }),
+    createThread(RESEARCH_THREAD_ID, "Research conversation"),
   ]);
 
   await setupSidebarPage({
@@ -1088,7 +1057,6 @@ function newChatRow(list: HTMLElement): HTMLElement {
   return found;
 }
 test("My Okou's header holds the toggle, search, New Project and list menu while New chat leads the list", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
 
   await setupSidebarPage({
@@ -1156,7 +1124,6 @@ test("My Okou's header holds the toggle, search, New Project and list menu while
 });
 
 test("My Okou's Chat link and new chat shortcut open its chat page at /", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Existing conversation"),
   ]);
@@ -1195,7 +1162,6 @@ test("My Okou's Chat link and new chat shortcut open its chat page at /", async 
 });
 
 test("My Okou's Chat link returns a filtered chat list to the inbox", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(ARCHIVED_THREAD_ID, "Archived context", { archived: true }),
@@ -1235,7 +1201,6 @@ test("My Okou's Chat link returns a filtered chat list to the inbox", async () =
 });
 
 test("The Okou rail entry opens My Okou's chat page at /", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Existing conversation"),
   ]);
@@ -1266,7 +1231,6 @@ test("The Okou rail entry opens My Okou's chat page at /", async () => {
 });
 
 test("Mark all workspace chats read from the chat-list menu", async () => {
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Existing conversation"),
     createThread(INCIDENT_THREAD_ID, "Unread conversation"),
@@ -1294,7 +1258,7 @@ test("Mark all workspace chats read from the chat-list menu", async () => {
 
   await setupSidebarPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
 
   const list = await screen.findByTestId("chat-list-column");
@@ -1377,7 +1341,6 @@ test("Mark all workspace chats read from the chat-list menu", async () => {
 });
 
 async function setupReadUnreadSidebar() {
-  prepareDefaultAgent();
   const unreadIndicatorsRefreshed = context.mocks.deferred<void>();
   const unreadThreadIds = new Set<string>();
   const unreadAt = "2026-03-10T00:05:00Z";
@@ -1417,7 +1380,7 @@ async function setupReadUnreadSidebar() {
       unreadThreadIds.add(params.id);
       changeChatThreadReadCursor({
         threadId: params.id,
-        agentId: AGENT_ID,
+
         lastReadAt: null,
       });
       return respond(200, {

@@ -80,7 +80,7 @@ function parseUserLocale(value: unknown): UserLocale | null {
  * retired: reads always answer `false`. Writes are no longer accepted.
  *
  * Rollout fallback. Surface: installed native readers of
- * `GET /api/user-preferences`. The web client floor already excludes the App
+ * `GET /api/member/preferences`. The web client floor already excludes the App
  * builds that read it, but iOS and Android register this response. Gate: a
  * native compatibility proof for each registered client; then remove this
  * constant and the contract field together.

@@ -25,7 +25,6 @@ import {
 import {
   findComposer,
   findFastControl,
-  MESSAGE_EXPERIENCE_AGENT_ID,
   createMessageExperienceHelpers,
 } from "./chat-message-experience-test-helpers.ts";
 
@@ -135,14 +134,14 @@ function installLateFollowupChat(options: {
     {
       id: currentThreadId,
       title: "Current response",
-      agent: { id: MESSAGE_EXPERIENCE_AGENT_ID, avatarUrl: null },
+
       createdAt: CREATED_AT,
       updatedAt: "2026-08-21T14:02:00.000Z",
     },
     {
       id: HANDOFF_THREAD_ID,
       title: "Handoff response",
-      agent: { id: MESSAGE_EXPERIENCE_AGENT_ID, avatarUrl: null },
+
       createdAt: CREATED_AT,
       updatedAt: "2026-08-21T14:01:00.000Z",
     },

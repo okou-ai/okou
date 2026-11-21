@@ -43,13 +43,8 @@ import type {
 } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 
-import {
-  MESSAGE_EXPERIENCE_AGENT_ID,
-  createMessageExperienceHelpers,
-} from "./chat-message-experience-test-helpers.ts";
+import { createMessageExperienceHelpers } from "./chat-message-experience-test-helpers.ts";
 
-export const SCOUT_AGENT_ID = MESSAGE_EXPERIENCE_AGENT_ID;
-export const OTHER_AGENT_ID = "c0000000-0000-4000-a000-000000000061";
 export const SCOUT_THREAD_ID = "b0000000-0000-4000-a000-000000000061";
 export const OTHER_THREAD_ID = "b0000000-0000-4000-a000-000000000062";
 export const ACME_CONNECTOR_ID = "e0000000-0000-4000-a000-000000000061";
@@ -62,7 +57,6 @@ const CREATED_AT = "2026-08-24T10:00:00.000Z";
 interface ComposerThreadFixture {
   readonly id: string;
   readonly title: string;
-  readonly agentId: string;
   readonly selectedModel?: string | null;
   readonly serviceTier?: ChatThreadServiceTier | null;
 }
@@ -556,10 +550,6 @@ export function createComposerConnectorHelpers(context: TestContext) {
         });
       },
     });
-    context.mocks.data.agents([
-      { agentId: SCOUT_AGENT_ID, displayName: "Scout" },
-      { agentId: OTHER_AGENT_ID, displayName: "Other Agent" },
-    ]);
     const threads =
       options.threads ??
       (options.threadId
@@ -567,7 +557,6 @@ export function createComposerConnectorHelpers(context: TestContext) {
             {
               id: fixtureThreadId,
               title: "Scout chat",
-              agentId: SCOUT_AGENT_ID,
             },
           ]
         : undefined);
@@ -577,7 +566,7 @@ export function createComposerConnectorHelpers(context: TestContext) {
           return {
             id: thread.id,
             title: thread.title,
-            agent: { id: thread.agentId, avatarUrl: null },
+
             createdAt: CREATED_AT,
             updatedAt: new Date(
               Date.parse(CREATED_AT) + (threads.length - index) * 1000,

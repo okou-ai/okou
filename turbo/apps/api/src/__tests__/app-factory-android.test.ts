@@ -20,7 +20,7 @@ describe("Android installed-client compatibility at the API boundary", () => {
       androidClientCompatibility.minimumSupportedVersion = "0.2.0";
       const app = createApp({ signal: context.signal, routes: healthRoutes });
       const response = await app.request(
-        method === "GET" ? "/health" : "/api/user-preferences/initialize",
+        method === "GET" ? "/health" : "/api/member/preferences/initialize",
         {
           method,
           headers: {

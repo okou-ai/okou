@@ -660,9 +660,7 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
     expect(initialized).toMatchObject({
       hasOrg: true,
       isAdmin: true,
-      hasDefaultAgent: true,
     });
-    expect(initialized.defaultAgentId).toBeTruthy();
     await flushWaitUntilForTest();
   });
   const runs = createRunsApi(context);

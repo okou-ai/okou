@@ -186,9 +186,9 @@ describe("automatic welcome thread delivery", () => {
       await deliver(creator);
 
       // Bootstrap is unaffected by the welcome work chained behind it.
-      await expect(bdd.readOnboardingStatus(creator)).resolves.toMatchObject({
-        hasDefaultAgent: true,
-      });
+      await expect(bdd.readOnboardingStatus(creator)).resolves.toMatchObject(
+        {},
+      );
       const threadId = await onlyCreatedThreadId(creator);
       await expect(
         chat.readThreadMetadata(creator, threadId),

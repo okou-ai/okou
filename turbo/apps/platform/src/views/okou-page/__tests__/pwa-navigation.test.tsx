@@ -2,7 +2,6 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import {
   chatThreadByIdContract,
   chatThreadsContract,
@@ -213,18 +212,6 @@ test("Browse and filter mobile browser chats before opening a conversation and r
   const workspace = installContinuityWorkspace(context, {
     caseId: 74,
     threads: [inbox, archived],
-  });
-  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-    return respond(200, {
-      agentId: params.id,
-      isDefaultAgent: false,
-      ownerId: "chat-list-owner",
-      displayName: "List agent",
-      description: null,
-      sound: null,
-      avatarUrl: null,
-      visibility: "private",
-    });
   });
   context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
     return respond(200, {

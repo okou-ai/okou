@@ -1,3 +1,4 @@
+import { readStoredDraftMessage } from "@okouai/api-contracts/validators/chat-threads";
 import { instructions } from "@okouai/db/schema/instructions";
 import { command } from "ccstate";
 import {
@@ -364,7 +365,7 @@ const collectThread$ = command(
           codexServiceTier: threadRoot.codexServiceTier,
         },
         draft: {
-          draftUserMessage: draft.draftUserMessage,
+          draftUserMessage: readStoredDraftMessage(draft.draftUserMessage),
           draftAttachments: draft.draftAttachments,
         },
         head: {

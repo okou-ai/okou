@@ -1198,14 +1198,14 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       });
     });
     authOrgApi.acceptAgentStorageWrites();
-    const onboarding = await own(() => {
-      return authOrgApi.readOnboardingStatus(actor);
+    const onboardingAgentId = await own(() => {
+      return authOrgApi.readDefaultAgentId(actor);
     });
     await own(() => {
       return authOrgApi.completeOnboarding(actor);
     });
     const defaultAgentId = requireValue(
-      onboarding.defaultAgentId,
+      onboardingAgentId,
       "Expected the normal default Agent",
     );
     const defaultAgent = await own(() => {
@@ -1241,14 +1241,14 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       bundlesOnly: true,
     });
     runsApi.acceptTelemetryIngest();
-    const onboarding = await own(() => {
-      return authOrgApi.readOnboardingStatus(actor);
+    const onboardingAgentId = await own(() => {
+      return authOrgApi.readDefaultAgentId(actor);
     });
     await own(() => {
       return authOrgApi.completeOnboarding(actor);
     });
     const defaultAgentId = requireValue(
-      onboarding.defaultAgentId,
+      onboardingAgentId,
       "Expected the normal default Agent",
     );
     const defaultAgent = await own(() => {
@@ -3032,14 +3032,14 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return enableFeishuIntegration(platform, member);
         });
-        const onboarding = await own(() => {
-          return authOrgApi.readOnboardingStatus(admin);
+        const onboardingAgentId = await own(() => {
+          return authOrgApi.readDefaultAgentId(admin);
         });
         await own(() => {
           return authOrgApi.completeOnboarding(admin);
         });
         const defaultAgentId = requireValue(
-          onboarding.defaultAgentId,
+          onboardingAgentId,
           "Expected the normal default Agent",
         );
         await own(() => {
@@ -3896,14 +3896,14 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return enableFeishuIntegration(platform, actor);
         });
-        const onboarding = await own(() => {
-          return authOrgApi.readOnboardingStatus(actor);
+        const onboardingAgentId = await own(() => {
+          return authOrgApi.readDefaultAgentId(actor);
         });
         await own(() => {
           return authOrgApi.completeOnboarding(actor);
         });
         const defaultAgentId = requireValue(
-          onboarding.defaultAgentId,
+          onboardingAgentId,
           "Expected the normal default Agent",
         );
         await own(() => {

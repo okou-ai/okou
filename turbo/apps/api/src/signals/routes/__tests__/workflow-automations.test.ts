@@ -630,7 +630,7 @@ describe("okou workflow automations", () => {
           orgRole: "org:member",
         })
       : scenario.actor;
-    const { defaultAgentId } = await bdd.readOnboardingStatus(owner);
+    const defaultAgentId = await bdd.readDefaultAgentId(owner);
     if (!defaultAgentId) {
       throw new Error("Expected the member workflow namespace");
     }

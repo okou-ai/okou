@@ -186,7 +186,7 @@ describe("MISC-03: workflows lifecycle through public API", () => {
 
     await base.completeOnboarding(admin);
     await base.completeOnboarding(member);
-    const { defaultAgentId } = await base.readOnboardingStatus(admin);
+    const defaultAgentId = await base.readDefaultAgentId(admin);
     if (!defaultAgentId) {
       throw new Error("Expected a workspace default executor");
     }

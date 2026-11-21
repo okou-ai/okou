@@ -39,11 +39,13 @@ teardown() {
 }
 
 @test "runner refreshes workspace workflow files and mounts personal instructions" {
-    run runner_api_curl "/api/onboarding/status"
+    run runner_api_curl "/api/onboarding/member-status"
     echo "$output"
     assert_success
+    run runner_api_curl "/api/agents"
+    assert_success
     local agent_id
-    agent_id=$(jq -er '.defaultAgentId | select(type == "string" and length > 0)' <<<"$output")
+    agent_id=$(jq -er '.[] | select(.isDefaultAgent) | .agentId' <<<"$output")
 
     # Both turns share one member. Restore the saved version during teardown.
     run runner_api_curl "/api/instructions"

@@ -267,7 +267,7 @@ describe("recurring automation auto-disable platform feed events", () => {
     if (!event) {
       throw new Error("Expected the disabled automation's platform event");
     }
-    const { defaultAgentId } = await createBddApi(context).readOnboardingStatus(
+    const defaultAgentId = await createBddApi(context).readDefaultAgentId(
       scenario.actor,
     );
     if (!defaultAgentId) {

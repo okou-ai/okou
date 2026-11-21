@@ -39,7 +39,6 @@ import {
   customConnector,
   getConnectorAction,
   getConnectorCard,
-  listAgent,
   mcpCustomConnector,
   mockCustomConnectorStory,
   mockSavedConnectorAccounts,
@@ -48,8 +47,6 @@ import {
 } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
-const RESEARCH_ID = "c0000000-0000-4000-a000-000000000051";
-const SUPPORT_ID = "c0000000-0000-4000-a000-000000000052";
 
 function setupCustomPage(): Promise<void> {
   context.mocks.data.org({ id: "org_1", name: "Test Org", role: "admin" });
@@ -154,7 +151,6 @@ test.each([
     const connector = customConnector();
     const connectionId = crypto.randomUUID();
     let account: ConnectorAccountConnection | undefined;
-    context.mocks.data.agents([listAgent(RESEARCH_ID, "Research")]);
     context.mocks.api(customConnectorsContract.list, ({ respond }) => {
       return respond(200, { connectors: [connector] });
     });
@@ -285,7 +281,6 @@ test("Add and optionally name a custom connector account", async () => {
     }),
   ];
   const accounts = new Map<string, ConnectorAccountConnection>();
-  context.mocks.data.agents([listAgent(RESEARCH_ID, "Research")]);
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors });
   });
@@ -516,10 +511,6 @@ test("Create and edit a custom definition without ordinary legacy status project
 
 test("Manage a custom HTTP connector through creation and connection", async () => {
   mockCustomConnectorStory(context);
-  context.mocks.data.agents([
-    listAgent(RESEARCH_ID, "Research"),
-    listAgent(SUPPORT_ID, "Support"),
-  ]);
   await setupPage({ context, path: "/connectors" });
   click(await screen.findByTestId("connectors-scope-custom"));
   await expect(
@@ -580,10 +571,6 @@ test("Manage a custom HTTP connector through rename and deletion", async () => {
       ),
     },
   ]);
-  context.mocks.data.agents([
-    listAgent(RESEARCH_ID, "Research"),
-    listAgent(SUPPORT_ID, "Support"),
-  ]);
   await setupPage({ context, path: "/connectors" });
   click(await screen.findByTestId("connectors-scope-custom"));
   click(
@@ -638,7 +625,6 @@ test("Manage custom HTTP OAuth through creation", async () => {
   const authWindow = createAuthWindow();
   context.mocks.browser.open(authWindow);
   const clipboard = context.mocks.browser.clipboardWriteText();
-  context.mocks.data.agents([listAgent(RESEARCH_ID, "Research")]);
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: connector ? [connector] : [] });
   });
@@ -815,7 +801,6 @@ test("Manage custom HTTP OAuth through configuration update and connection", asy
   const updated: UpdateCustomConnectorBody[] = [];
   const authWindow = createAuthWindow();
   context.mocks.browser.open(authWindow);
-  context.mocks.data.agents([listAgent(RESEARCH_ID, "Research")]);
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: connector ? [connector] : [] });
   });
@@ -932,10 +917,6 @@ test("Manage custom HTTP OAuth through configuration update and connection", asy
 test("Manage a manual MCP connector through its lifecycle", async () => {
   let connector: CustomConnectorMcpResponse | null = null;
   const updates: UpdateCustomConnectorBody[] = [];
-  context.mocks.data.agents([
-    listAgent(RESEARCH_ID, "Research"),
-    listAgent(SUPPORT_ID, "Support"),
-  ]);
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: connector ? [connector] : [] });
   });
@@ -1074,10 +1055,6 @@ test("Create and connect an MCP server through automatic authorization", async (
   let created: CreateCustomConnectorBody | null = null;
   const authWindow = createAuthWindow();
   context.mocks.browser.open(authWindow);
-  context.mocks.data.agents([
-    listAgent("c0000000-0000-4000-a000-000000000001", "Default"),
-    listAgent(RESEARCH_ID, "Research"),
-  ]);
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: connector ? [connector] : [] });
   });
@@ -1227,7 +1204,6 @@ test("Keep saved custom accounts manageable when only the default needs reconnec
       isDefault: false,
     }),
   ];
-  context.mocks.data.agents([listAgent(RESEARCH_ID, "Research")]);
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [connector, empty] });
   });
@@ -1313,10 +1289,6 @@ test("Reconnect an OAuth account after cancelled consent and metadata changes", 
     connectionStatus: "reconnect-required",
     reconnectReason: "authorization_expired_or_revoked",
   });
-  context.mocks.data.agents([
-    listAgent("c0000000-0000-4000-a000-000000000001", "Default"),
-    listAgent(RESEARCH_ID, "Research"),
-  ]);
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [connector] });
   });
@@ -1428,7 +1400,6 @@ test("Create, edit, and connect an OAuth MCP connector", async () => {
   const updated: UpdateCustomConnectorBody[] = [];
   const authWindow = createAuthWindow();
   context.mocks.browser.open(authWindow);
-  context.mocks.data.agents([]);
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: connector ? [connector] : [] });
   });
@@ -1575,7 +1546,6 @@ test("Add and optionally name a custom OAuth account", async () => {
   let submitted: unknown;
   const authWindow = createAuthWindow();
   context.mocks.browser.open(authWindow);
-  context.mocks.data.agents([listAgent(RESEARCH_ID, "Research")]);
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [connector] });
   });
@@ -1711,7 +1681,6 @@ test("Do not grant access after an unsuccessful custom connection", async () => 
   const connector = customConnector({ displayName: "Acme Incomplete" });
   let writeAvailable = false;
   let account: ConnectorAccountConnection | null = null;
-  context.mocks.data.agents([listAgent(RESEARCH_ID, "Research")]);
   mockSavedConnectorAccounts(context, () => {
     return account ? [account] : [];
   });
@@ -1809,10 +1778,6 @@ test("Hide integration-managed connectors from custom settings", async () => {
 
 test("Manage a custom connector before it is connected", async () => {
   const connector = customConnector();
-  context.mocks.data.agents([
-    listAgent(RESEARCH_ID, "Research"),
-    listAgent(SUPPORT_ID, "Support"),
-  ]);
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [connector] });
   });

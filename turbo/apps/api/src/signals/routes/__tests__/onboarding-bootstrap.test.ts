@@ -8,7 +8,7 @@ import {
   billingStatusContract,
   billingUsagePackCreditsContract,
 } from "@okouai/api-contracts/contracts/billing";
-import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
+import { memberOnboardingContract } from "@okouai/api-contracts/contracts/onboarding";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { memberPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { SEED_INSTRUCTIONS } from "@okouai/core/seed-instructions";
@@ -51,7 +51,7 @@ function clients(
     ],
   });
   return {
-    status: app(onboardingStatusContract),
+    status: app(memberOnboardingContract),
     agents: app(agentsMainContract),
     instructions: app(agentInstructionsContract),
     billing: app(billingStatusContract),
@@ -67,8 +67,11 @@ function authenticateAdmin(): string {
 }
 
 async function readDefaultId(api: ReturnType<typeof clients>): Promise<string> {
-  const response = await accept(api.status.getStatus({ headers }), [200]);
-  const agentId = response.body.defaultAgentId;
+  await accept(api.status.getStatus({ headers }), [200]);
+  const listed = await accept(api.agents.list({ headers }), [200]);
+  const agentId = listed.body.find((entry) => {
+    return entry.isDefaultAgent;
+  })?.agentId;
   if (!agentId) {
     throw new Error("Expected a usable default Agent");
   }
@@ -139,24 +142,14 @@ describe("default Agent bootstrap", () => {
   it("publishes one usable default and one grant for concurrent status requests", async () => {
     authenticateAdmin();
     const api = clients();
-    const responses = await Promise.all([
+    await Promise.all([
       accept(api.status.getStatus({ headers }), [200]),
       accept(api.status.getStatus({ headers }), [200]),
       accept(api.status.getStatus({ headers }), [200]),
     ]);
-    const agentId = responses[0]?.body.defaultAgentId;
-    if (!agentId) {
-      throw new Error("Expected a usable default Agent");
-    }
-    for (const response of responses) {
-      expect(response.body).toMatchObject({
-        hasDefaultAgent: true,
-        defaultAgentId: agentId,
-      });
-    }
     const listed = await accept(api.agents.list({ headers }), [200]);
     expect(listed.body).toHaveLength(1);
-    expect(listed.body[0]?.agentId).toBe(agentId);
+    const agentId = listed.body[0]!.agentId;
     const instructions = await accept(
       api.instructions.get({ headers, params: { id: agentId } }),
       [200],
@@ -366,10 +359,7 @@ describe("default Agent bootstrap", () => {
       new Error("Object storage is unavailable"),
     );
     const pending = await accept(api.status.getStatus({ headers }), [200]);
-    expect(pending.body).toMatchObject({
-      defaultAgentId: null,
-      hasDefaultAgent: false,
-    });
+    expect(pending.body).toMatchObject({});
     const before = await accept(api.agents.list({ headers }), [200]);
     expect(before.body).toStrictEqual([]);
     const agentId = await readDefaultId(api);

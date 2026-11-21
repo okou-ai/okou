@@ -12,18 +12,14 @@ import { click, setupPage } from "../../../__tests__/page-helper.ts";
 
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  AGENT_ID,
   buttonByText,
-  createSidebarAccountHelpers,
   linkByText,
   openAccountMenu,
 } from "./sidebar-account-test-helpers.ts";
 
 const context = testContext();
-const { prepareDefaultAgent } = createSidebarAccountHelpers(context);
 
 test("Open personal Settings and manage account security", async () => {
-  prepareDefaultAgent();
   context.mocks.data.userPreferences({
     captureNetworkBodiesRemaining: 0,
     memoryInitialized: true,
@@ -31,7 +27,7 @@ test("Open personal Settings and manage account security", async () => {
 
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     auth: {
       user: {
         id: "test-user-123",
@@ -90,7 +86,6 @@ test("Open personal Settings and manage account security", async () => {
 });
 
 test("Toggle network-body capture in Debug settings", async () => {
-  prepareDefaultAgent();
   const user = userEvent.setup({ delay: null });
   const submitted: number[] = [];
   let preferences: UserPreferencesResponse = {
@@ -117,7 +112,7 @@ test("Toggle network-body capture in Debug settings", async () => {
 
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     auth: {
       user: {
         id: "test-user-123",
@@ -202,11 +197,9 @@ test("Toggle network-body capture in Debug settings", async () => {
 });
 
 test("Hide Debug settings without Debug access", async () => {
-  prepareDefaultAgent();
-
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat?settings=debug`,
+    path: `/?settings=debug`,
     auth: {
       user: {
         id: "test-user-123",

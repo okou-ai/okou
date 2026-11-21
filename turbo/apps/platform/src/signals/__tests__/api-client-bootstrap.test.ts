@@ -1,4 +1,4 @@
-import { agentsMainContract } from "@okouai/api-contracts/client/agents";
+import { memberOnboardingContract } from "@okouai/api-contracts/client/onboarding";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { expect, test, vi } from "vitest";
 
@@ -63,21 +63,17 @@ test("uses a matching bootstrap response once before falling back to the network
   expect(networkRequestCount).toBe(2);
 });
 
-test("validates agent descriptor responses against the original contract", async () => {
-  const agent = {
-    agentId: "00000000-0000-4000-8000-000000000001",
-    isDefaultAgent: true,
-    ownerId: "user_test",
-    description: null,
-    displayName: "Test agent",
-    sound: null,
-    avatarUrl: null,
-    visibility: "private",
+test("validates member onboarding descriptor responses against the original contract", async () => {
+  const member = {
+    hasOrg: true,
+    isAdmin: false,
+    needsOnboarding: false,
+    onboardingComplete: true,
   };
-  context.mocks.http.get("*/api/agents", () => {
-    return Response.json([agent]);
+  context.mocks.http.get("*/api/onboarding/member-status", () => {
+    return Response.json(member);
   });
-  const client = createAuthedContractClient(agentsMainContract, {
+  const client = createAuthedContractClient(memberOnboardingContract, {
     baseUrl: "https://api.okou.ai",
     clientVersion: "descriptor-test",
     getToken: () => {
@@ -88,15 +84,10 @@ test("validates agent descriptor responses against the original contract", async
     },
   });
 
-  await expect(client.list()).resolves.toMatchObject({
+  await expect(client.getStatus()).resolves.toMatchObject({
     status: 200,
-    body: [agent],
+    body: member,
   });
-
-  context.mocks.http.get("*/api/agents", () => {
-    return Response.json([{ ...agent, visibility: "invalid" }]);
-  });
-  await expect(client.list()).rejects.toThrow("Response validation failed");
 });
 
 test("fails when a descriptor has no test response validator", async () => {

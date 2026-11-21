@@ -133,7 +133,7 @@ final class MentionRequestLog: Sendable { let value = Mutex<[String]>([]) }
 @MainActor
 extension WorkspaceStore {
   var mentionTestSource: ComposerMentionSource {
-    ComposerMentionSource(agentID: selectedAgentID, threads: list.threads)
+    ComposerMentionSource(threads: list.threads)
   }
 }
 

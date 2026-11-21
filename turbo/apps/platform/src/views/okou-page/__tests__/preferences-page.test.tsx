@@ -243,7 +243,7 @@ test("Appearance choices made during startup survive the initial workspace read"
 
   const page = await startPage({
     context,
-    path: "/agents?settings=preference",
+    path: "/?settings=preference",
     host: "app.okou.ai",
   });
   await page.content;
@@ -357,7 +357,7 @@ test("A cached palette is visible during startup and cleared when the workspace 
 
   const page = await startPage({
     context,
-    path: "/agents?settings=preference",
+    path: "/?settings=preference",
     host: "app.okou.ai",
   });
   await page.content;
@@ -625,7 +625,7 @@ test("A failed preference save shows its error and can be retried", async () => 
   );
   await setupPage({
     context,
-    path: "/agents?settings=chat",
+    path: "/?settings=chat",
   });
 
   const dialog = await screen.findByRole("dialog", { name: "Settings" });

@@ -14,7 +14,6 @@ import {
   findComposerEditor,
 } from "./chat-composer-test-helpers.ts";
 import {
-  AGENT_ID,
   THREAD_ID,
   createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
@@ -38,7 +37,7 @@ function button(
 async function setupHome() {
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
   return await findComposerEditor();
 }
@@ -118,7 +117,7 @@ test("An empty conversation offers capabilities by default without an avatar and
 const COMPLIANCE_TITLE = "Okou’s compliance, built for your trust";
 
 test.each([
-  ["home", `/agents/${AGENT_ID}/chat`],
+  ["home", `/`],
   ["empty conversation", `/chats/${THREAD_ID}`],
 ])(
   "The %s lists compliance statuses under the capability cards",

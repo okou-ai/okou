@@ -33,7 +33,6 @@ import {
 } from "./shared-thread-attachments.service";
 import { visibleChatEventPredicate } from "./chat-event-visibility.service";
 import { generateSharedThreadTitle } from "./chat-title.service";
-import { legacyAgentMentionsToText } from "@okouai/core/legacy-agent-mention";
 import { projectUserMessageForPublicShare } from "./chat-user-message.service";
 import {
   canonicalArchivedChatEventContent,
@@ -307,7 +306,7 @@ const prepareSharedThreadMessages$ = command(
           ? row.content
           : row.userMessage
             ? projectUserMessageForPublicShare(row.userMessage)
-            : row.content && legacyAgentMentionsToText(row.content);
+            : row.content;
       const attachments = await set(
         prepareSharedThreadMessageAttachments$,
         {

@@ -596,7 +596,6 @@ test("A retained conversation displays the workspace assistant name on its reply
   const reply = await screen.findByText("The launch notes are summarized.");
   const group = reply.closest('[data-role="assistant"]');
   expect(group).toHaveTextContent("Okou");
-  expect(group?.querySelector('a[href^="/agents/"]')).toBeNull();
   expect(myOkouAvatarButtons()).toHaveLength(0);
 });
 

@@ -32,7 +32,7 @@ enum ComposerAttributedDocument {
   }
 
   static func isInline(_ part: MessageJSON) -> Bool {
-    ["text", "agent", "chat_thread", "template"].contains(part["type"]?.string ?? "")
+    ["text", "chat_thread", "template"].contains(part["type"]?.string ?? "")
   }
 
   static func attributed(
@@ -135,7 +135,6 @@ enum ComposerAttributedDocument {
       let escaped = name.replacingOccurrences(of: "\\", with: "\\\\")
         .replacingOccurrences(of: "[", with: "\\[").replacingOccurrences(of: "]", with: "\\]")
       switch part["type"]?.string {
-      case "agent": return "[\(escaped)](/agents/\(part["agentId"]?.string ?? "")/chat)"
       case "chat_thread": return "[\(escaped)](/chats/\(part["threadId"]?.string ?? ""))"
       case "text": return part["text"]?.string ?? ""
       default: return name
@@ -174,7 +173,6 @@ final class ComposerReferenceAttachment: NSTextAttachment {
   var title: String { part["nameSnapshot"]?.string ?? part["titleSnapshot"]?.string ?? "" }
   var symbol: String {
     switch part["type"]?.string {
-    case "agent": "circle-user-round"
     case "chat_thread": "message-circle"
     default: "file"
     }
@@ -188,9 +186,7 @@ final class ComposerReferenceAttachment: NSTextAttachment {
 
   override var accessibilityLabel: String? {
     get {
-      let kind =
-        part["type"]?.string == "agent"
-        ? "Agent" : (part["type"]?.string == "chat_thread" ? "Chat" : "Template")
+      let kind = part["type"]?.string == "chat_thread" ? "Chat" : "Template"
       return kind + ": " + title
     }
     set { super.accessibilityLabel = newValue }

@@ -400,8 +400,8 @@ export function createRunsApi(context: TestContext) {
     const chat = createChatFilesBddApi(context);
     let threadId = body.threadId;
     if (threadId === undefined && body.agentId !== undefined) {
-      const { defaultAgentId } =
-        await createBddApi(context).readOnboardingStatus(actor);
+      const defaultAgentId =
+        await createBddApi(context).readDefaultAgentId(actor);
       if (body.agentId !== defaultAgentId) {
         // Exercise legacy clients that create the thread before sending.
         const thread = await chat.createThread(actor, {
@@ -806,10 +806,10 @@ export function createRunsApi(context: TestContext) {
       // then creates a default agent without granting limited-free credits or
       // replacing metadata on an existing default agent.
       const bdd = createBddApi(context);
-      const onboarding = await run(() => {
-        return bdd.readOnboardingStatus(actor);
+      const onboardingAgentId = await run(() => {
+        return bdd.readDefaultAgentId(actor);
       });
-      if (!onboarding.defaultAgentId) {
+      if (!onboardingAgentId) {
         throw new Error("Expected paid onboarding to create a default agent");
       }
       const completed = await run(() => {
@@ -826,7 +826,7 @@ export function createRunsApi(context: TestContext) {
         customerId,
         subscriptionId,
         invoiceId,
-        defaultAgentId: onboarding.defaultAgentId,
+        defaultAgentId: onboardingAgentId,
         credits: billingStatus.body.credits,
       };
     },

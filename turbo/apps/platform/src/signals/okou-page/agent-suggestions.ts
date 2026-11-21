@@ -127,7 +127,7 @@ const internalDirectionComposer$ = state<Promise<ComposerSignals> | null>(null);
 const resetDirection$ = resetSignal();
 
 /**
- * One unsaved composer for the card's target, so neither the default Agent's
+ * One unsaved composer for the card's target, so neither the workspace
  * draft nor the target thread's saved draft is read or replaced.
  */
 const directionGraph$ = computed((get) => {
@@ -319,7 +319,7 @@ export const openSuggestionDirection$ = command(
 );
 
 /**
- * Starts the chosen action in a new thread of the default Agent and keeps
+ * Starts the chosen action in a new chat and keeps
  * home in place. The card is consumed once its input is accepted.
  */
 const sendAgentSuggestionOption$ = command(

@@ -17,7 +17,6 @@ import {
   oauthAuthMethod,
   ORDINARY_CONNECTOR_ID,
   permissionDetail,
-  SCOUT_AGENT_ID,
   createComposerConnectorHelpers,
 } from "./chat-composer-connectors-test-helpers.ts";
 import {
@@ -100,7 +99,7 @@ test("Configure connector permissions from the composer", async () => {
     ]),
   });
 
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
 
   click(await findFastControl("button", "Connectors"));
   click(await findFastControl("button", /^Axiom/u));
@@ -143,7 +142,7 @@ describe("connecting a custom connector from Chat", () => {
       ],
     });
 
-    await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+    await setupPage({ context, path: `/` });
 
     await loadComposer();
     await openConnectors(user);
@@ -226,7 +225,7 @@ test("Reconnect the expired custom default from the composer with healthy siblin
     ],
     accounts: [expired, sibling],
   });
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
   await loadComposer();
   await openConnectors(user);
   const catalog = await openCustomConnectors(user);
@@ -288,7 +287,7 @@ test("Show only the connector actions that are useful in chat", async () => {
 
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: `/`,
   });
 
   await loadComposer();
@@ -328,7 +327,7 @@ test("Start connector setup from chat", async () => {
 
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: `/`,
     featureSwitches: {},
   });
 
@@ -384,7 +383,7 @@ test.each([null, "Close"] as const)(
     });
     const authWindow = createAuthWindow();
     const browserOpen = context.mocks.browser.open(authWindow);
-    await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+    await setupPage({ context, path: `/` });
 
     await loadComposer();
     await openConnectors(user);
@@ -463,7 +462,7 @@ test("Respect integration-managed connector availability in chat", async () => {
 
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: `/`,
   });
 
   await loadComposer();
@@ -497,7 +496,7 @@ test("Search beyond featured connectors from chat", async () => {
     featuredConnectorSlugs: [GITHUB_SLUG],
   });
 
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
 
   await loadComposer();
   await openConnectors(user);
@@ -536,7 +535,7 @@ test("Exclude unconnected integration-managed connectors from chat setup", async
     ],
   });
 
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
 
   await loadComposer();
   await openConnectors(user);
@@ -562,7 +561,7 @@ test("Enable a credential-free connector directly from chat", async () => {
   });
   const browserOpen = context.mocks.browser.open(null);
 
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
 
   await loadComposer();
   await openConnectors(user);

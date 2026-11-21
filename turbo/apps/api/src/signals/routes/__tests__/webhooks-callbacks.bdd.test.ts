@@ -65,8 +65,6 @@ const context = testContext();
 const TERMINAL_RUN_STATUSES = ["completed", "failed", "cancelled"] as const;
 const api = createWebhookCallbackApi(context);
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-const DEFAULT_AGENT_AVATAR_URL =
-  "https://static.vm0.io/public/default-agent-avatar-ceb298b79964.svg";
 
 // Billing-status capability projections of the limited-free and Team plans.
 const LIMITED_FREE_BILLING_CAPABILITIES = {
@@ -888,14 +886,7 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       onboardingComplete: false,
       isAdmin: true,
       hasOrg: true,
-      hasDefaultAgent: true,
-      defaultAgentMetadata: {
-        displayName: "Okou",
-        sound: "professional",
-        avatarUrl: DEFAULT_AGENT_AVATAR_URL,
-      },
     });
-    expect(status.defaultAgentId).toBeTruthy();
 
     const agents = await bdd.listAgents(admin);
     expect(

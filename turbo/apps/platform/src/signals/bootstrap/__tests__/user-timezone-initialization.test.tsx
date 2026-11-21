@@ -140,7 +140,7 @@ test("A stored organization timezone is not replaced on a later visit", async ()
 
   await setupPage({
     context,
-    path: "/agents?settings=preference",
+    path: "/?settings=preference",
     host: "app.okou.ai",
   });
 

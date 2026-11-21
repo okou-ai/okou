@@ -11,7 +11,6 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
-  CAPABILITY_AGENT_ID,
   findButton,
   readyChat,
   RUN_PATH,
@@ -205,7 +204,7 @@ test("Show only the selected conversation when switching chats", async () => {
     {
       id: RUN_THREAD_ID,
       title: "Running conversation",
-      agent: { id: CAPABILITY_AGENT_ID, avatarUrl: null },
+
       createdAt: "2026-08-01T10:00:00.000Z",
       updatedAt: "2026-08-01T10:02:00.000Z",
       pinnedAt: null,
@@ -213,7 +212,7 @@ test("Show only the selected conversation when switching chats", async () => {
     {
       id: COMPLETED_THREAD_ID,
       title: "Completed conversation",
-      agent: { id: CAPABILITY_AGENT_ID, avatarUrl: null },
+
       createdAt: "2026-08-01T10:01:00.000Z",
       updatedAt: "2026-08-01T10:01:00.000Z",
       pinnedAt: null,

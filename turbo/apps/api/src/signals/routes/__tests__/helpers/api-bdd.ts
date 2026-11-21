@@ -7,8 +7,7 @@ import { randomUUID } from "node:crypto";
 import { authContract } from "@okouai/api-contracts/contracts/auth";
 import {
   onboardingCompleteContract,
-  onboardingStatusContract,
-  type OnboardingStatusResponse,
+  memberOnboardingContract,
 } from "@okouai/api-contracts/contracts/onboarding";
 import type { ApiErrorResponse } from "@okouai/api-contracts/contracts/errors";
 import {
@@ -21,7 +20,7 @@ import {
 } from "@okouai/api-contracts/contracts/agents";
 import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
 import {
-  userPreferencesContract,
+  memberPreferencesContract,
   type UserLocale,
 } from "@okouai/api-contracts/contracts/user-preferences";
 
@@ -111,7 +110,7 @@ export function createBddApi(context: TestContext) {
     return setupAppWithRoutes({
       context,
       routes: onboardingStatusRoutes,
-    })(onboardingStatusContract);
+    })(memberOnboardingContract);
   }
 
   function onboardingCompleteClient() {
@@ -132,7 +131,7 @@ export function createBddApi(context: TestContext) {
     return setupAppWithRoutes({
       context,
       routes: userPreferencesRoutes,
-    })(userPreferencesContract);
+    })(memberPreferencesContract);
   }
 
   function agentsClient() {
@@ -140,6 +139,17 @@ export function createBddApi(context: TestContext) {
       context,
       routes: agentsRoutes,
     })(agentsMainContract);
+  }
+
+  async function readDefaultAgentId(user: ApiTestUser) {
+    const headers = authenticate(user);
+    await accept(onboardingStatusClient().getStatus({ headers }), [200]);
+    const listed = await accept(agentsClient().list({ headers }), [200]);
+    return (
+      listed.body.find((entry) => {
+        return entry.isDefaultAgent;
+      })?.agentId ?? null
+    );
   }
 
   function agentsByIdClient() {
@@ -224,9 +234,9 @@ export function createBddApi(context: TestContext) {
       );
     },
 
-    async readOnboardingStatus(
-      nextUser: ApiTestUser,
-    ): Promise<OnboardingStatusResponse> {
+    readDefaultAgentId,
+
+    async readOnboardingStatus(nextUser: ApiTestUser) {
       const response = await accept(
         onboardingStatusClient().getStatus({
           headers: authenticate(nextUser),
@@ -234,18 +244,6 @@ export function createBddApi(context: TestContext) {
         [200],
       );
       return response.body;
-    },
-
-    async requestReadOnboardingStatus(
-      nextUser: ApiTestUser | null,
-      statuses: readonly (200 | 401)[],
-    ) {
-      return await accept(
-        onboardingStatusClient().getStatus({
-          headers: authenticate(nextUser),
-        }),
-        statuses,
-      );
     },
 
     async completeOnboarding(
@@ -293,15 +291,8 @@ export function createBddApi(context: TestContext) {
       options: OnboardingBootstrapOptions,
     ): Promise<string> {
       const headers = authenticate(nextUser);
-      await accept(agentsClient().list({ headers }), [200]);
-      const statusResponse = await accept(
-        onboardingStatusClient().getStatus({
-          headers,
-        }),
-        [200],
-      );
-      const status = statusResponse.body;
-      if (!status.defaultAgentId) {
+      const defaultAgentId = await readDefaultAgentId(nextUser);
+      if (!defaultAgentId) {
         throw new Error("Expected onboarding bootstrap to create an agent");
       }
 
@@ -323,7 +314,7 @@ export function createBddApi(context: TestContext) {
         [200],
       );
 
-      return status.defaultAgentId;
+      return defaultAgentId;
     },
 
     async requestReadOrg(

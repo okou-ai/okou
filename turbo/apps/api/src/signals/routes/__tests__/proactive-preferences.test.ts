@@ -51,7 +51,7 @@ async function preferenceRun(suggestions = true) {
   const owned = await publicChatActor(context);
   return await owned.run(async () => {
     const { actor } = owned;
-    const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+    const defaultAgentId = await bdd.readDefaultAgentId(actor);
     if (!actor.orgId || !defaultAgentId) {
       throw new Error("Expected a workspace primary Agent");
     }

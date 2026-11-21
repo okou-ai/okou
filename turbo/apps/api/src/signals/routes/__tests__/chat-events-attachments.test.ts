@@ -279,10 +279,9 @@ describe("CHAT-02: generation templates and attachments", () => {
     await cancelAndCompleteChatRun(actor, sent.runId);
   }, 90_000);
 
-  it("lists the agents and chat threads the message links", async () => {
+  it("lists the chat threads the message links", async () => {
     const { actor } = await entitledChatActor();
 
-    const referencedAgentId = randomUUID();
     const referencedThreadId = randomUUID();
     const referencedThread = {
       type: "chat_thread",
@@ -292,13 +291,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     const userMessage: UserMessageInputDocument = {
       version: 1,
       parts: [
-        { type: "text", text: "Ask " },
-        {
-          type: "agent",
-          agentId: referencedAgentId,
-          nameSnapshot: "Research Scout",
-        },
-        { type: "text", text: " to summarize " },
         referencedThread,
         {
           type: "feedback",
@@ -321,7 +313,6 @@ describe("CHAT-02: generation templates and attachments", () => {
         "# Referenced conversations",
         "",
         "The current message links:",
-        `- Retained configuration reference "Research Scout": ${referencedAgentId}. This reference does not select an executor or authorize shared configuration changes.`,
         `- Chat thread "Q3 \\"launch\\" plan": CHAT_THREAD_ID=${referencedThreadId}`,
         "",
         "Work sent to another chat with `okou chat send` runs independently and does not report back here. Use an authorized chat-run-finished Workflow automation when completion notifications are needed.",

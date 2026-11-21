@@ -400,7 +400,7 @@ async function setupConnectedTeamsActor(
   runsApi.acceptTelemetryIngest();
   // The paid entitlement helper already bootstraps and completes onboarding.
   const subscription = await runsApi.grantProEntitlement(actor);
-  const { defaultAgentId } = await authOrgApi.readOnboardingStatus(actor);
+  const defaultAgentId = await authOrgApi.readDefaultAgentId(actor);
   if (!defaultAgentId) {
     throw new Error(
       "Expected paid onboarding to create a Teams callback agent",

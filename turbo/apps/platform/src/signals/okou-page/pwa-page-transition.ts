@@ -9,7 +9,6 @@ interface PwaPageLocation {
   readonly searchParams: URLSearchParams;
 }
 
-// The chats tab is `/`, which is My Okou's chat page, or an agent chat URL.
 const matchChatPages = [ROUTES.home].map((path) => {
   return match(path);
 });

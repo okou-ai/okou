@@ -35,7 +35,7 @@ export async function ensureRunnerOrganizationReady(
   options: RunnerOrganizationReadinessOptions,
 ): Promise<void> {
   const response = await fetch(
-    new URL("/api/onboarding/status", options.apiUrl),
+    new URL("/api/onboarding/member-status", options.apiUrl),
     {
       headers: authHeadersForToken(
         options.clerkSessionToken,
@@ -102,7 +102,7 @@ async function waitForChatPage(page: Page, appUrl: string): Promise<void> {
 }
 
 function isChatUrl(url: URL): boolean {
-  return /^\/(?:agents\/[^/]+\/chat|chats\/[^/]+)$/.test(url.pathname);
+  return url.pathname === "/" || /^\/chats\/[^/]+$/.test(url.pathname);
 }
 
 function isReadyRunnerOrganization(value: unknown): boolean {
@@ -112,11 +112,6 @@ function isReadyRunnerOrganization(value: unknown): boolean {
     "hasOrg" in value &&
     value.hasOrg === true &&
     "isAdmin" in value &&
-    value.isAdmin === true &&
-    "hasDefaultAgent" in value &&
-    value.hasDefaultAgent === true &&
-    "defaultAgentId" in value &&
-    typeof value.defaultAgentId === "string" &&
-    value.defaultAgentId.length > 0
+    value.isAdmin === true
   );
 }

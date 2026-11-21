@@ -1,3 +1,4 @@
+import { readStoredDraftMessage } from "@okouai/api-contracts/validators/chat-threads";
 import { projectChatContract } from "@okouai/api-contracts/contracts/project-chat";
 import { personalProjectAccess$ } from "./projects";
 import { command, computed } from "ccstate";
@@ -80,7 +81,7 @@ function createAgentDraftReader(
     return {
       status: 200 as const,
       body: {
-        draftUserMessage: draft?.draftUserMessage ?? null,
+        draftUserMessage: readStoredDraftMessage(draft?.draftUserMessage),
         draftAttachments: draft?.draftAttachments ?? null,
       },
     };

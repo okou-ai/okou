@@ -1,5 +1,4 @@
 import { catalogFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
-import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import {
   connectorCatalogContract,
   type PublicConnectorCatalogStatusItem,
@@ -21,7 +20,6 @@ import { pathname } from "../../../signals/location.ts";
 
 const context = testContext();
 
-const AGENT_ID = "c0000000-0000-4000-a000-000000000030";
 const IDEAS_PATH = "/ideas";
 
 const STANDUP_PROMPT =
@@ -29,19 +27,6 @@ const STANDUP_PROMPT =
 
 const REVENUECAT_PROMPT =
   "Set up a daily RevenueCat digest that tracks new subscriptions, renewals, and cancellations in Google Sheets and alerts on Slack for churn spikes";
-
-function agentFixture(): AgentResponse {
-  return {
-    isDefaultAgent: false,
-    agentId: AGENT_ID,
-    ownerId: "test-user-123",
-    description: "Helps turn ideas into work",
-    displayName: "Research Agent",
-    sound: null,
-    avatarUrl: null,
-    visibility: "public",
-  };
-}
 
 function catalogItem(
   slug: ConnectorSlug,
@@ -86,9 +71,7 @@ function catalogResponse(
   return { connectors: [...connectors] };
 }
 
-function configureAgent(): void {
-  context.mocks.data.agents([agentFixture()]);
-}
+function configureAgent(): void {}
 
 function mockCatalog(
   connectors: readonly PublicConnectorCatalogStatusItem[],

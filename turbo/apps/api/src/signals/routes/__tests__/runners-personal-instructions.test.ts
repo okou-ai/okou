@@ -41,7 +41,7 @@ describe("Captured personal Instructions in direct Runs", () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const s3 = installWorkflowVolumeS3Fixture(context);
-      const { defaultAgentId } = await bdd.readOnboardingStatus(owned.actor);
+      const defaultAgentId = await bdd.readDefaultAgentId(owned.actor);
       if (!defaultAgentId) {
         throw new Error("Expected default executor");
       }
@@ -158,7 +158,7 @@ describe("Captured personal Instructions in direct Runs", () => {
           ],
         ]),
       );
-      const { defaultAgentId } = await bdd.readOnboardingStatus(owned.actor);
+      const defaultAgentId = await bdd.readDefaultAgentId(owned.actor);
       if (!defaultAgentId) {
         throw new Error("Expected default executor");
       }

@@ -87,7 +87,6 @@ async function setupEntryNavigation(
     caseId,
     threads: [older, middle, newest],
   });
-  // My Okou's chat page at `/` chats with the default agent.
   mockSuggestionPool([suggestion()]);
   await setupPage({
     context,

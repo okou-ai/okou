@@ -356,7 +356,6 @@ describe("email-native signup", () => {
     await expect(bdd.readOnboardingStatus(actor)).resolves.toMatchObject({
       needsOnboarding: false,
       onboardingComplete: true,
-      hasDefaultAgent: true,
     });
     const snapshot = await createdThreads(actor);
     expect(snapshot.chatThreads).toHaveLength(1);
@@ -2496,7 +2495,6 @@ describe("Email integration", () => {
     await expect(bdd.readOnboardingStatus(actor)).resolves.toMatchObject({
       needsOnboarding: false,
       onboardingComplete: true,
-      hasDefaultAgent: true,
     });
     verifiedDirectory(actor);
     const snapshot = await createdThreads(actor);

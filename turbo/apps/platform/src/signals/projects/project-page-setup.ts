@@ -21,16 +21,14 @@ import { selectedProjectId$ } from "./project-navigation.ts";
 import { hydrateProjects$, projects$ } from "./projects.ts";
 
 /**
- * A Project's own page starts new chats inside it, like an Agent's new-chat
- * page. Projects always compose with the default Agent and keep the agent
- * draft for now.
+ * The Project composer opens the workspace draft and starts new chats in this Project.
  */
 export const setupProjectPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const projectId = get(selectedProjectId$);
     signal.throwIfAborted();
     if (!projectId) {
-      throw new Error("A Project page requires a Project and a default Agent");
+      throw new Error("A Project page requires a Project");
     }
     const agentDraft = await set(ensureAgentDraft$, signal);
     set(setAgentComposerContext$, { agentDraft, projectId });

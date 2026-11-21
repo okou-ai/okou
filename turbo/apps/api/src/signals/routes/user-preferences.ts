@@ -1,7 +1,6 @@
 import {
   USER_PREFERENCES_UNINITIALIZED,
   userLocaleSchema,
-  userPreferencesContract,
   memberPreferencesContract,
   type UserLocale,
 } from "@okouai/api-contracts/contracts/user-preferences";
@@ -18,7 +17,6 @@ import { reconcileExistingMorningBrief$ } from "../services/morning-brief-recove
 import { badRequestMessage, conflict } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { route$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { initializeMemberMemory$ } from "../services/member-memory-initialization.service";
@@ -31,15 +29,9 @@ function isValidUserLocale(locale: string | null): locale is UserLocale {
   return locale !== null && userLocaleSchema.safeParse(locale).success;
 }
 
-const mobileResponseFields$ = computed((get) => {
-  const path = get(route$).path;
-  return path === userPreferencesContract.get.path ||
-    path === userPreferencesContract.initialize.path
-    ? { pinnedAgentIds: [] }
-    : {};
-});
-
-const updateUserPreferencesBody$ = bodyResultOf(userPreferencesContract.update);
+const updateUserPreferencesBody$ = bodyResultOf(
+  memberPreferencesContract.update,
+);
 
 const getUserPreferencesInner$ = computed(async (get): Promise<unknown> => {
   const auth = get(organizationAuthContext$);
@@ -63,7 +55,7 @@ const getUserPreferencesInner$ = computed(async (get): Promise<unknown> => {
   }
   return {
     status: 200 as const,
-    body: { ...preferences, ...get(mobileResponseFields$) },
+    body: preferences,
   };
 });
 
@@ -116,13 +108,13 @@ const updateUserPreferencesInner$ = command(
     }
     return {
       status: 200 as const,
-      body: { ...result.data, ...get(mobileResponseFields$) },
+      body: result.data,
     };
   },
 );
 
 const initializeUserPreferencesBody$ = bodyResultOf(
-  userPreferencesContract.initialize,
+  memberPreferencesContract.initialize,
 );
 const fillMissingUserPreferenceFields$ = command(
   async (
@@ -240,7 +232,6 @@ const initializeUserPreferencesInner$ = command(
         status: 200 as const,
         body: {
           ...current,
-          ...get(mobileResponseFields$),
           timezone: writeOutcome.timezone,
           locale: writeOutcome.locale,
         },
@@ -266,7 +257,6 @@ const initializeUserPreferencesInner$ = command(
       status: 200 as const,
       body: {
         ...preferences,
-        ...get(mobileResponseFields$),
         timezone: stored?.timezone ?? null,
         locale: stored?.locale ?? null,
       },
@@ -275,30 +265,25 @@ const initializeUserPreferencesInner$ = command(
 );
 
 export const userPreferencesRoutes: readonly RouteEntry[] = [
-  memberPreferencesContract,
-  userPreferencesContract,
-].flatMap((contract) => {
-  return [
-    {
-      route: contract.initialize,
-      handler: authRoute(
-        { requireOrganization: true, missingOrganizationStatus: 401 },
-        initializeUserPreferencesInner$,
-      ),
-    },
-    {
-      route: contract.get,
-      handler: authRoute(
-        { requireOrganization: true, missingOrganizationStatus: 401 },
-        getUserPreferencesInner$,
-      ),
-    },
-    {
-      route: contract.update,
-      handler: authRoute(
-        { requireOrganization: true, missingOrganizationStatus: 401 },
-        updateUserPreferencesInner$,
-      ),
-    },
-  ];
-});
+  {
+    route: memberPreferencesContract.initialize,
+    handler: authRoute(
+      { requireOrganization: true, missingOrganizationStatus: 401 },
+      initializeUserPreferencesInner$,
+    ),
+  },
+  {
+    route: memberPreferencesContract.get,
+    handler: authRoute(
+      { requireOrganization: true, missingOrganizationStatus: 401 },
+      getUserPreferencesInner$,
+    ),
+  },
+  {
+    route: memberPreferencesContract.update,
+    handler: authRoute(
+      { requireOrganization: true, missingOrganizationStatus: 401 },
+      updateUserPreferencesInner$,
+    ),
+  },
+];

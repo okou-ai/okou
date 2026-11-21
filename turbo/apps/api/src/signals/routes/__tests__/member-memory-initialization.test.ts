@@ -24,7 +24,7 @@ import {
   createRunsApi,
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
-import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import { memberPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { userPreferencesRoutes } from "../user-preferences";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
@@ -74,7 +74,7 @@ async function membershipCreated(actor: ApiTestUser): Promise<void> {
 async function prepareReadablePreferences(actor: ApiTestUser): Promise<void> {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   const preferences = setupApp({ context, routes: userPreferencesRoutes })(
-    userPreferencesContract,
+    memberPreferencesContract,
   );
   const updated = await accept(
     preferences.update({
@@ -89,7 +89,7 @@ async function prepareReadablePreferences(actor: ApiTestUser): Promise<void> {
 async function memoryInitialized(actor: ApiTestUser) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   const preferences = setupApp({ context, routes: userPreferencesRoutes })(
-    userPreferencesContract,
+    memberPreferencesContract,
   );
   return (
     await accept(
@@ -248,7 +248,7 @@ describe("member memory account initialization", () => {
         const preferences = setupApp({
           context,
           routes: userPreferencesRoutes,
-        })(userPreferencesContract);
+        })(memberPreferencesContract);
         const initialized = await accept(
           preferences.initialize({
             headers: { authorization: "Bearer clerk-session" },

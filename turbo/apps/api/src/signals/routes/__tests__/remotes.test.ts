@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import { memberPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -51,7 +51,7 @@ function sshClient() {
 
 function preferencesClient() {
   return setupApp({ context, routes: userPreferencesRoutes })(
-    userPreferencesContract,
+    memberPreferencesContract,
   );
 }
 

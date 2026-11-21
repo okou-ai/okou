@@ -144,36 +144,3 @@ export const memberPreferencesContract = c.router({
     summary: "Update user preferences",
   },
 });
-
-// Installed mobile clients require the empty array in successful responses.
-const mobilePreferencesSchema = userPreferencesResponseSchema.extend({
-  pinnedAgentIds: array(string()),
-});
-export const userPreferencesContract = c.router({
-  initialize: {
-    ...memberPreferencesContract.initialize,
-    path: "/api/user-preferences/initialize",
-    responses: {
-      ...memberPreferencesContract.initialize.responses,
-      200: mobilePreferencesSchema,
-    },
-  },
-  get: {
-    ...memberPreferencesContract.get,
-    path: "/api/user-preferences",
-    responses: {
-      ...memberPreferencesContract.get.responses,
-      200: mobilePreferencesSchema,
-    },
-  },
-  update: {
-    ...memberPreferencesContract.update,
-    path: "/api/user-preferences",
-    responses: {
-      ...memberPreferencesContract.update.responses,
-      200: mobilePreferencesSchema,
-    },
-  },
-});
-
-export type UserPreferencesContract = typeof userPreferencesContract;

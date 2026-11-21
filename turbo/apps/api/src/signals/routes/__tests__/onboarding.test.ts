@@ -369,7 +369,7 @@ describe("POST /api/onboarding/complete", () => {
       onboardingComplete: true,
       needsOnboarding: false,
     });
-    // This read cannot bootstrap Plan. Read it before onboarding/status, which
+    // This read cannot bootstrap Plan. Read it before the member onboarding status, which
     // can create the default agent and its entitlement.
     const billing = await accept(
       billingStatusClient().get({ headers: authHeaders() }),

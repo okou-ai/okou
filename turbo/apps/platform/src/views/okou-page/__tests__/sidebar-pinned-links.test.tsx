@@ -13,11 +13,10 @@ import {
 } from "./sidebar-test-helpers.tsx";
 
 const context = testContext();
-const { mockSidebarThreadStory, prepareAgents } = createSidebarHelpers(context);
+const { mockSidebarThreadStory } = createSidebarHelpers(context);
 
 test("Alt-click still opens a thread in the sidebar pane", async () => {
   const user = userEvent.setup({ delay: null });
-  prepareAgents();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Main conversation"),
     createThread(INCIDENT_THREAD_ID, "Side conversation"),

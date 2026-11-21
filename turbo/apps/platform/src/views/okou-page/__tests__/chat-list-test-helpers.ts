@@ -1,5 +1,4 @@
 import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
-import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import {
   chatThreadEventsContract,
@@ -26,8 +25,6 @@ import {
   mockChatThreadSnapshotResponse,
   type TestContext,
 } from "../../../signals/__tests__/test-helpers.ts";
-
-export const CHAT_LIST_AGENT_ID = "c7000000-0000-4000-a000-000000000001";
 
 export function chatListThreadId(index: number): string {
   return `b7000000-0000-4000-a000-${index.toString().padStart(12, "0")}`;
@@ -87,7 +84,6 @@ export function chatListEvent(
     seqId: sequence,
     kind,
     chatThreadId: threadId,
-    agentId: CHAT_LIST_AGENT_ID,
     title: null,
     selectedModel: null,
     serviceTier: null,
@@ -163,27 +159,6 @@ export function installChatListStream(
       currentEvents = [...events];
     },
   };
-}
-
-export function installChatListAgent(
-  context: TestContext,
-  gate?: Promise<void>,
-): void {
-  context.mocks.api(agentsMainContract.list, async ({ respond }) => {
-    await gate;
-    return respond(200, [
-      {
-        isDefaultAgent: true,
-        agentId: CHAT_LIST_AGENT_ID,
-        ownerId: "chat-list-owner",
-        displayName: "List agent",
-        description: null,
-        sound: null,
-        avatarUrl: null,
-        visibility: "private",
-      },
-    ]);
-  });
 }
 
 export function installChatListRunModels(context: TestContext): void {

@@ -7,7 +7,6 @@ import type {
   onboardingDraftContract as OriginalOnboardingDraftContract,
   onboardingRecommendationContract as OriginalOnboardingRecommendationContract,
   onboardingSourcesContract as OriginalOnboardingSourcesContract,
-  onboardingStatusContract as OriginalOnboardingStatusContract,
 } from "../contracts/onboarding";
 import type { ClientDescriptor } from "./types";
 
@@ -101,19 +100,6 @@ export const onboardingSourcesContract: ClientDescriptor<
       401: true,
       403: true,
       503: true,
-    },
-  },
-};
-
-export const onboardingStatusContract: ClientDescriptor<
-  typeof OriginalOnboardingStatusContract
-> = {
-  getStatus: {
-    method: "GET",
-    path: "/api/onboarding/status",
-    statuses: {
-      200: true,
-      401: true,
     },
   },
 };

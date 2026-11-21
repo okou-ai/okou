@@ -18,10 +18,7 @@ import {
 } from "./chat-composer-test-helpers.ts";
 import { buildRunModel } from "./chat-model-builders.ts";
 import { openModelPanel } from "./chat-model-panel-test-helpers.ts";
-import {
-  AGENT_ID,
-  createTemplateGalleryHelpers,
-} from "./chat-composer-template-gallery-test-helpers.ts";
+import { createTemplateGalleryHelpers } from "./chat-composer-template-gallery-test-helpers.ts";
 
 const context = testContext();
 const { mockTemplateChat } = createTemplateGalleryHelpers(context);
@@ -125,7 +122,7 @@ async function setupLinking(options?: {
   }
   await setupPage({
     context,
-    path: options?.path ?? `/agents/${AGENT_ID}/chat`,
+    path: options?.path ?? `/`,
     featureSwitches: {
       [FeatureSwitchKey.SubscriptionLinkingEntry]: options?.enabled ?? true,
     },

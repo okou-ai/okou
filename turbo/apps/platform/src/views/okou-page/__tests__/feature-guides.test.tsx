@@ -13,7 +13,7 @@ import {
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const path = "/agents/c0000000-0000-4000-a000-000000000001/chat";
+const path = "/";
 const edition = Object.freeze<FeatureGuideEdition>({
   id: "monthly-update",
   revisionId: "11111111-1111-4111-8111-111111111111",

@@ -30,8 +30,6 @@ export const discordOrgStatusSchema = object({
   guildId: string().nullable(),
   guildName: string().nullable(),
   discordUserId: string().nullable(),
-  defaultAgentId: string().nullable(),
-  defaultAgentName: string().nullable(),
   contextMode: discordContextModeSchema,
   onboarding: literal("oauth"),
   dmSelectionConnectionId: uuid().nullable(),

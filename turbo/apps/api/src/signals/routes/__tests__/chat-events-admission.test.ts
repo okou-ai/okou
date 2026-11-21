@@ -1,6 +1,6 @@
 import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
 import { instructionsRoutes } from "../instructions";
-import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import { memberPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { userPreferencesRoutes } from "../user-preferences";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
 import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
@@ -76,7 +76,7 @@ describe("CHAT-02: on-demand member memory initialization", () => {
         model: "claude-fable-5-1",
       });
       const preferences = setupApp({ context, routes: userPreferencesRoutes })(
-        userPreferencesContract,
+        memberPreferencesContract,
       );
       // An existing member with preferences but no memory, as before on-demand
       // initialization: the read reports it without writing anything.

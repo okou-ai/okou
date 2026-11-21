@@ -266,64 +266,6 @@ final class ChatClientTests: XCTestCase {
     XCTAssertEqual(result.eventIDs, Set((1...101).map(eventIdentity)))
   }
 
-  func testOldHistoryPreservesStructuredAgentMentionsAndSourceContext() async throws {
-    let mixedMessage = """
-      {"userMessage":{"version":1,"parts":[
-        {"type":"text","text":"Ask"},
-        {"type":"agent","agentId":"\(fixtureAgent)","nameSnapshot":"Release Scout"},
-        {"type":"chat_thread","threadId":"\(fixtureThread)","titleSnapshot":"Release chat"},
-        {"type":"source","kind":"agent","runId":"\(fixtureRun)","threadId":"\(fixtureThread)","agentId":"\(fixtureAgent)","titleSnapshot":"Earlier run","href":"https://app.okou.ai/chats/\(fixtureThread)"},
-        {"type":"file","fileId":"historical-file","filenameSnapshot":"plan.md","contentType":"text/markdown"}
-      ]}}
-      """.replacingOccurrences(of: "\n", with: "")
-    let mentionOnlyMessage = """
-      {"userMessage":{"version":1,"parts":[{"type":"agent","agentId":"\(fixtureAgent)","nameSnapshot":"Planner"}]}}
-      """
-    let fixture = ChatHTTPFixture { request in
-      switch request.url?.path {
-      case "/api/chat-threads/\(fixtureThread)/event-snapshot":
-        return ChatHTTPResponse(
-          body: """
-            {"url":"https://\(request.url!.host!)/snapshot","expiresInSeconds":60,"lastEventId":"\(eventIdentity(3))","lastSeqId":3}
-            """)
-      case "/snapshot":
-        let rows = [
-          eventJSON(seq: 1, type: "input.prompt", payload: mixedMessage),
-          eventJSON(seq: 2, type: "input.prompt", payload: mentionOnlyMessage),
-          eventJSON(seq: 3, type: "run.completed")
-        ]
-        return ChatHTTPResponse(body: rows.joined(separator: "\n") + "\n")
-      case "/api/chat-threads/\(fixtureThread)/event-rows":
-        return ChatHTTPResponse(
-          body: """
-            {"rows":[],"cursor":{"lastEventId":"\(eventIdentity(3))","lastSeqId":3},"hasMore":false}
-            """)
-      case "/api/chat-threads/\(fixtureThread)":
-        return ChatHTTPResponse(body: "{\"lastReadAt\":null,\"cancellationRecoveryPending\":false}")
-      default: throw URLError(.unsupportedURL)
-      }
-    }
-
-    let history = try await ChatSync(client: fixture.client).history(threadID: fixtureThread)
-
-    XCTAssertEqual(
-      history.messages.map(\.text),
-      [
-        "AskRelease ScoutRelease chat",
-        "Planner"
-      ])
-    XCTAssertEqual(history.messages.map(\.role), [.user, .user])
-    XCTAssertEqual(history.messages.first?.userMessage?.annotation?.kind, "agent")
-    XCTAssertEqual(history.messages.first?.userMessage?.annotation?.titleSnapshot, "Earlier run")
-    XCTAssertEqual(history.messages.first?.userMessage?.annotation?.runId, fixtureRun)
-    XCTAssertEqual(history.messages.first?.userMessage?.bodyParts[1].agentId, fixtureAgent)
-    XCTAssertEqual(
-      history.messages.first?.attachments,
-      [
-        ChatMessageAttachment(
-          id: "historical-file", filename: "plan.md", contentType: "text/markdown")
-      ])
-  }
 
 }
 

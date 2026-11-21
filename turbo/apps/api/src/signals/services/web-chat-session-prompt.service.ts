@@ -38,20 +38,13 @@ function buildReferencesContext(
   references: UserMessageReferences,
   singleAgent: boolean,
 ): string {
-  if (references.agents.length === 0 && references.chatThreads.length === 0) {
+  if (references.chatThreads.length === 0) {
     return "";
   }
   return [
-    singleAgent
-      ? "# Referenced conversations"
-      : "# Referenced Agents and Threads",
+    "# Referenced conversations",
     "",
     "The current message links:",
-    ...references.agents.map((agent) => {
-      return singleAgent
-        ? `- Retained configuration reference ${JSON.stringify(agent.nameSnapshot)}: ${agent.agentId}. This reference does not select an executor or authorize shared configuration changes.`
-        : `- Agent ${JSON.stringify(agent.nameSnapshot)}: AGENT_ID=${agent.agentId}`;
-    }),
     ...references.chatThreads.map((thread) => {
       return `- Chat thread ${JSON.stringify(thread.titleSnapshot)}: CHAT_THREAD_ID=${thread.threadId}`;
     }),

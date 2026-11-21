@@ -1,3 +1,4 @@
+import { readStoredMessageParts } from "../contracts/stored-message-parts";
 import {
   modelSettingsPatchSchema,
   modelSettingsSchema,
@@ -413,12 +414,6 @@ const userMessageChatThreadPartSchema = object({
   titleSnapshot: string().min(1),
 }).strict();
 
-const userMessageAgentPartSchema = object({
-  type: literal("agent"),
-  agentId: uuid(),
-  nameSnapshot: string().min(1),
-}).strict();
-
 export const projectMentionSchema = object({
   type: literal("project"),
   projectId: uuid(),
@@ -434,7 +429,6 @@ const userMessageTemplatePartSchema = object({
 export const feedbackNotePartSchema = discriminatedUnion("type", [
   userMessageTextPartSchema,
   userMessageChatThreadPartSchema,
-  userMessageAgentPartSchema,
   userMessageTemplatePartSchema,
   projectMentionSchema,
 ]);
@@ -502,7 +496,6 @@ const userMessageSourcePartSchema = discriminatedUnion("kind", [
 export const userMessageInputPartSchema = discriminatedUnion("type", [
   userMessageTextPartSchema,
   userMessageChatThreadPartSchema,
-  userMessageAgentPartSchema,
   userMessageTemplatePartSchema,
   projectMentionSchema,
   userMessageSourcePartSchema,
@@ -569,7 +562,6 @@ export const userMessagePartSchema = discriminatedUnion("type", [
 export const userMessageDocumentSchema = object({
   version: literal(1),
   parts: array(userMessagePartSchema)
-    .min(1)
     .refine(
       (parts) => {
         return (
@@ -607,6 +599,20 @@ export const userMessageInputDocumentSchema = object({
       { message: "A user message may contain at most one non-content part" },
     ),
 }).strict();
+
+export function readStoredDraftMessage(value: unknown) {
+  if (value == null) return null;
+  const document = readStoredMessageParts(value);
+  if (
+    typeof document === "object" &&
+    document !== null &&
+    "parts" in document &&
+    Array.isArray(document.parts) &&
+    document.parts.length === 0
+  )
+    return null;
+  return userMessageInputDocumentSchema.parse(document);
+}
 
 const chatEventRecommendedFollowupShape = {
   prompt: string(),

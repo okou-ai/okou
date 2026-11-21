@@ -15,11 +15,11 @@ describe("captured My Okou execution guidance", () => {
     }
     await owned.run(async () => {
       fixture.bdd.acceptAgentStorageWrites();
-      const status = await fixture.bdd.readOnboardingStatus(actor);
-      if (!status.defaultAgentId) {
+      const statusAgentId = await fixture.bdd.readDefaultAgentId(actor);
+      if (!statusAgentId) {
         throw new Error("Expected the workspace executor");
       }
-      await fixture.bdd.updateAgentMetadata(actor, status.defaultAgentId, {
+      await fixture.bdd.updateAgentMetadata(actor, statusAgentId, {
         description: "MUTABLE_SHARED_ROLE_DO_NOT_INHERIT",
         sound: "friendly",
       });

@@ -13,7 +13,7 @@ test("Okou production uses its own authentication URLs", async () => {
   await setupPage({
     context,
     host: "app.okou.ai",
-    path: "/agents",
+    path: "/",
   });
 
   expect(clerk.resourceRequests).toStrictEqual([
@@ -39,7 +39,7 @@ test("App-started Clerk keeps browser navigation until a route owns it", async (
   await setupPage({
     context,
     host: "app.okou.ai",
-    path: "/agents",
+    path: "/",
   });
   expect(window.__okouClerkRouter).toBeUndefined();
 
@@ -163,7 +163,7 @@ function runInlineBootstrap(hostname: string, pathname = "/sign-in") {
   return { bootstrap, bootstrapWindow, appendedScripts, script };
 }
 
-async function startInlineClerkRuntime(hostname: string, pathname = "/agents") {
+async function startInlineClerkRuntime(hostname: string, pathname = "/") {
   const page = runInlineBootstrap(hostname, pathname);
   const loaded = Promise.resolve();
   let loadOptions: InlineBootstrapLoadOptions | undefined;
@@ -224,7 +224,7 @@ test("The inline Clerk bootstrap uses the current page sign-in URL", async () =>
 
 test("The inline bootstrap loads installed UI only for auth routes", () => {
   for (const pathname of [
-    "/agents",
+    "/",
     "/v1/sign-in",
     "/v1/sign-up",
     "/v1/sign-invader",

@@ -10,12 +10,7 @@ import { createElement } from "react";
 import { AgentChatPage } from "../../views/okou-page/agent-chat-page.tsx";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
-import {
-  searchParams$,
-  updateSearchParams$,
-  detachedNavigateTo$,
-} from "../route.ts";
-import { ROUTES } from "../route-paths.ts";
+import { searchParams$, updateSearchParams$ } from "../route.ts";
 
 import { setTalkDraft$, talkDraft$ } from "./chat-draft.ts";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
@@ -155,12 +150,3 @@ export const setupHomeChatPage$ = command(
     }
   },
 );
-
-export const setupAgentChatPage$ = command(({ get, set }) => {
-  // My Okou has one chat page at `/`. Keep deep-link params such as
-  // `prompt` and `handoff` so the page there still applies them.
-  set(detachedNavigateTo$, ROUTES.home, {
-    searchParams: get(searchParams$),
-    replace: true,
-  });
-});

@@ -154,7 +154,7 @@ function promptRequestContent(
  * Lightweight prompt deep-link endpoint.
  *
  * This replaces the use-case-only `/onboarding?prompt=...` path once the
- * workspace/default agent already exists: consume the prompt exactly like the
+ * workspace already exists: consume the prompt exactly like the
  * onboarding "Try It" action and route into the new optimistic chat thread.
  */
 export const setupPromptPage$ = command(
