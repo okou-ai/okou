@@ -22,7 +22,6 @@ import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
 
 const context = testContext();
-const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const THREAD_ID = "b0000000-0000-4000-a000-000000000902";
 const CONNECTOR_URL = `https://app.okou.ai/connectors/github/authorize?threadId=${THREAD_ID}`;
 const PERMISSION_URL = `https://app.okou.ai/connectors/permissions?orgId=org_default&userId=test-user-123&connectorSlug=slack&permission=files:read`;

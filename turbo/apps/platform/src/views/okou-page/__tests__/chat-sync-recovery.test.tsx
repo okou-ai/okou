@@ -16,7 +16,6 @@ import {
   chatListThreadId,
   installChatListStream,
 } from "./chat-list-test-helpers.ts";
-import { AGENT_ID } from "./chat-lifecycle-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
   createChatRunFixtures,

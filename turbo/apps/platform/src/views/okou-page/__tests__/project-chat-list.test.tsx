@@ -19,7 +19,6 @@ import {
   installContinuityWorkspace,
 } from "./chat-continuity-test-helpers.ts";
 import {
-  CHAT_LIST_AGENT_ID,
   chatListThread,
 } from "./chat-list-test-helpers.ts";
 import { menuItemByText } from "./sidebar-test-helpers.tsx";
