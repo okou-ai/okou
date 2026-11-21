@@ -10,6 +10,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.100.9](https://github.com/okou-ai/okou/compare/api-v2.100.8...api-v2.100.9) (2026-11-21)
+
+
+### Bug Fixes
+
+* **api:** allow chat creation with native OAuth ([#49875](https://github.com/okou-ai/okou/issues/49875)) ([4a34883](https://github.com/okou-ai/okou/commit/4a3488355b00872e24f684df8a1c1c0506e78b6c))
+
+
+### Refactoring
+
+* contract legacy chat and run agent storage ([#49868](https://github.com/okou-ai/okou/issues/49868)) ([abbf9f8](https://github.com/okou-ai/okou/commit/abbf9f8e672ac56f0f98583cfb0b536e9225e905))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.3
+    * @okouai/core bumped to 8.858.8
+    * @okouai/db bumped to 2.57.9
+    * @okouai/pi-agent-runtime bumped to 1.52.27
+
 ## [2.100.8](https://github.com/okou-ai/okou/compare/api-v2.100.7...api-v2.100.8) (2026-11-21)
 
 
