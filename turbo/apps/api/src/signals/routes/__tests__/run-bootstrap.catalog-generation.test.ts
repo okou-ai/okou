@@ -27,7 +27,7 @@ async function connectorActor() {
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
   const runnerGroup = await api.configureRunnerGroup();
-  const agents: string[] = [];
+
   const providerIds: string[] = [];
   const waitingThreads = new Set<string>();
   const owner = publicRunOwner(context, actor, {
@@ -41,9 +41,7 @@ async function connectorActor() {
     },
     afterRuns: async () => {
       await connectors.deleteFeatureSwitches(actor);
-      for (const agentId of agents) {
-        await bdd.deleteAgent(actor, agentId);
-      }
+
       for (const id of providerIds) {
         await createAuthDeviceSupportApi(
           context,
@@ -75,7 +73,7 @@ async function connectorActor() {
       displayName: "Connector selection",
       visibility: "private",
     });
-    agents.push(agent.agentId);
+
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
     await connectX(connectors, actor);
     return {

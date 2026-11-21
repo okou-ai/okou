@@ -53,9 +53,7 @@ describe("MCP OAuth foundations", () => {
     const agent = await bdd.createAgent(actor, {
       displayName: "OAuth transport owner",
     });
-    oauthCleanups.push(async () => {
-      await bdd.deleteAgent(actor, agent.agentId);
-    });
+
     const connector = await connectors.createCustomConnector(actor, {
       kind: "mcp",
       displayName: "OAuth transport boundaries",
@@ -687,9 +685,7 @@ describe("MCP OAuth foundations", () => {
     const agent = await bdd.createAgent(actor, {
       displayName: "OAuth refresh transport owner",
     });
-    oauthCleanups.push(async () => {
-      await bdd.deleteAgent(actor, agent.agentId);
-    });
+
     const tokenRequests: {
       readonly body: string;
       readonly authorization: string | null;

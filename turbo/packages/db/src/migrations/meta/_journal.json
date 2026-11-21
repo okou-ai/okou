@@ -3718,6 +3718,20 @@
       "when": 1795281946876,
       "tag": "1609_retire_legacy_chat_run_source_agent",
       "breakpoints": true
+    },
+    {
+      "idx": 1610,
+      "version": "7",
+      "when": 1795282249468,
+      "tag": "1610_retire-chat-and-run-agent-ids",
+      "breakpoints": true
+    },
+    {
+      "idx": 1611,
+      "version": "7",
+      "when": 1795283045249,
+      "tag": "1611_restrict-workflow-agent-deletion",
+      "breakpoints": true
     }
   ]
 }

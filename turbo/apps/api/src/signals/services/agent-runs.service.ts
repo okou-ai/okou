@@ -16,7 +16,6 @@ import {
   sandboxStartupPathSchema,
   type SandboxStartupPath,
 } from "@okouai/api-contracts/contracts/runner-primitives";
-import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -47,8 +46,6 @@ interface RunningRunRow {
   readonly id: string;
   readonly runUserId: string;
   readonly startedAt: Date | null;
-  readonly agentName: string | null;
-  readonly agentDisplayName: string | null;
 }
 
 function effectiveConcurrencyLimit(
@@ -130,11 +127,8 @@ function runningRunRows(orgId: string): Computed<Promise<RunningRunRow[]>> {
         id: agentRuns.id,
         runUserId: agentRuns.userId,
         startedAt: agentRuns.startedAt,
-        agentName: agents.name,
-        agentDisplayName: agents.displayName,
       })
       .from(agentRuns)
-      .leftJoin(agents, eq(agentRuns.agentId, agents.id))
       .where(and(eq(agentRuns.orgId, orgId), eq(agentRuns.status, "running")))
       .orderBy(asc(agentRuns.startedAt));
   });
@@ -176,8 +170,8 @@ function runningTaskItem(
   const isOwner = run.runUserId === userId;
   return {
     runId: isOwner ? run.id : null,
-    agentName: run.agentName ?? "unknown",
-    agentDisplayName: run.agentDisplayName ?? null,
+    agentName: "Okou",
+    agentDisplayName: null,
     userEmail: emails.get(run.runUserId) ?? "unknown",
     startedAt: run.startedAt?.toISOString() ?? null,
     isOwner,

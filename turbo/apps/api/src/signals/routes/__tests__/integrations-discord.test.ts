@@ -875,7 +875,7 @@ describe("verified Discord integration settings", () => {
       },
     );
     await fixture(owner);
-    const ownAgent = await api.createAgent(ownerProfile, {
+    await api.createAgent(ownerProfile, {
       visibility: "private",
       displayName: "Personal Discord agent",
     });
@@ -884,7 +884,5 @@ describe("verified Discord integration settings", () => {
       defaultAgentId,
       defaultAgentName: "Okou",
     });
-
-    await api.deleteAgent(ownerProfile, ownAgent.agentId);
   });
 });

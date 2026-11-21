@@ -42,7 +42,6 @@ export function createChatThreadReadPreparation(args: {
   const thread$ = computed(async (get) => {
     const [thread] = await get(db$)
       .select({
-        agentId: chatThreads.agentId,
         lastReadAt: chatThreads.lastReadAt,
       })
       .from(chatThreads)
@@ -81,7 +80,6 @@ export function createChatThreadReadPreparation(args: {
     return {
       threadId: args.threadId,
       userId: args.userId,
-      ...(thread.agentId ? { agentId: thread.agentId } : {}),
       orgId: args.orgId,
       lastReadAt: thread.lastReadAt,
       watermark,

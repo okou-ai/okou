@@ -52,7 +52,6 @@ async function fixture(options: { orgId?: string; userId?: string } = {}) {
     }
     await runs.requestCancelRun(actor, run.runId, [200, 400, 404]);
     await flushWaitUntilForTest();
-    await bdd.requestDeleteAgent(actor, agent.agentId, [204, 404]);
   });
   await runs.heartbeatRunner(runnerGroup);
   const execution = await runs.executionInput(run.runId);
@@ -335,11 +334,11 @@ describe("Run cancellation reconciliation", () => {
     });
   });
 
-  it("keeps the cancelled member Run visible to its sandbox after legacy Agent deletion", async () => {
+  it("keeps the cancelled member Run visible to its sandbox after a rejected legacy Agent deletion", async () => {
     const f = await fixture();
     await f.runs.requestCancelRun(f.actor, f.runId, [200]);
     await flushWaitUntilForTest();
-    await f.bdd.deleteAgent(f.actor, f.agentId);
+    await f.bdd.expectAgentDeleteUnavailable(f.actor, f.agentId);
     expect((await read(f)).body).toStrictEqual({
       protocolVersion: 1,
       runId: f.runId,

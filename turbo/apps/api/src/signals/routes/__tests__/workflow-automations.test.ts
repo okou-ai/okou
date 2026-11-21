@@ -3619,7 +3619,7 @@ describe("okou workflow automations", () => {
     });
   });
 
-  it("preserves Gmail watches after deleting a workflow or a legacy agent", async () => {
+  it("preserves Gmail watches after deleting a workflow or rejecting Agent deletion", async () => {
     const workflowScenario = await setupFixture();
     await connectGmail(
       workflowScenario,
@@ -3670,7 +3670,10 @@ describe("okou workflow automations", () => {
       }),
       [201],
     );
-    await bdd.deleteAgent(agentScenario.actor, legacyAgent.agentId);
+    await bdd.expectAgentDeleteUnavailable(
+      agentScenario.actor,
+      legacyAgent.agentId,
+    );
     expect(watch.calls).toBe(2);
     expect(stop.calls).toBe(0);
   });

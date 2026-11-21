@@ -41,9 +41,7 @@ export function createPublicFirewallConnections(context: TestContext) {
       description: "Exercises firewall auth resolution.",
       visibility: "private",
     });
-    runCleanups.push(async () => {
-      await bdd.deleteAgent(actor, agent.agentId);
-    });
+
     const created = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "resolve firewall auth",

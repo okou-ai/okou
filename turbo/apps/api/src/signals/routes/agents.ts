@@ -28,8 +28,6 @@ import {
 import { conflict, notFound } from "../../lib/error";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
-import { deleteAgentById$ } from "../services/agent-deletion.service";
-import { publishVncLifecycleInvalidation$ } from "../services/remote-runtime-wakeup.service";
 import {
   agentResponse,
   visibleAgentIdentityCondition,
@@ -600,19 +598,6 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     throw new Error(`Canonical Agent missing after update: ${params.id}`);
   }
 
-  if (body.data.visibility === "private") {
-    await set(
-      publishVncLifecycleInvalidation$,
-      {
-        kind: "agent",
-        orgId: auth.orgId,
-        agentId: params.id,
-        ownerId: row.agent.owner,
-      },
-      signal,
-    );
-  }
-
   return {
     status: 200 as const,
     body: agentResponse(row.agent),
@@ -724,77 +709,12 @@ const updateAgentMetadataInner$ = command(
       throw new Error(`Canonical Agent missing after update: ${params.id}`);
     }
 
-    if (body.data.visibility === "private") {
-      await set(
-        publishVncLifecycleInvalidation$,
-        {
-          kind: "agent",
-          orgId: auth.orgId,
-          agentId: params.id,
-          ownerId: result.agent.owner,
-        },
-        signal,
-      );
-    }
-
     return {
       status: 200 as const,
       body: agentResponse(result.agent),
     };
   },
 );
-
-const initialDeleteAgent$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const params = get(pathParamsOf(agentsByIdContract.delete));
-  const db = get(db$);
-  const [agent] = await db
-    .select({
-      id: agents.id,
-      owner: agents.owner,
-      visibility: agents.visibility,
-    })
-    .from(agents)
-    .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
-    .limit(1);
-  return agent;
-});
-
-const deleteAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const auth = get(organizationAuthContext$);
-  const member = { userId: auth.userId, role: auth.orgRole ?? "member" };
-  const params = get(pathParamsOf(agentsByIdContract.delete));
-
-  const agent = await get(initialDeleteAgent$);
-  signal.throwIfAborted();
-
-  if (!agent) {
-    return agentNotFound(params.id);
-  }
-
-  const permissionError = requireAgentPermission(
-    agent.owner,
-    member,
-    "delete agent",
-    { visibility: agent.visibility },
-  );
-  if (permissionError) {
-    return permissionError;
-  }
-
-  const result = await set(
-    deleteAgentById$,
-    { agentId: agent.id, orgId: auth.orgId, member },
-    signal,
-  );
-  signal.throwIfAborted();
-
-  if (result) {
-    return result;
-  }
-
-  return { status: 204 as const, body: undefined };
-});
 
 const agentReadAuth = {
   requireOrganization: true,
@@ -806,12 +726,6 @@ const agentWriteAuth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
   requiredCapability: "agent:write",
-} as const;
-
-const agentDeleteAuth = {
-  requireOrganization: true,
-  missingOrganizationStatus: 401,
-  requiredCapability: "agent:delete",
 } as const;
 
 export const agentsRoutes: readonly RouteEntry[] = [
@@ -837,9 +751,5 @@ export const agentsRoutes: readonly RouteEntry[] = [
   {
     route: agentsByIdContract.updateMetadata,
     handler: authRoute(agentWriteAuth, updateAgentMetadataInner$),
-  },
-  {
-    route: agentsByIdContract.delete,
-    handler: authRoute(agentDeleteAuth, deleteAgentInner$),
   },
 ];

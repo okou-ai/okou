@@ -10,7 +10,7 @@ import { env, mockEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
-import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import type { ApiTestUser } from "./helpers/api-bdd";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { manualHttpCustomConnectorCreateBody } from "./helpers/api-bdd-connectors";
@@ -459,7 +459,7 @@ describe("CHAT-02: thread connector account selection", () => {
   );
 
   it("uses default custom HTTP and MCP accounts without persisting overrides", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const storage = context.mocks.s3.send.getMockImplementation();
     const storageBucket = env("R2_USER_STORAGES_BUCKET_NAME");
     const kmsKeyId = env("SECRETS_KMS_KEY_ID");
@@ -480,7 +480,6 @@ describe("CHAT-02: thread connector account selection", () => {
       for (const connectorId of connectorIds) {
         await connectors.deleteCustomConnector(actor, connectorId);
       }
-      await createBddApi(context).deleteAgent(actor, agentId);
       cleaned = true;
     };
     onTestFinished(cleanup);

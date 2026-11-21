@@ -160,22 +160,6 @@ export const agentsByIdContract = c.router({
     },
     summary: "Update agent metadata",
   },
-  delete: {
-    method: "DELETE",
-    path: "/api/agents/:id",
-    headers: authHeadersSchema,
-    pathParams: object({ id: uuid() }),
-    body: c.noBody(),
-    responses: {
-      204: c.noBody(),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-      409: apiErrorSchema,
-    },
-    summary: "Delete agent by id",
-  },
 });
 
 /**

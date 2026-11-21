@@ -68,7 +68,6 @@ export async function withConnectorRuntime(
       await runs.requestCancelRun(actor, owned.runId, [200]);
       await flushWaitUntilForTest();
     }
-    await bdd.deleteAgent(actor, agent.agentId);
   }
   function cleanup(): Promise<void> {
     cleanupPromise ??= cleanupOwnedResources();

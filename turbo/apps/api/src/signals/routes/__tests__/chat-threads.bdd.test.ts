@@ -43,7 +43,6 @@ import {
   expectApiError,
   type ApiTestUser,
 } from "./helpers/api-bdd";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -109,7 +108,6 @@ const chat = createChatFilesBddApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
 const connectorsApi = createConnectorBddApi(context);
-const authOrg = createAuthOrgAgentsBddApi(context);
 const routeMocks = createRouteMocks(context);
 const DAY_MS = 24 * 60 * 60 * 1000;
 function chatThreadConnectorSelectionsClient() {
@@ -746,7 +744,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     await expectExpiredThreadEventCursor(actor, firstEvent.seqId + 1);
   });
 
-  it("preserves member threads and their sidebar events when a legacy Agent is deleted", async () => {
+  it("preserves member threads and their sidebar events when legacy Agent deletion is rejected", async () => {
     const actor = bdd.user();
     await api.ensurePersonalSubscriptionModel(actor);
     const removedAgent = await bdd.createAgent(actor, {
@@ -776,7 +774,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     }
 
     chat.mockObjectStorageObjectsExist();
-    await authOrg.deleteAgent(actor, removedAgent.agentId);
+    await bdd.expectAgentDeleteUnavailable(actor, removedAgent.agentId);
     // The App renders its list from the snapshot plus this external event API.
     const tail = await threadEventPage(actor, before.latestSeqId);
     expect(tail.events).toStrictEqual([]);

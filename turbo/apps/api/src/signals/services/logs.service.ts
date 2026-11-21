@@ -9,7 +9,6 @@ import {
   type TriggerSource,
 } from "@okouai/api-contracts/contracts/logs";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-provider-types";
-import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   and,
@@ -17,7 +16,6 @@ import {
   desc,
   eq,
   gte,
-  ilike,
   isNotNull,
   lt,
   or,
@@ -63,30 +61,9 @@ interface LogsListParams {
   orgId: string;
   cursor?: string;
   limit?: number;
-  search?: string;
-  agentId?: string;
-  name?: string;
   since?: number;
   status?: LogStatus;
   triggerSource?: TriggerSource;
-}
-
-function buildAgentFilterConditions(params: {
-  agentId?: string;
-  name?: string;
-  search?: string;
-}): SQL[] {
-  const conditions: SQL[] = [];
-
-  if (params.agentId) {
-    conditions.push(eq(agents.id, params.agentId));
-  } else if (params.name) {
-    conditions.push(eq(agents.name, params.name));
-  } else if (params.search) {
-    conditions.push(ilike(agents.name, `%${params.search}%`));
-  }
-
-  return conditions;
 }
 
 interface LogsListData {
@@ -108,9 +85,7 @@ function logsListRunSelection() {
     startedAt: agentRuns.startedAt,
     completedAt: agentRuns.completedAt,
     triggerSource: agentRuns.triggerSource,
-    agentId: agents.id,
     launchSnapshot: agentRuns.launchSnapshot,
-    displayName: agents.displayName,
     cliAgentSessionId: agentRuns.frameworkSessionId,
   };
 }
@@ -118,9 +93,6 @@ function logsListRunSelection() {
 function toLogsFilters(
   statusRows: readonly Pick<typeof agentRuns.$inferSelect, "status">[],
   sourceRows: readonly Pick<typeof agentRuns.$inferSelect, "triggerSource">[],
-  agentRows: readonly {
-    readonly agentId: typeof agents.$inferSelect.id | null;
-  }[],
 ): LogsFilters {
   const statuses = statusRows
     .map((r) => {
@@ -146,15 +118,7 @@ function toLogsFilters(
       return triggerSourceSchema.safeParse(s).success;
     });
 
-  const agentIds = agentRows
-    .map((r) => {
-      return r.agentId;
-    })
-    .filter((agentId): agentId is string => {
-      return agentId !== null;
-    });
-
-  return { statuses, sources, agents: agentIds };
+  return { statuses, sources, agents: [] };
 }
 
 export function logsList(
@@ -176,8 +140,6 @@ export function logsList(
       }
     }
 
-    conditions.push(...buildAgentFilterConditions(params));
-
     if (params.since !== undefined) {
       conditions.push(gte(agentRuns.createdAt, new Date(params.since)));
     }
@@ -195,9 +157,6 @@ export function logsList(
       db
         .select(logsListRunSelection())
         .from(agentRuns)
-
-        .leftJoin(agents, eq(agentRuns.agentId, agents.id))
-
         .where(whereClause)
         .orderBy(desc(agentRuns.createdAt), desc(agentRuns.id))
         .limit(limit + 1),
@@ -206,8 +165,6 @@ export function logsList(
           eq(agentRuns.userId, params.userId),
           eq(agentRuns.orgId, params.orgId),
         ];
-
-        conditions.push(...buildAgentFilterConditions(params));
 
         if (params.since !== undefined) {
           conditions.push(gte(agentRuns.createdAt, new Date(params.since)));
@@ -222,8 +179,6 @@ export function logsList(
         const [result] = await db
           .select({ count: count() })
           .from(agentRuns)
-
-          .leftJoin(agents, eq(agentRuns.agentId, agents.id))
           .where(and(...conditions));
 
         return result?.count ?? 0;
@@ -234,7 +189,7 @@ export function logsList(
           eq(agentRuns.orgId, orgId),
         ];
 
-        const [statusRows, sourceRows, agentRows] = await Promise.all([
+        const [statusRows, sourceRows] = await Promise.all([
           db
             .selectDistinct({ status: agentRuns.status })
             .from(agentRuns)
@@ -243,15 +198,9 @@ export function logsList(
             .selectDistinct({ triggerSource: agentRuns.triggerSource })
             .from(agentRuns)
             .where(and(...baseConditions, isNotNull(agentRuns.triggerSource))),
-          db
-            .selectDistinct({ agentId: agents.id })
-            .from(agentRuns)
-
-            .leftJoin(agents, eq(agentRuns.agentId, agents.id))
-            .where(and(...baseConditions, isNotNull(agents.id))),
         ]);
 
-        return toLogsFilters(statusRows, sourceRows, agentRows);
+        return toLogsFilters(statusRows, sourceRows);
       })(params.userId, params.orgId),
     ]);
 
@@ -270,8 +219,8 @@ export function logsList(
         return {
           id: run.id,
           sessionId: run.cliAgentSessionId ?? null,
-          agentId: run.agentId ?? null,
-          displayName: run.displayName ?? null,
+          agentId: null,
+          displayName: null,
           framework: run.launchSnapshot?.framework ?? null,
           triggerSource: normalizeTriggerSource(run.triggerSource),
           status: run.status as LogStatus,
@@ -306,8 +255,6 @@ export function logDetail(
     const [result] = await db
       .select({
         run: logDetailRunSelection(),
-        agentId: agents.id,
-        agentDisplayName: agents.displayName,
         triggerSource: agentRuns.triggerSource,
         modelProvider: agentRuns.modelProvider,
         selectedModel: agentRuns.selectedModel,
@@ -315,8 +262,6 @@ export function logDetail(
         modelRuntimeModel: agentRuns.modelRuntimeModel,
       })
       .from(agentRuns)
-
-      .leftJoin(agents, eq(agentRuns.agentId, agents.id))
       .where(
         and(
           eq(agentRuns.id, params.runId),
@@ -341,8 +286,6 @@ export function logDetail(
 
     const {
       run,
-      agentId,
-      agentDisplayName,
       triggerSource,
       modelProvider,
       selectedModel,
@@ -356,8 +299,8 @@ export function logDetail(
     return {
       id: run.id,
       sessionId: run.frameworkSessionId,
-      agentId,
-      displayName: agentDisplayName ?? null,
+      agentId: null,
+      displayName: null,
       framework,
       modelProvider: isBuiltInModelProviderType(modelProvider)
         ? "built-in"

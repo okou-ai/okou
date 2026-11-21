@@ -42,7 +42,7 @@ export const loadChatThreadSnapshotProjection$ = command(
       const page = await db
         .select({
           id: chatThreads.id,
-          agentId: legacyThreadAgentId(chatThreads.agentId, chatThreads.orgId),
+          agentId: legacyThreadAgentId(sql`NULL::uuid`, chatThreads.orgId),
           projectId: chatThreads.projectId,
           title: chatThreads.title,
           lastMessageAt: chatThreads.lastMessageAt,

@@ -207,7 +207,6 @@ interface SetupTeamPageOptions {
   readonly agents?: readonly AgentResponse[];
   readonly detailErrorByAgentId?: Readonly<Record<string, string>>;
   readonly featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>;
-  readonly onDeleteAgent?: (agentId: string) => void;
 }
 
 export function setupTeamPage({
@@ -216,9 +215,8 @@ export function setupTeamPage({
   agents = [agentFixture(RESEARCH_AGENT_ID, "Research Agent")],
   detailErrorByAgentId = {},
   featureSwitches,
-  onDeleteAgent,
 }: SetupTeamPageOptions): Promise<void> {
-  let visibleAgents = [...agents];
+  const visibleAgents = [...agents];
   context.mocks.api(agentsMainContract.list, ({ respond }) => {
     return respond(200, visibleAgents);
   });
@@ -237,13 +235,6 @@ export function setupTeamPage({
       : respond(404, {
           error: { code: "NOT_FOUND", message: "Agent not found" },
         });
-  });
-  context.mocks.api(agentsByIdContract.delete, ({ params, respond }) => {
-    visibleAgents = visibleAgents.filter((agent) => {
-      return agent.agentId !== params.id;
-    });
-    onDeleteAgent?.(params.id);
-    return respond(204);
   });
 
   return setupPage({ context, path, featureSwitches });

@@ -1214,7 +1214,7 @@ describe("GET /api/artifacts/catalog", () => {
     180_000,
   );
 
-  it("keeps owned files and catalog identity after deleting the backing agent", async () => {
+  it("keeps owned files and catalog identity after a rejected attempt to delete the backing Agent", async () => {
     const owner = await catalogActor("Artifact catalog deletion owner");
     const uploaded = await uploadFile({
       owner,
@@ -1231,7 +1231,7 @@ describe("GET /api/artifacts/catalog", () => {
     const detail = await chat.getArtifactCatalogEntry(owner.actor, artifactId);
 
     await flushWaitUntilForTest();
-    await bdd.deleteAgent(owner.actor, owner.agentId);
+    await bdd.expectAgentDeleteUnavailable(owner.actor, owner.agentId);
 
     await expect(chat.listArtifactCatalog(owner.actor)).resolves.toStrictEqual(
       catalog,
@@ -1266,7 +1266,7 @@ describe("GET /api/artifacts/catalog", () => {
         contentType: "text/plain",
         objectStorage,
       });
-      await bdd.deleteAgent(owner.actor, owner.agentId);
+      await bdd.expectAgentDeleteUnavailable(owner.actor, owner.agentId);
       const catalog = await chat.listArtifactCatalog(owner.actor);
       const artifactId = catalog.artifacts[0]?.id;
       if (!artifactId) {

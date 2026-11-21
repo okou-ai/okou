@@ -102,7 +102,7 @@ export function discordIngressFailureSql(args: {
       UPDATE ${chatThreads}
       SET last_message_at = GREATEST(${chatThreads.lastMessageAt}, ${event.createdAt.toISOString()}::timestamp)
       WHERE ${touchCondition}
-      RETURNING id, user_id, agent_id, last_message_at
+      RETURNING id, user_id, last_message_at
     ), failure_sort_reserved AS (
       -- A published error requires the authorized touch identity. Its missing
       -- scalar fails the existing user_id NOT NULL constraint, rolling back
@@ -208,7 +208,6 @@ export const findDiscordChatThreadRoute$ = command(
 
 interface CanonicalDiscordChatThreadRouteArgs extends DiscordChatThreadRouteKey {
   readonly orgId: string;
-  readonly agentId: string;
   readonly currentTime: Date;
   readonly ingressId: string;
   readonly claimToken: string;
@@ -274,8 +273,7 @@ function canonicalRouteCreationInput(
   const t = chatThreads;
   const e = chatThreadEvents;
   return sql`, creation_input AS MATERIALIZED (
-    SELECT ${sql.param(args.agentId, t.agentId)}::uuid AS agent_id,
-      ${sql.param(args.initialModel.selectedModel, t.selectedModel)}::text AS selected_model,
+    SELECT ${sql.param(args.initialModel.selectedModel, t.selectedModel)}::text AS selected_model,
       ${sql.param(args.initialModel.serviceTier === "priority" ? "fast" : null, t.codexServiceTier)}::text AS codex_service_tier,
       ${sql.param(explicitModelSettings(defaults.modelSettings), t.modelSettings)}::jsonb AS model_settings,
       ${sql.param(defaults.cloudBrowserEnabled, t.cloudBrowserEnabled)}::boolean AS cloud_browser_enabled,
@@ -312,7 +310,7 @@ function canonicalRouteCreationWrites(): SQL {
       creation_input.cloud_browser_enabled, NULL, creation_input.current_time,
       creation_input.current_time, creation_input.current_time, creation_input.current_time
     FROM inserted_route CROSS JOIN creation_input
-    RETURNING id, user_id, agent_id, title, selected_model, codex_service_tier,
+    RETURNING id, user_id, title, selected_model, codex_service_tier,
       model_settings, cloud_browser_enabled, created_at
   ), reserved AS (
     INSERT INTO ${q} (user_id, org_id, last_seq_id)
