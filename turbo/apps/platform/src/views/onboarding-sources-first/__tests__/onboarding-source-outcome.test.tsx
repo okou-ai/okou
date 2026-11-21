@@ -56,3 +56,34 @@ test("onboarding-source-outcome-001 switching industries replaces the Drive brie
   expect(screen.queryByText("Refill skincare launch")).not.toBeInTheDocument();
   expect(getAction("button", "Continue")).toBeDisabled();
 });
+test("onboarding-source-outcome-003 a phone opens the Drive example while the connection is still required", async () => {
+  context.mocks.browser.matchMedia((query) => {
+    return query === "(width < 640px)";
+  });
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
+  });
+  mockOnboardingConnectorCatalog(context, [
+    onboardingSourceItem({
+      slug: "google-drive",
+      label: "Google Drive",
+      description: "Read shared briefs",
+      hasAccount: false,
+    }),
+  ]);
+  await setupPage({ context, path: "/onboarding" });
+  click(await screen.findByText(/Design & creative|^Design$/));
+  click(await findAction("button", "Continue"));
+  const toggle = await screen.findByText("See an example of what you can get");
+  expect(toggle.closest("details")).not.toHaveAttribute("open");
+  click(toggle);
+  expect(toggle.closest("details")).toHaveAttribute("open");
+  await expect(
+    screen.findByRole("figure", {
+      name: /Creative brief prepared from Google Drive/i,
+    }),
+  ).resolves.toBeVisible();
+  expect(getAction("button", "Continue")).toBeDisabled();
+  expect(screen.getByText("Permissions and privacy")).toBeVisible();
+});

@@ -1,6 +1,6 @@
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { test, expect } from "vitest";
 import { findAction } from "./connector-integrations-test-helpers.ts";
 
@@ -102,17 +102,13 @@ test("markdown-artifacts-006 a bare artifact opens its image while a fenced addr
   const url = prefix + "rain.png",
     example = "https://guide.example.org/how";
   await conversation([url, "", "```text", example, "```"].join("\n"));
-  const code = await waitFor(() => {
-    const block = Array.from(document.querySelectorAll("pre,code")).find(
-      (n) => {
-        return n.textContent?.includes(example);
-      },
-    );
-    if (!block) {
-      throw new Error("Missing fenced example");
-    }
-    return block;
-  });
+  const code = await screen.findByText(
+    (_text, element) => {
+      return element?.textContent === example + "\n";
+    },
+    { selector: "pre code" },
+  );
+  expect(code).toBeVisible();
   expect(code.querySelector("a")).toBeNull();
   const link = await findAction("link", url);
   click(link);
