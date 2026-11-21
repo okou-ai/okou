@@ -117,9 +117,9 @@ describe("X daily resource usage webhook", () => {
 
     const rejected = await accept(
       submit({ ...deleted, runId: survivor.runId }, [observation([freshId])]),
-      [403],
+      [401],
     );
-    expect(rejected.status).toBe(403);
+    expect(rejected.status).toBe(401);
     await accept(submit(survivor, [observation([sharedId, freshId])]), [200]);
   });
 
