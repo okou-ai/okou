@@ -1,15 +1,15 @@
-import base64
-import json
 import os
-import signal
 import sys
 
 
-request = sys.stdin.read()
-os.write(int(os.environ["NODE_CHANNEL_FD"]), (json.dumps(request) + "\n").encode())
+request = sys.stdin.buffer.read()
+# Both the RPC request and Node's IPC frames are single-line JSON.
+os.write(int(os.environ["NODE_CHANNEL_FD"]), request + b"\n")
 if os.environ["SSH_READ_MODE"] == "hang":
+    import signal
+
     signal.pause()
-response = base64.b64decode(os.environ["SSH_READ_RESPONSE"])
+response = os.environb[b"SSH_READ_RESPONSE"] + b"\n"
 sys.stdout.buffer.write(response)
 if os.environ["SSH_READ_MODE"] == "extra":
     sys.stdout.buffer.write(response)
