@@ -26,7 +26,8 @@ def has_public_auth_surface(output):
         return False
     # Workspace screens also show the app name. Require the authentication heading.
     return any(
-        node.get("package") == PACKAGE and node.get("text") == "Welcome to Okou"
+        node.get("package") == PACKAGE
+        and node.get("text") in {"Welcome to Okou", "Continue to Okou"}
         for node in root.iter("node")
     )
 
