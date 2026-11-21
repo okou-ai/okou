@@ -153,4 +153,6 @@
     <string name="realtime_connecting">Connecting to live updates…</string>
     <string name="realtime_unavailable">Live updates unavailable. You can still refresh manually.</string>
     <string name="settings_account">Account</string>
+    <string name="chat_project_expansion_read_failed">Could not load Project expansion on this device.</string>
+    <string name="chat_project_expansion_save_failed">Could not save Project expansion on this device.</string>
 </resources>

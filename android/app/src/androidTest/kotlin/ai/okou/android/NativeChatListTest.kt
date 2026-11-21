@@ -19,6 +19,7 @@ import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.UiScrollable
 import androidx.test.uiautomator.UiSelector
 import androidx.test.uiautomator.Until
+import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -162,6 +163,8 @@ class NativeChatListTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext.applicationContext as TestOkouApplication
         val device = UiDevice.getInstance(instrumentation)
+        val auth = app.authentication as TestAuthentication
+        val previousAuth = auth.state.value
         val previous = app.chatService
         val savedPreferences = app.snapshotApiPreferences()
         val savedCache = ChatCacheSnapshot(app.noBackupFilesDir.resolve("chat-list"), app.chatCache)
@@ -169,6 +172,7 @@ class NativeChatListTest {
         val gate = CountDownLatch(1)
         fixture.beforeResponse = { gate.await() }
         app.chatService = fixture.service
+        auth.state.value = testAuthenticationState(user = "project-list-${UUID.randomUUID()}")
         var scenario: ActivityScenario<MainActivity>? = null
         var chatJob: Job? = null
         val failures = mutableListOf<Throwable>()
@@ -232,6 +236,9 @@ class NativeChatListTest {
             gate.countDown()
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             device.awaitChatList(app)
+            revealText("Research")
+            assertTrue(device.wait(Until.gone(By.text("Project chat")), 10_000))
+            clickText("Research")
             revealText("Project chat")
             scenario.recreate()
             revealText("Project chat")
@@ -351,6 +358,9 @@ class NativeChatListTest {
             text(app.getString(R.string.history_completed))
             click(UiSelector().description(app.getString(R.string.back)))
             revealText("Project chat")
+            revealText("Research")
+            clickText("Research")
+            assertTrue(device.wait(Until.gone(By.text("Project chat")), 10_000))
         } catch (error: Throwable) {
             failures.add(error)
             try {
@@ -368,6 +378,7 @@ class NativeChatListTest {
                     { savedCache.restore() },
                     { app.restoreApiPreferences(savedPreferences) },
                     { app.chatService = previous },
+                    { auth.state.value = previousAuth },
                     { instrumentation.resetInTouchMode() },
                 )) {
                 try {

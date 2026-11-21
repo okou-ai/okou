@@ -8,6 +8,8 @@ import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ComposerJournalStore
+import ai.okou.android.chat.ProjectExpansionModel
+import ai.okou.android.chat.ProjectExpansionStore
 import ai.okou.android.chat.RunControlJournalStore
 import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.chatScopeHash
@@ -54,6 +56,7 @@ data class ReadyWorkspace(
     val organization: Organization,
     val preferences: MemberPreferencesModel,
     val chats: ChatListModel,
+    val projectExpansion: ProjectExpansionModel,
     val instructions: PersonalInstructionsModel,
     val composer: ChatComposerModel,
     val controls: RunControlsModel,
@@ -69,6 +72,7 @@ sealed interface OpeningWorkspace {
         override val identity: WorkspaceIdentity,
         val organization: Organization,
         val chats: ChatListModel,
+        val projectExpansion: ProjectExpansionModel,
     ) : OpeningWorkspace
 }
 
@@ -92,6 +96,7 @@ class SessionModel(
     private val composerJournal: ComposerJournalStore,
     private val runControlJournal: RunControlJournalStore,
     private val appearanceCache: MemberAppearanceCache,
+    private val projectExpansionStore: ProjectExpansionStore,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     updatesRequired: Flow<Boolean> = emptyFlow(),
     private val connectivity: Flow<Boolean> = emptyFlow(),
@@ -251,6 +256,10 @@ class SessionModel(
                     requireCurrent(ticket, snapshot)
                     val store = ViewModelStore()
                     presentation = store
+                    val projectExpansion =
+                        store.workspaceModel {
+                            ProjectExpansionModel(projectExpansionStore, identity)
+                        }
                     val chats =
                         store.workspaceModel {
                             ChatListModel(
@@ -264,7 +273,8 @@ class SessionModel(
                                 connectivity = connectivity,
                             )
                         }
-                    val opened = OpeningWorkspace.Authorized(identity, organization, chats)
+                    val opened =
+                        OpeningWorkspace.Authorized(identity, organization, chats, projectExpansion)
                     val knownMemberships =
                         if (fastAccess == null) memberships
                         else
@@ -412,6 +422,7 @@ class SessionModel(
                         opened.organization,
                         preferences,
                         chats,
+                        opened.projectExpansion,
                         instructions,
                         composer,
                         controls,

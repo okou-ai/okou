@@ -300,6 +300,7 @@ class ChatListRootTest {
         try {
             app.responseGate.countDown()
             awaitListAndNames()
+            setResearchExpanded(true)
             compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Project chat"))
             compose.onNodeWithText("Project chat").performClick()
             compose.onNodeWithTag("conversation").assertExists()
@@ -349,10 +350,9 @@ class ChatListRootTest {
             compose.onNodeWithTag("conversation").assertDoesNotExist()
             compose.onNodeWithTag("chat_list").assertExists()
             compose.onNodeWithText("Project chat").assertExists()
-            compose.onNodeWithText("Research").performClick()
+            setResearchExpanded(false)
             compose.onNodeWithText("Project chat").assertDoesNotExist()
-            compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Research"))
-            compose.onNodeWithText("Research").performClick()
+            setResearchExpanded(true)
             compose.onNodeWithText("Project chat").assertExists()
         } finally {
             gate.countDown()
@@ -456,6 +456,12 @@ class ChatListRootTest {
         compose.onNodeWithContentDescription("Back").performClick()
         awaitListAndNames()
         val unread = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unread")
+        val projectUnreadCount =
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unread 1")
+        compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Research"))
+        compose.onNodeWithText("Research").assert(projectUnreadCount)
+        compose.onNodeWithText("Project chat").assertDoesNotExist()
+        setResearchExpanded(true)
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Project chat"))
         compose.waitUntil(10_000) {
             compose
@@ -464,10 +470,7 @@ class ChatListRootTest {
                 .isNotEmpty()
         }
         compose.onNodeWithText("Project chat").assert(unread)
-        compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Research"))
-        val projectUnreadCount =
-            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Unread 1")
-        compose.onNodeWithText("Research").assert(!projectUnreadCount).performClick()
+        setResearchExpanded(false)
         compose.onNodeWithText("Research").assert(projectUnreadCount)
         compose.onNodeWithText("Project chat").assertDoesNotExist()
         compose.onNodeWithTag("chat_list").performScrollToIndex(0)
@@ -583,6 +586,7 @@ class ChatListRootTest {
         }
         app.responseGate.countDown()
         awaitListAndNames()
+        setResearchExpanded(true)
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Project chat"))
         val target = hasText("Project chat")
         val unreadStatus =
@@ -712,14 +716,14 @@ class ChatListRootTest {
                 .isNotEmpty()
         }
         compose.onNodeWithText("Unread").performClick()
+        setResearchExpanded(true)
         list.performScrollToNode(hasText("Project chat"))
         compose
             .onNodeWithText("Project chat")
             .assert(
                 SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Active, Unread")
             )
-        list.performScrollToNode(hasText("Research"))
-        compose.onNodeWithText("Research").performClick()
+        setResearchExpanded(false)
         compose.waitUntil(10_000) {
             compose
                 .onAllNodes(hasText("Research").and(projectUnreadCount))
@@ -762,8 +766,7 @@ class ChatListRootTest {
         filter.performClick()
         compose.onNodeWithText("Unread").assertIsSelected()
         compose.onNodeWithText("Archived").performClick()
-        list.performScrollToNode(hasText("Research"))
-        compose.onNodeWithText("Research").performClick()
+        setResearchExpanded(true)
         list.performScrollToNode(hasText("Project chat"))
         compose
             .onNodeWithText("Project chat")
@@ -836,6 +839,7 @@ class ChatListRootTest {
         }
         app.responseGate.countDown()
         awaitListAndNames()
+        setResearchExpanded(true)
         val target = hasText("Project chat")
         val row = compose.onNode(target)
         compose.onNodeWithTag("chat_list").performScrollToNode(target)
@@ -1198,6 +1202,7 @@ class ChatListRootTest {
         }
         app.responseGate.countDown()
         awaitListAndNames()
+        setResearchExpanded(true)
         val first = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
         val target = compose.onNodeWithTag("chat_$neighbor")
         fun moveDown() {
@@ -1250,6 +1255,20 @@ class ChatListRootTest {
                 .toSet()
                 .size,
         )
+    }
+
+    private fun setResearchExpanded(expanded: Boolean) {
+        val project = hasText("Research")
+        val before = if (expanded) SemanticsActions.Expand else SemanticsActions.Collapse
+        val after = if (expanded) SemanticsActions.Collapse else SemanticsActions.Expand
+        compose.onNodeWithTag("chat_list").performScrollToNode(project)
+        compose.onNode(project.and(SemanticsMatcher.keyIsDefined(before))).performClick()
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodes(project.and(SemanticsMatcher.keyIsDefined(after)))
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
     }
 
     private fun awaitRowActionSettled(id: String) {
@@ -1345,6 +1364,7 @@ class ChatListRootTest {
         compose.onNodeWithText("Try again").performClick()
         awaitListAndNames()
         compose.onNodeWithText(loadFailure).assertDoesNotExist()
+        setResearchExpanded(true)
         compose.onNodeWithText("Project chat").assertIsDisplayed()
     }
 

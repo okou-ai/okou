@@ -152,4 +152,6 @@
     <string name="realtime_connecting">Connexion aux mises à jour en direct…</string>
     <string name="realtime_unavailable">Les mises à jour en direct sont indisponibles. Vous pouvez actualiser manuellement.</string>
     <string name="settings_account">Compte</string>
+    <string name="chat_project_expansion_read_failed">Impossible de charger l’état de développement des projets sur cet appareil.</string>
+    <string name="chat_project_expansion_save_failed">Impossible d’enregistrer l’état de développement des projets sur cet appareil.</string>
 </resources>

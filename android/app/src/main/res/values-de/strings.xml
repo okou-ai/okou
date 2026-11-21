@@ -152,4 +152,6 @@
     <string name="realtime_connecting">Live-Aktualisierungen werden verbunden…</string>
     <string name="realtime_unavailable">Live-Aktualisierungen sind nicht verfügbar. Du kannst weiterhin manuell aktualisieren.</string>
     <string name="settings_account">Konto</string>
+    <string name="chat_project_expansion_read_failed">Die Anzeigeeinstellungen für Projekte konnten auf diesem Gerät nicht geladen werden.</string>
+    <string name="chat_project_expansion_save_failed">Die Anzeigeeinstellungen für Projekte konnten auf diesem Gerät nicht gespeichert werden.</string>
 </resources>

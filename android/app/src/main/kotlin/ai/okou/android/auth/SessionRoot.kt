@@ -97,6 +97,7 @@ internal fun SessionRoot(
                     ready?.chats ?: opened?.chats,
                     ready?.composer,
                     ready?.controls,
+                    projectExpansion = ready?.projectExpansion ?: opened?.projectExpansion,
                     settingsContent = { destination, openInstructions ->
                         if (ready != null) {
                             when (destination) {

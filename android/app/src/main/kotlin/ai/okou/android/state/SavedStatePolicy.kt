@@ -7,7 +7,6 @@ import android.os.Parcel
 internal object SavedStatePolicy {
     const val ACTIVITY_BYTES = 50_000
     const val CONVERSATION_STATES = 32
-    const val COLLAPSED_PROJECTS = 64
 
     fun verify(state: Bundle) {
         val parcel = Parcel.obtain()

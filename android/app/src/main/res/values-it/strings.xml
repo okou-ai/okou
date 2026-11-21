@@ -152,4 +152,6 @@
     <string name="realtime_connecting">Connessione agli aggiornamenti in tempo reale…</string>
     <string name="realtime_unavailable">Gli aggiornamenti in tempo reale non sono disponibili. Puoi aggiornare manualmente.</string>
     <string name="settings_account">Account</string>
+    <string name="chat_project_expansion_read_failed">Impossibile caricare lo stato di espansione dei progetti su questo dispositivo.</string>
+    <string name="chat_project_expansion_save_failed">Impossibile salvare lo stato di espansione dei progetti su questo dispositivo.</string>
 </resources>
