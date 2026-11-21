@@ -46,15 +46,9 @@ describe("okou workflow create command", () => {
   let workflowDir: string;
 
   beforeEach(() => {
-    server.use(
-      http.get("*/api/agents", () => {
-        return HttpResponse.json([{ agentId: AGENT_ID, isDefaultAgent: true }]);
-      }),
-    );
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", capturedRunToken(["agent:write"]));
-    vi.stubEnv("OKOU_AGENT_ID", "");
     vi.stubEnv("OKOU_CHAT_THREAD_ID", "");
 
     workflowDir = join(tmpdir(), `test-workflow-${Date.now()}`);
@@ -101,7 +95,7 @@ describe("okou workflow create command", () => {
         "A test workflow",
       ]);
 
-      expect(capturedBody?.agentId).toBe(AGENT_ID);
+      expect(capturedBody).not.toHaveProperty("agentId");
       expect(capturedBody?.name).toBe("my-workflow");
       expect(capturedBody?.instruction).toBe("Summarize the inbox");
       expect(capturedBody?.displayName).toBe("My Workflow");
@@ -123,7 +117,6 @@ describe("okou workflow create command", () => {
     });
 
     it("should forward OKOU_CHAT_THREAD_ID when creating from a chat thread", async () => {
-      vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
       vi.stubEnv("OKOU_CHAT_THREAD_ID", CHAT_THREAD_ID);
 
       let capturedBody: Record<string, unknown> | undefined;
@@ -145,33 +138,12 @@ describe("okou workflow create command", () => {
         "Do things",
       ]);
 
-      expect(capturedBody?.agentId).toBe(AGENT_ID);
+      expect(capturedBody).not.toHaveProperty("agentId");
       expect(capturedBody?.chatThreadId).toBe(CHAT_THREAD_ID);
     });
   });
 
   describe("error handling", () => {
-    it("should fail when the workspace has no executor", async () => {
-      server.use(
-        http.get("*/api/agents", () => {
-          return HttpResponse.json([]);
-        }),
-      );
-      await expect(async () => {
-        await createCommand.parseAsync([
-          "node",
-          "cli",
-          "my-workflow",
-          "--instruction",
-          "Do things",
-        ]);
-      }).rejects.toThrow("process.exit called");
-
-      expect(mockConsoleError).toHaveBeenCalledWith(
-        expect.stringContaining("no available Okou executor"),
-      );
-    });
-
     it("should reject SKILL.md in supplementary directory", async () => {
       writeFileSync(join(workflowDir, "SKILL.md"), "# nope");
 

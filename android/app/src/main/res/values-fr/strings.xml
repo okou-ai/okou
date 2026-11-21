@@ -159,4 +159,5 @@
     <string name="updates_waiting_to_check">Vérification en attente</string>
     <string name="updates_waiting_to_download">Téléchargement en attente</string>
     <string name="instructions_placeholder">Que souhaitez-vous qu’Okou garde à l’esprit ?</string>
+    <string name="instructions_save_when_online">Connectez-vous pour enregistrer les modifications.</string>
 </resources>

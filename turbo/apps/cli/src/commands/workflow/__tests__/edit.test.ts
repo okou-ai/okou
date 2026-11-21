@@ -72,11 +72,6 @@ describe("okou workflow edit command", () => {
   let workflowDir: string;
 
   beforeEach(() => {
-    server.use(
-      http.get("*/api/agents", () => {
-        return HttpResponse.json([{ agentId: AGENT_ID, isDefaultAgent: true }]);
-      }),
-    );
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", capturedRunToken(["agent:write"]));

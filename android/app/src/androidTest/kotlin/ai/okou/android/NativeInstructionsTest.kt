@@ -101,24 +101,26 @@ class NativeInstructionsTest {
                     )
                     .click()
             }
-            fun editor() =
+            fun editor(requireFocus: Boolean = false) =
                 checkNotNull(
                     device.wait(
-                        Until.findObject(By.pkg(app.packageName).clazz("android.widget.EditText")),
+                        Until.findObject(
+                            By.pkg(app.packageName).clazz("android.widget.EditText").apply {
+                                if (requireFocus) focused(true)
+                            }
+                        ),
                         10_000,
                     )
                 )
+            fun imeVisible() =
+                instrumentation.uiAutomation.windows.any {
+                    it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD
+                }
             fun awaitIme(visible: Boolean) {
                 assertTrue(
                     device.wait(
                         object : Condition<UiDevice, Boolean> {
-                            override fun apply(unused: UiDevice): Boolean {
-                                val actual =
-                                    instrumentation.uiAutomation.windows.any {
-                                        it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD
-                                    }
-                                return actual == visible
-                            }
+                            override fun apply(unused: UiDevice): Boolean = imeVisible() == visible
                         },
                         10_000,
                     ) == true
@@ -161,7 +163,17 @@ class NativeInstructionsTest {
             awaitIme(false)
             reveal(app.getString(R.string.instructions_title))
             scenario.recreate()
-            assertTrue(editor().text.contains("Native **instructions** 👋"))
+            assertTrue(editor(requireFocus = true).text.contains("Native **instructions** 👋"))
+            device.waitForIdle()
+            assertFalse("Recreation reopened the dismissed keyboard", imeVisible())
+
+            editor().click()
+            awaitIme(true)
+            scenario.recreate()
+            assertTrue(editor(requireFocus = true).text.contains("Native **instructions** 👋"))
+            awaitIme(true)
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            awaitIme(false)
             click(R.string.instructions_save)
             assertTrue(
                 device.wait(

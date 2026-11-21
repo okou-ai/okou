@@ -89,6 +89,7 @@ export const getStartedContract = c.router({
       200: getStartedStatusSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
+      404: apiErrorSchema,
       503: apiErrorSchema,
     },
     summary: "Read Get started rewards and redemption eligibility",

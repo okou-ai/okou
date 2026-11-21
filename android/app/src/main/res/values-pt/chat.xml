@@ -3,6 +3,10 @@
     <string name="chat_undo_unarchived">Conversa desarquivada</string>
     <string name="chat_undo_marked_read">Conversa marcada como lida</string>
     <string name="chat_undo">Desfazer</string>
+    <string name="chat_undo_offline">%1$s\nDesfaça a alteração quando estiver online novamente.</string>
+    <string name="chat_undo_checking">Verificando se a alteração foi desfeita…</string>
+    <string name="chat_undo_failed">Não foi possível desfazer a alteração.</string>
+    <string name="chat_undo_unconfirmed">Não foi possível confirmar se a alteração foi desfeita.</string>
     <string name="chat_feedback_dismiss">Fechar</string>
     <string name="chat_list_offline">Sem conexão</string>
     <string name="chat_list_refresh_failed">Não foi possível atualizar a lista de conversas</string>

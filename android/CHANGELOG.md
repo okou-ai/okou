@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.36.0](https://github.com/okou-ai/okou/compare/android-v0.35.0...android-v0.36.0) (2026-11-21)
+
+
+### Features
+
+* **android:** render markdown while editing personal instructions ([#49812](https://github.com/okou-ai/okou/issues/49812)) ([cb9be3d](https://github.com/okou-ai/okou/commit/cb9be3d9d81b7abeeed5bcbc79aed452babad37c))
+
+
+### Bug Fixes
+
+* **android:** reconcile late project rename receipts ([#49834](https://github.com/okou-ai/okou/issues/49834)) ([9dc177f](https://github.com/okou-ai/okou/commit/9dc177f8d225420baf21aa15c75871a0febd74b9))
+
+
+### Performance Improvements
+
+* **android:** reuse confirmed conversation transcripts on refresh ([#49840](https://github.com/okou-ai/okou/issues/49840)) ([bb23642](https://github.com/okou-ai/okou/commit/bb236428139a326d4587635fc4bcf789833dc008))
+
 ## [0.35.0](https://github.com/okou-ai/okou/compare/android-v0.34.2...android-v0.35.0) (2026-11-21)
 
 

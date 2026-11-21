@@ -45,7 +45,7 @@ const getStartedStatus$ = computed(
     await get(runtimeAuthenticatedIdentity$);
     const response = await accept(
       get(apiClient$)(getStartedContract).status(),
-      [200, 403],
+      [200, 403, 404],
       undefined,
       { showErrorToast: false },
     );

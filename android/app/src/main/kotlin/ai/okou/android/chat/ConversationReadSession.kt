@@ -53,9 +53,11 @@ internal constructor(
         markDisplayedRead()
     }
 
-    internal fun stopAutomaticRead(): Job? {
+    internal val pendingAutomaticRead: Job?
+        get() = request
+
+    internal fun stopAutomaticRead() {
         automaticRead = false
-        return request
     }
 
     private fun markDisplayedRead() {

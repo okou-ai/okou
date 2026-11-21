@@ -315,11 +315,6 @@ describe("okou workflow automation commands", () => {
   const tempDirs: string[] = [];
 
   beforeEach(() => {
-    server.use(
-      http.get("*/api/agents", () => {
-        return HttpResponse.json([{ agentId: AGENT_ID, isDefaultAgent: true }]);
-      }),
-    );
     vi.clearAllMocks();
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
@@ -519,7 +514,6 @@ describe("okou workflow automation commands", () => {
     });
 
     it("should resolve a workflow name in the workspace", async () => {
-      vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
       const workflows = mockWorkflowList();
       const captured = captureCreateAutomation(loopAutomation);
 
@@ -533,7 +527,7 @@ describe("okou workflow automation commands", () => {
         "15m",
       ]);
 
-      expect(workflows.capturedUrl()).toContain(`agentId=${AGENT_ID}`);
+      expect(workflows.capturedUrl()).toContain("scope=workspace");
       expect(captured.workflowId).toBe(WORKFLOW_ID);
       expect(captured.body).toEqual({
         schedule: { type: "loop", intervalSeconds: 900 },

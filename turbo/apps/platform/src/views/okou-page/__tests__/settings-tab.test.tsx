@@ -747,10 +747,14 @@ async function prepareWorkflowCopyDeletion(failSecondCopy: boolean) {
         });
       }
       const source = params.workflowId === first.id ? first : second;
+      const { toAgentId } = body;
+      if (!toAgentId) {
+        throw new Error("Expected the selected workflow destination");
+      }
       if (
         workflows.some((workflow) => {
           return (
-            workflow.agentId === body.toAgentId && workflow.name === source.name
+            workflow.agentId === toAgentId && workflow.name === source.name
           );
         })
       ) {
@@ -764,7 +768,7 @@ async function prepareWorkflowCopyDeletion(failSecondCopy: boolean) {
       const copied: WorkflowSummary = {
         ...source,
         id: crypto.randomUUID(),
-        agentId: body.toAgentId,
+        agentId: toAgentId,
         agentName: "nova",
         agentDisplayName: "Nova",
       };

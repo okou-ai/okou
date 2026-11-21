@@ -1,5 +1,4 @@
 import { stripVTControlCharacters } from "node:util";
-import { getOkouAgentId } from "../../lib/okou-env";
 import {
   finalizeActionUrl,
   printCallbackTurnInstruction,
@@ -229,7 +228,6 @@ Examples:
               finalizeActionUrl(
                 new URL("https://app.okou.ai"),
                 options.callbackPrompt,
-                getOkouAgentId(),
               );
               const requested = await requestDesktopShellAccess(
                 options.reason,
@@ -239,7 +237,6 @@ Examples:
                 authorizationUrl: finalizeActionUrl(
                   new URL(requested.authorizationUrl),
                   options.callbackPrompt,
-                  getOkouAgentId(),
                 ),
               };
               if (options.json) {

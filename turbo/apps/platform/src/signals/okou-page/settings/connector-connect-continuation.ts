@@ -283,12 +283,7 @@ const continueConnectorConnectPlan$ = command(
         return;
       }
       case "directed-connect": {
-        await set(
-          completeDirectedConnectorAction$,
-          plan.agentId,
-          plan.callback,
-          signal,
-        );
+        await set(completeDirectedConnectorAction$, plan.callback, signal);
         return;
       }
       case "composer": {
@@ -661,12 +656,7 @@ const continueCustomConnectorSucceeded$ = command(
       }
       case "directed-connect": {
         set(reloadDirectedConnectAccounts$, signal);
-        await set(
-          completeDirectedConnectorAction$,
-          plan.agentId,
-          plan.callback,
-          signal,
-        );
+        await set(completeDirectedConnectorAction$, plan.callback, signal);
         return;
       }
       case "composer": {

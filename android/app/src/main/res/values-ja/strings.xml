@@ -159,4 +159,5 @@
     <string name="updates_waiting_to_check">確認待ち</string>
     <string name="updates_waiting_to_download">ダウンロード待ち</string>
     <string name="instructions_placeholder">Okou に覚えておいてほしいことはありますか？</string>
+    <string name="instructions_save_when_online">接続すると変更を保存できます。</string>
 </resources>

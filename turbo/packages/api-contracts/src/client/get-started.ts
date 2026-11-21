@@ -14,6 +14,7 @@ export const getStartedContract: ClientDescriptor<
       200: true,
       401: true,
       403: true,
+      404: true,
       503: true,
     },
   },

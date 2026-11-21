@@ -3,6 +3,10 @@
     <string name="chat_undo_unarchived">Chat rimossa dall’archivio</string>
     <string name="chat_undo_marked_read">Chat contrassegnata come letta</string>
     <string name="chat_undo">Annulla</string>
+    <string name="chat_undo_offline">%1$s\nPotrai annullare la modifica quando tornerai online.</string>
+    <string name="chat_undo_checking">Verifica dell’annullamento…</string>
+    <string name="chat_undo_failed">Impossibile annullare la modifica.</string>
+    <string name="chat_undo_unconfirmed">Impossibile confermare l’annullamento.</string>
     <string name="chat_feedback_dismiss">Chiudi</string>
     <string name="chat_list_offline">Offline</string>
     <string name="chat_list_refresh_failed">Aggiornamento della lista chat non riuscito</string>
