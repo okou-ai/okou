@@ -148,7 +148,6 @@ function copiedThreadClauses(
     },
     {
       gate: sql`${exists(sql`(SELECT 1 FROM copied_binding)`)} AND ${beforeEvent}`,
-      agentId: sql`${args.targetAgentId}::uuid`,
     },
   );
   return {

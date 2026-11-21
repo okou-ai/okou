@@ -61,7 +61,6 @@ type GoogleCalendarChangeType = "created" | "updated" | "cancelled";
 
 interface GoogleCalendarEventAutomationRow {
   readonly automation: AutomationRow;
-  readonly agentId: string;
   readonly workflowName: string;
   readonly chatThreadId: string;
 }
@@ -606,7 +605,6 @@ const loadGoogleCalendarEventAutomations$ = command(
             orgId: row.automation.orgId,
             userId: row.automation.ownerUserId,
             workflowId: row.automation.workflowId,
-            agentId: row.agentId,
             workflowTitle: row.workflowDisplayName ?? row.workflowName,
             currentTime,
           },
@@ -615,7 +613,6 @@ const loadGoogleCalendarEventAutomations$ = command(
       signal.throwIfAborted();
       automations.push({
         automation: row.automation,
-        agentId: row.agentId,
         workflowName: row.workflowName,
         chatThreadId,
       });
@@ -704,7 +701,6 @@ const startGoogleCalendarAutomationRun$ = command(
         runWorkflowAutomationNow$,
         {
           automation: args.automation.automation,
-          agentId: args.automation.agentId,
           chatThreadId: args.automation.chatThreadId,
           automationContext: runInput.context,
           connectorSourceId: args.state.connectorId,
