@@ -210,7 +210,7 @@ class NativeChatListTest {
                             }
                         },
                         10_000,
-                    )
+                    ),
                 )
             }
             device.awaitChatList(app)
