@@ -13,6 +13,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1162.2](https://github.com/okou-ai/okou/compare/app-v0.1162.1...app-v0.1162.2) (2026-11-21)
+
+
+### Bug Fixes
+
+* return 404 for unconfigured get started rewards ([#49832](https://github.com/okou-ai/okou/issues/49832)) ([b8b046f](https://github.com/okou-ai/okou/commit/b8b046f5daf43e740a8ed051e59ca7738ed327ad))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.1
+    * @okouai/core bumped to 8.858.6
+    * @okouai/ui bumped to 1.21.82
+
 ## [0.1162.1](https://github.com/okou-ai/okou/compare/app-v0.1162.0...app-v0.1162.1) (2026-11-21)
 
 
