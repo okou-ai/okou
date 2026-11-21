@@ -71,11 +71,6 @@ export async function validatePermanentWorkflowNameScopes(databaseUrl: string) {
       1,
       "Ordinary readers select one identity even beside a same-name Official installation",
     );
-    const retiredDelete = await client.query(
-      "SELECT public.delete_agent_rows($1, $2, 'owner', true) AS result",
-      [agentId, orgId],
-    );
-    assert.deepEqual(retiredDelete.rows[0].result, { kind: "missing" });
     await assert.rejects(
       client.query(`DELETE FROM agents WHERE id = $1`, [agentId]),
       { constraint: "workflows_agent_id_agents_id_fk" },

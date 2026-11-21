@@ -189,7 +189,6 @@ export const indicatorsSchema = object({
   threads: record(uuid(), indicatorSchema),
   /** Latest unread terminal marker. With includeActiveUnread, threads can also be active. */
   unreadAt: record(uuid(), iso.datetime()),
-  agents: record(uuid(), indicatorSchema).optional(),
 });
 
 export const chatThreadEventIdSchema = uuid();
