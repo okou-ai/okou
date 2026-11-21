@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
 import { orgCustomConnectorSkillPublications } from "@okouai/db/schema/org-custom-connector-skill-publication";
 import type { PreparedCustomConnectorSkill } from "./custom-connector-skill-bundle.service";
 
@@ -23,14 +23,11 @@ export type CustomConnectorSkillBundleRow = Pick<
   keyof ReturnType<typeof customConnectorSkillBundleSelection>
 >;
 
-/** Keep both source IDs in sync until the native publication migration has shipped. */
 export function customConnectorSkillBundleValues(
   skill: PreparedCustomConnectorSkill | null,
 ) {
-  const sourceVersionId = skill?.sourceVersionId ?? null;
   return {
     skillContentBundle: skill?.contentBundle ?? null,
-    skillContentBundleSourceVersionId: sourceVersionId,
-    skillStorageVersionId: sourceVersionId,
+    skillContentBundleSourceVersionId: skill?.sourceVersionId ?? null,
   };
 }
