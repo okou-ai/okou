@@ -3,6 +3,10 @@
     <string name="chat_undo_unarchived">Discussion désarchivée</string>
     <string name="chat_undo_marked_read">Discussion marquée comme lue</string>
     <string name="chat_undo">Annuler</string>
+    <string name="chat_undo_offline">%1$s\nVous pourrez annuler la modification une fois la connexion rétablie.</string>
+    <string name="chat_undo_checking">Vérification de l’annulation…</string>
+    <string name="chat_undo_failed">Impossible d’annuler la modification.</string>
+    <string name="chat_undo_unconfirmed">Impossible de confirmer l’annulation.</string>
     <string name="chat_feedback_dismiss">Fermer</string>
     <string name="chat_list_offline">Hors ligne</string>
     <string name="chat_list_refresh_failed">Échec de l’actualisation de la liste des chats</string>
