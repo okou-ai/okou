@@ -28,16 +28,12 @@ const mcpThreadEventSchema = discriminatedUnion("kind", [
     .omit({
       id: true,
       chatThreadId: true,
-      agentId: true,
-      reassignedAgentId: true,
     })
     .extend(mcpThreadReferences),
   projectThreadEvent
     .omit({
       id: true,
       chatThreadId: true,
-      agentId: true,
-      reassignedAgentId: true,
     })
     .extend(mcpThreadReferences),
 ]);
@@ -57,7 +53,7 @@ const mcpChatEventRowSchema = discriminatedUnion("eventType", [
 ]);
 
 export const mcpChatThreadSchema = chatThreadSnapshotProjectionSchema
-  .omit({ id: true, agentId: true })
+  .omit({ id: true })
   .extend({ threadId: mcpThreadIdSchema });
 
 const mcpThreadSnapshotSchema = object({

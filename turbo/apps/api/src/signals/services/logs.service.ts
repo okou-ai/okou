@@ -118,7 +118,7 @@ function toLogsFilters(
       return triggerSourceSchema.safeParse(s).success;
     });
 
-  return { statuses, sources, agents: [] };
+  return { statuses, sources };
 }
 
 export function logsList(
@@ -219,8 +219,6 @@ export function logsList(
         return {
           id: run.id,
           sessionId: run.cliAgentSessionId ?? null,
-          agentId: null,
-          displayName: null,
           framework: run.launchSnapshot?.framework ?? null,
           triggerSource: normalizeTriggerSource(run.triggerSource),
           status: run.status as LogStatus,
@@ -299,8 +297,6 @@ export function logDetail(
     return {
       id: run.id,
       sessionId: run.frameworkSessionId,
-      agentId: null,
-      displayName: null,
       framework,
       modelProvider: isBuiltInModelProviderType(modelProvider)
         ? "built-in"

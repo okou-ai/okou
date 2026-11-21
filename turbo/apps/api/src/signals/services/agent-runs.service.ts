@@ -170,8 +170,6 @@ function runningTaskItem(
   const isOwner = run.runUserId === userId;
   return {
     runId: isOwner ? run.id : null,
-    agentName: "Okou",
-    agentDisplayName: null,
     userEmail: emails.get(run.runUserId) ?? "unknown",
     startedAt: run.startedAt?.toISOString() ?? null,
     isOwner,

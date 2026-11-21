@@ -103,7 +103,6 @@ export const mcpCancelRunOutputSchema = runsCancelContract.cancel.responses[200]
   .extend({ runId: mcpRunIdSchema });
 
 export const mcpGetChatIndicatorsOutputSchema = indicatorsSchema
-  .omit({ agents: true })
   .extend({
     threads: record(
       mcpThreadIdSchema,

@@ -507,7 +507,7 @@ export function chatIndicators(
       }
       threads[row.threadId] = "unread";
     }
-    return { agents: {}, threads, unreadAt };
+    return { threads, unreadAt };
   });
 }
 

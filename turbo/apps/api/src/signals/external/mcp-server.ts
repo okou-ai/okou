@@ -480,8 +480,6 @@ async function getThreadSnapshot(
       ({
         id,
         chatThreadId,
-        agentId: _agentId,
-        reassignedAgentId: _reassignedAgentId,
         ...event
       }) => {
         return { ...event, eventId: id, threadId: chatThreadId };
@@ -639,7 +637,6 @@ function registerProjectTools(
           projectsContract.threads.responses[200].parse(await response.json());
         return toolBody({
           nextAfter,
-          threads: threads.map(({ id, agentId: _agentId, ...thread }) => {
             return { ...thread, threadId: id };
           }),
         });

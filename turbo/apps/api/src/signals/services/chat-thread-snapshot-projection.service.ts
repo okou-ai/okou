@@ -4,7 +4,6 @@ import { chatThreadSnapshotProjectionSchema } from "@okouai/api-contracts/contra
 import { modelSettingsSchema } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { and, desc, eq, lt, sql, type SQLWrapper } from "drizzle-orm";
 import {
-  legacyThreadAgentId,
   chatThreadOrganizationPredicate,
 } from "./chat-thread-organization.service";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -42,7 +41,6 @@ export const loadChatThreadSnapshotProjection$ = command(
       const page = await db
         .select({
           id: chatThreads.id,
-          agentId: legacyThreadAgentId(sql`NULL::uuid`, chatThreads.orgId),
           projectId: chatThreads.projectId,
           title: chatThreads.title,
           lastMessageAt: chatThreads.lastMessageAt,
@@ -83,7 +81,6 @@ export const loadChatThreadSnapshotProjection$ = command(
         threads.push(
           chatThreadSnapshotProjectionSchema.parse({
             id: thread.id,
-            ...(thread.agentId ? { agentId: thread.agentId } : {}),
             projectId: thread.projectId,
             title: thread.title,
             sortAt: thread.sortAt,
