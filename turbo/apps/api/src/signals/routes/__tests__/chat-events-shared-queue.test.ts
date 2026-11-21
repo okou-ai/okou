@@ -415,7 +415,6 @@ describe("CHAT-02: shared user message queue", () => {
       kind: "agent",
       runId: source.runId,
       threadId: source.threadId,
-      agentId,
       titleSnapshot: "New thread",
       href: `/chats/${source.threadId}#run-${source.runId}`,
     });
@@ -524,7 +523,7 @@ describe("CHAT-02: shared user message queue", () => {
     expect(firstTargetSystemPrompt).toContain(
       `SOURCE_THREAD_ID: ${source.threadId}`,
     );
-    expect(firstTargetSystemPrompt).toContain(`SOURCE_AGENT_ID: ${agentId}`);
+    expect(firstTargetSystemPrompt).not.toContain("SOURCE_AGENT_ID:");
     expect(firstTargetSystemPrompt).toContain(
       "SOURCE_THREAD_TITLE: New thread",
     );
@@ -563,7 +562,6 @@ describe("CHAT-02: shared user message queue", () => {
             kind: "agent",
             runId: source.runId,
             threadId: source.threadId,
-            agentId,
             titleSnapshot: "New thread",
             href: `/chats/${source.threadId}#run-${source.runId}`,
           },
@@ -616,7 +614,6 @@ describe("CHAT-02: shared user message queue", () => {
       kind: "agent",
       runId: source.runId,
       threadId: source.threadId,
-      agentId,
       titleSnapshot: "Delegation source",
       href: `/chats/${source.threadId}#run-${source.runId}`,
     });
@@ -655,7 +652,6 @@ describe("CHAT-02: shared user message queue", () => {
       kind: "agent",
       runId: source.runId,
       threadId: source.threadId,
-      agentId,
       titleSnapshot: "New thread",
       href: `/chats/${source.threadId}#run-${source.runId}`,
     });
