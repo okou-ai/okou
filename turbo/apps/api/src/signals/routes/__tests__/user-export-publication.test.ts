@@ -149,7 +149,7 @@ test("exports PATCH-created drafts with owned thread timestamps and absent draft
   const peer = actor(owner.orgId);
   const app = setupApp({ context, routes });
   const fixture = initialize(app, [owner, peer]);
-  const agentId = await ownedAgent(fixture, owner);
+  await ownedAgent(fixture, owner);
   const threads = [];
   for (const title of ["Saved draft", "No draft", "Cleared draft"]) {
     threads.push(

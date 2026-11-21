@@ -318,11 +318,10 @@ export function createWorkflowsBddApi(context: TestContext) {
      */
     async startEventAutomationRun(
       actor: ApiTestUser,
-      agentId: string,
+      _legacyAgentId: string,
       chatThreadId?: string,
     ): Promise<{ readonly runId: string; readonly threadId: string }> {
       const workflowId = await api.createWorkflow(actor, {
-        agentId,
         name: `event-${randomUUID().slice(0, 8)}`,
         chatThreadId,
       });

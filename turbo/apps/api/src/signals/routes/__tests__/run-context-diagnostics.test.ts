@@ -93,7 +93,8 @@ test.each(["data router", "Preview"])(
     const f = await diagnosticFixture();
     // This service credential stays at the API. Give it the same value as an
     // admitted variable to exercise masking without a Runner secret-value index.
-    const knownSecret = f.agentId;
+    const knownSecret = "https://diagnostic.example.test";
+    mockEnv("APP_URL", knownSecret);
     const secretName =
       source === "data router"
         ? "OKOU_DATA_TOKEN"
@@ -114,13 +115,15 @@ test.each(["data router", "Preview"])(
     expect(response.body).toMatchObject({
       prompt: execution.prompt,
       appendSystemPrompt: execution.appendSystemPrompt,
-      vars: { OKOU_AGENT_ID: "***" },
+      environment: { OKOU_APP_URL: "***" },
       secretNames: expect.arrayContaining(["OKOU_TOKEN", secretName]),
     });
-    expect(execution.vars).toMatchObject({
-      OKOU_AGENT_ID: f.agentId,
+    expect(execution.platformEnvironment).toMatchObject({
+      OKOU_APP_URL: knownSecret,
     });
-    expect(JSON.stringify(response.body.vars)).not.toContain(knownSecret);
+    expect(JSON.stringify(response.body.environment)).not.toContain(
+      knownSecret,
+    );
     expect(JSON.stringify(response.body)).not.toContain(
       execution.platformEnvironment.OKOU_TOKEN,
     );
@@ -147,7 +150,7 @@ test("reads captured diagnostics through uppercase Run UUID paths", async () => 
   ).toMatchObject({
     prompt: "Business prompt retained independently of diagnostics",
     appendSystemPrompt,
-    vars: { OKOU_AGENT_ID: f.agentId },
+    vars: {},
   });
 });
 

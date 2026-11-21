@@ -574,7 +574,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     expectApiError(noOrg.body);
     expect(noOrg.body.error.code).toBe("UNAUTHORIZED");
 
-    expect(await allThreadEvents(outsider)).toStrictEqual([]);
+    await expect(allThreadEvents(outsider)).resolves.toStrictEqual([]);
   });
 
   it("returns chat thread snapshot and lifecycle events with cursor expiry", async () => {
