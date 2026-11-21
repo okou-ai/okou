@@ -50,6 +50,7 @@ import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -605,8 +606,9 @@ class OkouAppTest {
         )
         // The fixture rejects thread creation, leaving the original command available to retry.
         send.performClick()
-        val retry = compose.onNodeWithText("Retry this same message")
-        retry.performScrollTo().assertIsDisplayed().assertIsEnabled()
+        val retry = hasText("Retry this same message") and isEnabled()
+        compose.waitUntilExactlyOneExists(retry, 10_000)
+        compose.onNode(retry).performScrollTo().assertIsDisplayed().assertIsEnabled()
     }
 
     @Test

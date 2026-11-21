@@ -151,14 +151,15 @@ The reader streams gzip NDJSON snapshots and follows canonical paired-cursor raw
 rows, including valid zero cold start, missing snapshot fallback, gap-tolerant
 sequences, an extra cold confirmation page and expired-cursor rebuild. Malformed
 or truncated data never publishes a partial checkpoint. Projection preserves
-revocation/rejection and queued/running/stopped/failure facts. CommonMark 0.24.0
-renders selectable native text/code; references and unsupported structured parts
+revocation/rejection and queued/running/stopped/failure facts. CommonMark
+renders selectable native text and code with horizontally scrolling tables.
+References and unsupported structured parts
 remain explicit with their original JSON. HTML remains literal text, and reading
 does not automatically download attachments or open links. Interactive viewers
 remain later work.
 
-An authorized, resumed, visible conversation marks read only after successful
-network confirmation and display. This calls the existing server mark-read POST
+An authorized, resumed conversation marks read after the latest confirmed content
+is visible at the reading edge. This calls the existing server mark-read POST
 and refreshes independent indicators; cached display, hidden navigation and held
 requests do not mark read. Local caches never establish server freshness.
 The workspace retains synchronization and confirmed content. Each visible visit
@@ -168,6 +169,9 @@ ends that session; reopening creates a fresh one even when event rows are unchan
 Display acknowledgments identify a captured network confirmation, not whatever
 state is newest when an effect runs. The existing server API selects its current
 run-finish watermark; it does not accept a displayed event cursor.
+An older reading position is stored as a message identifier and viewport offset
+for the local account, workspace and conversation. Returning to the latest
+content clears that anchor.
 
 ## Prerequisites and Setup
 

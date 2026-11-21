@@ -129,14 +129,20 @@ class NativeRealtimeTest {
                 checkNotNull(device.wait(Until.findObject(label(value)), 10_000))
             fun reveal(value: String) {
                 val target = label(value)
+                val scrollable = By.pkg(app.packageName).scrollable(true)
+                check(
+                    device.wait(
+                        object : Condition<UiDevice, Boolean> {
+                            override fun apply(device: UiDevice) =
+                                device.hasObject(target) || device.hasObject(scrollable)
+                        },
+                        10_000,
+                    )
+                ) {
+                    "Native reply and its scroll container are both unavailable"
+                }
                 if (!device.hasObject(target)) {
-                    val container =
-                        checkNotNull(
-                            device.wait(
-                                Until.findObject(By.pkg(app.packageName).scrollable(true)),
-                                10_000,
-                            )
-                        )
+                    val container = checkNotNull(device.findObject(scrollable))
                     val visible =
                         object : Condition<UiObject2, Boolean> {
                             // Compose exposes virtual descendants through the current window.
@@ -168,7 +174,7 @@ class NativeRealtimeTest {
                                 By.pkg(app.packageName)
                                     .clickable(true)
                                     .enabled(true)
-                                    .hasDescendant(label(app.getString(R.string.controls_stop)))
+                                    .hasDescendant(label(app.getString(R.string.conversation_stop)))
                             ),
                             10_000,
                         )
@@ -545,7 +551,7 @@ class NativeRealtimeTest {
                     !device.hasObject(label(app.getString(R.string.composer_sync_saving))) &&
                     !device.hasObject(label(app.getString(R.string.composer_unconfirmed)))
             }
-            reveal(app.getString(R.string.controls_stop))
+            reveal(app.getString(R.string.conversation_stop))
             clickStop()
             condition("Single interrupt reaches transport while the response is held") {
                 controlPosts.get() == 1 &&
@@ -562,9 +568,16 @@ class NativeRealtimeTest {
                 activeRun,
                 interrupted.get()!!.getValue("interruptsRunId").jsonPrimitive.content,
             )
-            // Wait for the new control panel before the duplicate native action.
+            // An ambiguous receipt keeps Stop unavailable until readback settles it.
             reveal(app.getString(R.string.controls_unknown))
-            clickStop()
+            val pendingStop =
+                device.findObject(
+                    By.pkg(app.packageName)
+                        .clickable(true)
+                        .hasDescendant(label(app.getString(R.string.conversation_stop)))
+                )
+            checkNotNull(pendingStop)
+            assertTrue(!pendingStop.isEnabled)
             device.waitForIdle()
             scenario.onActivity {
                 assertEquals(1, controls?.uiState?.value?.journal?.pending?.size)
@@ -652,7 +665,7 @@ class NativeRealtimeTest {
                     device.findObject(
                         By.pkg(app.packageName)
                             .clickable(true)
-                            .hasDescendant(By.text(app.getString(R.string.controls_stop)))
+                            .hasDescendant(By.text(app.getString(R.string.conversation_stop)))
                     )
                 val summary =
                     diagnostics() +

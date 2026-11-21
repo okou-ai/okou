@@ -21,6 +21,7 @@ import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
@@ -304,7 +305,8 @@ class ChatListRootTest {
                 .onNodeWithTag("conversation")
                 .performScrollToNode(hasText("Native history", substring = true))
             compose.onNodeWithText("Native history", substring = true).assertExists()
-            compose.onNodeWithContentDescription("Settings").performClick()
+            compose.onNodeWithContentDescription("Chat actions").performClick()
+            compose.onNodeWithText("Settings").performClick()
             compose.onNodeWithText("Display mode").assertExists()
             release.countDown()
             compose.waitUntil(10_000) {
@@ -369,7 +371,8 @@ class ChatListRootTest {
             val loadingLabel = app.getString(R.string.history_loading)
             compose.mainClock.advanceTimeBy(160)
             compose.waitUntilExactlyOneExists(hasContentDescription(loadingLabel), 5_000)
-            compose.onNodeWithContentDescription("Settings").performClick()
+            compose.onNodeWithContentDescription("Chat actions").performClick()
+            compose.onNodeWithText("Settings").performClick()
             compose.onNodeWithText("Display mode").assertExists()
             gate.countDown()
             val chats =
@@ -1520,6 +1523,48 @@ class ChatListRootTest {
         } finally {
             rejectWrite.countDown()
             releaseRead.countDown()
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun archivingInACompactConversationKeepsUndoBesideTheComposer() {
+        val app = compose.activity.application as ChatListApplication
+        val fixture = app.fixture
+        val events = fixture.rowEventTail()
+        fixture.commandResponse = { request ->
+            when (request.requestUrl?.encodedPath) {
+                "/api/chat-threads/$CHAT_PERSONAL/archive" -> {
+                    events.add(24L to request.rowEvent(24, CHAT_PERSONAL, "archived"))
+                    MockResponse().setResponseCode(204)
+                }
+                "/api/chat-threads/$CHAT_PERSONAL/unarchive" -> {
+                    events.add(25L to request.rowEvent(25, CHAT_PERSONAL, "unarchived"))
+                    MockResponse().setResponseCode(204)
+                }
+                else -> null
+            }
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithTag("chat_$CHAT_PERSONAL").performClick()
+        val composer = compose.onNodeWithTag("chat_composer").assertIsDisplayed()
+        val bottom = composer.getUnclippedBoundsInRoot().bottom
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Archive chat").performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasText("Undo") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
+        }
+        val feedback = compose.onNodeWithTag("conversation_feedback").assertIsDisplayed()
+        val composerTop = composer.getUnclippedBoundsInRoot().top
+        assertTrue(feedback.getUnclippedBoundsInRoot().bottom <= composerTop)
+        compose.onNodeWithText("Undo").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("conversation").assertIsDisplayed()
+        assertEquals(bottom, composer.assertIsDisplayed().getUnclippedBoundsInRoot().bottom)
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasTestTag("chat_$CHAT_PERSONAL")).fetchSemanticsNodes().isNotEmpty()
         }
     }
 

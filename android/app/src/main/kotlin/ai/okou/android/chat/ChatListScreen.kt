@@ -146,44 +146,15 @@ internal fun ChatListScreen(
     deletingId?.let { id ->
         val thread = state.threads.firstOrNull { it.id == id && it.hidden != true }
         if (thread != null) {
-            AlertDialog(
-                onDismissRequest = { deletingId = null },
-                modifier =
-                    Modifier.padding(horizontal = 24.dp).widthIn(max = 360.dp).fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
-                containerColor = MaterialTheme.colorScheme.surface,
-                tonalElevation = 0.dp,
-                properties = DialogProperties(usePlatformDefaultWidth = false),
-                title = {
-                    Text(
-                        stringResource(R.string.chat_delete_title),
-                        fontWeight = FontWeight.SemiBold,
-                    )
+            DeleteChatDialog(
+                enabled =
+                    id !in state.pendingRowActions &&
+                        ChatRowAction.Delete in state.rowActions(thread),
+                dismiss = { deletingId = null },
+                confirm = {
+                    deletingId = null
+                    performRowAction(id, ChatRowAction.Delete)
                 },
-                text = {
-                    Text(
-                        stringResource(R.string.chat_delete_description),
-                        Modifier.verticalScroll(rememberScrollState()),
-                    )
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            deletingId = null
-                            performRowAction(id, ChatRowAction.Delete)
-                        },
-                        enabled =
-                            id !in state.pendingRowActions &&
-                                ChatRowAction.Delete in state.rowActions(thread),
-                        colors =
-                            ButtonDefaults.textButtonColors(
-                                contentColor = MaterialTheme.colorScheme.error
-                            ),
-                    ) {
-                        Text(stringResource(R.string.chat_delete_confirm))
-                    }
-                },
-                dismissButton = { ChatAction(R.string.chat_rename_cancel, { deletingId = null }) },
             )
         } else if (state.listPhase == ChatReadPhase.Ready) {
             LaunchedEffect(id) { deletingId = null }
@@ -664,7 +635,7 @@ private fun Modifier.projectChildIndent(color: Color): Modifier =
         .padding(start = 24.dp)
 
 @Composable
-private fun RenameListItemDialog(
+internal fun RenameListItemDialog(
     currentName: String,
     @StringRes titleRes: Int,
     @StringRes labelRes: Int,
@@ -698,6 +669,38 @@ private fun RenameListItemDialog(
             )
         },
         confirmButton = { ChatAction(confirmRes, { save(name) }, enabled = canSave) },
+        dismissButton = { ChatAction(R.string.chat_rename_cancel, dismiss) },
+    )
+}
+
+@Composable
+internal fun DeleteChatDialog(enabled: Boolean, dismiss: () -> Unit, confirm: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = dismiss,
+        modifier = Modifier.padding(horizontal = 24.dp).widthIn(max = 360.dp).fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
+        tonalElevation = 0.dp,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        title = {
+            Text(stringResource(R.string.chat_delete_title), fontWeight = FontWeight.SemiBold)
+        },
+        text = {
+            Text(
+                stringResource(R.string.chat_delete_description),
+                Modifier.verticalScroll(rememberScrollState()),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = confirm,
+                enabled = enabled,
+                colors =
+                    ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            ) {
+                Text(stringResource(R.string.chat_delete_confirm))
+            }
+        },
         dismissButton = { ChatAction(R.string.chat_rename_cancel, dismiss) },
     )
 }
@@ -998,7 +1001,7 @@ internal fun ChatRowAction.label(): Int =
     }
 
 @DrawableRes
-private fun ChatRowAction.icon(): Int =
+internal fun ChatRowAction.icon(): Int =
     when (this) {
         ChatRowAction.MarkRead -> R.drawable.ic_mark_chat_read
         ChatRowAction.MarkUnread -> R.drawable.ic_mark_chat_unread

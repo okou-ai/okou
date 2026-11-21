@@ -8,8 +8,6 @@
     <string name="composer_restore_draft">보관된 초안 복원</string>
     <string name="controls_storage_failed">대기 중인 제어 요청을 저장할 수 없습니다.</string>
     <string name="controls_stop">실행 중인 작업 중지</string>
-    <string name="controls_queued_automation">대기 중인 자동화</string>
-    <string name="controls_skip">자동화 건너뛰기</string>
     <string name="controls_preparing">제어 요청 저장 중…</string>
     <string name="controls_sending">제어 요청 전송 중…</string>
     <string name="controls_accepted">요청이 접수되었습니다. 확인을 기다립니다.</string>
@@ -23,9 +21,6 @@
     <string name="controls_read_failed">제어 결과를 확인할 수 없습니다.</string>
     <string name="controls_recovery_failed">대화 복구 상태를 확인할 수 없습니다.</string>
     <string name="controls_recovering">대화를 계속할 준비를 하고 있습니다.</string>
-    <string name="output_live">실시간 응답</string>
-    <string name="output_waiting">실시간 응답을 기다리는 중</string>
-    <string name="output_catching_up">저장된 메시지를 불러오는 중입니다. 받은 텍스트는 유지됩니다.</string>
     <string name="settings">설정</string>
     <string name="back">뒤로</string>
     <string name="appearance">표시 모드</string>

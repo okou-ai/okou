@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="conversation_welcome">오늘 어떤 일을 할까요?</string>
+    <string name="conversation_welcome_detail">하고 싶은 일을 Okou에게 알려 주세요.</string>
+    <string name="conversation_jump_latest">최신 메시지로 이동</string>
+    <string name="conversation_new_reply">새 답변</string>
+    <string name="conversation_view_progress">진행 상태 보기</string>
+    <string name="conversation_processing">처리 중…</string>
+    <string name="conversation_history_offline">온라인 상태가 되면 채팅 기록을 불러옵니다.</string>
+    <string name="conversation_offline_send">전송하려면 인터넷에 연결하세요. 초안은 여기에 남습니다.</string>
+    <string name="conversation_work">작업 과정</string>
+    <string name="conversation_reply_actions">답변 작업</string>
+    <string name="conversation_copy_reply">답변 복사</string>
+    <string name="conversation_reply_copied">답변을 복사했어요</string>
+    <string name="conversation_revoke">철회</string>
+    <string name="conversation_stop">중지</string>
+</resources>

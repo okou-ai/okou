@@ -55,6 +55,32 @@ class ConversationHistoryTest {
 
     @After fun close() = runBlocking { stores.forEach { it.close() } }
 
+    @Test
+    fun readingAnchorSurvivesReopenAndStaysScopedToAccountWorkspaceAndThread() = runTest {
+        val directory = temporary.newFolder()
+        val anchor = ConversationAnchor(HISTORY_LAST_EVENT, 27f)
+        val original = cache(directory)
+        original.open(identity) { true }.saveReadingAnchor(CHAT_PERSONAL, anchor)
+        original.close()
+
+        val reopened = cache(directory)
+        assertNull(
+            reopened
+                .open(identity.copy(userId = "other-user")) { true }
+                .loadReadingAnchor(CHAT_PERSONAL)
+        )
+        assertNull(
+            reopened
+                .open(identity.copy(workspaceId = "other-workspace")) { true }
+                .loadReadingAnchor(CHAT_PERSONAL)
+        )
+        val lease = reopened.open(identity.copy(sessionId = "renewed")) { true }
+        assertNull(lease.loadReadingAnchor(CHAT_IN_PROJECT))
+        assertEquals(anchor, lease.loadReadingAnchor(CHAT_PERSONAL))
+        lease.saveReadingAnchor(CHAT_PERSONAL, null)
+        assertNull(lease.loadReadingAnchor(CHAT_PERSONAL))
+    }
+
     private fun row(
         id: String = HISTORY_LAST_EVENT,
         seq: Long = 37,
@@ -1161,5 +1187,7 @@ class ConversationHistoryTest {
         assertTrue(numbered.text.contains("3. first"))
         assertTrue(numbered.text.contains("7. nested"))
         assertTrue(numbered.text.contains("4. second"))
+        val table = renderHistoryMarkdown("| Check | Status |\n| --- | --- |\n| Links | Done |")
+        assertEquals("Check\tStatus\nLinks\tDone", table.text.trim())
     }
 }

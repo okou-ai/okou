@@ -8,8 +8,6 @@
     <string name="composer_restore_draft">恢复保留的草稿</string>
     <string name="controls_storage_failed">待处理控制请求暂时无法保存。</string>
     <string name="controls_stop">停止运行中的任务</string>
-    <string name="controls_queued_automation">排队中的自动任务</string>
-    <string name="controls_skip">跳过自动任务</string>
     <string name="controls_preparing">正在保存控制请求…</string>
     <string name="controls_sending">正在发送控制请求…</string>
     <string name="controls_accepted">请求已接受，等待确认。</string>
@@ -23,9 +21,6 @@
     <string name="controls_read_failed">无法核实控制结果。</string>
     <string name="controls_recovery_failed">暂时无法获取会话恢复状态。</string>
     <string name="controls_recovering">正在准备继续会话。</string>
-    <string name="output_live">实时回复</string>
-    <string name="output_waiting">等待实时回复</string>
-    <string name="output_catching_up">正在同步已保存的消息。已收到的文本会保留。</string>
     <string name="settings">设置</string>
     <string name="back">返回</string>
     <string name="appearance">显示模式</string>
@@ -90,7 +85,7 @@
     <string name="instructions_retry_save">重试同一次保存</string>
     <string name="composer_new">新对话</string>
     <string name="composer_new_project">在此项目中新建对话</string>
-    <string name="composer_message">消息</string>
+    <string name="composer_message">发消息</string>
     <string name="composer_send">发送</string>
     <string name="composer_local_failed">草稿更改未能保存到此设备。</string>
     <string name="composer_unconfirmed">消息是否送达尚未确认。</string>

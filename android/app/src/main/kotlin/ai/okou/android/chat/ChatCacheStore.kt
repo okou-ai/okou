@@ -6,6 +6,7 @@ import ai.okou.android.api.generated.ChatEventsEventsItem
 import ai.okou.android.api.generated.ProjectArchive
 import ai.okou.android.api.generated.ProjectEventsEventsItem
 import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.auth.scopeHash
 import ai.okou.android.auth.workspaceStorageKey
 import android.content.Context
 import android.util.AtomicFile
@@ -49,6 +50,8 @@ internal data class PreparedChatList(
 
 internal class HistoryCacheRevision
 
+@Serializable internal data class ConversationAnchor(val eventId: String, val offsetDp: Float)
+
 internal data class CachedHistory(
     val checkpoint: HistoryCheckpoint,
     val confirmedAt: Long,
@@ -75,6 +78,7 @@ internal constructor(
 
     private val lock = Mutex()
     private val unreadLock = Mutex()
+    private val readingLock = Mutex()
     private val active = AtomicReference<Lease?>()
     private var database: ChatCacheDatabase? = null
     private val file = directory.resolve("chats.db")
@@ -194,6 +198,61 @@ internal constructor(
         private fun checkCurrent() {
             if (!current()) throw CancellationException("Chat cache owner retired")
         }
+
+        private fun readingFile(threadId: String) =
+            AtomicFile(directory.resolve("${scopeHash(listOf(key, threadId))}-reading.json"))
+
+        internal suspend fun loadReadingAnchor(threadId: String): ConversationAnchor? =
+            withContext(dispatcher) {
+                readingLock.withLock {
+                    checkCurrent()
+                    val anchor =
+                        try {
+                            json.decodeFromString<ConversationAnchor>(
+                                readingFile(threadId).readFully().decodeToString()
+                            )
+                        } catch (_: FileNotFoundException) {
+                            null
+                        } catch (_: IOException) {
+                            Log.w("ChatCacheStore", "Could not read the conversation position")
+                            null
+                        } catch (_: SerializationException) {
+                            Log.w("ChatCacheStore", "Could not decode the conversation position")
+                            null
+                        }
+                    checkCurrent()
+                    anchor?.takeIf {
+                        it.offsetDp.isFinite() && it.offsetDp >= 0f && it.eventId.isNotEmpty()
+                    }
+                }
+            }
+
+        internal suspend fun saveReadingAnchor(threadId: String, anchor: ConversationAnchor?) =
+            withContext(dispatcher) {
+                readingLock.withLock {
+                    checkCurrent()
+                    val file = readingFile(threadId)
+                    if (anchor == null) {
+                        file.delete()
+                    } else {
+                        try {
+                            ensureDirectory()
+                            val output = file.startWrite()
+                            try {
+                                output.write(json.encodeToString(anchor).encodeToByteArray())
+                                currentCoroutineContext().ensureActive()
+                                checkCurrent()
+                                file.finishWrite(output)
+                            } catch (error: Exception) {
+                                file.failWrite(output)
+                                throw error
+                            }
+                        } catch (_: IOException) {
+                            Log.w("ChatCacheStore", "Could not save the conversation position")
+                        }
+                    }
+                }
+            }
 
         internal suspend fun loadUnread(): CachedUnread? =
             withContext(dispatcher) {
