@@ -4,14 +4,12 @@ import { agentDeletionError } from "@okouai/core/agent-protection";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, asc, eq, gt, sql } from "drizzle-orm";
 import {
-  array,
   discriminatedUnion,
   enum as zEnum,
   literal,
   number,
   object,
   string,
-  unknown as zUnknown,
 } from "zod";
 
 import { db$, writeDb$ } from "../external/db";
@@ -21,7 +19,6 @@ import { conflict } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { isLockNotAvailable } from "../../lib/pg-errors";
 import { settle } from "../utils";
-import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import {
   conversationDeletionDatabaseError,
   logCommittedConversationDeletion,
@@ -50,15 +47,6 @@ const deletionResultSchema = discriminatedUnion("kind", [
   }),
   object({
     kind: literal("deleted"),
-    automations: array(
-      object({
-        orgId: string(),
-        ownerUserId: string(),
-        eventType: string().nullable(),
-        eventConfig: zUnknown(),
-        eventConnectorId: string().nullable(),
-      }),
-    ),
     conversationDeletion: object({
       deletedRuns: number().int().nonnegative(),
       releasedReferences: number().int().nonnegative(),
@@ -315,17 +303,6 @@ export const deleteAgentById$ = command(
     if (result.kind === "forbidden") {
       return result.response;
     }
-    if (result.kind === "missing") {
-      return undefined;
-    }
-    await set(
-      reconcileAutomationEventWatches$,
-      {
-        automations: result.automations,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
     return undefined;
   },
 );

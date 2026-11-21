@@ -174,7 +174,6 @@ BEGIN
     batch_offset := batch_offset + 500;
   END LOOP;
   RETURN jsonb_build_object('kind', 'deleted',
-    'automations', '[]'::jsonb,
     'conversationDeletion', jsonb_build_object('deletedRuns', deleted_run_count,
       'releasedReferences', released_reference_count,
       'releasedHashes', jsonb_array_length(references_to_release)));
