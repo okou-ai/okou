@@ -43,7 +43,7 @@ import org.robolectric.annotation.Config
 class ChatComposerModelTest {
     @get:Rule val temporary = TemporaryFolder()
     private val identity = WorkspaceIdentity("https://api.example/", "user-a", "session-a", "org-a")
-    private val existing = ComposerTarget(CHAT_PERSONAL, CHAT_AGENT)
+    private val existing = ComposerTarget(threadId = CHAT_PERSONAL)
 
     private class Service : ChatComposerService {
         val requests = mutableListOf<SendRequestVariant1>()
@@ -419,9 +419,7 @@ class ChatComposerModelTest {
         assertEquals("A different new conversation draft", model.uiState.value.entry(personal).text)
         assertEquals(
             "",
-            model.uiState.value
-                .entry(ComposerTarget(service.creates.single().clientThreadId, CHAT_AGENT))
-                .text,
+            model.uiState.value.entry(ComposerTarget(service.creates.single().clientThreadId)).text,
         )
         assertEquals(
             "A different new conversation draft",
@@ -468,7 +466,7 @@ class ChatComposerModelTest {
             assertEquals("原始 **text** 👋\nsecond line", service.requests.single().prompt)
             gate.complete(Unit)
             runCurrent()
-            val real = ComposerTarget(service.requests.single().threadId, CHAT_AGENT, CHAT_PROJECT)
+            val real = ComposerTarget(service.requests.single().threadId, CHAT_PROJECT)
             assertEquals("Newer input stays editable", second.uiState.value.entry(real).text)
             assertNull(second.uiState.value.entry(real).pending)
             assertEquals(
@@ -692,7 +690,7 @@ class ChatComposerModelTest {
             runCurrent()
             assertEquals(
                 "Typed while navigation catches up",
-                model.uiState.value.entry(ComposerTarget(bId, CHAT_AGENT)).text,
+                model.uiState.value.entry(ComposerTarget(bId)).text,
             )
             model.acknowledge(checkNotNull(bId))
             runCurrent()

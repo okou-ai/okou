@@ -25,13 +25,11 @@ function textEvent(sequenceNumber: number, text: string) {
   };
 }
 
-test("A completed activity appears only after its full event history is ready", async () => {
+test("Completed activity history waits for the final events page before showing either page", async () => {
   context.mocks.api(logsByIdContract.getById, ({ respond }) => {
     return respond(200, {
       id: RUN_ID,
       sessionId: null,
-      agentId: "c0000000-0000-4000-a000-000000000063",
-      displayName: "Test Agent",
       framework: "claude-code",
       modelProvider: null,
       selectedModel: null,
@@ -77,7 +75,7 @@ test("A completed activity appears only after its full event history is ready", 
   });
 
   await expect(
-    screen.findByRole("heading", { name: "Test Agent" }),
+    screen.findByRole("heading", { name: "Okou" }),
   ).resolves.toBeInTheDocument();
   await secondPageRequested.promise;
   expect(screen.queryByText("Page one content")).not.toBeInTheDocument();

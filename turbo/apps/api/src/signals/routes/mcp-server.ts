@@ -138,11 +138,9 @@ const mcpThreadSnapshot$ = command(async ({ get }, signal: AbortSignal) => {
   return {
     status: 200 as const,
     body: {
-      chatThreads: archive.chatThreads.map(
-        ({ id, agentId: _agentId, ...thread }) => {
-          return { ...thread, threadId: id };
-        },
-      ),
+      chatThreads: archive.chatThreads.map(({ id, ...thread }) => {
+        return { ...thread, threadId: id };
+      }),
       latestEventId: snapshot.latestEventId,
       latestSeqId: snapshot.latestSeqId,
     },

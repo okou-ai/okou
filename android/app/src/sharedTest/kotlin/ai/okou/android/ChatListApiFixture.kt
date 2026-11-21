@@ -35,7 +35,7 @@ fun chatEventWire(
     kind: String = "created",
     extra: String = "",
     title: String = "Personal chat",
-    agent: String? = CHAT_AGENT,
+    agent: String? = null,
 ): String {
     val legacyAgent = agent?.let { ""","agentId":"$it"""" }.orEmpty()
     return """{"id":"$id","seqId":$seq,"kind":"$kind","chatThreadId":"$thread"$legacyAgent,"title":"$title","selectedModel":null,"serviceTier":null,"computerUseHostId":null,"createdAt":"$CHAT_DATE"$extra}"""
@@ -173,7 +173,7 @@ class ChatListApiFixture : Closeable {
     @Volatile
     var indicators: () -> MockResponse = {
         jsonResponse(
-            """{"agents":{},"threads":{"$CHAT_PERSONAL":"active","$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}"""
+            """{"threads":{"$CHAT_PERSONAL":"active","$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}"""
         )
     }
     @Volatile

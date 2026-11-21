@@ -25,10 +25,10 @@ const DIGEST_RUN_ID = "d0000000-0000-4000-a000-000000000c02";
 const LEGACY_RUN_ID = "d0000000-0000-4000-a000-000000000c03";
 
 /** Run details the activity page reads for each run. */
-function mockRunDetails(names: Readonly<Record<string, string>>): void {
+function mockRunDetails(prompts: Readonly<Record<string, string>>): void {
   context.mocks.api(logsByIdContract.getById, ({ params, respond }) => {
-    const displayName = names[params.id];
-    if (!displayName) {
+    const prompt = prompts[params.id];
+    if (!prompt) {
       return respond(404, {
         error: { code: "NOT_FOUND", message: "Run not found" },
       });
@@ -36,14 +36,12 @@ function mockRunDetails(names: Readonly<Record<string, string>>): void {
     return respond(200, {
       id: params.id,
       sessionId: `session-${params.id}`,
-      agentId: "c0000000-0000-4000-a000-000000000001",
-      displayName,
       framework: "claude-code",
       modelProvider: null,
       selectedModel: null,
       triggerSource: "web",
       status: "running",
-      prompt: displayName,
+      prompt,
       appendSystemPrompt: null,
       createdAt: "2026-11-20T07:00:00.000Z",
       startedAt: "2026-11-20T07:00:01.000Z",
@@ -54,10 +52,20 @@ function mockRunDetails(names: Readonly<Record<string, string>>): void {
 
 async function openDebugChat(
   chatEvents: MockChatEventInput[],
-  activeRunIds: string[] = [],
-  debug = true,
+  {
+    activeRunIds = [],
+    debug = true,
+    runPrompts,
+  }: {
+    activeRunIds?: string[];
+    debug?: boolean;
+    runPrompts?: Readonly<Record<string, string>>;
+  } = {},
 ): Promise<void> {
   installRunChat({ chatEvents, activeRunIds });
+  if (runPrompts) {
+    mockRunDetails(runPrompts);
+  }
   await setupPage({
     context,
     path: RUN_PATH,
@@ -102,10 +110,11 @@ test("Keep Copy to the right of an active run's logs before any assistant output
         text: "Review the launch checklist",
       }),
     ],
-    [LAUNCH_RUN_ID],
+    {
+      activeRunIds: [LAUNCH_RUN_ID],
+      runPrompts: { [LAUNCH_RUN_ID]: "Launch review" },
+    },
   );
-  // Registered after the chat fixture so these run details answer.
-  mockRunDetails({ [LAUNCH_RUN_ID]: "Launch review" });
   const actions = await messageActions("Review the launch checklist");
   const logs = control("link", "View run logs", actions);
   const copy = control("button", "Copy message", actions);
@@ -120,8 +129,8 @@ test("Keep Copy to the right of an active run's logs before any assistant output
   await userEvent.setup({ delay: null }).click(logs as HTMLElement);
 
   await expect(
-    screen.findByRole("heading", { name: "Launch review" }),
-  ).resolves.toBeInTheDocument();
+    screen.findByText("Launch review", { selector: "summary span" }),
+  ).resolves.toBeVisible();
   expect(window.location.pathname).toBe(`/activities/${LAUNCH_RUN_ID}`);
 });
 
@@ -161,51 +170,55 @@ async function copiedText(clipboard: {
 }
 
 test("Copy workflow trigger bubbles and inspect their associated runs", async () => {
-  await openDebugChat([
-    {
-      id: "digest-trigger",
-      role: "user",
-      eventType: "input.automation",
-      content: null,
-      runId: DIGEST_RUN_ID,
-      seqId: 1,
-      createdAt: "2026-11-20T07:00:00.000Z",
-      userMessage: {
-        version: 1,
-        parts: [
-          { type: "automation", workflowName: "Weekly digest" },
-          { type: "text", text: "Summarize this week's launches" },
-        ],
-      },
-    },
-    {
-      id: "legacy-trigger",
-      role: "user",
-      eventType: "input.automation",
-      content: null,
-      runId: LEGACY_RUN_ID,
-      seqId: 2,
-      createdAt: "2026-11-20T07:05:00.000Z",
-      userMessage: {
-        version: 1,
-        parts: [
-          {
-            type: "automation",
-            workflowName: "CRM sync",
-            automationBrief: "Sync the CRM notes",
-          },
-        ],
-      },
-    },
-  ]);
-  mockRunDetails({
-    [DIGEST_RUN_ID]: "Weekly digest run",
-    [LEGACY_RUN_ID]: "CRM sync run",
-  });
   const clipboard = {
     plain: context.mocks.browser.clipboardWriteText(),
     rich: context.mocks.browser.clipboardWrite(),
   };
+  await openDebugChat(
+    [
+      {
+        id: "digest-trigger",
+        role: "user",
+        eventType: "input.automation",
+        content: null,
+        runId: DIGEST_RUN_ID,
+        seqId: 1,
+        createdAt: "2026-11-20T07:00:00.000Z",
+        userMessage: {
+          version: 1,
+          parts: [
+            { type: "automation", workflowName: "Weekly digest" },
+            { type: "text", text: "Summarize this week's launches" },
+          ],
+        },
+      },
+      {
+        id: "legacy-trigger",
+        role: "user",
+        eventType: "input.automation",
+        content: null,
+        runId: LEGACY_RUN_ID,
+        seqId: 2,
+        createdAt: "2026-11-20T07:05:00.000Z",
+        userMessage: {
+          version: 1,
+          parts: [
+            {
+              type: "automation",
+              workflowName: "CRM sync",
+              automationBrief: "Sync the CRM notes",
+            },
+          ],
+        },
+      },
+    ],
+    {
+      runPrompts: {
+        [DIGEST_RUN_ID]: "Weekly digest run",
+        [LEGACY_RUN_ID]: "CRM sync run",
+      },
+    },
+  );
   const digest = await messageActions("Summarize this week's launches");
   const legacy = await messageActions("Sync the CRM notes");
 
@@ -233,12 +246,15 @@ test("Copy workflow trigger bubbles and inspect their associated runs", async ()
     .click(control("link", "View run logs", digest) as HTMLElement);
 
   await expect(
-    screen.findByRole("heading", { name: "Weekly digest run" }),
-  ).resolves.toBeInTheDocument();
+    screen.findByText("Weekly digest run", { selector: "summary span" }),
+  ).resolves.toBeVisible();
   expect(window.location.pathname).toBe(`/activities/${DIGEST_RUN_ID}`);
 });
 
 test("Copy and paste a structured chat message from the keyboard without flattening it", async () => {
+  // user-event installs its own clipboard, so the boundary mock follows it.
+  const user = userEvent.setup({ delay: null });
+  const clipboard = context.mocks.browser.clipboardWrite();
   await openDebugChat(
     [
       {
@@ -276,12 +292,8 @@ test("Copy and paste a structured chat message from the keyboard without flatten
         },
       },
     ],
-    [],
-    false,
+    { debug: false },
   );
-  // user-event installs its own clipboard, so the boundary mock follows it.
-  const user = userEvent.setup({ delay: null });
-  const clipboard = context.mocks.browser.clipboardWrite();
   const actions = await messageActions("Tighten the launch plan");
 
   control("button", "Copy message", actions)?.focus();

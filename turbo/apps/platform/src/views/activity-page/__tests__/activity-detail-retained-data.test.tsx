@@ -32,8 +32,6 @@ function serveActivity(
     }
     return respond(200, {
       sessionId: null,
-      agentId: null,
-      displayName: null,
       framework: "claude-code",
       modelProvider: null,
       selectedModel: null,
@@ -101,8 +99,6 @@ test("A user can download all retained diagnostics for an older activity", async
   serveActivity({
     id: RUN_ID,
     sessionId: "session-f61",
-    agentId: "c0000000-0000-4000-a000-000000000061",
-    displayName: "Invoice archive",
     triggerSource: "automation-schedule",
     prompt: "Archive last year's invoices",
     startedAt: "2025-12-02T09:00:01.000Z",
@@ -146,7 +142,6 @@ test("A user can download all retained diagnostics for an older activity", async
   expect(exported).toMatchObject({
     meta: {
       id: RUN_ID,
-      displayName: "Invoice archive",
       status: "completed",
       triggerSource: "automation-schedule",
       framework: "claude-code",

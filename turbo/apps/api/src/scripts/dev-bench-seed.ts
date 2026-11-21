@@ -507,7 +507,7 @@ async function chunkedInsert<T>(
 
 async function cleanupExistingBenchThreads(
   database: Database,
-  args: { readonly userId: string; readonly agentId: string },
+  args: { readonly userId: string; readonly orgId: string },
 ): Promise<number> {
   const threadRows = await database
     .select({ id: chatThreads.id })
@@ -515,7 +515,7 @@ async function cleanupExistingBenchThreads(
     .where(
       and(
         eq(chatThreads.userId, args.userId),
-        eq(chatThreads.agentId, args.agentId),
+        eq(chatThreads.orgId, args.orgId),
         inArray(
           chatThreads.title,
           DEV_BENCH_THREAD_PROFILES.map((profile) => {
@@ -655,7 +655,6 @@ function appendRunEvents(
     id: runId,
     userId: args.userId,
     orgId: args.orgId,
-    agentId: args.agentId,
     status: failed ? "failed" : "completed",
     prompt,
     result: failed
@@ -988,7 +987,6 @@ async function seedProfile(
     id: threadId,
     orgId: args.orgId,
     userId: args.userId,
-    agentId: args.agentId,
     title: args.profile.title,
     selectedModel: args.profile.selectedModel,
     pinnedAt,
@@ -1024,7 +1022,10 @@ async function seedDevBench(args: {
   assertLocalDatabase();
   const database = db();
   const orgId = await getAgentOrgId(database, args.agentId);
-  const removed = await cleanupExistingBenchThreads(database, args);
+  const removed = await cleanupExistingBenchThreads(database, {
+    ...args,
+    orgId,
+  });
   if (removed > 0) {
     writeLine(`Removed ${String(removed)} existing dev bench thread(s)`);
   }

@@ -40,7 +40,6 @@ function relatedChats(respondToRelationship?: () => Promise<void> | undefined) {
               kind: "agent",
               runId: launchId,
               threadId: parent.id,
-              agentId: parent.agentId,
               titleSnapshot: "Release draft",
               href: `/chats/${parent.id}`,
             },

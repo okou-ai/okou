@@ -187,11 +187,7 @@ fun ConversationRoute(
                         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                             Column {
                                 if (thread != null) {
-                                    Text(
-                                        list.agents
-                                            .firstOrNull { it.agentId == thread.agentId }
-                                            ?.displayName ?: stringResource(R.string.app_name)
-                                    )
+                                    Text(stringResource(R.string.app_name))
                                     thread.selectedModel?.let { Text(it) }
                                 }
                                 TextButton(onClick = model::refresh, colors = actionColors) {

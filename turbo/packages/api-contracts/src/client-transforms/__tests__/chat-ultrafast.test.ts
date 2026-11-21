@@ -21,7 +21,6 @@ it.each([iosChatUltrafastTransforms, androidChatUltrafastTransforms])(
       seqId: 1,
       kind: "service_tier_updated",
       chatThreadId: id,
-      agentId: id,
       computerUseHostId: null,
     };
     const fast = { ...event, seqId: 2, serviceTier: "priority" };
@@ -37,7 +36,6 @@ it.each([iosChatUltrafastTransforms, androidChatUltrafastTransforms])(
 it("maps only the tier on metadata sent to installed iOS clients", () => {
   const metadata = {
     ...thread,
-    agentId: id,
     serviceTier: "ultrafast",
     modelSettings: {},
     pinnedAt: null,

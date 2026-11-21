@@ -225,7 +225,7 @@ describe("Data Router accounting when a run ends", () => {
     await finish(run);
   });
 
-  it("settles captured usage after the completed Agent and Run are deleted", async () => {
+  it("settles captured usage after a completed Run", async () => {
     const run = await createRun();
     const requestId = randomUUID();
     await accept(register(run, requestId), [200]);
@@ -246,12 +246,15 @@ describe("Data Router accounting when a run ends", () => {
       }),
     );
     const completion = webhooks.requestAgentComplete(
-      { runId: run.runId, exitCode: 1, error: "Completed before deletion" },
+      {
+        runId: run.runId,
+        exitCode: 1,
+        error: "Completed before usage settlement",
+      },
       run.headers,
       [200],
     );
     await lookupEntered.promise;
-    await bdd.deleteAgent(run.actor, run.agentId);
     releaseLookup.resolve(undefined);
     await completion;
     await flushWaitUntilForTest();

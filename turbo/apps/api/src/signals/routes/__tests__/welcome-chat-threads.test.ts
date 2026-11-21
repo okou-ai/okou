@@ -78,10 +78,10 @@ async function fixture(
   await runs.grantProEntitlement(actor, {
     periodEndUnix: Math.floor(now() / 1000) - 90 * 86_400,
   });
-  const agentId = await bdd.bootstrapLimitedFreeOnboarding(actor, {
+  await bdd.bootstrapLimitedFreeOnboarding(actor, {
     displayName: "Editable agent name must not replace the public brand",
   });
-  return { actor, agentId };
+  return { actor };
 }
 
 async function create(
@@ -171,7 +171,7 @@ describe("POST /api/welcome-chat-threads", () => {
   });
 
   it("creates a runless personal welcome with the default model and connector state", async () => {
-    const { actor, agentId } = await fixture();
+    const { actor } = await fixture();
     await runs.ensurePersonalSubscriptionModel(actor);
     context.mocks.ably.publish.mockRejectedValue(
       new Error("Notification unavailable"),
@@ -186,7 +186,6 @@ describe("POST /api/welcome-chat-threads", () => {
     );
     expect(metadata.body).toMatchObject({
       id: body.id,
-      agentId,
       title: "Welcome to Okou",
       selectedModel: MODEL,
       serviceTier: null,

@@ -186,10 +186,10 @@ export const indicatorSchema = zEnum(["active", "unread"]);
  * indicators or event history does not advance the thread's read watermark.
  */
 export const indicatorsSchema = object({
-  agents: record(uuid(), indicatorSchema),
   threads: record(uuid(), indicatorSchema),
   /** Latest unread terminal marker. With includeActiveUnread, threads can also be active. */
   unreadAt: record(uuid(), iso.datetime()),
+  agents: record(uuid(), indicatorSchema).optional(),
 });
 
 export const chatThreadEventIdSchema = uuid();
@@ -205,7 +205,6 @@ export const chatThreadSnapshotProjectionSchema = object({
    * retained snapshots are rewritten and those API rollback targets retire (#44591).
    */
   projectId: uuid().nullable().optional(),
-  agentId: uuid().optional(),
   title: string().nullable(),
   sortAt: string(),
   createdAt: string(),
@@ -249,9 +248,6 @@ const ordinaryChatThreadEventSchema = object({
   ]),
   chatThreadId: uuid(),
   projectId: uuid().nullable().optional(),
-  agentId: uuid().optional(),
-  /** On sort_touched, an explicit canonical agent reassignment. */
-  reassignedAgentId: uuid().optional(),
   title: string().nullable(),
   // On sort_touched, this changes pin rank instead of activity recency.
   pinOrder: string().nullable().optional(),

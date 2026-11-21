@@ -1745,7 +1745,6 @@ describe("CHAT-02: completed chat callback", () => {
       }
       expect(indicators.body.threads[threadId]).toBeUndefined();
       expect(indicators.body.unreadAt[threadId]).toBeUndefined();
-      expect(indicators.body.agents).toStrictEqual({});
       expect(context.mocks.webpush.sendNotification).toHaveBeenCalledTimes(1);
       await expect(
         chat.readThreadMetadata(actor, threadId),
@@ -1827,7 +1826,6 @@ describe("CHAT-02: completed chat callback", () => {
       const indicators = await readIndicators();
       expect(indicators.threads[run.threadId]).toBeUndefined();
       expect(indicators.unreadAt[run.threadId]).toBeUndefined();
-      expect(indicators.agents[agentId]).toBeUndefined();
       expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
       await expect(
         chat.readThreadMetadata(actor, run.threadId),

@@ -186,7 +186,7 @@ private struct ChatSearchContent: View {
             VStack(alignment: .leading, spacing: OkouSpace.xs) {
               Text(
                 workspace.list.threads.first { $0.id == group.result.chatThreadId }?
-                  .displayTitle ?? group.result.agentName
+                  .displayTitle ?? String(localized: "New Chat")
               )
               .lineLimit(1)
               Text(group.result.snippet).font(.okou(.subheadline)).foregroundStyle(

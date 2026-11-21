@@ -50,15 +50,12 @@ test("discord-source-presentation-001 message sources distinguish a guild, a dir
   }
 });
 
-test("discord-source-presentation-003 a completed activity identifies its Discord trigger", async () => {
+test("A completed activity identifies Discord as its trigger", async () => {
   const id = crypto.randomUUID();
-  const title = "Harbor tide bulletin";
   context.mocks.api(logsByIdContract.getById, ({ params, respond }) => {
     return respond(200, {
       id: params.id,
-      agentId: "harbor-agent",
       sessionId: "harbor-session",
-      displayName: title,
       framework: "claude-code",
       modelProvider: null,
       selectedModel: null,
@@ -72,9 +69,7 @@ test("discord-source-presentation-003 a completed activity identifies its Discor
     });
   });
   await setupPage({ context, path: "/activities/" + id });
-  await expect(
-    screen.findByRole("heading", { name: title }),
-  ).resolves.toBeInTheDocument();
-  const source = screen.getByText("Source");
+  const source = await screen.findByText("Source");
+  expect(screen.getByRole("heading", { name: "Okou" })).toBeVisible();
   expect(source.parentElement).toHaveTextContent("Discord");
 });

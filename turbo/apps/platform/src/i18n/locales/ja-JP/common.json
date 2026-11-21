@@ -86,7 +86,6 @@
           "title": "モデルプロバイダーが一時的に利用できません"
         }
       },
-      "fallbackAgent": "エージェント",
       "fields": {
         "duration": "期間",
         "model": "モデル",

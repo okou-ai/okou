@@ -31,8 +31,6 @@ function mockActivities(runs: Readonly<Record<string, RunnerFixture>>): void {
     return respond(200, {
       id: params.id,
       sessionId: null,
-      agentId: "c0000000-0000-4000-a000-000000000064",
-      displayName: "Runner check",
       framework: run.framework,
       modelProvider: null,
       selectedModel: null,

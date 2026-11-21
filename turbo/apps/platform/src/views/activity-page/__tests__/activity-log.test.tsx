@@ -19,8 +19,6 @@ function detail(overrides: Record<string, unknown> = {}) {
   return {
     id: RUN_ID,
     sessionId: "session-f41",
-    agentId: "c0000000-0000-4000-a000-000000000001",
-    displayName: "Release review",
     framework: "claude-code",
     modelProvider: null,
     selectedModel: null,
@@ -56,7 +54,7 @@ function mockAgentEvents(events: readonly AgentEventFixture[]): void {
 async function openActivity(): Promise<void> {
   await setupPage({ context, path: `/activities/${RUN_ID}` });
   await expect(
-    screen.findByRole("heading", { name: "Release review" }),
+    screen.findByRole("heading", { name: "Okou" }),
   ).resolves.toBeInTheDocument();
 }
 

@@ -38,8 +38,6 @@ test("Enter and Space each toggle a network type once, and Escape restores trigg
     return respond(200, {
       id: RUN_ID,
       sessionId: null,
-      agentId: "c0000000-0000-4000-a000-000000000062",
-      displayName: "Build check",
       framework: "claude-code",
       modelProvider: null,
       selectedModel: null,

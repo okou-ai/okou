@@ -86,7 +86,6 @@
           "title": "Provider temporarily unavailable"
         }
       },
-      "fallbackAgent": "Agent",
       "fields": {
         "duration": "Duration",
         "model": "Model",

@@ -71,7 +71,7 @@ class ChatReplayTest {
                     event(12, "sort_touched"),
                 )
                 .single()
-        assertEquals(CHAT_OTHER_AGENT, row.agentId)
+
         assertEquals(true, row.muted)
         assertEquals("2026-11-13T00:00:00.000Z", row.sortAt)
         assertEquals(setOf("codex/test", "claude-code/test"), row.modelSettings?.keys)
@@ -93,7 +93,6 @@ class ChatReplayTest {
                 )
                 .single()
         assertNull(row.projectId)
-        assertEquals(CHAT_AGENT, row.agentId)
     }
 
     @Test
@@ -149,13 +148,12 @@ class ChatReplayTest {
                     ),
                 indicators =
                     Indicators(
-                        emptyMap(),
                         mapOf(projectRow.id to IndicatorsThreadsValue.UNREAD),
                         mapOf(projectRow.id to "2026-11-13T00:00:00Z"),
                     ),
                 filter = ChatListFilter.Unread,
             )
-        assertEquals(CHAT_OTHER_AGENT, chatListGroups(state).first().threads.single().agentId)
+        assertEquals(projectRow.id, chatListGroups(state).first().threads.single().id)
         assertTrue(chatListGroups(state).last().threads.isEmpty())
         assertTrue(
             chatListGroups(state.copy(threads = listOf(projectRow.copy(muted = true)))).all {
@@ -197,7 +195,6 @@ class ChatReplayTest {
                 projectList = ProjectListUiState(rows = listOf(project)),
                 indicators =
                     Indicators(
-                        emptyMap(),
                         mapOf(CHAT_IN_PROJECT to IndicatorsThreadsValue.UNREAD),
                         mapOf(CHAT_IN_PROJECT to "2026-11-13T00:00:00Z"),
                     ),
@@ -259,10 +256,10 @@ class ChatReplayTest {
     @Test
     fun rankingIncludesHiddenAndArchivedPeersButDoesNotCrossListGroups() {
         val outside = replay(event(1, "created"), event(2, "pinned")).single()
-        val otherOutside = outside.copy(id = "other-outside", agentId = CHAT_OTHER_AGENT)
+        val otherOutside = outside.copy(id = "other-outside")
         val member = outside.copy(id = CHAT_IN_PROJECT, projectId = CHAT_PROJECT)
         val unresolved = member.copy(id = "unresolved", projectId = "missing")
-        val hidden = member.copy(id = "hidden", hidden = true, agentId = CHAT_OTHER_AGENT)
+        val hidden = member.copy(id = "hidden", hidden = true)
         val archived = member.copy(id = "archived", archived = true)
         val project =
             ConfirmedProject(CHAT_PROJECT, "Research", outside.createdAt, outside.createdAt)

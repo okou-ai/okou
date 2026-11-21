@@ -25,7 +25,6 @@ type ChatSearchMessageRow = {
 };
 
 type ChatSearchMatchRow = ChatSearchMessageRow & {
-  readonly agentName: string;
   readonly projectId: string | null;
   readonly projectName: string | null;
 };
@@ -168,7 +167,6 @@ async function findChatSearchMatches(
         role: candidate.role,
         createdAt: candidate.createdAt,
         text: candidate.text,
-        agentName: "Okou",
         projectId: candidate.projectId,
         projectName: candidate.projectName,
       },
@@ -180,7 +178,7 @@ export function chatSearch(
   input: ChatSearchInput | Computed<ChatSearchInput>,
 ): Computed<
   Promise<{
-    readonly results: readonly (ChatSearchResult &
+    readonly results: readonly (Omit<ChatSearchResult, "agentName"> &
       Pick<ChatSearchMatchRow, "projectId" | "projectName">)[];
   }>
 > {
@@ -199,7 +197,6 @@ export function chatSearch(
       const matchedMessage = toChatSearchMessage(match);
       return {
         chatThreadId: match.chatThreadId,
-        agentName: match.agentName,
         projectId: match.projectId,
         projectName: match.projectName,
         matchedMessage,

@@ -111,10 +111,6 @@ class ChatReadBindingsTest {
     fun mapsRootArraysAndArchiveInputDefaultsCompileAndDecodeThroughRealSerializers() {
         val indicators = json.decodeFromJsonElement<Indicators>(wire("indicators"))
         assertEquals(
-            JsonPrimitive("active"),
-            json.encodeToJsonElement(indicators.agents.values.single()),
-        )
-        assertEquals(
             JsonPrimitive("unread"),
             json.encodeToJsonElement(indicators.threads.values.single()),
         )

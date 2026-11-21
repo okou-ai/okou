@@ -22,7 +22,6 @@ const chatCallbacks = createChatCallbacksApi(context);
 
 interface CursorFixture {
   readonly actor: ApiTestUser;
-  readonly agentId: string;
   readonly threadId: string;
   readonly orgId: string;
 }
@@ -42,13 +41,12 @@ function actorOrgId(actor: ApiTestUser): string {
  */
 async function createCursorFixture(): Promise<CursorFixture> {
   const actor = bdd.user();
-  const agent = await chat.createAgentForChatThread(actor);
+  await chat.createAgentForChatThread(actor);
   const thread = await chat.createThread(actor, {
     title: `Read cursor ${randomUUID()}`,
   });
   return {
     actor,
-    agentId: agent.agentId,
     threadId: thread.id,
     orgId: actorOrgId(actor),
   };
@@ -77,7 +75,7 @@ async function createUnreadCursorFixture(): Promise<CursorFixture> {
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
-  const agent = await bdd.createAgent(actor, {
+  await bdd.createAgent(actor, {
     displayName: `Read cursor unread ${randomUUID().slice(0, 8)}`,
     visibility: "private",
   });
@@ -93,7 +91,7 @@ async function createUnreadCursorFixture(): Promise<CursorFixture> {
       return await chat.listUnreadChatThreadIds(actor);
     })(),
   ).resolves.toContain(threadId);
-  return { actor, agentId: agent.agentId, threadId, orgId: actorOrgId(actor) };
+  return { actor, threadId, orgId: actorOrgId(actor) };
 }
 
 /** The persisted cursor a production thread reader returns. */
@@ -181,7 +179,6 @@ describe("chat thread read cursor", () => {
         "chatThreadReadCursorUpdated",
         {
           threadId: fixture.threadId,
-          agentId: undefined,
           lastReadAt: stored,
         },
       ],

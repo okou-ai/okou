@@ -1,6 +1,5 @@
 import { computed } from "ccstate";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agents } from "@okouai/db/schema/agent";
 import { eq } from "drizzle-orm";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -16,7 +15,6 @@ const attributionRun$ = computed(async (get) => {
   }
   const [row] = await get(db$)
     .select({
-      agentId: agentRuns.agentId,
       orgId: agentRuns.orgId,
       userId: agentRuns.userId,
     })
@@ -24,21 +22,6 @@ const attributionRun$ = computed(async (get) => {
     .where(eq(agentRuns.id, auth.runId))
     .limit(1);
   return row;
-});
-
-const agentLabel$ = computed(async (get) => {
-  const run = await get(attributionRun$);
-  if (!run?.agentId) {
-    return undefined;
-  }
-  const [row] = await get(db$)
-    .select({ displayName: agents.displayName, name: agents.name })
-    .from(agents)
-    .where(eq(agents.id, run.agentId))
-    .limit(1);
-  return (
-    (row?.displayName ?? row?.name)?.trim().replace(/\s+/gu, " ") || undefined
-  );
 });
 
 const userLabel$ = computed(async (get) => {
@@ -59,12 +42,9 @@ const userLabel$ = computed(async (get) => {
 /** Request-owned reads share Slack's independently best-effort attribution. */
 export const integrationMessageSendLabels$ = computed(async (get) => {
   const noop = (): void => {};
-  const [run, agentLabel] = await Promise.all([
-    tapError(get(attributionRun$), noop),
-    tapError(get(agentLabel$), noop),
-  ]);
+  const run = await tapError(get(attributionRun$), noop);
   return {
-    agentLabel,
+    agentLabel: undefined as string | undefined,
     runOwner: run ? { orgId: run.orgId, userId: run.userId } : undefined,
   };
 });

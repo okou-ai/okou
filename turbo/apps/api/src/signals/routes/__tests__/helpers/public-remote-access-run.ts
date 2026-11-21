@@ -297,9 +297,7 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
         }
       }
       await flushWaitUntilForTest();
-      if (state.agentId) {
-        await createBddApi(context).deleteAgent(state.actor, state.agentId);
-      }
+
       await flushWaitUntilForTest();
     }
   }

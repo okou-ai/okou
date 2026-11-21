@@ -71,7 +71,7 @@ open class TestChatService : ChatListService {
 
     override suspend fun chatEvents(since: Long?) = ChatEvents(emptyList(), false)
 
-    override suspend fun indicators() = Indicators(emptyMap(), emptyMap(), emptyMap())
+    override suspend fun indicators() = Indicators(emptyMap(), emptyMap())
 
     override suspend fun agents(): Agents = emptyList()
 

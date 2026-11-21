@@ -3,6 +3,7 @@ package ai.okou.android.chat
 import ai.okou.android.*
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ResetSubscriptionResultOutcome
+import ai.okou.android.auth.workspaceStorageKey
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
@@ -30,7 +31,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], application = TestOkouApplication::class)
 class AssistantRecoveryModelTest {
     @get:Rule val temporary = TemporaryFolder()
-    private val target = ComposerTarget(threadId = CHAT_PERSONAL, agentId = CHAT_AGENT)
+    private val target = ComposerTarget(threadId = CHAT_PERSONAL)
 
     private class Fixture(
         val api: ChatListApiFixture,
@@ -140,7 +141,7 @@ class AssistantRecoveryModelTest {
                     owners.put("composer", composer)
                     val thread =
                         Json.decodeFromString<ChatArchive>(
-                                """{"chatThreads":[{"id":"$CHAT_PERSONAL","agentId":"$CHAT_AGENT","projectId":null,"title":"Thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null,"selectedModel":"gpt-recovery","serviceTier":"priority"}]}"""
+                                """{"chatThreads":[{"id":"$CHAT_PERSONAL","projectId":null,"title":"Thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null,"selectedModel":"gpt-recovery","serviceTier":"priority"}]}"""
                             )
                             .chatThreads
                             .single()
@@ -739,6 +740,11 @@ class AssistantRecoveryModelTest {
             val before = f.journal.load(f.api.identity).journal
             f.owners.clear()
             f.journal.close()
+            val file = directory.resolve("${f.api.identity.workspaceStorageKey()}.json")
+            val saved = file.readText()
+            val legacy = saved.replace("\"agentId\":null", "\"agentId\":\"$CHAT_AGENT\"")
+            assertNotEquals(saved, legacy)
+            file.writeText(legacy)
             val reopened =
                 ComposerJournalStore(
                     ApplicationProvider.getApplicationContext(),
