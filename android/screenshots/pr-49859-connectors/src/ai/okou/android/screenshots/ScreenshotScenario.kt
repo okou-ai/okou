@@ -77,7 +77,10 @@ class ScreenshotScenario {
         }
 
         fun enter(label: String, value: String) {
-            val editor = By.pkg(app.packageName).clazz("android.widget.EditText").desc(label)
+            val editor =
+                By.pkg(app.packageName)
+                    .clazz("android.widget.EditText")
+                    .hasDescendant(By.desc(label))
             checkNotNull(device.wait(Until.findObject(editor), 12_000)) { "Missing editor: $label" }
                 .click()
             checkNotNull(device.wait(Until.findObject(editor.focused(true)), 12_000)) {
