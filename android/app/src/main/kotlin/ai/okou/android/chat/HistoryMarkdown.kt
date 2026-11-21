@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
@@ -47,6 +48,7 @@ import org.commonmark.node.HtmlInline
 import org.commonmark.node.Image
 import org.commonmark.node.IndentedCodeBlock
 import org.commonmark.node.Link
+import org.commonmark.node.ListBlock
 import org.commonmark.node.ListItem
 import org.commonmark.node.Node
 import org.commonmark.node.OrderedList
@@ -69,61 +71,97 @@ internal fun HistoryMarkdown(source: String, style: TextStyle) =
         if (blocks == null) {
             Text(source, style = style)
         } else {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                for (block in blocks) {
-                    if (block is HistoryMarkdownBlock.Table) {
-                        HistoryMarkdownTable(block.rows)
-                        continue
-                    }
-                    block as HistoryMarkdownBlock.Paragraph
-                    val blockStyle =
-                        when (block.heading) {
-                            1 ->
-                                style.copy(
-                                    fontSize = 20.sp,
-                                    lineHeight = 28.sp,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            in 2..6 ->
-                                style.copy(
-                                    fontSize = 16.sp,
-                                    lineHeight = 24.sp,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            else -> style
+            HistoryMarkdownBlocks(blocks, style)
+        }
+    }
+
+@Composable
+private fun HistoryMarkdownBlocks(
+    blocks: List<HistoryMarkdownBlock>,
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        for (block in blocks) when (block) {
+            is HistoryMarkdownBlock.Table -> HistoryMarkdownTable(block.rows)
+            is HistoryMarkdownBlock.ListItems ->
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (item in block.items) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Text(item.marker, Modifier.widthIn(min = 16.dp), style = style)
+                            HistoryMarkdownBlocks(item.blocks, style, Modifier.weight(1f))
                         }
-                    Text(block.text, style = blockStyle)
+                    }
                 }
+            is HistoryMarkdownBlock.Paragraph -> {
+                val blockStyle =
+                    when (block.heading) {
+                        1 ->
+                            style.copy(
+                                fontSize = 20.sp,
+                                lineHeight = 28.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        in 2..6 ->
+                            style.copy(
+                                fontSize = 16.sp,
+                                lineHeight = 24.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        else -> style
+                    }
+                Text(block.text, style = blockStyle)
             }
         }
     }
+}
 
 private sealed interface HistoryMarkdownBlock {
     data class Paragraph(val text: AnnotatedString, val heading: Int) : HistoryMarkdownBlock
 
     data class Table(val rows: List<List<HistoryMarkdownCell>>) : HistoryMarkdownBlock
+
+    data class ListItems(val items: List<HistoryMarkdownListItem>) : HistoryMarkdownBlock
 }
 
 private data class HistoryMarkdownCell(val text: AnnotatedString, val alignment: TextAlign)
+
+private data class HistoryMarkdownListItem(
+    val marker: String,
+    val blocks: List<HistoryMarkdownBlock>,
+)
 
 private val historyMarkdownParser =
     Parser.builder().extensions(listOf(TablesExtension.create())).build()
 
 private fun historyMarkdownBlocks(source: String): List<HistoryMarkdownBlock> =
-    historyMarkdownParser
-        .parse(source)
-        .children()
-        .map { node ->
-            if (node is TableBlock) HistoryMarkdownBlock.Table(historyMarkdownRows(node))
-            else {
-                val rendered = renderHistoryMarkdownNode(node)
-                HistoryMarkdownBlock.Paragraph(
-                    rendered.subSequence(0, rendered.text.trimEnd('\n').length),
-                    (node as? Heading)?.level ?: 0,
-                )
-            }
+    historyMarkdownParser.parse(source).children().map(Node::historyMarkdownBlock).toList()
+
+private fun Node.historyMarkdownBlock(): HistoryMarkdownBlock =
+    when (this) {
+        is TableBlock -> HistoryMarkdownBlock.Table(historyMarkdownRows(this))
+        is ListBlock -> {
+            val startNumber = (this as? OrderedList)?.markerStartNumber
+            HistoryMarkdownBlock.ListItems(
+                children()
+                    .mapIndexed { index, item ->
+                        val marker = if (startNumber == null) "•" else "${startNumber + index}."
+                        HistoryMarkdownListItem(
+                            marker,
+                            item.children().map(Node::historyMarkdownBlock).toList(),
+                        )
+                    }
+                    .toList()
+            )
         }
-        .toList()
+        else -> {
+            val rendered = renderHistoryMarkdownNode(this)
+            HistoryMarkdownBlock.Paragraph(
+                rendered.subSequence(0, rendered.text.trimEnd('\n').length),
+                (this as? Heading)?.level ?: 0,
+            )
+        }
+    }
 
 private fun Node.children(): Sequence<Node> = generateSequence(firstChild) { it.next }
 

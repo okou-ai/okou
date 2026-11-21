@@ -1467,6 +1467,7 @@ class ChatListRootTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun archivingInACompactConversationKeepsUndoBesideTheComposer() {
         val app = compose.activity.application as ChatListApplication
         val fixture = app.fixture
@@ -1487,15 +1488,19 @@ class ChatListRootTest {
         app.responseGate.countDown()
         awaitListAndNames()
         compose.onNodeWithTag("chat_$CHAT_PERSONAL").performClick()
+        val composer = compose.onNodeWithTag("chat_composer").assertIsDisplayed()
+        val bottom = composer.getUnclippedBoundsInRoot().bottom
         compose.onNodeWithContentDescription("Chat actions").performClick()
         compose.onNodeWithText("Archive chat").performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodes(hasText("Undo") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithTag("conversation_feedback").assertIsDisplayed()
+        val feedback = compose.onNodeWithTag("conversation_feedback").assertIsDisplayed()
+        val composerTop = composer.getUnclippedBoundsInRoot().top
+        assertTrue(feedback.getUnclippedBoundsInRoot().bottom <= composerTop)
         compose.onNodeWithText("Undo").assertIsDisplayed().performClick()
         compose.onNodeWithTag("conversation").assertIsDisplayed()
-        compose.onNodeWithTag("message_input").assertIsDisplayed()
+        assertEquals(bottom, composer.assertIsDisplayed().getUnclippedBoundsInRoot().bottom)
         compose.onNodeWithContentDescription("Back").performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodes(hasTestTag("chat_$CHAT_PERSONAL")).fetchSemanticsNodes().isNotEmpty()
