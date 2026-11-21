@@ -1,5 +1,7 @@
 package ai.okou.android
 
+import ai.okou.android.artifacts.ArtifactCatalogModel
+import ai.okou.android.artifacts.ArtifactsRoute
 import ai.okou.android.chat.AssistantRecoveryModel
 import ai.okou.android.chat.AssistantRecoveryPanel
 import ai.okou.android.chat.ChatComposerField
@@ -71,11 +73,14 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -101,6 +106,7 @@ internal fun OkouApp(
         @Composable
         (SettingsDestination, openInstructions: () -> Unit, closeInstructions: () -> Unit) -> Unit,
     recovery: AssistantRecoveryModel? = null,
+    artifacts: ArtifactCatalogModel? = null,
     workspaceAvatar: @Composable (() -> Unit)? = null,
     workspaceName: String? = null,
     updateToolbarAction: UpdateToolbarAction? = null,
@@ -115,9 +121,16 @@ internal fun OkouApp(
                     if (startupRecovery == null) ChatReadPhase.Loading else ChatReadPhase.Idle
             )
     var navigation by rememberWorkspaceNavigation()
+    var artifactsOpen by rememberSaveable { mutableStateOf(false) }
+    var artifactSourceId by rememberSaveable { mutableStateOf<String?>(null) }
+    val artifactPageState = rememberSaveableStateHolder()
+    val artifactEntryFocus = remember { FocusRequester() }
+    var restoreArtifactEntryFocus by remember { mutableStateOf(false) }
+    val artifactSource = artifactSourceId.takeIf { artifactsOpen && artifacts != null }
+    val showArtifacts = artifactsOpen && artifacts != null && artifactSource == null
     val composerInput = composer?.uiState?.collectAsStateWithLifecycle()
     val settings = navigation.settings.takeIf { workspaceReady }
-    val requestedTarget = navigation.target
+    val requestedTarget = artifactSource?.let { WorkspaceTarget.Chat(it) } ?: navigation.target
     val restoringFirstSend =
         !workspaceReady &&
             requestedTarget is WorkspaceTarget.NewChat &&
@@ -140,10 +153,12 @@ internal fun OkouApp(
     val listWidth = workspaceListPaneWidth(window.width, window.height)
     val searchState = rememberChatSearchState()
     var focusSearch by remember { mutableStateOf(false) }
-    val searchActive = chats != null && navigation.search == SearchRoute.Open
-    var composerFocused by remember(target, settings, searchActive) { mutableStateOf(false) }
+    val searchActive = chats != null && !artifactsOpen && navigation.search == SearchRoute.Open
+    var composerFocused by
+        remember(target, settings, searchActive, showArtifacts) { mutableStateOf(false) }
     val editing =
-        searchActive ||
+        showArtifacts ||
+            searchActive ||
             settings == SettingsDestination.Instructions ||
             (settings == null && (target is WorkspaceTarget.NewChat || composerFocused))
     DisposableEffect(editing) {
@@ -151,8 +166,10 @@ internal fun OkouApp(
         onDispose { onUpdateEditingChanged(false) }
     }
     val showList = listWidth != null || searchActive || target == WorkspaceTarget.List
-    val showChatList = settings == null && showList && !searchActive
-    val showWorkspaceBack = listWidth == null && !searchActive && target != WorkspaceTarget.List
+    val showChatList = settings == null && showList && !searchActive && !showArtifacts
+    val showWorkspaceBack =
+        artifactSource != null ||
+            listWidth == null && !searchActive && target != WorkspaceTarget.List
     val listPositions =
         ChatListFilter.entries.map { filter -> key(filter) { rememberLazyListState() } }
     val settingsPosition = rememberScrollState()
@@ -168,6 +185,21 @@ internal fun OkouApp(
     var restoreSearchFocus by remember { mutableStateOf(false) }
     var restoreSettingsFocus by remember { mutableStateOf(false) }
 
+    fun closeArtifacts(restoreFocus: Boolean) {
+        restoreArtifactEntryFocus = restoreFocus
+        artifactSourceId = null
+        artifactsOpen = false
+        artifacts?.select(null)
+        artifactPageState.removeState("artifacts")
+    }
+
+    fun openArtifacts() {
+        focus.clearFocus()
+        keyboard?.hide()
+        artifactSourceId = null
+        artifactsOpen = true
+    }
+
     fun releaseSearchFocus() {
         focus.clearFocus()
         keyboard?.hide()
@@ -181,6 +213,7 @@ internal fun OkouApp(
     }
 
     fun openSearch() {
+        if (artifactSource != null) closeArtifacts(restoreFocus = false)
         restoreSearchFocus = searchEntryFocused
         searchState.reset()
         focusSearch = true
@@ -260,6 +293,7 @@ internal fun OkouApp(
         }
 
     fun openConversation(threadId: String, destination: WorkspaceTarget, fromSearch: Boolean) {
+        if (artifactSource != null) closeArtifacts(restoreFocus = false)
         val search =
             when {
                 fromSearch && listWidth == null -> SearchRoute.ReturnOnBack
@@ -300,6 +334,7 @@ internal fun OkouApp(
 
     fun startNewChat(projectId: String?) {
         val activeComposer = composer?.takeIf { workspaceReady } ?: return
+        if (artifactSource != null) closeArtifacts(restoreFocus = false)
         activeComposer.beginNew(projectId)
         conversations.open(ComposerTarget(projectId = projectId).key)
         val search =
@@ -330,10 +365,21 @@ internal fun OkouApp(
                 }
             }
         }
-    LaunchedEffect(target, thread, list.listPhase, listWidth, pendingNewChat, awaitingCreatedChat) {
-        if (target is WorkspaceTarget.Chat) {
+    LaunchedEffect(
+        target,
+        thread,
+        list.listPhase,
+        listWidth,
+        pendingNewChat,
+        awaitingCreatedChat,
+        showArtifacts,
+    ) {
+        if (target is WorkspaceTarget.Chat && !showArtifacts) {
             val pending = pendingNewChat
-            if (pending != null && navigation.target == target) {
+            if (artifactSource != null) {
+                if (thread != null) chats?.history?.open(thread)
+                else if (list.listPhase == ChatReadPhase.Ready) artifactSourceId = null
+            } else if (pending != null && navigation.target == target) {
                 navigation = navigation.copy(target = WorkspaceTarget.NewChat(pending.projectId))
             } else if (thread != null) chats?.history?.open(thread)
             else if (
@@ -364,7 +410,8 @@ internal fun OkouApp(
         provisionalId?.let { id -> list.threads.firstOrNull { it.id == id && it.hidden != true } }
     val needsChatList =
         settings == null &&
-            (showList ||
+            (showArtifacts ||
+                showList ||
                 (provisionalId != null && provisionalChat == null) ||
                 (target is WorkspaceTarget.Chat && thread == null))
     DisposableEffect(chats, needsChatList, showChatList) {
@@ -386,11 +433,35 @@ internal fun OkouApp(
             SettingsDestination.Instructions ->
                 navigation = navigation.copy(settings = SettingsDestination.Overview)
             SettingsDestination.Overview -> navigation = navigation.copy(settings = null)
-            null -> if (navigation.search == SearchRoute.Open) closeSearch() else returnToList()
+            null ->
+                when {
+                    artifactSource != null -> artifactSourceId = null
+                    navigation.search == SearchRoute.Open -> closeSearch()
+                    else -> returnToList()
+                }
         }
     }
 
-    BackHandler(settings != null || showWorkspaceBack || searchActive, onBack = ::back)
+    BackHandler(
+        !showArtifacts && (settings != null || showWorkspaceBack || searchActive),
+        onBack = ::back,
+    )
+
+    if (showArtifacts) {
+        artifactPageState.SaveableStateProvider("artifacts") {
+            ArtifactsRoute(
+                artifacts,
+                list.threads,
+                listWidth,
+                onClose = { closeArtifacts(restoreFocus = true) },
+                onSource = { source ->
+                    conversations.open(source.id)
+                    artifactSourceId = source.id
+                },
+            )
+        }
+        return
+    }
 
     val title =
         when (settings) {
@@ -499,12 +570,21 @@ internal fun OkouApp(
                     openSearch = if (chats != null) ::openSearch else null,
                     actions = toolbarActions,
                 )
-                if (chats != null) WorkspaceToolEntries()
+                if (chats != null) {
+                    WorkspaceToolEntries(
+                        openArtifacts = if (artifacts == null) null else ::openArtifacts,
+                        artifactModifier = Modifier.focusRequester(artifactEntryFocus),
+                    )
+                }
             }
             LaunchedEffect(Unit) {
                 if (restoreSearchFocus) {
                     restoreSearchFocus = false
                     searchEntryFocus.requestFocus()
+                }
+                if (restoreArtifactEntryFocus && artifacts != null) {
+                    restoreArtifactEntryFocus = false
+                    artifactEntryFocus.requestFocus()
                 }
             }
         }
@@ -549,7 +629,11 @@ internal fun OkouApp(
                             ) {
                                 Icon(
                                     painterResource(R.drawable.ic_arrow_back),
-                                    stringResource(R.string.back),
+                                    stringResource(
+                                        if (artifactSource != null && settings == null)
+                                            R.string.artifact_return_preview
+                                        else R.string.back
+                                    ),
                                 )
                             }
                         }
@@ -651,14 +735,28 @@ internal fun OkouApp(
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             if (listWidth != null && target != WorkspaceTarget.List) {
-                                Box(
+                                Row(
                                     Modifier.fillMaxWidth()
                                         .heightIn(min = 63.dp)
                                         .padding(
                                             horizontal = if (listWidth == 344) 40.dp else 32.dp
                                         ),
-                                    contentAlignment = Alignment.CenterStart,
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
+                                    if (artifactSource != null) {
+                                        IconButton(
+                                            onClick = {
+                                                focus.clearFocus()
+                                                keyboard?.hide()
+                                                back()
+                                            }
+                                        ) {
+                                            Icon(
+                                                painterResource(R.drawable.ic_arrow_back),
+                                                stringResource(R.string.artifact_return_preview),
+                                            )
+                                        }
+                                    }
                                     detailTitle()
                                 }
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outline)

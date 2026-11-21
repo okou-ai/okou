@@ -35,6 +35,10 @@ import { modelCatalogContract } from "../contracts/model-catalog";
 import { runModelsMainContract } from "../contracts/run-models";
 import { thirdPartySubscriptionsMainContract } from "../contracts/third-party-subscriptions";
 import { billingStatusContract } from "../contracts/billing";
+import { artifactCatalogRuntimeContract } from "../contracts/artifact-catalog";
+import { artifactDownloadsContract } from "../contracts/artifact-downloads";
+import { artifactReferencesContract } from "../contracts/artifact-references";
+import { hostContract } from "../contracts/host";
 import { personalModelProviderAccountsByIdContract } from "../contracts/personal-model-providers";
 
 export interface KotlinRouteBinding {
@@ -112,6 +116,31 @@ const historyReadBindings = [
 
 /** Only routes used by the installed native client, not every Web contract. */
 export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
+  {
+    name: "artifactCatalog",
+    response: "ArtifactCatalog",
+    route: artifactCatalogRuntimeContract.list,
+  },
+  {
+    name: "artifactDetail",
+    response: "ArtifactDetail",
+    route: artifactCatalogRuntimeContract.get,
+  },
+  {
+    name: "resolveArtifactReference",
+    response: "ArtifactReference",
+    route: artifactReferencesContract.resolve,
+  },
+  {
+    name: "artifactDownload",
+    response: "ArtifactDownload",
+    route: artifactDownloadsContract.download,
+  },
+  {
+    name: "artifactSitePreview",
+    response: "ArtifactSitePreview",
+    route: hostContract.sitePreview,
+  },
   {
     name: "agentDraft",
     response: "ComposerDraft",
@@ -294,6 +323,31 @@ export interface KotlinTypeBinding {
 }
 
 export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
+  {
+    name: "ArtifactCatalog",
+    schema: artifactCatalogRuntimeContract.list.responses[200],
+    direction: "output",
+  },
+  {
+    name: "ArtifactDetail",
+    schema: artifactCatalogRuntimeContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "ArtifactReference",
+    schema: artifactReferencesContract.resolve.responses[200],
+    direction: "output",
+  },
+  {
+    name: "ArtifactDownload",
+    schema: artifactDownloadsContract.download.responses[200],
+    direction: "output",
+  },
+  {
+    name: "ArtifactSitePreview",
+    schema: hostContract.sitePreview.responses[200],
+    direction: "output",
+  },
   {
     name: "RenameProjectRequest",
     schema: projectsContract.update.body,

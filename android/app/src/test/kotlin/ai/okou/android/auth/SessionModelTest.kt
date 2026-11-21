@@ -65,6 +65,8 @@ class SessionModelTest {
         ChatListService by TestChatService(),
         ChatComposerService by TestChatComposerService() {
         var closed = false
+        private val canonical = CanonicalWorkspaceSession(identity, tokens)
+        override val artifacts = canonical.artifacts
 
         override suspend fun sendControl(request: SendRequest): AcceptedInput =
             error("No control backend in this fixture")
@@ -90,6 +92,7 @@ class SessionModelTest {
 
         override fun close() {
             closed = true
+            canonical.close()
         }
     }
 
