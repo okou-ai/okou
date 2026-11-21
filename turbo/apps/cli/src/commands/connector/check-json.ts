@@ -18,7 +18,7 @@ import { getOkouAgentId } from "../../lib/okou-env";
 import { getPlatformOrigin } from "../../lib/platform-url";
 import {
   CALLBACK_PROMPT_PLACEHOLDER,
-  currentChatSupportsActionCallback,
+  currentPermissionCallbackThread,
 } from "./action-url";
 import {
   AWS_INCOMPLETE_CONTEXT_GUIDANCE,
@@ -85,7 +85,6 @@ function permissionActions(
   request: ConnectorDiagnosticRequest,
   diagnostic: ResolvedDiagnostic,
   origin: string,
-  agentId: string | undefined,
   awsContextIncomplete: boolean,
 ): CheckAction[] {
   if (
@@ -149,7 +148,7 @@ function permissionActions(
       {
         kind: "command",
         command,
-        ...(currentChatSupportsActionCallback(agentId)
+        ...(currentPermissionCallbackThread()
           ? {
               callbackCommand: `${command} --callback-prompt "${CALLBACK_PROMPT_PLACEHOLDER}"`,
             }
@@ -318,13 +317,7 @@ export async function printConnectorCheckJson(
     }).map((link): CheckAction => {
       return { kind: "link", ...link };
     }),
-    ...permissionActions(
-      request,
-      diagnostic,
-      origin,
-      agentId,
-      incompleteUnknown,
-    ),
+    ...permissionActions(request, diagnostic, origin, incompleteUnknown),
   ];
   if (diagnostic.run.status === "not-configured") {
     actions.push({
