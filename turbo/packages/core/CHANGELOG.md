@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.858.8](https://github.com/okou-ai/okou/compare/core-v8.858.7...core-v8.858.8) (2026-11-21)
+
+
+### Refactoring
+
+* remove project thread deletion feature switch ([#49871](https://github.com/okou-ai/okou/issues/49871)) ([87a5dd0](https://github.com/okou-ai/okou/commit/87a5dd02dd9f35ce5a9fcc6775d63cf11547eaef))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.98.3
+
 ## [8.858.7](https://github.com/okou-ai/okou/compare/core-v8.858.6...core-v8.858.7) (2026-11-21)
 
 

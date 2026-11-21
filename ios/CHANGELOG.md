@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.51.9](https://github.com/okou-ai/okou/compare/ios-v0.51.8...ios-v0.51.9) (2026-11-21)
+
+
+### CI
+
+* shorten app publication and scope ios script checks ([#49872](https://github.com/okou-ai/okou/issues/49872)) ([5181cd2](https://github.com/okou-ai/okou/commit/5181cd28d322da866f40aa508234af7a6417f370))
+
+
+### Refactoring
+
+* contract legacy chat and run agent storage ([#49868](https://github.com/okou-ai/okou/issues/49868)) ([abbf9f8](https://github.com/okou-ai/okou/commit/abbf9f8e672ac56f0f98583cfb0b536e9225e905))
+
 ## [0.51.8](https://github.com/okou-ai/okou/compare/ios-v0.51.7...ios-v0.51.8) (2026-11-21)
 
 

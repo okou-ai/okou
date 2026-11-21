@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.1](https://github.com/okou-ai/okou/compare/android-v0.37.0...android-v0.37.1) (2026-11-21)
+
+
+### Refactoring
+
+* contract legacy chat and run agent storage ([#49868](https://github.com/okou-ai/okou/issues/49868)) ([abbf9f8](https://github.com/okou-ai/okou/commit/abbf9f8e672ac56f0f98583cfb0b536e9225e905))
+
 ## [0.37.0](https://github.com/okou-ai/okou/compare/android-v0.36.0...android-v0.37.0) (2026-11-21)
 
 
