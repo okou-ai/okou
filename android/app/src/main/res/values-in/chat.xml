@@ -3,7 +3,7 @@
     <string name="chat_undo_unarchived">Chat dikeluarkan dari arsip</string>
     <string name="chat_undo_marked_read">Chat ditandai sudah dibaca</string>
     <string name="chat_undo">Urungkan</string>
-    <string name="chat_undo_close">Tutup</string>
+    <string name="chat_feedback_dismiss">Tutup</string>
     <string name="chat_list_offline">Offline</string>
     <string name="chat_list_refresh_failed">Daftar chat gagal diperbarui</string>
     <string name="chat_list_first_load_failed">Untuk sementara tidak dapat dimuat</string>
@@ -58,6 +58,7 @@
     <string name="chat_rename_project">Ganti nama proyek</string>
     <string name="chat_project_name">Nama proyek</string>
     <string name="chat_project_rename_unconfirmed">Nama proyek tidak dapat dikonfirmasi.</string>
+    <string name="chat_project_rename_rejected">Nama proyek tidak dapat diubah.</string>
     <string name="chat_project_rename_save">Simpan</string>
     <string name="chat_project_rename_pending">Mengganti nama proyek…</string>
 </resources>

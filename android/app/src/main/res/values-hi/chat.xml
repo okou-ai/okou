@@ -3,7 +3,7 @@
     <string name="chat_undo_unarchived">चैट संग्रह से निकाली गई</string>
     <string name="chat_undo_marked_read">चैट पढ़ी हुई चिह्नित की गई</string>
     <string name="chat_undo">पूर्ववत करें</string>
-    <string name="chat_undo_close">बंद करें</string>
+    <string name="chat_feedback_dismiss">बंद करें</string>
     <string name="chat_list_offline">ऑफ़लाइन</string>
     <string name="chat_list_refresh_failed">चैट सूची रीफ़्रेश नहीं हुई</string>
     <string name="chat_list_first_load_failed">फ़िलहाल लोड नहीं हो सका</string>
@@ -59,6 +59,7 @@
     <string name="chat_rename_project">प्रोजेक्ट का नाम बदलें</string>
     <string name="chat_project_name">प्रोजेक्ट का नाम</string>
     <string name="chat_project_rename_unconfirmed">प्रोजेक्ट के नाम की पुष्टि नहीं हो सकी।</string>
+    <string name="chat_project_rename_rejected">प्रोजेक्ट का नाम नहीं बदला जा सका।</string>
     <string name="chat_project_rename_save">सहेजें</string>
     <string name="chat_project_rename_pending">प्रोजेक्ट का नाम बदला जा रहा है…</string>
 </resources>
