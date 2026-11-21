@@ -871,17 +871,7 @@ class ImageOperationTest(unittest.TestCase):
             self.records("requests").count({"action": "run", "phase": "build"}), 2
         )
         self.environment["IMAGE_FAULT"] = ""
-        self.assertNotEqual(
-            self.invoke("run", "build", str(self.result), check=False).returncode, 0
-        )
-        self.assertFalse(self.result.exists())
-        self.assertEqual(
-            sum("--service-type=exec" in entry for entry in self.records("systemd")),
-            1,
-        )
-        self.assertFalse(self.records("executions"))
-
-        # An unexpectedly late worker still observes the canceled owner.
+        # Check the first call's cancellation before a retry can cancel the owner.
         operation = next(self.root.glob("vm0-runner-image-*/*/*/intent.json")).parent
         late = subprocess.run(
             [sys.executable, str(operation / "worker.py"), "worker", str(operation)],
@@ -894,6 +884,16 @@ class ImageOperationTest(unittest.TestCase):
         self.assertIn("cancelled", late.stderr)
         self.assertFalse(self.records("executions"))
         self.assertNotEqual(self.invoke("claim", check=False).returncode, 0)
+
+        self.assertNotEqual(
+            self.invoke("run", "build", str(self.result), check=False).returncode, 0
+        )
+        self.assertFalse(self.result.exists())
+        self.assertEqual(
+            sum("--service-type=exec" in entry for entry in self.records("systemd")),
+            1,
+        )
+        self.assertFalse(self.records("executions"))
 
     def test_expired_result_cannot_permit_execution_again(self):
         self.invoke("claim")
