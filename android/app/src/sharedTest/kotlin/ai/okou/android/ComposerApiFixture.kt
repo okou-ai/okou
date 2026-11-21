@@ -38,6 +38,7 @@ class ComposerApiFixture : Closeable {
     @Volatile var beforeListReturn: () -> Unit = {}
     @Volatile var beforeHistoryReturn: (String) -> Unit = {}
     @Volatile var beforeContextReturn: () -> Unit = {}
+    @Volatile var beforeInputStatusReturn: () -> Unit = {}
     @Volatile var inputDisposition = "queued"
     val drafts = ConcurrentHashMap<String, JsonObject>()
     @Volatile var beforeDraftRead: (String) -> Unit = {}
@@ -120,6 +121,7 @@ class ComposerApiFixture : Closeable {
                 }
                 path.contains("/inputs/") && path.endsWith("/status") -> {
                     requests += request
+                    beforeInputStatusReturn()
                     val parts = checkNotNull(request.requestUrl).pathSegments
                     val input = inputs[parts[4]]
                     val status =

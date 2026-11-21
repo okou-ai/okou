@@ -23,6 +23,7 @@ import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -538,13 +539,30 @@ class ChatComposerRootTest {
             editor?.uiState?.value?.failed?.contains(ComposerTarget().key) == true &&
                 chats.uiState.value.threads.any { it.id == pending.threadId }
         }
-        compose.onNodeWithContentDescription("Back").performClick()
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithText("New conversation").fetchSemanticsNodes().size == 1
+        val checkingDelivery = AtomicBoolean(false)
+        val deliveryResponse = CountDownLatch(1)
+        app.fixture.beforeInputStatusReturn = {
+            checkingDelivery.set(true)
+            deliveryResponse.await()
         }
-        compose.onNodeWithTag("chat_${pending.threadId}").performClick()
-        messageText(pending.eventId, prompt).assertIsDisplayed()
-        compose.onNodeWithText("Check delivery").assertIsEnabled()
+        try {
+            compose.onNodeWithContentDescription("Back").performClick()
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText("New conversation").fetchSemanticsNodes().size == 1
+            }
+            compose.onNodeWithTag("chat_${pending.threadId}").performClick()
+            messageText(pending.eventId, prompt).assertIsDisplayed()
+            awaitConversation { checkingDelivery.get() }
+            compose.onNodeWithText("Check delivery").assertIsNotEnabled()
+        } finally {
+            deliveryResponse.countDown()
+        }
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodes(hasText("Check delivery") and isEnabled())
+                .fetchSemanticsNodes()
+                .size == 1
+        }
         assertTrue(app.fixture.inputs.isEmpty())
     }
 
