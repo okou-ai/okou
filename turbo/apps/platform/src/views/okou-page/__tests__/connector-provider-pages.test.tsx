@@ -1,3 +1,4 @@
+import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
 import {
   slackConnectContract,
   type SlackConnectLinkStatus,
@@ -119,4 +120,47 @@ test("connector-provider-pages-008 switching explicitly authorizes the newly req
     slackUserId: requested,
     requestUserScopes: true,
   });
+});
+
+test("connector-provider-pages-011 the signed Telegram invitation leads to the official bot", async () => {
+  const identity = { telegramUserId: "82479", botUsername: "agent_bot" };
+  let linked = false;
+  context.mocks.api(
+    integrationsTelegramContract.getLinkStatus,
+    ({ respond }) => {
+      return linked
+        ? respond(200, { linked: true, ...identity })
+        : respond(200, {
+            linked: false,
+            installation: {
+              id: "official",
+              botUsername: identity.botUsername,
+              loginBotId: "731",
+              domainConfigured: true,
+            },
+          });
+    },
+  );
+  context.mocks.api(integrationsTelegramContract.link, ({ body, respond }) => {
+    linked = body.connectSignature?.telegramUserId === identity.telegramUserId;
+    return respond(200, identity);
+  });
+  await setupPage({
+    context,
+    host,
+    path: `/telegram/connect?tgUser=82479&ts=1790000000&sig=${"ca".repeat(32)}`,
+  });
+  click(await findButton("Connect"));
+  await screen.findByText("Connected to Telegram!");
+  expect(
+    screen.getByText("Send the bot a message in Telegram to start chatting."),
+  ).toBeInTheDocument();
+  const launch = await findNamedLink("Open Telegram");
+  expect(launch).toHaveAttribute("target", "_blank");
+  expect(launch).toHaveAttribute("href", "https://t.me/agent_bot");
+  await expect(findNamedLink("Back to settings")).resolves.toHaveAttribute(
+    "href",
+    "/works",
+  );
+  expect(new URL(window.location.href).searchParams.has("sig")).toBeFalsy();
 });
