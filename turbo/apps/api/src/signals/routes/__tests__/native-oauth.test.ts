@@ -138,6 +138,44 @@ describe("native organization OAuth grants", () => {
     ).toBe(401);
   });
 
+  it("creates one owned thread for repeated requests with the same client thread ID", async () => {
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    await bdd.createAgent(actor, {
+      displayName: "Native Chat Creation",
+      visibility: "private",
+    });
+    const authorize = mcp.authorize(actor);
+    const token = authorize({ scope: "okou:chat:send okou:chat:read" });
+    const readOnlyToken = authorize({
+      scope: "okou:chat:read",
+    });
+    const payload = { clientThreadId: randomUUID(), title: "Cardputer Zero" };
+    expect(
+      (await request(readOnlyToken, "/api/chat-threads", "POST", payload))
+        .status,
+    ).toBe(403);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await request(
+        token,
+        "/api/chat-threads",
+        "POST",
+        payload,
+      );
+      expect(response.status).toBe(201);
+      expect(response.body).toMatchObject({
+        id: payload.clientThreadId,
+        title: payload.title,
+      });
+    }
+    const metadata = await request(
+      token,
+      `/api/chat-threads/${payload.clientThreadId}/metadata`,
+    );
+    expect(metadata.status).toBe(200);
+    expect(metadata.body).toMatchObject({ id: payload.clientThreadId });
+  });
+
   it("reads metadata and marks only same-workspace owned threads read", async () => {
     const actor = bdd.user();
     const owned = await thread(actor);
