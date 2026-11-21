@@ -22,6 +22,7 @@ class ChatListSync(
         val changed: Boolean,
         val shouldRebase: Boolean = false,
         val eventIdsBeforeRebase: Set<String> = emptySet(),
+        val replacedSnapshot: Boolean = false,
     )
 
     suspend fun synchronize(cached: ChatCheckpoint?): Result =
@@ -37,6 +38,7 @@ class ChatListSync(
                 shouldRebase =
                     !confirmed.replacement &&
                         confirmed.checkpoint.events.size > CHAT_THREAD_SNAPSHOT_REBASE_THRESHOLD,
+                replacedSnapshot = confirmed.replacement,
             )
         }
 
@@ -69,6 +71,7 @@ class ChatListSync(
                     changed = true,
                     eventIdsBeforeRebase =
                         confirmed.events.mapNotNullTo(hashSetOf()) { it.cursor().eventId },
+                    replacedSnapshot = true,
                 )
         }
 

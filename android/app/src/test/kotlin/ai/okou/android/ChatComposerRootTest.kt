@@ -33,8 +33,10 @@ import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
+import okhttp3.mockwebserver.MockResponse
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -363,6 +365,99 @@ class ChatComposerRootTest {
         } finally {
             create.countDown()
             list.countDown()
+        }
+    }
+
+    @Test
+    fun restoredAcceptedChatDeletedBeforeSnapshotDoesNotStayInTheInbox() {
+        val app = compose.activity.application as ComposerRootApplication
+        cleanupApplication = app
+        val oldList = CountDownLatch(1)
+        val detail = CountDownLatch(1)
+        val detailRequested = AtomicBoolean(false)
+        val cursorExpired = AtomicBoolean(false)
+        app.contextGate.countDown()
+        try {
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithTag("chat_$CHAT_PERSONAL").fetchSemanticsNodes().size == 1
+            }
+            compose.onNodeWithTag("chat_$CHAT_PERSONAL").assertIsDisplayed()
+            compose.onNodeWithText("New chat").performClick()
+            captureOwners()
+            awaitConversation { editor?.uiState?.value?.journal != null }
+            compose.onNodeWithTag("message_input").performTextInput("An accepted first send")
+            compose.onNodeWithContentDescription("Send").performClick()
+            awaitConversation { app.fixture.inputs.size == 1 }
+            val pending = checkNotNull(editor?.uiState?.value?.entry(ComposerTarget())?.pending)
+            app.fixture.beforeListReturn = { oldList.await() }
+            app.sendGate.countDown()
+            awaitConversation {
+                val state = editor?.uiState?.value
+                state?.entry(ComposerTarget())?.createdThreadId == pending.threadId &&
+                    state?.persistence == ComposerPersistence.Durable
+            }
+            compose.activityRule.scenario.close()
+            compose.waitUntil(10_000) {
+                shadowOf(Looper.getMainLooper()).idle()
+                editorJob?.isCompleted == true && listJob?.isCompleted == true
+            }
+            oldList.countDown()
+            runBlocking { checkNotNull(app.journalStore).close() }
+            app.journalStore = ComposerJournalStore(app, app.journalDirectory)
+
+            fun jsonResponse(body: String) =
+                MockResponse().setHeader("Content-Type", "application/json").setBody(body)
+            val list = app.fixture.chats
+            val reply = list.commandResponse
+            list.commandResponse = { request ->
+                if (
+                    request.method == "GET" &&
+                        request.requestUrl?.encodedPath == "/api/chat-threads/${pending.threadId}"
+                ) {
+                    detailRequested.set(true)
+                    detail.await()
+                    jsonResponse(
+                            """{"error":{"code":"NOT_FOUND","message":"Chat thread not found"}}"""
+                        )
+                        .setResponseCode(404)
+                } else reply(request)
+            }
+            list.events = { request ->
+                val since = request.requestUrl?.queryParameter("sinceSeqId")?.toLongOrNull()
+                if (since != null && since < 40L) {
+                    cursorExpired.set(true)
+                    jsonResponse("{}").setResponseCode(410)
+                } else jsonResponse("""{"events":[],"hasMore":false}""")
+            }
+            list.snapshot = {
+                jsonResponse(
+                    """{"url":"${list.server.url("/archive")}","expiresInSeconds":60,"latestEventId":"$HISTORY_LAST_EVENT","latestSeqId":40}"""
+                )
+            }
+            list.archive = { jsonResponse("""{"chatThreads":[]}""") }
+
+            val fresh = ActivityScenario.launch<MainActivity>(Intent(app, MainActivity::class.java))
+            replacement = fresh
+            var activity: MainActivity? = null
+            fresh.onActivity { activity = it }
+            val row = "chat_${pending.threadId}"
+            awaitConversation { cursorExpired.get() }
+            awaitConversation { detailRequested.get() }
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithTag(row).fetchSemanticsNodes().size == 1
+            }
+            captureOwners(checkNotNull(activity))
+            detail.countDown()
+            awaitConversation {
+                val state = editor?.uiState?.value
+                state?.journal != null &&
+                    state.entry(ComposerTarget()).createdThreadId == null &&
+                    state.persistence == ComposerPersistence.Durable
+            }
+            compose.onNodeWithTag(row).assertDoesNotExist()
+        } finally {
+            oldList.countDown()
+            detail.countDown()
         }
     }
 

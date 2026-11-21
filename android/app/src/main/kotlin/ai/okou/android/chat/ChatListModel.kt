@@ -310,6 +310,9 @@ class ChatListModel(
     )
 
     private var pendingListRead: ListReadBatch? = null
+    private val acceptedChatsToVerify = mutableSetOf<String>()
+    private val verifyingAcceptedChats = mutableSetOf<String>()
+    internal var onAcceptedChatMissing: ((String) -> Unit)? = null
     // Reconciliation survives transport backoff and lasts until a read publishes successfully.
     private var completedActivityReconciliation: Any? = null
     private var listRetry: Job? = null
@@ -906,12 +909,68 @@ class ChatListModel(
         return chats.filterNot { it.threadId in observed }
     }
 
-    internal fun retainAcceptedNewChats(chats: List<ProvisionalChat>) {
+    internal fun retainAcceptedNewChats(chats: List<ProvisionalChat>, restored: Boolean = false) {
         if (!current() || chats.isEmpty()) return
         // A new draft can replace the composer target while these chats await their list rows.
         val state = mutable.value
         val accepted = (chats + state.acceptedNewChats).distinctBy { it.threadId }
         mutable.value = state.copy(acceptedNewChats = unobservedNewChats(accepted))
+        if (restored) {
+            chats.mapTo(acceptedChatsToVerify) { it.threadId }
+            if (state.source == ChatListSource.Network) verifyAcceptedChats()
+        }
+    }
+
+    private fun verifyAcceptedChats() {
+        if (acceptedChatsToVerify.isEmpty()) return
+        val accepted = mutable.value.acceptedNewChats
+        acceptedChatsToVerify.retainAll(accepted.map { it.threadId }.toSet())
+        for (chat in accepted) {
+            val id = chat.threadId
+            if (id !in acceptedChatsToVerify || !verifyingAcceptedChats.add(id)) continue
+            viewModelScope.launch {
+                try {
+                    verifyAcceptedChat(id)
+                } finally {
+                    verifyingAcceptedChats.remove(id)
+                }
+            }
+        }
+    }
+
+    private suspend fun verifyAcceptedChat(id: String) {
+        // Consume the current request before reading so a newer snapshot can request another read.
+        while (acceptedChatsToVerify.remove(id)) {
+            requireCurrent()
+            if (mutable.value.acceptedNewChats.none { it.threadId == id }) return
+            try {
+                service.threadDetail(id)
+                requireCurrent()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                requireCurrent()
+                if (error is ApiFailure.Http && error.status == 404) {
+                    acceptedChatsToVerify.remove(id)
+                    val state = mutable.value
+                    val remaining = state.acceptedNewChats.filterNot { it.threadId == id }
+                    if (remaining.size < state.acceptedNewChats.size) {
+                        mutable.value = state.copy(acceptedNewChats = remaining)
+                        onAcceptedChatMissing?.invoke(id)
+                    }
+                    return
+                }
+                if (
+                    error is ApiFailure.Unauthenticated ||
+                        error is ApiFailure.UpdateRequired ||
+                        error is ApiFailure.Http && error.status == 401
+                ) {
+                    onFailure(error)
+                }
+                // Wait for another list publication unless newer verification is already queued.
+                if (acceptedChatsToVerify.add(id)) return
+            }
+        }
     }
 
     internal fun reloadAfterRowActionFailure() {
@@ -1419,6 +1478,10 @@ class ChatListModel(
         )
             mutable.value = state
         else publishRows(state)
+        // Snapshot absence can also mean a creation raced the read. Verify by thread ID.
+        if (result.replacedSnapshot)
+            mutable.value.acceptedNewChats.mapTo(acceptedChatsToVerify) { it.threadId }
+        verifyAcceptedChats()
     }
 
     private fun settleRowEdits(observed: Set<String>, discarded: Set<String>) {
