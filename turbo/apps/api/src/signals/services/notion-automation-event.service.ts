@@ -228,7 +228,6 @@ type ExecuteDueNotionEventsResult = {
 
 type DueNotionAutomationRow = {
   readonly automation: AutomationRow;
-  readonly agentId: string;
   readonly workflowName: string;
   readonly chatThreadId: string | null;
 };
@@ -1508,7 +1507,6 @@ const loadDueNotionAutomationRow$ = command(
     const [row] = await db
       .select({
         automation: workflowAutomationColumns(),
-        agentId: workflows.agentId,
         workflowName: workflows.name,
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
       })
@@ -1872,7 +1870,6 @@ const startNotionWorkflowRun$ = command(
         runWorkflowAutomationNow$,
         {
           automation: args.row.automation,
-          agentId: args.row.agentId,
           chatThreadId: args.chatThreadId,
           automationContext: args.context,
           connectorSourceId: args.connectorSourceId,

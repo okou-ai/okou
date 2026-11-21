@@ -58,10 +58,14 @@ class ContinuationReportTests(unittest.TestCase):
             clocks = (events[0]["monotonic_ns"]+3,events[0]["monotonic_ns"]+6,
                       events[-2]["monotonic_ns"]+3,events[-2]["monotonic_ns"]+6)
             for phase, proof, clock in zip(continuation.PHASES,(original,condition,continued,saved),clocks):
-                self.witnesses.append({"version":1,"case":case,"phase":phase,
-                                      "monotonic_ns":clock,"unix_ns":clock+1000,
-                                      "sandbox_id":events[1]["sandbox_id"],
-                                      "backing_generation":events[1]["backing_generation"],"evidence":proof})
+                self.witnesses.append(report_test.witness_receipt(
+                    case, phase,
+                    monotonic_ns=clock,
+                    unix_ns=clock+1000,
+                    sandbox_id=events[1]["sandbox_id"],
+                    backing_generation=events[1]["backing_generation"],
+                    evidence=proof,
+                ))
 
     def write(self):
         report_test.write_report_fixture(self.root, self.collector, self.samples,

@@ -239,7 +239,6 @@ const prepareDebugMorningBrief$ = command(
       {
         ...owner,
         workflowId: state.installation.id,
-        agentId: state.installation.agentId,
         workflowTitle: target.displayName ?? "Morning Brief",
         currentTime,
       },

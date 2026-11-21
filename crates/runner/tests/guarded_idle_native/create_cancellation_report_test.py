@@ -61,8 +61,14 @@ class CreateCancellationTests(unittest.TestCase):
                 dict(uncertain,closed=True,allocated=[0,0,0]),
             ]
             for phase,value,ns in zip(create.PHASES,values,[clock(ms) for ms in (10,500,600,700,800)]+[terminal[4]["monotonic_ns"]+1]):
-                self.witnesses.append({"version":1,"case":case,"phase":phase,"monotonic_ns":ns,"unix_ns":ns+1000,
-                    "sandbox_id":terminal[1]["sandbox_id"],"backing_generation":terminal[1]["backing_generation"],"evidence":value})
+                self.witnesses.append(report_test.witness_receipt(
+                    case, phase,
+                    monotonic_ns=ns,
+                    unix_ns=ns+1000,
+                    sandbox_id=terminal[1]["sandbox_id"],
+                    backing_generation=terminal[1]["backing_generation"],
+                    evidence=value,
+                ))
 
     def write(self):
         report_test.write_report_fixture(self.root, self.collector, self.samples,

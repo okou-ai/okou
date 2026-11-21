@@ -94,7 +94,7 @@ const startDueWorkflowAutomation$ = command(
       runWorkflowAutomationNow$,
       {
         automation,
-        agentId: args.row.agentId,
+        proactiveAgentId: args.row.agentId,
         chatThreadId: args.chatThreadId,
         automationContext: args.scheduleContext,
         apiStartTime: now(),
@@ -486,7 +486,6 @@ const launchClaimedDueRow$ = command(
               orgId: row.automation.orgId,
               userId: row.automation.ownerUserId,
               workflowId: row.automation.workflowId,
-              agentId: row.agentId,
               workflowTitle: row.workflowDisplayName ?? row.workflowName,
               currentTime,
             },

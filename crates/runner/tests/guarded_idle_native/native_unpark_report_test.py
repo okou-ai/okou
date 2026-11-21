@@ -85,8 +85,14 @@ class NativeUnparkReportTests(unittest.TestCase):
                  "accepted_response_before_cancellation":True,"internal_vmm_inflight_claimed":False},
             )
             for phase,value,offset in zip(native.PHASES,values,(3,8,12,20,35,39)):
-                self.witnesses.append({"version":1,"case":case,"phase":phase,"monotonic_ns":at(offset),
-                    "unix_ns":at(offset)+1000,"sandbox_id":owner,"backing_generation":generation,"evidence":value})
+                self.witnesses.append(report_test.witness_receipt(
+                    case, phase,
+                    monotonic_ns=at(offset),
+                    unix_ns=at(offset)+1000,
+                    sandbox_id=owner,
+                    backing_generation=generation,
+                    evidence=value,
+                ))
             saved = remap(copy.deepcopy(template[3:]))
             for event in saved:
                 heartbeat = event["evidence"].get("heartbeat")

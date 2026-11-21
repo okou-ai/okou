@@ -214,7 +214,6 @@ type GithubWebhookAutomationEvent =
 
 interface GithubWebhookAutomationRow {
   readonly automation: AutomationRow;
-  readonly agentId: string;
   readonly workflowName: string;
   readonly chatThreadId: string;
   readonly config: GithubWebhookAutomationEventConfig;
@@ -529,7 +528,6 @@ const loadGithubWebhookAutomations$ = command(
             orgId: row.automation.orgId,
             userId: row.automation.ownerUserId,
             workflowId: row.automation.workflowId,
-            agentId: row.agentId,
             workflowTitle: row.workflowDisplayName ?? row.workflowName,
             currentTime,
           },
@@ -538,7 +536,6 @@ const loadGithubWebhookAutomations$ = command(
       signal.throwIfAborted();
       automations.push({
         automation: row.automation,
-        agentId: row.agentId,
         workflowName: row.workflowName,
         chatThreadId,
         config,
@@ -858,7 +855,6 @@ const startGithubWebhookAutomation$ = command(
       runWorkflowAutomationNow$,
       {
         automation: args.automation.automation,
-        agentId: args.automation.agentId,
         chatThreadId: args.automation.chatThreadId,
         automationContext: context,
         apiStartTime: args.apiStartTime,

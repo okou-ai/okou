@@ -251,7 +251,6 @@ export interface ThreadModelReplacement {
   readonly chatThreadId: string;
   readonly userId: string;
   readonly orgId: string;
-  readonly agentId: string;
   readonly replacedModel: string;
   readonly selectedModel: string;
   readonly replacedCodexServiceTier: CodexServiceTier | null;
@@ -317,7 +316,6 @@ export const resolveEnqueuedChatInputModel$ = command(
       db
         .select({
           userId: chatThreads.userId,
-          agentId: chatThreads.agentId,
           selectedModel: chatThreads.selectedModel,
           codexServiceTier: chatThreads.codexServiceTier,
           modelSettings: chatThreads.modelSettings,
@@ -351,12 +349,11 @@ export const resolveEnqueuedChatInputModel$ = command(
       return {
         modelSelection: selection,
         threadModelReplacement:
-          successor && thread.selectedModel && thread.agentId
+          successor && thread.selectedModel
             ? {
                 chatThreadId: args.threadId,
                 userId: thread.userId,
                 orgId: args.orgId,
-                agentId: thread.agentId,
                 replacedModel: thread.selectedModel,
                 selectedModel: successor,
                 replacedCodexServiceTier: thread.codexServiceTier,

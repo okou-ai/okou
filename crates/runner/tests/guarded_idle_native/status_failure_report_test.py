@@ -88,10 +88,14 @@ class StatusFailureReportTests(unittest.TestCase):
                     "allocated": [0,0,0], "accounting": accounts},
             )
             for phase, value, clock in zip(failure.PHASES, values, (4,12,16,25,30,40,45)):
-                self.witnesses.append({"version": 1, "case": case, "phase": phase,
-                    "monotonic_ns": at(clock), "unix_ns": at(clock)+1000,
-                    "sandbox_id": terminal[1]["sandbox_id"], "backing_generation": terminal[1]["backing_generation"],
-                    "evidence": copy.deepcopy(value)})
+                self.witnesses.append(report_test.witness_receipt(
+                    case, phase,
+                    monotonic_ns=at(clock),
+                    unix_ns=at(clock)+1000,
+                    sandbox_id=terminal[1]["sandbox_id"],
+                    backing_generation=terminal[1]["backing_generation"],
+                    evidence=copy.deepcopy(value),
+                ))
 
     def write(self):
         report_test.write_report_fixture(self.root, self.collector, self.samples,

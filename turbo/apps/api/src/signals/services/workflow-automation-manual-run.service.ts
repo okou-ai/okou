@@ -130,7 +130,6 @@ export const runOwnedWorkflowAutomationNow$ = command(
         orgId: automation.orgId,
         userId: automation.ownerUserId,
         workflowId: automation.workflowId,
-        agentId: target.agentId,
         workflowTitle: target.workflowTitle,
         currentTime,
       },
@@ -150,7 +149,7 @@ export const runOwnedWorkflowAutomationNow$ = command(
       runWorkflowAutomationNow$,
       {
         automation,
-        agentId: target.agentId,
+        proactiveAgentId: target.agentId,
         chatThreadId,
         automationContext: manualContext,
         apiStartTime: currentTime.getTime(),

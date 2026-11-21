@@ -18,6 +18,22 @@ report = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(report)
 
 
+def witness_receipt(
+    case, phase, *, monotonic_ns, unix_ns, sandbox_id, backing_generation, evidence
+):
+    """Build one synthetic v1 envelope around scenario-owned evidence."""
+    return {
+        "version": 1,
+        "case": case,
+        "phase": phase,
+        "monotonic_ns": monotonic_ns,
+        "unix_ns": unix_ns,
+        "sandbox_id": sandbox_id,
+        "backing_generation": backing_generation,
+        "evidence": evidence,
+    }
+
+
 def write_report_fixture(root, collector, samples, log_groups, *, stdout_suffix=""):
     """Serialize synthetic consumer inputs; callers own evidence and log order."""
     (root / "report.json").write_text(json.dumps(collector))
@@ -80,11 +96,14 @@ class NativeReportTests(unittest.TestCase):
                  "home_payload_bytes": 65536},
             ]
             for phase, proof in zip(report.PHASES, evidence):
-                self.events.append({
-                    "version": 1, "case": case, "phase": phase, "monotonic_ns": clock,
-                    "unix_ns": clock + 1000, "sandbox_id": sandbox,
-                    "backing_generation": backing, "evidence": proof,
-                })
+                self.events.append(witness_receipt(
+                    case, phase,
+                    monotonic_ns=clock,
+                    unix_ns=clock + 1000,
+                    sandbox_id=sandbox,
+                    backing_generation=backing,
+                    evidence=proof,
+                ))
                 self.samples.append({
                     "monotonic_ns": clock + 1, "mem_available_bytes": 100000,
                     "sample_age_ns": 2, "read_duration_ns": 1,
