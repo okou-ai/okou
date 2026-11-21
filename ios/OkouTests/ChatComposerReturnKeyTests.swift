@@ -210,22 +210,32 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     defer { unmount(window) }
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)
     try await focusMentionInput(input)
-    input.setMarkedText("确认发布", selectedRange: NSRange(location: 4, length: 0))
+    XCTAssertEqual(input.returnKeyType, .send)
+    let composedText = "确认发布"
+    input.setMarkedText(
+      composedText, selectedRange: NSRange(location: composedText.utf16.count, length: 0))
+    _ = try XCTUnwrap(input.markedTextRange, mentionInputStatus(input))
     input.unmarkText()
     input.insertText("\n")
-    XCTAssertTrue(conversation.draft.contains("确认发布"))
+    XCTAssertEqual(conversation.draft, "\(composedText)\n")
+
+    // Unmarking queues settlement on the main queue. Queue the test's continuation
+    // behind it before exercising a separate Return to send.
+    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+      DispatchQueue.main.async { continuation.resume() }
+    }
+    try Task.checkCancellation()
     XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
-    try await eventually { !input.isSettlingComposition }
+
     input.insertText("\n")
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(message: mentionInputStatus(input)) {
       conversation.pending.isEmpty && conversation.draft.isEmpty
-        && conversation.messages.contains { $0.text.contains("确认发布") }
+        && conversation.messages.contains { $0.text == composedText }
     }
     let sent = try fixture.state.value.withLock {
       try $0.messages.map { try JSONDecoder().decode(AttachmentFlowFixture.Message.self, from: $0) }
     }
-    XCTAssertTrue(
-      sent.first?.userMessage.parts.compactMap(\.text).joined().contains("确认发布") == true)
+    XCTAssertEqual(sent.map { $0.userMessage.parts.compactMap(\.text).joined() }, [composedText])
   }
 
   func testSendModeSelectsAChatReferenceAndMenuNewlinePreservesItsPartsAndUndo() async throws {
