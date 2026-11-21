@@ -256,9 +256,7 @@ class ChatComposerRootTest {
         try {
             compose.onNodeWithText("New chat").performClick()
             captureOwners()
-            compose.waitUntil(10_000) {
-                editor?.uiState?.value?.journal != null
-            }
+            compose.waitUntil(10_000) { editor?.uiState?.value?.journal != null }
             val prompt = "First message before the server responds"
             compose.onNodeWithTag("message_input").performTextInput(prompt)
             compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
@@ -324,9 +322,7 @@ class ChatComposerRootTest {
                         )
                         .chats
                 }
-            awaitConversation {
-                editor?.uiState?.value?.journal != null
-            }
+            awaitConversation { editor?.uiState?.value?.journal != null }
             val prompt = "Input with a delayed receipt"
             compose.onNodeWithTag("message_input").performTextInput(prompt)
             compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()

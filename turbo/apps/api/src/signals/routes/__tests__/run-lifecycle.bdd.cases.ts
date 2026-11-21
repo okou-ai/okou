@@ -467,13 +467,12 @@ function expectCanonicalOkouRunEnvironment(args: {
   readonly platformEnvironment: Readonly<Record<string, string>>;
   readonly secretValues: readonly string[] | null | undefined;
   readonly appUrl: string;
-  readonly agentId: string;
   readonly userId: string;
   readonly orgId: string;
   readonly runId: string;
 }): void {
   expect(args.platformEnvironment.OKOU_APP_URL).toBe(args.appUrl);
-  expect(args.platformEnvironment.OKOU_AGENT_ID).toBe(args.agentId);
+  expect(args.platformEnvironment).not.toHaveProperty("OKOU_AGENT_ID");
   expect(
     Object.keys(args.environment ?? {}).filter((key) => {
       return key.startsWith("ZERO_");
@@ -8387,17 +8386,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "okou generate <type> -h",
           "okou doctor credit",
           "okou credit <credits>",
-          "Agent instructions are team-shared behavior rules for everyone using the same agent",
-          "Memory captures the current user's preferences, background, experience, and historical context",
-          "without changing other team members' defaults",
-          "A long-lived personal preference does not necessarily belong in shared instructions",
-          "choose between instructions and memory based on their intent, the nature and scope of the content, and its impact on other team members",
-          "Memory is usually the better choice for personal communication habits",
-          "Instructions are more appropriate for defining or revising common rules the whole team should follow",
-          "Avoid turning personal preferences into team-wide defaults or leaving genuinely shared rules only in personal memory",
-          "not whether the user used the words 'instructions' or 'memory'",
-          "exercise judgment rather than requiring a named storage target or confirmation for every update; existing permissions and memory-update rules still apply",
-          "Preserve unrelated settings",
+          "Instructions are the current user's persistent directions",
+          "Other members have their own Instructions",
+          "okou instructions edit --file <path>",
+          "Memory captures the user's preferences, background, and past context",
+          "Share reusable team procedures through workspace Workflows",
           "Plan permission requests",
           "all concrete connector operations required for the current task",
           "Do not include hypothetical future operations",
@@ -8498,7 +8491,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           platformEnvironment: execution.platformEnvironment,
           secretValues: execution.secretValues,
           appUrl,
-          agentId: agent.agentId,
           userId: actor.userId,
           orgId: actor.orgId,
           runId: run.runId,
