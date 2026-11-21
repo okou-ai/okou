@@ -58,6 +58,7 @@
     <string name="chat_rename_project">プロジェクト名を変更</string>
     <string name="chat_project_name">プロジェクト名</string>
     <string name="chat_project_rename_unconfirmed">プロジェクト名を確認できませんでした。</string>
+    <string name="chat_project_rename_rejected">プロジェクトの名前を変更できませんでした。</string>
     <string name="chat_project_rename_save">保存</string>
     <string name="chat_project_rename_pending">プロジェクト名を変更中…</string>
 </resources>

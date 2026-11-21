@@ -2136,6 +2136,90 @@ class ChatListModelTest {
     }
 
     @Test
+    fun rejectedProjectRenameRestoresConfirmedNameWithoutRequiringReadback() = runTest {
+        val service = HeldProjectRenameService()
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            val projectReads = service.projectReads
+            model.renameProject(CHAT_PROJECT, "Rejected")
+            runCurrent()
+            assertEquals("Rejected", model.uiState.value.projects.single().name)
+
+            service.failProjectReads = true
+            service.response.completeExceptionally(ApiFailure.Http(409, "CONFLICT", null, null))
+            advanceUntilIdle()
+            val state = model.uiState.value
+            assertEquals("Before", state.projects.single().name)
+            assertNull(state.renamingProjectId)
+            assertEquals(service.sent.single(), state.rejectedProjectRenameEventId)
+            assertTrue(state.unconfirmedProjectRenames.isEmpty())
+            assertEquals(projectReads, service.projectReads)
+            model.retryProjectRename(CHAT_PROJECT)
+            runCurrent()
+            assertEquals(1, service.sent.size)
+        }
+    }
+
+    @Test
+    fun unconfirmedProjectRenameRetriesWithTheOriginalIdAndIgnoresRetiredRejection() = runTest {
+        val service = HeldProjectRenameService()
+        var authorized = true
+        withCatchUpModel(service, authorized = { authorized }) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.renameProject(CHAT_PROJECT, "After")
+            runCurrent()
+            val originalId = service.sent.single()
+            service.response.completeExceptionally(ApiFailure.Network(IOException("Lost response")))
+            advanceUntilIdle()
+            assertEquals(setOf(CHAT_PROJECT), model.uiState.value.unconfirmedProjectRenames)
+            assertNull(model.uiState.value.rejectedProjectRenameEventId)
+
+            service.response = CompletableDeferred()
+            model.retryProjectRename(CHAT_PROJECT)
+            runCurrent()
+            assertEquals(listOf(originalId, originalId), service.sent)
+            authorized = false
+            service.response.completeExceptionally(ApiFailure.Http(404, null, null, null))
+            advanceUntilIdle()
+            assertNull(model.uiState.value.rejectedProjectRenameEventId)
+        }
+    }
+
+    private inner class HeldProjectRenameService : Service() {
+        var response = CompletableDeferred<Unit>()
+        val sent = mutableListOf<String>()
+        var projectReads = 0
+        var failProjectReads = false
+
+        override suspend fun projectSnapshot() =
+            ProjectSnapshotVariant1(
+                listOf(
+                    ProjectSnapshotVariant1ProjectsItem(
+                        CHAT_PROJECT,
+                        "Before",
+                        CHAT_DATE,
+                        CHAT_DATE,
+                    )
+                ),
+                latestEventId = null,
+                latestSeqId = 0,
+            )
+
+        override suspend fun projectEvents(since: Long): ProjectEvents {
+            projectReads++
+            if (failProjectReads) throw ApiFailure.Network(IOException("Project read failed"))
+            return ProjectEvents(emptyList(), false)
+        }
+
+        override suspend fun renameProject(projectId: String, name: String, eventId: String) {
+            sent += eventId
+            response.await()
+        }
+    }
+
+    @Test
     fun observedProjectRenameStaysConfirmedWhenTheResponseIsLostOffline() = runTest {
         val connected = MutableStateFlow(true)
         val response = CompletableDeferred<Unit>()

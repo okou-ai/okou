@@ -146,6 +146,7 @@ data class ChatListUiState(
     val projectsSource: ChatListSource? = null,
     val renamingProjectId: String? = null,
     val unconfirmedProjectRenames: Set<String> = emptySet(),
+    internal val rejectedProjectRenameEventId: String? = null,
     val indicators: Indicators? = null,
     val indicatorsPhase: ChatReadPhase = ChatReadPhase.Idle,
     val filter: ChatListFilter = ChatListFilter.Inbox,
@@ -1456,6 +1457,12 @@ class ChatListModel(
         retryableProjectRenames[id]?.let(::submitProjectRename)
     }
 
+    internal fun dismissProjectRenameRejection(eventId: String) {
+        if (current() && mutable.value.rejectedProjectRenameEventId == eventId) {
+            mutable.value = mutable.value.copy(rejectedProjectRenameEventId = null)
+        }
+    }
+
     private fun publishProjects(
         rows: List<ConfirmedProject>,
         state: ChatListUiState = mutable.value,
@@ -1498,6 +1505,17 @@ class ChatListModel(
                 } catch (error: Exception) {
                     requireCurrent()
                     if (error !is ApiFailure.Http || error.status != 404) onFailure(error)
+                    if (
+                        error is ApiFailure.Unauthenticated ||
+                            error is ApiFailure.UpdateRequired ||
+                            error is ApiFailure.Http &&
+                                error.status in setOf(400, 401, 403, 404, 409, 422)
+                    ) {
+                        requireCurrent()
+                        mutable.value =
+                            mutable.value.copy(rejectedProjectRenameEventId = rename.eventId)
+                        return@launch
+                    }
                 }
                 requireCurrent()
                 // Wait out a read that could have started before the write.

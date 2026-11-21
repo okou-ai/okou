@@ -58,6 +58,7 @@
     <string name="chat_rename_project">重命名项目</string>
     <string name="chat_project_name">项目名称</string>
     <string name="chat_project_rename_unconfirmed">无法确认项目名称。</string>
+    <string name="chat_project_rename_rejected">无法重命名项目。</string>
     <string name="chat_project_rename_save">保存</string>
     <string name="chat_project_rename_pending">正在重命名项目…</string>
 </resources>

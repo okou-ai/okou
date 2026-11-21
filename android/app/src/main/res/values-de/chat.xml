@@ -59,6 +59,7 @@
     <string name="chat_rename_project">Projekt umbenennen</string>
     <string name="chat_project_name">Projektname</string>
     <string name="chat_project_rename_unconfirmed">Der Projektname konnte nicht bestätigt werden.</string>
+    <string name="chat_project_rename_rejected">Das Projekt konnte nicht umbenannt werden.</string>
     <string name="chat_project_rename_save">Speichern</string>
     <string name="chat_project_rename_pending">Projekt wird umbenannt…</string>
 </resources>

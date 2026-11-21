@@ -58,6 +58,7 @@
     <string name="chat_rename_project">Ganti nama proyek</string>
     <string name="chat_project_name">Nama proyek</string>
     <string name="chat_project_rename_unconfirmed">Nama proyek tidak dapat dikonfirmasi.</string>
+    <string name="chat_project_rename_rejected">Nama proyek tidak dapat diubah.</string>
     <string name="chat_project_rename_save">Simpan</string>
     <string name="chat_project_rename_pending">Mengganti nama proyek…</string>
 </resources>
