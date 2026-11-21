@@ -163,6 +163,9 @@ data class ChatListUiState(
     internal val acceptedNewChats: List<ProvisionalChat> = emptyList(),
 )
 
+internal val ChatListUiState.canRenameProject: Boolean
+    get() = projectsSource != null && !offline && renamingProjectId == null
+
 internal val ChatListUiState.displayUnreadAt: Map<String, String>?
     get() = indicators?.unreadAt ?: cachedUnread?.unreadAt
 
@@ -1496,9 +1499,7 @@ class ChatListModel(
         val state = mutable.value
         if (
             !current() ||
-                state.offline ||
-                state.projectsSource != ChatListSource.Network ||
-                projectRename != null ||
+                !state.canRenameProject ||
                 confirmedProjectRows.none { it.id == rename.id }
         )
             return
