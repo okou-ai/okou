@@ -56,3 +56,5 @@ const fetch: typeof app.fetch = (...args) => {
 };
 
 export default { fetch };
+
+// Historical startup performance preview.
