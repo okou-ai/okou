@@ -169,7 +169,9 @@ fn mark_exec_operation_possible_guest_write(
                 ));
             };
             if let Some(normal_operation) = operation.normal_operation.as_mut() {
-                normal_operation.mark_possible_guest_write_started()
+                normal_operation
+                    .mark_possible_guest_write_started()
+                    .map_err(normal_operation_transition_error)
             } else {
                 Ok(())
             }

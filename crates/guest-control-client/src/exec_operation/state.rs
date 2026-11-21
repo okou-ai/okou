@@ -11,7 +11,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::{
     CompositeNormalOperation, ConnectionState, RouteId, Shared, normal_operation_transition_error,
-    operation_tracker::{NormalOperationToken, NormalOperationTransitionHandle},
+    operation_tracker::{NormalOperationToken, PendingNormalOperation},
 };
 
 use super::diagnostics::{
@@ -219,7 +219,7 @@ impl Default for Operations {
 
 pub(in crate::exec_operation) struct ExecOperation {
     pub(in crate::exec_operation) route_id: RouteId,
-    pub(in crate::exec_operation) normal_operation: Option<ExecOperationNormalTracking>,
+    pub(in crate::exec_operation) normal_operation: Option<PendingNormalOperation>,
     pub(in crate::exec_operation) lifecycle: ExecOperationLifecycle,
     pub(in crate::exec_operation) diagnostic: ExecOperationDiagnostic,
     pub(in crate::exec_operation) result_tx: oneshot::Sender<io::Result<ExecOperationResult>>,
@@ -260,11 +260,6 @@ pub(in crate::exec_operation) struct PendingExecControl {
     pub(in crate::exec_operation) control_nonce: ExecControlNonce,
     pub(in crate::exec_operation) response_tx: oneshot::Sender<io::Result<ExecControlOutcome>>,
     pub(in crate::exec_operation) normal_operation: NormalOperationToken,
-}
-
-pub(in crate::exec_operation) enum ExecOperationNormalTracking {
-    Owned(NormalOperationToken),
-    Composite(NormalOperationTransitionHandle),
 }
 
 pub(in crate::exec_operation) struct TerminalExecOperation {
@@ -356,7 +351,9 @@ impl ExecOperation {
             }
         };
         if let Some(normal_operation) = normal_operation {
-            normal_operation.complete()?;
+            normal_operation
+                .complete()
+                .map_err(normal_operation_transition_error)?;
         }
         Ok(TerminalExecOperation {
             diagnostic,
@@ -366,32 +363,6 @@ impl ExecOperation {
             stream_overflowed,
             host_cancel_requested,
         })
-    }
-}
-
-impl ExecOperationNormalTracking {
-    pub(in crate::exec_operation) fn mark_possible_guest_write_started(
-        &mut self,
-    ) -> io::Result<()> {
-        match self {
-            ExecOperationNormalTracking::Owned(normal_operation) => normal_operation
-                .mark_possible_guest_write_started()
-                .map_err(normal_operation_transition_error),
-            ExecOperationNormalTracking::Composite(normal_operation) => normal_operation
-                .mark_possible_guest_write_started()
-                .map_err(normal_operation_transition_error),
-        }
-    }
-
-    pub(in crate::exec_operation) fn complete(self) -> io::Result<()> {
-        match self {
-            ExecOperationNormalTracking::Owned(normal_operation) => normal_operation
-                .complete()
-                .map_err(normal_operation_transition_error),
-            ExecOperationNormalTracking::Composite(normal_operation) => normal_operation
-                .mark_possible_guest_write_completed()
-                .map_err(normal_operation_transition_error),
-        }
     }
 }
 
@@ -646,11 +617,11 @@ pub(in crate::exec_operation) fn register_exec_operation_start(
     };
     let (result_tx, result_rx) = oneshot::channel();
     let normal_operation = match tracking {
-        ExecOperationTracking::Tracked => Some(ExecOperationNormalTracking::Owned(
+        ExecOperationTracking::Tracked => Some(PendingNormalOperation::Owned(
             shared.reserve_normal_operation()?,
         )),
         ExecOperationTracking::Composite(normal_operation) => Some(
-            ExecOperationNormalTracking::Composite(normal_operation.transition_handle()),
+            PendingNormalOperation::Composite(normal_operation.transition_handle()),
         ),
         ExecOperationTracking::Untracked => None,
     };

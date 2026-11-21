@@ -17,7 +17,7 @@ use tracing::Level;
 use tracing_subscriber::prelude::*;
 use tracing_test_support::{CapturedEvent, CapturedEvents};
 
-use crate::operation_tracker::NormalOperationReadiness;
+use crate::operation_tracker::{NormalOperationReadiness, PendingNormalOperation};
 use crate::tests::support::{
     assert_connection_accepts_exec_operation, is_connected, normal_operation_readiness,
     read_guest_message, route_reservation_count, send_exec_result, setup_host_and_guest,
@@ -40,7 +40,7 @@ fn exec_operation_for_snapshot(seq: u32, label: &str) -> ExecOperation {
     let normal_operations = crate::operation_tracker::NormalOperationTracker::new();
     ExecOperation {
         route_id: RouteId::from_raw(u64::from(seq)),
-        normal_operation: Some(ExecOperationNormalTracking::Owned(
+        normal_operation: Some(PendingNormalOperation::Owned(
             normal_operations.reserve().unwrap(),
         )),
         lifecycle: ExecOperationLifecycle::OneShot,

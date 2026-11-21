@@ -342,6 +342,31 @@ impl NormalOperationTransitionHandle {
     }
 }
 
+/// Normal-operation ownership retained by a pending request or exec route.
+pub(crate) enum PendingNormalOperation {
+    Owned(NormalOperationToken),
+    Composite(NormalOperationTransitionHandle),
+}
+
+impl PendingNormalOperation {
+    pub(crate) fn mark_possible_guest_write_started(
+        &mut self,
+    ) -> Result<(), NormalOperationTransitionError> {
+        match self {
+            Self::Owned(token) => token.mark_possible_guest_write_started(),
+            Self::Composite(handle) => handle.mark_possible_guest_write_started(),
+        }
+    }
+
+    /// A composite route completes its write and leaves release to its outer owner.
+    pub(crate) fn complete(self) -> Result<(), NormalOperationTransitionError> {
+        match self {
+            Self::Owned(token) => token.complete(),
+            Self::Composite(handle) => handle.mark_possible_guest_write_completed(),
+        }
+    }
+}
+
 impl Drop for NormalOperationToken {
     fn drop(&mut self) {
         if self.released {
