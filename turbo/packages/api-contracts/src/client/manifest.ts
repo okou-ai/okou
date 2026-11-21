@@ -520,7 +520,7 @@ export const clientDescriptorManifest = [
   },
   {
     module: "mcp-chat-search",
-    contracts: ["mcpChatSearchContract", "mcpProjectChatSearchContract"],
+    contracts: ["mcpProjectChatSearchContract"],
   },
   {
     module: "mcp-chat-snapshots",

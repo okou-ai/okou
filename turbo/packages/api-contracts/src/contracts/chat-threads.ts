@@ -1060,7 +1060,6 @@ const chatSearchMatchRangeSchema = object({
 });
 
 const chatSearchResultSchema = object({
-  agentName: string(),
   chatThreadId: string(),
   matchedMessage: chatSearchMessageSchema,
   matchedRanges: array(chatSearchMatchRangeSchema),

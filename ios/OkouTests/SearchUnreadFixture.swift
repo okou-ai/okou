@@ -37,7 +37,7 @@ func searchResponse(content: String) -> ChatHTTPResponse {
   let text = try! JSONEncoder().encodeString(content)
   return ChatHTTPResponse(
     body: """
-      {"results":[{"chatThreadId":"\(SearchUnreadFixture.id(2))","agentName":"Research","matchedMessage":{"chatThreadId":"\(SearchUnreadFixture.id(2))","role":"assistant","content":\(text),"createdAt":"2026-10-19T12:00:00Z","seqId":5,"runId":null},"matchedRanges":[{"start":\(start),"end":\(end)}]}]}
+      {"results":[{"chatThreadId":"\(SearchUnreadFixture.id(2))","matchedMessage":{"chatThreadId":"\(SearchUnreadFixture.id(2))","role":"assistant","content":\(text),"createdAt":"2026-10-19T12:00:00Z","seqId":5,"runId":null},"matchedRanges":[{"start":\(start),"end":\(end)}]}]}
       """)
 }
 

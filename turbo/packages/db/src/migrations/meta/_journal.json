@@ -3718,6 +3718,13 @@
       "when": 1795286891342,
       "tag": "1609_stage-agent-retirement",
       "breakpoints": true
+    },
+    {
+      "idx": 1610,
+      "version": "7",
+      "when": 1795292457882,
+      "tag": "1610_contract_chat_run_agent_storage",
+      "breakpoints": true
     }
   ]
 }
