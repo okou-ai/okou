@@ -15,14 +15,11 @@ export interface ComposerChatThreadSuggestionResult {
 
 export function createComposerChatThreadSuggestions(
   activeRange$: Computed<ChatThreadSuggestionRange | null>,
-): Computed<ComposerChatThreadSuggestionResult> {
-  return computed((get): ComposerChatThreadSuggestionResult => {
+): Computed<Promise<ComposerChatThreadSuggestionResult>> {
+  return computed((get): Promise<ComposerChatThreadSuggestionResult> => {
     const range = get(activeRange$);
     if (!range) {
-      return {
-        query: null,
-        chatThreads: [],
-      };
+      return Promise.resolve({ query: null, chatThreads: [] });
     }
 
     const query = range.query.toLowerCase();
@@ -47,9 +44,6 @@ export function createComposerChatThreadSuggestions(
       }
     }
 
-    return {
-      query: range.query,
-      chatThreads,
-    };
+    return Promise.resolve({ query: range.query, chatThreads });
   });
 }

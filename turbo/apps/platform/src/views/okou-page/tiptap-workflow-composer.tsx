@@ -466,8 +466,7 @@ function useComposerWorkflowSuggestions(
 }
 
 /**
- * The @-mention half of the suggestion menu. Only the result for the current
- * agent and the current query counts; a stale resolution shows nothing.
+ * The @-mention menu shows results for the current query.
  */
 function useComposerMentionSuggestions(
   composer: ComposerSignals,

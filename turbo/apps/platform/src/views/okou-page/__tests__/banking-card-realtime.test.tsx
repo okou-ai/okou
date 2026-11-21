@@ -15,14 +15,21 @@ test("Duplicate banking cards update together on events and recover after a cont
   url.searchParams.set("reason", REASON);
   url.searchParams.set("threadId", context.resourceId);
   url.searchParams.set("callbackPrompt", "Continue the expense review");
-  let name = "Finance Assistant";
+  let pending = false;
   context.mocks.api(
     bankingWorkspaceContract.accessRequestStatus,
     ({ respond }) => {
       return respond(200, {
-        agent: { id: AGENT_ID, name },
+        agent: { id: AGENT_ID, name: "Okou" },
         connection: null,
-        session: null,
+        session: pending
+          ? {
+              id: AGENT_ID,
+              mode: "connect",
+              status: "pending",
+              institutionLoginId: null,
+            }
+          : null,
         grant: null,
       });
     },
@@ -49,10 +56,10 @@ test("Duplicate banking cards update together on events and recover after a cont
   });
   await waitFor(() => {
     expect(screen.getAllByTestId("banking-action-card")).toHaveLength(2);
-    expect(screen.getAllByText(name)).toHaveLength(2);
+    expect(screen.getAllByText(REASON)).toHaveLength(2);
   });
   await attachment.started;
-  name = "Updated Finance Assistant";
+  pending = true;
   attachment.attach();
   await waitFor(() => {
     expect(
@@ -61,13 +68,17 @@ test("Duplicate banking cards update together on events and recover after a cont
   });
   context.mocks.ably.trigger("bankingAccessChanged", {});
   await waitFor(() => {
-    expect(screen.getAllByText(name)).toHaveLength(2);
+    expect(
+      screen.getAllByText(
+        "Waiting for Mastercard Data Connect. Finish there, then return to Chat.",
+      ),
+    ).toHaveLength(2);
   });
 
   context.mocks.ably.triggerConnectionState("suspended");
-  name = "Recovered Finance Assistant";
+  pending = false;
   context.mocks.ably.triggerConnectionState("connected");
   await waitFor(() => {
-    expect(screen.getAllByText(name)).toHaveLength(2);
+    expect(screen.getAllByText(REASON)).toHaveLength(2);
   });
 });
