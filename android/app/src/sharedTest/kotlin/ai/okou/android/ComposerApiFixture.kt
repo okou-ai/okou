@@ -68,7 +68,7 @@ class ComposerApiFixture : Closeable {
                         else "$path/draft"] = body
                     MockResponse().setResponseCode(204)
                 }
-                path == "/api/onboarding/member-status" -> {
+                path == "/api/onboarding/status" -> {
                     requests += request
                     beforeContextReturn()
                     json(

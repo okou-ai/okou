@@ -4,7 +4,7 @@ import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-thread
 import {
   type UserLocale,
   type UserPreferencesResponse,
-  memberPreferencesContract,
+  userPreferencesContract,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
@@ -87,19 +87,16 @@ function mockMissingLocaleInitialization(
   preferences: () => UserPreferencesResponse,
   saveLocale: (locale: UserLocale) => void,
 ): void {
-  context.mocks.api(
-    memberPreferencesContract.initialize,
-    ({ body, respond }) => {
-      const current = preferences();
-      if (current.locale === null) {
-        const requested = body.locale ?? "en-US";
-        saveLocale(
-          current.supportedLocales.includes(requested) ? requested : "en-US",
-        );
-      }
-      return respond(200, preferences());
-    },
-  );
+  context.mocks.api(userPreferencesContract.initialize, ({ body, respond }) => {
+    const current = preferences();
+    if (current.locale === null) {
+      const requested = body.locale ?? "en-US";
+      saveLocale(
+        current.supportedLocales.includes(requested) ? requested : "en-US",
+      );
+    }
+    return respond(200, preferences());
+  });
 }
 
 function indexedDbDisclosure(region: HTMLElement): {
@@ -133,10 +130,10 @@ function buttonWithText(
 
 async function openSupportedLanguagePicker() {
   let preferences = createPreferences("pt-BR", ["en-US", "pt-BR", "de-DE"]);
-  context.mocks.api(memberPreferencesContract.get, ({ respond }) => {
+  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
     return respond(200, preferences);
   });
-  context.mocks.api(memberPreferencesContract.update, ({ body, respond }) => {
+  context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
     preferences = {
       ...preferences,
       ...body,
@@ -167,7 +164,7 @@ test("Offer only the workspace's supported languages", async () => {
 test("Persist the browser language when the workspace has no preference", async () => {
   let serverLocale: UserLocale | null = null;
   context.mocks.browser.languages(["id-ID"]);
-  context.mocks.api(memberPreferencesContract.get, ({ respond }) => {
+  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
     if (serverLocale === null) {
       return respond(409, {
         error: {
@@ -186,7 +183,7 @@ test("Persist the browser language when the workspace has no preference", async 
       serverLocale = locale;
     },
   );
-  context.mocks.api(memberPreferencesContract.update, ({ body, respond }) => {
+  context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
     if (body.locale !== undefined) {
       serverLocale = body.locale;
     }
@@ -220,10 +217,10 @@ test("Select and persist a supported interface language", async () => {
   const submittedLocales: UserLocale[] = [];
   let serverLocale: UserLocale | null = "en-US";
   const supportedLocales: UserLocale[] = ["en-US", "pt-BR", "de-DE"];
-  context.mocks.api(memberPreferencesContract.get, ({ respond }) => {
+  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
     return respond(200, createPreferences(serverLocale, supportedLocales));
   });
-  context.mocks.api(memberPreferencesContract.update, ({ body, respond }) => {
+  context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
     if (body.locale !== undefined) {
       serverLocale = body.locale;
       submittedLocales.push(body.locale);

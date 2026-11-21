@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   USER_PREFERENCES_UNINITIALIZED,
-  memberPreferencesContract,
+  userPreferencesContract,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { DEFAULT_USER_TIMEZONE } from "@okouai/core/timezone";
 import { expect, test } from "vitest";
@@ -21,7 +21,7 @@ function headers() {
 
 function client() {
   return setupApp({ context, routes: userPreferencesRoutes })(
-    memberPreferencesContract,
+    userPreferencesContract,
   );
 }
 

@@ -1,6 +1,6 @@
 import {
   type UserPreferencesResponse,
-  memberPreferencesContract,
+  userPreferencesContract,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { mockApi } from "../msw-contract.ts";
 
@@ -65,7 +65,7 @@ export function setMockUserPreferences(
 }
 
 export const apiUserPreferencesHandlers = [
-  mockApi(memberPreferencesContract.initialize, ({ body, respond }) => {
+  mockApi(userPreferencesContract.initialize, ({ body, respond }) => {
     mockPreferences = {
       ...mockPreferences,
       timezone: mockPreferences.timezone ?? body.timezone ?? null,
@@ -74,7 +74,7 @@ export const apiUserPreferencesHandlers = [
     };
     return respond(200, mockPreferences);
   }),
-  mockApi(memberPreferencesContract.get, ({ respond }) => {
+  mockApi(userPreferencesContract.get, ({ respond }) => {
     if (mockPreferences.timezone === null || mockPreferences.locale === null) {
       return respond(409, {
         error: {
@@ -85,7 +85,7 @@ export const apiUserPreferencesHandlers = [
     }
     return respond(200, mockPreferences);
   }),
-  mockApi(memberPreferencesContract.update, ({ body, respond }) => {
+  mockApi(userPreferencesContract.update, ({ body, respond }) => {
     Object.assign(mockPreferences, body);
     return respond(200, mockPreferences);
   }),

@@ -342,7 +342,7 @@ test("Startup onboarding follows the current account and workspace", async () =>
   const statusRequested = context.mocks.deferred<void>();
   const statusReady = context.mocks.deferred<void>();
   let currentIdentityRequests = 0;
-  context.mocks.http.get("*/api/onboarding/member-status", async () => {
+  context.mocks.http.get("*/api/onboarding/status", async () => {
     currentIdentityRequests += 1;
     statusRequested.resolve();
     await statusReady.promise;

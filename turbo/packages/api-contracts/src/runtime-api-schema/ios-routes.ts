@@ -78,6 +78,7 @@ import { runConnectorAccountsContract } from "../contracts/run-connector-account
 import { thirdPartySubscriptionsMainContract } from "../contracts/third-party-subscriptions";
 import { uploadsContract } from "../contracts/uploads";
 import { userModelPreferenceContract } from "../contracts/user-model-preference";
+import { userPreferencesContract } from "../contracts/user-preferences";
 import { vncConnectionsContract } from "../contracts/vnc-connections";
 import { webFilesContract } from "../contracts/web-files";
 import { voiceIoQuotaContract } from "../contracts/voice-io-quota";
@@ -487,6 +488,7 @@ const iosContracts: readonly {
     id: "ios.userModelPreferenceContract.update",
     route: userModelPreferenceContract.update,
   },
+  { id: "ios.userPreferencesContract.get", route: userPreferencesContract.get },
   { id: "ios.vncConnectionsContract.list", route: vncConnectionsContract.list },
   { id: "ios.webFilesContract.fileUrl", route: webFilesContract.fileUrl },
   { id: "ios.voiceIoQuotaContract.get", route: voiceIoQuotaContract.get },

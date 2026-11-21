@@ -39,7 +39,7 @@ teardown() {
 }
 
 @test "runner refreshes workspace workflow files and mounts personal instructions" {
-    run runner_api_curl "/api/onboarding/member-status"
+    run runner_api_curl "/api/onboarding/status"
     echo "$output"
     assert_success
     run runner_api_curl "/api/agents"

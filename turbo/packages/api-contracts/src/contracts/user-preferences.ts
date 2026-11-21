@@ -95,10 +95,10 @@ export type UpdateUserPreferencesRequest = zInfer<
   typeof updateUserPreferencesRequestSchema
 >;
 
-export const memberPreferencesContract = c.router({
+export const userPreferencesContract = c.router({
   initialize: {
     method: "POST",
-    path: "/api/member/preferences/initialize",
+    path: "/api/user-preferences/initialize",
     headers: authHeadersSchema,
     body: object({
       timezone: string().min(1).optional(),
@@ -114,7 +114,7 @@ export const memberPreferencesContract = c.router({
   },
   get: {
     method: "GET",
-    path: "/api/member/preferences",
+    path: "/api/user-preferences",
     headers: authHeadersSchema,
     responses: {
       200: userPreferencesResponseSchema,
@@ -131,7 +131,7 @@ export const memberPreferencesContract = c.router({
   },
   update: {
     method: "POST",
-    path: "/api/member/preferences",
+    path: "/api/user-preferences",
     headers: authHeadersSchema,
     body: updateUserPreferencesRequestSchema,
     responses: {
@@ -144,3 +144,5 @@ export const memberPreferencesContract = c.router({
     summary: "Update user preferences",
   },
 });
+
+export type UserPreferencesContract = typeof userPreferencesContract;

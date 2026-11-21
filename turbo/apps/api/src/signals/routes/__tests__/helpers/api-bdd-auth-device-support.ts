@@ -9,7 +9,7 @@ import {
   personalModelProvidersMainContract,
   personalModelProviderAccountsByIdContract,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { memberPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
@@ -70,7 +70,7 @@ export function createAuthDeviceSupportApi(context: TestContext) {
   return {
     async initializePreferences(actor: ApiTestUser) {
       return await accept(
-        authDeviceSupportApp(context)(memberPreferencesContract).initialize({
+        authDeviceSupportApp(context)(userPreferencesContract).initialize({
           headers: authenticate(context, actor),
           body: { locale: "en-US" },
         }),
@@ -80,7 +80,7 @@ export function createAuthDeviceSupportApi(context: TestContext) {
 
     async readPreferences(actor: ApiTestUser) {
       return await accept(
-        authDeviceSupportApp(context)(memberPreferencesContract).get({
+        authDeviceSupportApp(context)(userPreferencesContract).get({
           headers: authenticate(context, actor),
         }),
         [200],
@@ -89,7 +89,7 @@ export function createAuthDeviceSupportApi(context: TestContext) {
 
     async readUninitializedPreferences(actor: ApiTestUser) {
       return await accept(
-        authDeviceSupportApp(context)(memberPreferencesContract).get({
+        authDeviceSupportApp(context)(userPreferencesContract).get({
           headers: authenticate(context, actor),
         }),
         [409],

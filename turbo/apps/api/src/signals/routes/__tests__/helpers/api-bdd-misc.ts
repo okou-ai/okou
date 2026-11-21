@@ -19,7 +19,7 @@ import {
 } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { orgLogoContract } from "@okouai/api-contracts/contracts/org-logo";
 import {
-  memberPreferencesContract,
+  userPreferencesContract,
   updateUserPreferencesRequestSchema,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
@@ -264,7 +264,7 @@ export function createMiscRoutesApi(context: TestContext) {
     async readPreferences(actor: ApiTestUser) {
       return await accept(
         setupApp({ context, routes: userPreferencesRoutes })(
-          memberPreferencesContract,
+          userPreferencesContract,
         ).get({
           headers: authenticate(context, actor),
         }),
@@ -275,7 +275,7 @@ export function createMiscRoutesApi(context: TestContext) {
     async readUninitializedPreferences(actor: ApiTestUser) {
       return await accept(
         setupApp({ context, routes: userPreferencesRoutes })(
-          memberPreferencesContract,
+          userPreferencesContract,
         ).get({
           headers: authenticate(context, actor),
         }),
@@ -290,7 +290,7 @@ export function createMiscRoutesApi(context: TestContext) {
     ) {
       return await accept(
         setupApp({ context, routes: userPreferencesRoutes })(
-          memberPreferencesContract,
+          userPreferencesContract,
         ).update({
           headers: authenticate(context, actor),
           body,

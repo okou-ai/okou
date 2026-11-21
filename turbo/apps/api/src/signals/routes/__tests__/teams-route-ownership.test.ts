@@ -5,9 +5,9 @@ import {
   chatThreadEventsContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { memberOnboardingContract } from "@okouai/api-contracts/contracts/onboarding";
+import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
 import { teamsBotIngressResponseSchema } from "@okouai/api-contracts/contracts/teams-bot";
-import { memberPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
@@ -140,7 +140,7 @@ async function connect(fixture: TeamsConnectFixture): Promise<void> {
   // memory before any run can mount it.
   await accept(
     setupApp({ context, routes: userPreferencesRoutes })(
-      memberPreferencesContract,
+      userPreferencesContract,
     ).initialize({
       headers: authHeaders(),
       body: { timezone: "UTC", locale: "en-US" },
@@ -159,7 +159,7 @@ async function setupTeamsRoute() {
     routes: onboardingStatusRoutes,
   });
   const onboarding = await accept(
-    app(memberOnboardingContract).getStatus({ headers: authHeaders() }),
+    app(onboardingStatusContract).getStatus({ headers: authHeaders() }),
     [200],
   );
   expect(onboarding.body.hasOrg).toBeTruthy();

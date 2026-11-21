@@ -12,7 +12,7 @@ import {
   cliAuthDeviceContract,
   cliAuthTokenContract,
 } from "@okouai/api-contracts/contracts/cli-auth";
-import { memberOnboardingContract } from "@okouai/api-contracts/contracts/onboarding";
+import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
 import { createStore } from "ccstate";
 
 import { mockNow } from "../../../lib/time";
@@ -95,7 +95,7 @@ function agentsCollectionClient() {
 
 function onboardingStatusClient() {
   return setupApp({ context, routes: onboardingStatusRoutes })(
-    memberOnboardingContract,
+    onboardingStatusContract,
   );
 }
 

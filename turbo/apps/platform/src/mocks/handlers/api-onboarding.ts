@@ -1,24 +1,24 @@
 import {
   onboardingCompleteContract,
   onboardingDraftContract,
-  memberOnboardingContract,
-  type MemberOnboardingStatus,
+  onboardingStatusContract,
+  type OnboardingStatusResponse,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { mockApi } from "../msw-contract.ts";
 
-const DEFAULT_ONBOARDING_STATUS: MemberOnboardingStatus = {
+const DEFAULT_ONBOARDING_STATUS: OnboardingStatusResponse = {
   needsOnboarding: false,
   onboardingComplete: true,
   isAdmin: true,
   hasOrg: true,
 };
 
-let mockOnboardingStatus: MemberOnboardingStatus = {
+let mockOnboardingStatus: OnboardingStatusResponse = {
   ...DEFAULT_ONBOARDING_STATUS,
 };
 
 export function setMockOnboardingStatus(
-  status: Partial<MemberOnboardingStatus>,
+  status: Partial<OnboardingStatusResponse>,
 ): void {
   mockOnboardingStatus = { ...mockOnboardingStatus, ...status };
 }
@@ -37,8 +37,8 @@ export const apiOnboardingHandlers = [
       },
     });
   }),
-  // GET /api/onboarding/member-status
-  mockApi(memberOnboardingContract.getStatus, ({ respond }) => {
+  // GET /api/onboarding/status
+  mockApi(onboardingStatusContract.getStatus, ({ respond }) => {
     return respond(200, mockOnboardingStatus);
   }),
 

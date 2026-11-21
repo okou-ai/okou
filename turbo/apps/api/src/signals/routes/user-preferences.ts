@@ -1,7 +1,7 @@
 import {
   USER_PREFERENCES_UNINITIALIZED,
   userLocaleSchema,
-  memberPreferencesContract,
+  userPreferencesContract,
   type UserLocale,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
@@ -29,9 +29,7 @@ function isValidUserLocale(locale: string | null): locale is UserLocale {
   return locale !== null && userLocaleSchema.safeParse(locale).success;
 }
 
-const updateUserPreferencesBody$ = bodyResultOf(
-  memberPreferencesContract.update,
-);
+const updateUserPreferencesBody$ = bodyResultOf(userPreferencesContract.update);
 
 const getUserPreferencesInner$ = computed(async (get): Promise<unknown> => {
   const auth = get(organizationAuthContext$);
@@ -114,7 +112,7 @@ const updateUserPreferencesInner$ = command(
 );
 
 const initializeUserPreferencesBody$ = bodyResultOf(
-  memberPreferencesContract.initialize,
+  userPreferencesContract.initialize,
 );
 const fillMissingUserPreferenceFields$ = command(
   async (
@@ -266,21 +264,21 @@ const initializeUserPreferencesInner$ = command(
 
 export const userPreferencesRoutes: readonly RouteEntry[] = [
   {
-    route: memberPreferencesContract.initialize,
+    route: userPreferencesContract.initialize,
     handler: authRoute(
       { requireOrganization: true, missingOrganizationStatus: 401 },
       initializeUserPreferencesInner$,
     ),
   },
   {
-    route: memberPreferencesContract.get,
+    route: userPreferencesContract.get,
     handler: authRoute(
       { requireOrganization: true, missingOrganizationStatus: 401 },
       getUserPreferencesInner$,
     ),
   },
   {
-    route: memberPreferencesContract.update,
+    route: userPreferencesContract.update,
     handler: authRoute(
       { requireOrganization: true, missingOrganizationStatus: 401 },
       updateUserPreferencesInner$,

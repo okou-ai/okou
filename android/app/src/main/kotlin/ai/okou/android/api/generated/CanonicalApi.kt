@@ -83,8 +83,8 @@ internal interface CanonicalApi {
         @Path("eventId") `pathEventId`: String,
     ): Response<InputStatus>
 
-    @GET("/api/onboarding/member-status")
-    suspend fun `memberOnboardingStatus`(
+    @GET("/api/onboarding/status")
+    suspend fun `onboardingStatus`(
         @Header("Authorization") token: String
     ): Response<OnboardingStatus>
 
@@ -108,19 +108,17 @@ internal interface CanonicalApi {
         @Body body: RealtimeTokenRequest,
     ): Response<RealtimeToken>
 
-    @GET("/api/member/preferences")
-    suspend fun `memberPreferences`(
-        @Header("Authorization") token: String
-    ): Response<UserPreferences>
+    @GET("/api/user-preferences")
+    suspend fun `preferences`(@Header("Authorization") token: String): Response<UserPreferences>
 
-    @POST("/api/member/preferences/initialize")
-    suspend fun `initializeMemberPreferences`(
+    @POST("/api/user-preferences/initialize")
+    suspend fun `initializePreferences`(
         @Header("Authorization") token: String,
         @Body body: InitializePreferencesRequest,
     ): Response<UserPreferences>
 
-    @POST("/api/member/preferences")
-    suspend fun `updateMemberPreferences`(
+    @POST("/api/user-preferences")
+    suspend fun `updatePreferences`(
         @Header("Authorization") token: String,
         @Body body: UpdatePreferencesRequest,
     ): Response<UserPreferences>

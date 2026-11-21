@@ -1408,11 +1408,11 @@ assert.deepEqual(
     .sort(),
   [
     "/api/feature-switches",
-    "/api/member/preferences",
-    "/api/onboarding/member-status",
+    "/api/onboarding/status",
     "/api/org",
     "/api/run-models",
     "/api/user-model-preference",
+    "/api/user-preferences",
   ],
 );
 for (const { headers, method, url } of observedApiRequests) {

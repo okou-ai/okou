@@ -2,7 +2,7 @@ import { command, computed, type Computed } from "ccstate";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { initializeMemberMemory$ } from "./member-memory-initialization.service";
 import type {
-  MemberOnboardingStatus,
+  OnboardingStatusResponse,
   OnboardingIndustry,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { isValidTimeZone } from "@okouai/core/timezone";
@@ -198,8 +198,8 @@ export function needsOnboarding(
 
 export function memberOnboardingStatus(
   auth: AuthContext,
-): Computed<Promise<MemberOnboardingStatus>> {
-  return computed(async (get): Promise<MemberOnboardingStatus> => {
+): Computed<Promise<OnboardingStatusResponse>> {
+  return computed(async (get): Promise<OnboardingStatusResponse> => {
     if (!auth.orgId) {
       const isAdmin = false;
       const complete = false;

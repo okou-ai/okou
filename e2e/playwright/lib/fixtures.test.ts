@@ -35,10 +35,10 @@ for (const scenario of ["success", "body-failure", "route-failure"]) {
             response
               .writeHead(200, { "Content-Type": "text/html" })
               .end(
-                "<button onclick=\"fetch('/api/member/preferences')\">Load preferences</button>",
+                "<button onclick=\"fetch('/api/user-preferences')\">Load preferences</button>",
               );
             break;
-          case "/api/member/preferences":
+          case "/api/user-preferences":
             pendingResponse = response;
             markStarted();
             break;

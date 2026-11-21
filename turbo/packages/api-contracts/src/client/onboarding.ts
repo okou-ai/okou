@@ -2,26 +2,13 @@
 // Regenerate: cd turbo && pnpm -F @okouai/api-contracts generate:client
 
 import type {
-  memberOnboardingContract as OriginalMemberOnboardingContract,
   onboardingCompleteContract as OriginalOnboardingCompleteContract,
   onboardingDraftContract as OriginalOnboardingDraftContract,
   onboardingRecommendationContract as OriginalOnboardingRecommendationContract,
   onboardingSourcesContract as OriginalOnboardingSourcesContract,
+  onboardingStatusContract as OriginalOnboardingStatusContract,
 } from "../contracts/onboarding";
 import type { ClientDescriptor } from "./types";
-
-export const memberOnboardingContract: ClientDescriptor<
-  typeof OriginalMemberOnboardingContract
-> = {
-  getStatus: {
-    method: "GET",
-    path: "/api/onboarding/member-status",
-    statuses: {
-      200: true,
-      401: true,
-    },
-  },
-};
 
 export const onboardingCompleteContract: ClientDescriptor<
   typeof OriginalOnboardingCompleteContract
@@ -100,6 +87,19 @@ export const onboardingSourcesContract: ClientDescriptor<
       401: true,
       403: true,
       503: true,
+    },
+  },
+};
+
+export const onboardingStatusContract: ClientDescriptor<
+  typeof OriginalOnboardingStatusContract
+> = {
+  getStatus: {
+    method: "GET",
+    path: "/api/onboarding/status",
+    statuses: {
+      200: true,
+      401: true,
     },
   },
 };

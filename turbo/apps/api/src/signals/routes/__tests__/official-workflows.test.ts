@@ -9,7 +9,7 @@ import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { launchBudgetRun } from "./helpers/public-autonomy-budget";
 import { publicChatActor } from "./helpers/public-chat-actor";
 
-import { memberPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import {
   workflowAutomationsContract,
   workflowsCollectionContract,
@@ -436,7 +436,7 @@ function mockBriefMemberships(
 async function initializeBriefMember(actor: ApiTestUser, timezone: string) {
   return await accept(
     setupApp({ context, routes: userPreferencesRoutes })(
-      memberPreferencesContract,
+      userPreferencesContract,
     ).initialize({
       headers: authHeaders(actor),
       body: { timezone, locale: "en-US" },
@@ -609,7 +609,7 @@ describe("Morning Brief initialization", () => {
     );
     expect(initialized.body.timezone).toBe("Asia/Tokyo");
     const saved = await accept(
-      app(memberPreferencesContract).get({ headers: authHeaders(actor) }),
+      app(userPreferencesContract).get({ headers: authHeaders(actor) }),
       [200],
     );
     expect(saved.body.timezone).toBe("Asia/Tokyo");

@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 import { authContract } from "@okouai/api-contracts/contracts/auth";
 import {
   onboardingCompleteContract,
-  memberOnboardingContract,
+  onboardingStatusContract,
 } from "@okouai/api-contracts/contracts/onboarding";
 import type { ApiErrorResponse } from "@okouai/api-contracts/contracts/errors";
 import {
@@ -20,7 +20,7 @@ import {
 } from "@okouai/api-contracts/contracts/agents";
 import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
 import {
-  memberPreferencesContract,
+  userPreferencesContract,
   type UserLocale,
 } from "@okouai/api-contracts/contracts/user-preferences";
 
@@ -110,7 +110,7 @@ export function createBddApi(context: TestContext) {
     return setupAppWithRoutes({
       context,
       routes: onboardingStatusRoutes,
-    })(memberOnboardingContract);
+    })(onboardingStatusContract);
   }
 
   function onboardingCompleteClient() {
@@ -131,7 +131,7 @@ export function createBddApi(context: TestContext) {
     return setupAppWithRoutes({
       context,
       routes: userPreferencesRoutes,
-    })(memberPreferencesContract);
+    })(userPreferencesContract);
   }
 
   function agentsClient() {

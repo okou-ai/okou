@@ -557,11 +557,11 @@ export const clientDescriptorManifest = [
   {
     module: "onboarding",
     contracts: [
-      "memberOnboardingContract",
       "onboardingCompleteContract",
       "onboardingDraftContract",
       "onboardingRecommendationContract",
       "onboardingSourcesContract",
+      "onboardingStatusContract",
     ],
   },
   {
@@ -785,7 +785,7 @@ export const clientDescriptorManifest = [
   },
   {
     module: "user-preferences",
-    contracts: ["memberPreferencesContract"],
+    contracts: ["userPreferencesContract"],
   },
   {
     module: "user-templates",

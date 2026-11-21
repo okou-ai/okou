@@ -1,7 +1,7 @@
 import type { ZodType } from "zod";
 import type { NoBodyMarker } from "../contracts/trpc-contract";
 import { orgContract } from "../contracts/org-routes";
-import { memberPreferencesContract } from "../contracts/user-preferences";
+import { userPreferencesContract } from "../contracts/user-preferences";
 import { apiErrorSchema } from "../contracts/api-error";
 import { androidUpgradeRequiredSchema } from "../contracts/android-client-compatibility";
 import { androidUpdatesContract } from "../contracts/android-updates";
@@ -27,7 +27,7 @@ import { projectSnapshotArchiveSchema } from "../validators/projects";
 import { instructionsContract } from "../contracts/instructions";
 import { chatEventsContract } from "../contracts/chat-event-send";
 import { chatInputStatusContract } from "../contracts/chat-input-status";
-import { memberOnboardingContract } from "../contracts/onboarding";
+import { onboardingStatusContract } from "../contracts/onboarding";
 import { platformRealtimeTokenContract } from "../contracts/realtime";
 import { sessionOutputDeltaSchema } from "../validators/realtime";
 import { modelCatalogContract } from "../contracts/model-catalog";
@@ -182,9 +182,9 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: chatInputStatusContract.get,
   },
   {
-    name: "memberOnboardingStatus",
+    name: "onboardingStatus",
     response: "OnboardingStatus",
-    route: memberOnboardingContract.getStatus,
+    route: onboardingStatusContract.getStatus,
   },
   {
     name: "personalInstructions",
@@ -205,21 +205,21 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: platformRealtimeTokenContract.create,
   },
   {
-    name: "memberPreferences",
+    name: "preferences",
     response: "UserPreferences",
-    route: memberPreferencesContract.get,
+    route: userPreferencesContract.get,
   },
   {
-    name: "initializeMemberPreferences",
+    name: "initializePreferences",
     response: "UserPreferences",
     request: "InitializePreferencesRequest",
-    route: memberPreferencesContract.initialize,
+    route: userPreferencesContract.initialize,
   },
   {
-    name: "updateMemberPreferences",
+    name: "updatePreferences",
     response: "UserPreferences",
     request: "UpdatePreferencesRequest",
-    route: memberPreferencesContract.update,
+    route: userPreferencesContract.update,
   },
   ...chatReadBindings,
   ...historyReadBindings,
@@ -413,7 +413,7 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   },
   {
     name: "OnboardingStatus",
-    schema: memberOnboardingContract.getStatus.responses[200],
+    schema: onboardingStatusContract.getStatus.responses[200],
     direction: "output",
   },
   {
@@ -433,17 +433,17 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   },
   {
     name: "UserPreferences",
-    schema: memberPreferencesContract.get.responses[200],
+    schema: userPreferencesContract.get.responses[200],
     direction: "output",
   },
   {
     name: "InitializePreferencesRequest",
-    schema: memberPreferencesContract.initialize.body,
+    schema: userPreferencesContract.initialize.body,
     direction: "input",
   },
   {
     name: "UpdatePreferencesRequest",
-    schema: memberPreferencesContract.update.body,
+    schema: userPreferencesContract.update.body,
     direction: "input",
   },
   { name: "ApiError", schema: apiErrorSchema, direction: "output" },

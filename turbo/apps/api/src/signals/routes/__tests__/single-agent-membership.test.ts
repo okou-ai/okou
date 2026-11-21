@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { memberPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -31,7 +31,7 @@ async function initialize(actor: ApiTestUser) {
   org.authenticate(actor);
   await accept(
     setupApp({ context, routes: userPreferencesRoutes })(
-      memberPreferencesContract,
+      userPreferencesContract,
     ).initialize({
       headers,
       body: { timezone: "Asia/Shanghai", locale: "en-US" },

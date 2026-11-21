@@ -1,5 +1,5 @@
 import {
-  memberPreferencesContract,
+  userPreferencesContract,
   type UserPreferencesResponse,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -40,7 +40,7 @@ function mockTimezonePreferences(
     | undefined;
   let reads = 0;
   let updates = 0;
-  context.mocks.api(memberPreferencesContract.get, ({ respond }) => {
+  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
     reads += 1;
     if (stored.timezone === null || stored.locale === null) {
       return respond(409, {
@@ -52,20 +52,17 @@ function mockTimezonePreferences(
     }
     return respond(200, stored);
   });
-  context.mocks.api(
-    memberPreferencesContract.initialize,
-    ({ body, respond }) => {
-      initializationBody = body;
-      stored = {
-        ...stored,
-        timezone: stored.timezone ?? body.timezone ?? null,
-        locale: stored.locale ?? body.locale,
-        memoryInitialized: true,
-      };
-      return respond(200, stored);
-    },
-  );
-  context.mocks.api(memberPreferencesContract.update, ({ body, respond }) => {
+  context.mocks.api(userPreferencesContract.initialize, ({ body, respond }) => {
+    initializationBody = body;
+    stored = {
+      ...stored,
+      timezone: stored.timezone ?? body.timezone ?? null,
+      locale: stored.locale ?? body.locale,
+      memoryInitialized: true,
+    };
+    return respond(200, stored);
+  });
+  context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
     updates += 1;
     stored = { ...stored, ...body };
     return respond(200, stored);

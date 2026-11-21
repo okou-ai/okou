@@ -32,14 +32,14 @@ const c = initContract();
 /**
  * Onboarding status response schema
  */
-export const memberOnboardingStatusSchema = object({
+export const onboardingStatusResponseSchema = object({
   needsOnboarding: boolean(),
   onboardingComplete: boolean(),
   isAdmin: boolean(),
   hasOrg: boolean(),
 });
-export type MemberOnboardingStatus = zInfer<
-  typeof memberOnboardingStatusSchema
+export type OnboardingStatusResponse = zInfer<
+  typeof onboardingStatusResponseSchema
 >;
 
 export type OnboardingIndustry = zInfer<typeof onboardingIndustrySchema>;
@@ -105,12 +105,12 @@ export type OnboardingRecommendationStatus = zInfer<
 /**
  * Onboarding status contract for workspace members
  */
-export const memberOnboardingContract = c.router({
+export const onboardingStatusContract = c.router({
   getStatus: {
     method: "GET",
-    path: "/api/onboarding/member-status",
+    path: "/api/onboarding/status",
     headers: authHeadersSchema,
-    responses: { 200: memberOnboardingStatusSchema, 401: apiErrorSchema },
+    responses: { 200: onboardingStatusResponseSchema, 401: apiErrorSchema },
     summary: "Read workspace membership onboarding status",
   },
 });
@@ -228,6 +228,7 @@ export const onboardingRecommendationContract = c.router({
   },
 });
 
+export type OnboardingStatusContract = typeof onboardingStatusContract;
 export type OnboardingCompleteContract = typeof onboardingCompleteContract;
 export type OnboardingRecommendationContract =
   typeof onboardingRecommendationContract;

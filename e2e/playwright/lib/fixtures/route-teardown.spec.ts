@@ -32,7 +32,7 @@ const test = base.extend({
 for (const scenario of ["success", "body-failure", "route-failure"]) {
   test(scenario, async ({ page, request }) => {
     page.on("close", () => console.log("PAGE_CLOSED"));
-    await page.route("**/api/member/preferences", async (route) => {
+    await page.route("**/api/user-preferences", async (route) => {
       const response = await route.fetch();
       const preferences: unknown = await response.json();
       expect(preferences).toEqual({ theme: "light" });

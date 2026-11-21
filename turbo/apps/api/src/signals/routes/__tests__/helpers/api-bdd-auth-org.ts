@@ -22,7 +22,7 @@ import type {
 } from "@okouai/api-contracts/contracts/org-members";
 import {
   onboardingCompleteContract,
-  memberOnboardingContract,
+  onboardingStatusContract,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { authContract } from "@okouai/api-contracts/contracts/auth";
 import {
@@ -51,7 +51,7 @@ import {
   orgMembershipRequestsContract,
 } from "@okouai/api-contracts/contracts/org-member-routes";
 import {
-  memberPreferencesContract,
+  userPreferencesContract,
   type UpdateUserPreferencesRequest,
   type UserPreferencesResponse,
 } from "@okouai/api-contracts/contracts/user-preferences";
@@ -757,7 +757,7 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
 
     async readOnboardingStatus(actor: ApiTestUser) {
       const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
-        memberOnboardingContract,
+        onboardingStatusContract,
       );
       const response = await accept(
         client.getStatus({
@@ -795,7 +795,7 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
       actor: ApiTestUser,
     ): Promise<UserPreferencesResponse> {
       const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
-        memberPreferencesContract,
+        userPreferencesContract,
       );
       const response = await accept(
         client.get({ headers: authenticate(actor) }),
@@ -809,7 +809,7 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
       body: UpdateUserPreferencesRequest,
     ): Promise<UserPreferencesResponse> {
       const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
-        memberPreferencesContract,
+        userPreferencesContract,
       );
       const response = await accept(
         client.update({ headers: authenticate(actor), body }),

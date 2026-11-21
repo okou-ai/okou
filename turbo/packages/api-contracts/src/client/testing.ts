@@ -537,18 +537,18 @@ import { morningBriefPreferenceContract } from "./morning-brief-preference";
 import { notificationsContract as OriginalNotificationsContract } from "../contracts/notifications";
 import { notificationsContract } from "./notifications";
 import {
-  memberOnboardingContract as OriginalMemberOnboardingContract,
   onboardingCompleteContract as OriginalOnboardingCompleteContract,
   onboardingDraftContract as OriginalOnboardingDraftContract,
   onboardingRecommendationContract as OriginalOnboardingRecommendationContract,
   onboardingSourcesContract as OriginalOnboardingSourcesContract,
+  onboardingStatusContract as OriginalOnboardingStatusContract,
 } from "../contracts/onboarding";
 import {
-  memberOnboardingContract,
   onboardingCompleteContract,
   onboardingDraftContract,
   onboardingRecommendationContract,
   onboardingSourcesContract,
+  onboardingStatusContract,
 } from "./onboarding";
 import { orgLogoContract as OriginalOrgLogoContract } from "../contracts/org-logo";
 import { orgLogoContract } from "./org-logo";
@@ -710,8 +710,8 @@ import { userExportContract as OriginalUserExportContract } from "../contracts/u
 import { userExportContract } from "./user-export";
 import { userModelPreferenceContract as OriginalUserModelPreferenceContract } from "../contracts/user-model-preference";
 import { userModelPreferenceContract } from "./user-model-preference";
-import { memberPreferencesContract as OriginalMemberPreferencesContract } from "../contracts/user-preferences";
-import { memberPreferencesContract } from "./user-preferences";
+import { userPreferencesContract as OriginalUserPreferencesContract } from "../contracts/user-preferences";
+import { userPreferencesContract } from "./user-preferences";
 import { userTemplatesContract as OriginalUserTemplatesContract } from "../contracts/user-templates";
 import { userTemplatesContract } from "./user-templates";
 import { vncHostsContract as OriginalVncHostsContract } from "../contracts/vnc-access";
@@ -1243,11 +1243,11 @@ export const clientDescriptorContracts: readonly (readonly [
   [modelCatalogContract, OriginalModelCatalogContract],
   [morningBriefPreferenceContract, OriginalMorningBriefPreferenceContract],
   [notificationsContract, OriginalNotificationsContract],
-  [memberOnboardingContract, OriginalMemberOnboardingContract],
   [onboardingCompleteContract, OriginalOnboardingCompleteContract],
   [onboardingDraftContract, OriginalOnboardingDraftContract],
   [onboardingRecommendationContract, OriginalOnboardingRecommendationContract],
   [onboardingSourcesContract, OriginalOnboardingSourcesContract],
+  [onboardingStatusContract, OriginalOnboardingStatusContract],
   [orgLogoContract, OriginalOrgLogoContract],
   [orgInviteContract, OriginalOrgInviteContract],
   [orgMembersContract, OriginalOrgMembersContract],
@@ -1334,7 +1334,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [usageMembersContract, OriginalUsageMembersContract],
   [userExportContract, OriginalUserExportContract],
   [userModelPreferenceContract, OriginalUserModelPreferenceContract],
-  [memberPreferencesContract, OriginalMemberPreferencesContract],
+  [userPreferencesContract, OriginalUserPreferencesContract],
   [userTemplatesContract, OriginalUserTemplatesContract],
   [vncHostsContract, OriginalVncHostsContract],
   [vncAuthorizationContract, OriginalVncAuthorizationContract],

@@ -4,7 +4,7 @@ import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import {
   onboardingCompleteContract,
   onboardingDraftContract,
-  memberOnboardingContract,
+  onboardingStatusContract,
 } from "@okouai/api-contracts/contracts/onboarding";
 import type { OnboardingDraftPayload } from "@okouai/api-contracts/validators/onboarding";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
@@ -32,7 +32,7 @@ function authHeaders() {
 
 function onboardingStatusClient() {
   return setupApp({ context, routes: onboardingStatusRoutes })(
-    memberOnboardingContract,
+    onboardingStatusContract,
   );
 }
 
@@ -203,7 +203,7 @@ describe("Onboarding draft", () => {
   });
 });
 
-describe("GET /api/onboarding/member-status", () => {
+describe("GET /api/onboarding/status", () => {
   it("returns 401 when the request is unauthenticated", async () => {
     const response = await accept(
       onboardingStatusClient().getStatus({ headers: {} }),

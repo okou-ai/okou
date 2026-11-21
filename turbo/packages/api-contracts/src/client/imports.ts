@@ -1319,11 +1319,11 @@ export const clientContractImportManifest = [
   {
     module: "onboarding",
     contracts: [
-      "memberOnboardingContract",
       "onboardingCompleteContract",
       "onboardingDraftContract",
       "onboardingRecommendationContract",
       "onboardingSourcesContract",
+      "onboardingStatusContract",
     ],
     bindings: [
       {
@@ -1963,7 +1963,7 @@ export const clientContractImportManifest = [
   },
   {
     module: "user-preferences",
-    contracts: ["memberPreferencesContract"],
+    contracts: ["userPreferencesContract"],
     bindings: [
       {
         name: "COLOR_THEMES",

@@ -35,7 +35,7 @@ export async function ensureRunnerOrganizationReady(
   options: RunnerOrganizationReadinessOptions,
 ): Promise<void> {
   const response = await fetch(
-    new URL("/api/onboarding/member-status", options.apiUrl),
+    new URL("/api/onboarding/status", options.apiUrl),
     {
       headers: authHeadersForToken(
         options.clerkSessionToken,

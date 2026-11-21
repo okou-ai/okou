@@ -90,7 +90,7 @@ describe("selected Kotlin wire generation", () => {
     const files = renderKotlinFiles();
     expect(files.get("CanonicalApi.kt")).toContain('@GET("/api/org")');
     expect(files.get("CanonicalApi.kt")).toContain(
-      '@POST("/api/member/preferences/initialize")',
+      '@POST("/api/user-preferences/initialize")',
     );
     expect(files.get("CanonicalApi.kt")).toContain(
       "@Body body: InitializePreferencesRequest",

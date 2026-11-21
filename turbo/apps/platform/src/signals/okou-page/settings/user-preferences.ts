@@ -1,6 +1,6 @@
 import { command, computed, state } from "ccstate";
 import { DEFAULT_USER_TIMEZONE, isValidTimeZone } from "@okouai/core/timezone";
-import { memberPreferencesContract } from "@okouai/api-contracts/client/user-preferences";
+import { userPreferencesContract } from "@okouai/api-contracts/client/user-preferences";
 import type {
   InitializedUserPreferencesResponse,
   UpdateUserPreferencesRequest,
@@ -46,7 +46,7 @@ const initialUserPreferences$ = computed(
   async (get): Promise<InitializedUserPreferencesResponse> => {
     get(preferenceReadRevision$);
     const createClient = get(apiClient$);
-    const client = createClient(memberPreferencesContract);
+    const client = createClient(userPreferencesContract);
     const result = await accept(client.get(), [200, 409]);
     // Initialization is idempotent: it fills missing timezone and locale and
     // creates the member's memory, which run creation requires.
@@ -131,7 +131,7 @@ export const updateUserPreference$ = command(
   ) => {
     signal.throwIfAborted();
     const createClient = get(apiClient$);
-    const client = createClient(memberPreferencesContract);
+    const client = createClient(userPreferencesContract);
     const fields = Object.entries(update).flatMap(([key, value]) => {
       return value === undefined ? [] : [key];
     });

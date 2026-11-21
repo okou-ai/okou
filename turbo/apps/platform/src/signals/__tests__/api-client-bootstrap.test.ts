@@ -1,4 +1,4 @@
-import { memberOnboardingContract } from "@okouai/api-contracts/client/onboarding";
+import { onboardingStatusContract } from "@okouai/api-contracts/client/onboarding";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { expect, test, vi } from "vitest";
 
@@ -70,10 +70,10 @@ test("validates member onboarding descriptor responses against the original cont
     needsOnboarding: false,
     onboardingComplete: true,
   };
-  context.mocks.http.get("*/api/onboarding/member-status", () => {
+  context.mocks.http.get("*/api/onboarding/status", () => {
     return Response.json(member);
   });
-  const client = createAuthedContractClient(memberOnboardingContract, {
+  const client = createAuthedContractClient(onboardingStatusContract, {
     baseUrl: "https://api.okou.ai",
     clientVersion: "descriptor-test",
     getToken: () => {

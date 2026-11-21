@@ -8,9 +8,9 @@ import {
   billingStatusContract,
   billingUsagePackCreditsContract,
 } from "@okouai/api-contracts/contracts/billing";
-import { memberOnboardingContract } from "@okouai/api-contracts/contracts/onboarding";
+import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
-import { memberPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { SEED_INSTRUCTIONS } from "@okouai/core/seed-instructions";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -51,7 +51,7 @@ function clients(
     ],
   });
   return {
-    status: app(memberOnboardingContract),
+    status: app(onboardingStatusContract),
     agents: app(agentsMainContract),
     instructions: app(agentInstructionsContract),
     billing: app(billingStatusContract),
@@ -116,7 +116,7 @@ describe("default Agent bootstrap", () => {
   it("preserves saved member preferences during lazy bootstrap", async () => {
     authenticateAdmin();
     const preferences = setupApp({ context, routes: userPreferencesRoutes })(
-      memberPreferencesContract,
+      userPreferencesContract,
     );
     const saved = {
       timezone: "Asia/Shanghai",

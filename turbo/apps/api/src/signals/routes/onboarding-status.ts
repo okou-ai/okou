@@ -1,4 +1,4 @@
-import { memberOnboardingContract } from "@okouai/api-contracts/contracts/onboarding";
+import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
 import { command } from "ccstate";
 
 import { logger } from "../../lib/log";
@@ -45,7 +45,7 @@ const statusHandler$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 export const onboardingStatusRoutes: readonly RouteEntry[] = [
   {
-    route: memberOnboardingContract.getStatus,
+    route: onboardingStatusContract.getStatus,
     handler: authRoute({}, statusHandler$),
   },
 ];

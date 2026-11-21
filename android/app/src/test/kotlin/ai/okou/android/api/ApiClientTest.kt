@@ -87,7 +87,7 @@ class ApiClientTest {
             assertTrue(value.memoryInitialized)
             val request = server.takeRequest()
             assertEquals("POST", request.method)
-            assertEquals("/api/member/preferences/initialize", request.path)
+            assertEquals("/api/user-preferences/initialize", request.path)
             assertEquals(
                 Json.parseToJsonElement("""{"locale":"zh-Hant"}"""),
                 Json.parseToJsonElement(request.body.readUtf8()),
