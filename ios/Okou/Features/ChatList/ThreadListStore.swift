@@ -470,7 +470,6 @@ final class ThreadListStore {
     actions.dismissError()
   }
 
-
   @discardableResult
   func setArchived(
     _ thread: ChatThread, archived: Bool, eventID: String = UUID().uuidString.lowercased(),
