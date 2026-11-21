@@ -129,14 +129,20 @@ class NativeRealtimeTest {
                 checkNotNull(device.wait(Until.findObject(label(value)), 10_000))
             fun reveal(value: String) {
                 val target = label(value)
+                val scrollable = By.pkg(app.packageName).scrollable(true)
+                check(
+                    device.wait(
+                        object : Condition<UiDevice, Boolean> {
+                            override fun apply(device: UiDevice) =
+                                device.hasObject(target) || device.hasObject(scrollable)
+                        },
+                        10_000,
+                    )
+                ) {
+                    "Native reply and its scroll container are both unavailable"
+                }
                 if (!device.hasObject(target)) {
-                    val container =
-                        checkNotNull(
-                            device.wait(
-                                Until.findObject(By.pkg(app.packageName).scrollable(true)),
-                                10_000,
-                            )
-                        )
+                    val container = checkNotNull(device.findObject(scrollable))
                     val visible =
                         object : Condition<UiObject2, Boolean> {
                             // Compose exposes virtual descendants through the current window.

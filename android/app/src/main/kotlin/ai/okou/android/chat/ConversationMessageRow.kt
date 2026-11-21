@@ -4,6 +4,7 @@ import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
+import ai.okou.android.state.rememberEarlierRepliesExpanded
 import android.content.ClipData
 import android.os.Build
 import android.widget.Toast
@@ -39,7 +40,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -164,7 +164,7 @@ internal fun ConversationMessageRow(
             Column(Modifier.fillMaxWidth().testTag("message_${message.id}")) {
                 ConversationReplyHeader(message)
                 if (entry.earlier.isNotEmpty()) {
-                    var expanded by rememberSaveable { mutableStateOf(false) }
+                    var expanded by rememberEarlierRepliesExpanded()
                     TextButton(
                         onClick = { expanded = !expanded },
                         colors =

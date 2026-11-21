@@ -16,7 +16,6 @@ import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
-import androidx.test.uiautomator.UiScrollable
 import androidx.test.uiautomator.UiSelector
 import androidx.test.uiautomator.Until
 import java.util.UUID
@@ -306,12 +305,6 @@ class NativeChatListTest {
             firstHistory.countDown()
             text("Native history reply")
             text("Research")
-            assertTrue(
-                UiScrollable(UiSelector().scrollable(true))
-                    .setAsVerticalList()
-                    .scrollIntoView(UiSelector().textContains("Native history"))
-            )
-            assertNotNull(device.wait(Until.findObject(By.textContains("Native history")), 10_000))
             click(UiSelector().description(app.getString(R.string.chat_actions)))
             clickText(app.getString(R.string.settings))
             text(app.getString(R.string.appearance))

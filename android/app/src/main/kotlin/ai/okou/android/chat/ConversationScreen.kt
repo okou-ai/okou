@@ -212,6 +212,8 @@ internal fun ConversationRoute(
         var restoredAnchor by remember { mutableStateOf<ConversationAnchor?>(null) }
         var positioned by remember { mutableStateOf(false) }
         var newReply by remember { mutableStateOf(false) }
+        val previewId = content.lastOrNull()?.takeIf { it.deliveryStatus != null }?.message?.id
+        var lastPreviewId by remember { mutableStateOf(previewId) }
         val newestReply =
             remember(content) {
                 content
@@ -257,6 +259,14 @@ internal fun ConversationRoute(
                 position.scrollToItem(0)
             }
             positioned = true
+        }
+        LaunchedEffect(positioned, previewId) {
+            // A newly submitted local preview is an action in this chat. A restored preview
+            // belongs to the original attempt and should leave the restored reading position.
+            if (positioned && previewId != null && previewId != lastPreviewId) {
+                position.scrollToItem(0)
+            }
+            lastPreviewId = previewId
         }
         val latestConfirmed =
             remember(transcript, content) {
