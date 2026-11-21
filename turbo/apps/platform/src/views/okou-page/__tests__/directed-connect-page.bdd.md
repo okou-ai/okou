@@ -67,6 +67,8 @@ Original test `Connect a no-auth connector and continue the originating chat`. [
 - **When** The user connects Stripe.
 - **Then** Stripe connects once, the originating chat receives the callback prompt, and no visible agent-authorization update is made. No connection dialog remains open.
 
+- **Upstream change** [#49830](https://github.com/okou-ai/okou/commit/fad4dc9a841aac86dcdaf62f17d07ff200c287e3) changes the originating Stripe link to carry the thread and callback without an agent ID. The original Given and exact-once Then remain recorded above. No frozen acceptance is claimed for this change.
+
 ## directed-connect-page-009
 
 Original test `Complete OpenID and continue the originating chat`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx#L1126).

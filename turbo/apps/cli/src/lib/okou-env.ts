@@ -10,10 +10,6 @@ export function getOkouToken(): string | undefined {
   return okouEnvironmentValue("TOKEN");
 }
 
-export function getOkouAgentId(): string | undefined {
-  return okouEnvironmentValue("AGENT_ID");
-}
-
 export function getOkouChatThreadId(): string | undefined {
   return okouEnvironmentValue("CHAT_THREAD_ID");
 }

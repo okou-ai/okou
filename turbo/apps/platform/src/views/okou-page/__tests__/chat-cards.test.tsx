@@ -1,3 +1,7 @@
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/run-connector-accounts";
+import { mockAuthorizationCallbackThread } from "./authorization-callback-test-helpers.ts";
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 
 import {
@@ -408,9 +412,7 @@ test("chat-cards-025 an account removed after rendering cannot open a reconnect 
 test("chat-cards-033 the banking card identifies the requesting agent, purpose and read-only data scope", async () => {
   const reason = "Reconcile the October statements";
   const path =
-    "/agents/" +
-    AGENT_ID +
-    "/banking?" +
+    "/banking/access?" +
     new URLSearchParams({
       reason,
       threadId: RUN_THREAD_ID,
@@ -457,3 +459,170 @@ test("A member can review standalone Slack access while a link for another chat 
     screen.findByTestId("unavailable-action-card"),
   ).resolves.toBeVisible();
 });
+
+function approvalPath(
+  pathname: string,
+  prompt: string,
+  extra: Record<string, string> = {},
+) {
+  return (
+    pathname +
+    "?" +
+    new URLSearchParams({
+      threadId: RUN_THREAD_ID,
+      callbackPrompt: prompt,
+      ...extra,
+    })
+  );
+}
+
+test("A standalone bank review uses the chat owner and displays its read-only scope", async () => {
+  const reason = "Prepare the refund ledger";
+  mockAuthorizationCallbackThread(context, RUN_THREAD_ID);
+  context.mocks.api(
+    bankingUserContract.accessRequestStatus,
+    ({ params, respond }) => {
+      expect(params.agentId).toBe("90000000-0000-4000-8000-000000000001");
+      return respond(200, {
+        agent: { id: params.agentId, name: "Bookkeeping reviewer" },
+        grant: null,
+        connection: null,
+        session: null,
+      });
+    },
+  );
+  const path = approvalPath("/banking/access", "Finish the refund review", {
+    reason,
+  });
+  await setupPage({ context, host: "app.okou.ai", path });
+  const card = await screen.findByTestId("banking-action-card");
+  await expect(
+    within(card).findByText("Bookkeeping reviewer"),
+  ).resolves.toBeVisible();
+  expect(card).toHaveTextContent(reason);
+  expect(card).toHaveTextContent(
+    /accounts, balances, and transactions · read only/i,
+  );
+  expect(location.pathname).toBe("/banking/access");
+  expect(
+    screen.queryByRole("region", { name: "Chat thread" }),
+  ).not.toBeInTheDocument();
+});
+
+test.each(["conversation", "standalone"] as const)(
+  "A member confirms the GitHub account from the %s approval link",
+  async (entry) => {
+    const account = {
+      ...workAccount(),
+      displayName: "Release team",
+      connectionStatus: "connected" as const,
+    };
+    const callback = "Continue the release audit using the team account";
+    const path = approvalPath(
+      "/connectors/accounts/" + account.id + "/select",
+      callback,
+      { kind: "builtin", connectorSlug: "github" },
+    );
+    let selected: string | null = null;
+    context.mocks.api(
+      connectorAccountsContract.connection,
+      ({ params, respond }) => {
+        expect(params.connectionId).toBe(account.id);
+        return respond(200, account);
+      },
+    );
+    context.mocks.api(
+      chatConnectorAccessContract.getThread,
+      ({ params, respond }) => {
+        expect(params.threadId).toBe(RUN_THREAD_ID);
+        return respond(200, {
+          target: account.target,
+          currentConnectionId: selected,
+          available: true,
+          accounts: [
+            {
+              connectionId: account.id,
+              displayName: account.displayName,
+              defaultEnabled: true,
+              isDefault: false,
+              overrideEnabled: null,
+              enabled: true,
+            },
+          ],
+        });
+      },
+    );
+    context.mocks.api(
+      runConnectorAccountsContract.approve,
+      ({ params, body, respond }) => {
+        expect(params.threadId).toBe(RUN_THREAD_ID);
+        expect(body).toMatchObject({
+          connectionId: account.id,
+          target: account.target,
+        });
+        selected = body.connectionId;
+        return respond(200, body);
+      },
+    );
+    if (entry === "conversation") {
+      await open(origin + path);
+    } else {
+      mockAuthorizationCallbackThread(context, RUN_THREAD_ID);
+      await setupPage({ context, host: "app.okou.ai", path });
+    }
+    const card = await screen.findByTestId("connector-account-action-card");
+    const chat = screen.queryByRole("region", { name: "Chat thread" });
+    expect(chat !== null).toBe(entry === "conversation");
+    await expect(
+      within(card).findByText("Switch to Release team?"),
+    ).resolves.toBeVisible();
+    const githubIcon = 'img[src="https://icons.example.test/github.svg"]';
+    await waitFor(() => {
+      expect(card.querySelector(githubIcon)).toBeInTheDocument();
+    });
+    expect(selected).toBeNull();
+    const sent = context.mocks.deferred<string>();
+    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+      expect(body.threadId).toBe(RUN_THREAD_ID);
+      if (typeof body.prompt === "string" && !sent.settled()) {
+        sent.resolve(body.prompt);
+      }
+      return respond(201, { threadId: RUN_THREAD_ID });
+    });
+    click(await findEnabledButton("Switch", card));
+    await expect(sent.promise).resolves.toBe(callback);
+    await expect(
+      within(card).findByText("Switched to Release team"),
+    ).resolves.toBeVisible();
+    expect(selected).toBe(account.id);
+    expect(card.querySelector(githubIcon)).toBeInTheDocument();
+  },
+);
+
+test.each([
+  ["banking", "/banking/access", { reason: "Review the renewal" }],
+  [
+    "connector account",
+    "/connectors/accounts/" + workId + "/select",
+    { kind: "builtin", connectorSlug: "github" },
+  ],
+] as const)(
+  "The standalone %s review shows the missing page for an inaccessible chat",
+  async (_kind, pathname, options) => {
+    mockAuthorizationCallbackThread(context, RUN_THREAD_ID, () => {
+      return false;
+    });
+    await setupPage({
+      context,
+      host: "app.okou.ai",
+      path: approvalPath(pathname, "Continue the renewal", options),
+    });
+    await expect(
+      screen.findByRole("heading", { name: "That page isn't here." }),
+    ).resolves.toBeVisible();
+    expect(
+      screen.queryByTestId("connector-account-action-card"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("banking-action-card")).not.toBeInTheDocument();
+  },
+);

@@ -1,3 +1,7 @@
+import {
+  getOkouChatThreadId,
+  getOkouConnectorAccountContextFile,
+} from "../lib/okou-env";
 import { ApiRequestError } from "../lib/api/core/client-factory";
 import { getCurrentMember } from "../lib/api/domains/auth";
 import { Command } from "commander";
@@ -18,7 +22,6 @@ import {
   type ConnectorPermissionInfo,
 } from "./shared/firewall-permissions";
 import {
-  isRunBoundConnectorContext,
   resolveRunConnectorAccountView,
   runConnectorAccountUnavailableMessage,
   type RunConnectorAccountEntry,
@@ -285,7 +288,7 @@ Outside a Run, --permissions does not expand connector permissions.`,
   )
   .action(
     withErrorHandler(async (options: { permissions?: boolean }) => {
-      if (isRunBoundConnectorContext()) {
+      if (getOkouChatThreadId() || getOkouConnectorAccountContextFile()) {
         await showSandboxInfo(options.permissions ?? false);
       } else {
         await showLocalInfo();

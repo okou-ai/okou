@@ -4,12 +4,8 @@ import { eq } from "drizzle-orm";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { db$ } from "../external/db";
 
-/** Retained Runs resolve Workflows in their captured Agent namespace. */
-export const workflowNamespace$ = computed(async (get) => {
+export const workspaceWorkflowNamespace$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  if (auth.tokenType === "agent" && auth.singleAgent !== true) {
-    return null;
-  }
   const [org] = await get(db$)
     .select({ id: orgMetadata.defaultAgentId })
     .from(orgMetadata)
@@ -19,4 +15,12 @@ export const workflowNamespace$ = computed(async (get) => {
     throw new Error("Workspace default executor is unavailable");
   }
   return org.id;
+});
+
+/** Retained Runs can still use their legacy workflow namespace. */
+export const workflowNamespace$ = computed((get) => {
+  const auth = get(organizationAuthContext$);
+  return auth.tokenType === "agent" && auth.singleAgent !== true
+    ? null
+    : get(workspaceWorkflowNamespace$);
 });

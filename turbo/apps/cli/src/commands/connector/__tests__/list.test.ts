@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 /**
  * Tests for okou connector list command
  *
@@ -23,8 +24,6 @@ import {
   customMcpConnector,
   stubCustomConnectors,
 } from "../../__tests__/helpers/custom-connectors";
-
-const AGENT_UUID = "550e8400-e29b-41d4-a716-446655440000";
 
 function stubConnectors(savedSlugs: readonly string[]) {
   server.use(stubConnectedConnectors(savedSlugs));
@@ -171,7 +170,7 @@ describe("okou connector list command", () => {
   });
 
   it("reports unavailable account context in a Run", async () => {
-    vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken(["connector:read"]));
     await listCommand.parseAsync(["node", "cli", "--json"]);
     expect(
       JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),

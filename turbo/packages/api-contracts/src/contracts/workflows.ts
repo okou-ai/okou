@@ -1407,7 +1407,7 @@ export const workflowAutomationsListResponseSchema = array(
 );
 
 export const workflowCreateRequestSchema = object({
-  agentId: uuid(),
+  agentId: uuid().optional(),
   chatThreadId: uuid().optional(),
   name: workflowNameSchema,
   instruction: workflowInstructionSchema.optional(),
@@ -1437,7 +1437,7 @@ export const workflowUpdateRequestSchema = object({
 );
 
 export const workflowCopyRequestSchema = object({
-  toAgentId: uuid(),
+  toAgentId: uuid().optional(),
 });
 
 export const workflowRunResponseSchema = object({
@@ -1459,7 +1459,10 @@ export const workflowsCollectionContract = c.router({
     method: "GET",
     path: "/api/workflows",
     headers: authHeadersSchema,
-    query: object({ agentId: uuid().optional() }),
+    query: object({
+      agentId: uuid().optional(),
+      scope: literal("workspace").optional(),
+    }),
     responses: {
       200: workflowListResponseSchema,
       401: apiErrorSchema,

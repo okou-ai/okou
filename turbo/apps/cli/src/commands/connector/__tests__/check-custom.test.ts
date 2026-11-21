@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -145,7 +146,7 @@ describe("custom connector URL diagnostics", () => {
   }
 
   function stubCurrentMemberDiagnostic(): void {
-    vi.stubEnv("OKOU_AGENT_ID", "");
+    vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", undefined);
     stubDiagnostic({
       ...resolvedCustom({
@@ -174,8 +175,7 @@ describe("custom connector URL diagnostics", () => {
     directory = mkdtempSync(join(tmpdir(), "okou-custom-check-"));
     contextPath = join(directory, "accounts.json");
     vi.stubEnv("OKOU_API_BACKEND_URL", ORIGIN);
-    vi.stubEnv("OKOU_TOKEN", "test-token");
-    vi.stubEnv("OKOU_AGENT_ID", "agent-1");
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken(["connector:read"]));
     vi.stubEnv("OKOU_CHAT_THREAD_ID", "thread-1");
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
     writeRunConnectorAccountContext(contextPath, [

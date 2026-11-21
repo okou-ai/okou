@@ -119,7 +119,6 @@ describe("okou connector permission-request --batch-file", () => {
     directory = await mkdtemp(join(tmpdir(), "okou-permission-batch-"));
     vi.stubEnv("OKOU_TOKEN", capturedRunToken(["agent:read"]));
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
-    vi.stubEnv("OKOU_AGENT_ID", "agent-current");
     vi.stubEnv("OKOU_CHAT_THREAD_ID", "thread-current");
     diagnostics();
   });
@@ -138,7 +137,9 @@ describe("okou connector permission-request --batch-file", () => {
       { ...slack, url: "https://slack.com/api/chat.update" },
     ]);
     const url = actionUrl();
-    expect(url.pathname).toBe("/agents/agent-current/permissions/batch");
+    expect(url.pathname).toBe("/connectors/permissions/batch");
+    expect(url.searchParams.get("orgId")).toBe("test-org");
+    expect(url.searchParams.get("userId")).toBe("test-user");
     expect(JSON.parse(url.searchParams.get("items") ?? "")).toStrictEqual([
       { connectorSlug: "slack", permission: slack.permission },
       { connectorSlug: "gmail", permission: gmail.permission },
@@ -232,7 +233,7 @@ describe("okou connector permission-request --batch-file", () => {
   });
 
   it("enforces the final encoded URL byte limit including callback", async () => {
-    vi.stubEnv("OKOU_AGENT_ID", "a".repeat(7500));
+    vi.stubEnv("OKOU_CHAT_THREAD_ID", "a".repeat(7500));
     await expect(
       run([slack], ["--callback-prompt", "继".repeat(100)]),
     ).rejects.toThrow("exit");

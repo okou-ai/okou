@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../../test/fixtures/captured-run-token";
 import chalk from "chalk";
 import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -42,7 +43,7 @@ describe("okou connector custom readers", () => {
   it("reports saved-account membership and Chat allowance inside a Run", async () => {
     const connector = customConnector({});
     const mcp = customMcpConnector();
-    vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken(["connector:read"]));
     server.use(
       stubConnectedConnectors([], [connector, mcp]),
       stubCustomConnectors([connector, mcp]),

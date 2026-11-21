@@ -1,3 +1,4 @@
+import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { open } from "node:fs/promises";
 
 import {
@@ -24,10 +25,7 @@ import {
   listCustomConnectors,
   type ConnectorCatalogItem,
 } from "../../lib/api/domains/connectors";
-import {
-  getOkouAgentId,
-  getOkouConnectorAccountContextFile,
-} from "../../lib/okou-env";
+import { getOkouConnectorAccountContextFile } from "../../lib/okou-env";
 import { connectorAccountCliLabel } from "./account-label";
 import { connectorInspectionType } from "./inspection";
 
@@ -307,7 +305,7 @@ function connectorIdentity(
 export function isRunBoundConnectorContext(): boolean {
   return (
     getOkouConnectorAccountContextFile() !== undefined ||
-    getOkouAgentId() !== undefined
+    decodeSandboxTokenPayload() !== undefined
   );
 }
 

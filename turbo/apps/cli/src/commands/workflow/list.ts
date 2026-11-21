@@ -1,4 +1,3 @@
-import { workspaceExecutorId } from "../../lib/command/workspace-executor";
 import { Command } from "commander";
 import chalk from "chalk";
 import { listWorkflows } from "../../lib/api/domains/workflows";
@@ -17,13 +16,10 @@ Examples:
   )
   .action(
     withErrorHandler(async () => {
-      const agentId = await workspaceExecutorId();
       // Official Workflows are system-managed and never listed as user Workflows.
-      const workflows = (await listWorkflows({ agentId })).filter(
-        (workflow) => {
-          return !workflow.official;
-        },
-      );
+      const workflows = (await listWorkflows()).filter((workflow) => {
+        return !workflow.official;
+      });
 
       if (workflows.length === 0) {
         console.log(chalk.dim("No workflows found"));
