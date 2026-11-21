@@ -1098,6 +1098,43 @@ class ChatListModelTest {
     }
 
     @Test
+    fun createAndDeleteInOneCatchUpRetireTheAcceptedPreview() = runTest {
+        val service = Service().apply { listRead = { page(listOf(chatEventWire())) } }
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            val preview = ProvisionalChat(CHAT_IN_PROJECT, CHAT_PROJECT)
+            model.retainAcceptedNewChats(listOf(preview))
+            assertEquals(listOf(preview), model.uiState.value.acceptedNewChats)
+            service.listRead = {
+                page(
+                    listOf(
+                        chatEventWire(
+                            id = "77777777-7777-4777-8777-777777777777",
+                            seq = 18,
+                            thread = preview.threadId,
+                        ),
+                        chatEventWire(
+                            id = "88888888-8888-4888-8888-888888888888",
+                            seq = 19,
+                            thread = preview.threadId,
+                            kind = "deleted",
+                        ),
+                    )
+                )
+            }
+            model.refreshList()
+            advanceUntilIdle()
+            assertEquals(listOf(CHAT_PERSONAL), model.uiState.value.threads.map { it.id })
+            assertTrue(model.uiState.value.acceptedNewChats.isEmpty())
+
+            // A receipt arriving after the canonical deletion cannot restore the preview.
+            model.retainAcceptedNewChats(listOf(preview))
+            assertTrue(model.uiState.value.acceptedNewChats.isEmpty())
+        }
+    }
+
+    @Test
     fun reconnectRetainsTrailingListDemandAndDoesNotBlockProjectsOrIndicators() = runTest {
         val realtime = TestRealtimeService()
         val events = mutableListOf(chatEventWire())

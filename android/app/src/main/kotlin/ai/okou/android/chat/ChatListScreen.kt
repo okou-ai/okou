@@ -141,9 +141,20 @@ internal fun ChatListScreen(
         }
     val indicators = state.indicators?.threads.orEmpty()
     val unreadChatIds = remember(unreadAt, state.readIntents) { state.unreadChatIds() }
+    val knownProjects = remember(state.projects) { state.projects.mapTo(hashSetOf()) { it.id } }
+    val pendingByProject =
+        remember(state.threads, state.filter, provisionalChats, knownProjects) {
+            if (state.filter != ChatListFilter.Inbox || provisionalChats.isEmpty()) emptyMap()
+            else {
+                val confirmedIds = state.threads.mapTo(hashSetOf()) { it.id }
+                provisionalChats
+                    .filterNot { it.threadId in confirmedIds }
+                    .groupBy { it.projectId?.takeIf(knownProjects::contains) }
+            }
+        }
     val sections =
-        remember(groups, collapsed, indicators, unreadChatIds) {
-            chatListSections(groups, collapsed, indicators, unreadChatIds)
+        remember(groups, collapsed, indicators, unreadChatIds, pendingByProject) {
+            chatListSections(groups, collapsed, indicators, unreadChatIds, pendingByProject)
         }
     val runningKeys =
         remember(indicators, sections) {
@@ -174,17 +185,6 @@ internal fun ChatListScreen(
     val metadataMissing =
         state.agentsSource == null && state.agentsPhase == ChatReadPhase.Failed ||
             state.projectsSource == null && state.projectsPhase == ChatReadPhase.Failed
-    val knownProjects = remember(state.projects) { state.projects.mapTo(hashSetOf()) { it.id } }
-    val pendingByProject =
-        remember(state.threads, state.filter, provisionalChats, knownProjects) {
-            if (state.filter != ChatListFilter.Inbox || provisionalChats.isEmpty()) emptyMap()
-            else {
-                val confirmedIds = state.threads.mapTo(hashSetOf()) { it.id }
-                provisionalChats
-                    .filterNot { it.threadId in confirmedIds }
-                    .groupBy { it.projectId?.takeIf(knownProjects::contains) }
-            }
-        }
     val missingDefault =
         state.agentsPhase == ChatReadPhase.Ready &&
             state.agents.none { it.isDefaultAgent } &&
@@ -299,7 +299,7 @@ internal fun ChatListScreen(
                 sections.forEach { section ->
                     val group = section.group
                     val project = group.project
-                    val pending = pendingByProject[project?.id].orEmpty()
+                    val pending = section.provisionalChats
                     val foldedStatus = section.foldedStatus
                     if (project != null) {
                         item(key = projectRowKey(project.id)) {

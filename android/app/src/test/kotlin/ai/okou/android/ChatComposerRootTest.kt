@@ -289,6 +289,9 @@ class ChatComposerRootTest {
                 .assertIsDisplayed()
             assertEquals(1L, historyStarted.count)
             compose.onNodeWithContentDescription("Back").performClick()
+            compose.onNodeWithText("New chat").performClick()
+            compose.onNodeWithTag("message_input").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Back").performClick()
             compose.onNodeWithTag("chat_${pending.threadId}").assertIsDisplayed().performClick()
             messageText(pending.eventId, prompt).assertIsDisplayed()
             list.countDown()
@@ -309,6 +312,57 @@ class ChatComposerRootTest {
             create.countDown()
             list.countDown()
             history.countDown()
+        }
+    }
+
+    @Test
+    fun pendingFirstSendRestoresFromStorageInTheInbox() {
+        val app = compose.activity.application as ComposerRootApplication
+        cleanupApplication = app
+        val create = CountDownLatch(1)
+        val list = CountDownLatch(1)
+        app.fixture.beforeCreateReturn = { create.await() }
+        app.contextGate.countDown()
+        try {
+            compose.onNodeWithText("New chat").performClick()
+            captureOwners()
+            awaitConversation { editor?.uiState?.value?.journal != null }
+            val prompt = "Recover my pending first message from the inbox"
+            compose.onNodeWithTag("message_input").performTextInput(prompt)
+            compose.onNodeWithContentDescription("Send").performClick()
+            awaitConversation { app.fixture.created.size == 1 }
+            val pending = checkNotNull(editor?.uiState?.value?.entry(ComposerTarget())?.pending)
+            app.fixture.beforeListReturn = { list.await() }
+            compose.activityRule.scenario.close()
+            compose.waitUntil(10_000) {
+                shadowOf(Looper.getMainLooper()).idle()
+                editorJob?.isCompleted == true && listJob?.isCompleted == true
+            }
+            create.countDown()
+            runBlocking { checkNotNull(app.journalStore).close() }
+            app.journalStore = ComposerJournalStore(app, app.journalDirectory)
+            val fresh = ActivityScenario.launch<MainActivity>(Intent(app, MainActivity::class.java))
+            replacement = fresh
+            val row = "chat_${pending.threadId}"
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithTag(row).fetchSemanticsNodes().size == 1
+            }
+            var activity: MainActivity? = null
+            fresh.onActivity { activity = it }
+            captureOwners(checkNotNull(activity))
+            compose.onNodeWithTag(row).assertIsDisplayed().performClick()
+            messageText(pending.eventId, prompt).assertIsDisplayed()
+            compose.onNodeWithText("Check delivery").assertExists()
+            assertTrue(app.fixture.inputs.isEmpty())
+            assertEquals(
+                1,
+                app.fixture.requests.count {
+                    it.method == "POST" && it.requestUrl?.encodedPath == "/api/chat-threads"
+                },
+            )
+        } finally {
+            create.countDown()
+            list.countDown()
         }
     }
 

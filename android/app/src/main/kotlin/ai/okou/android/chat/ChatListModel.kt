@@ -2,6 +2,8 @@ package ai.okou.android.chat
 
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.Agents
+import ai.okou.android.api.generated.ChatEventsEventsItemVariant1
+import ai.okou.android.api.generated.ChatEventsEventsItemVariant1Kind
 import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.IndicatorsThreadsValue
 import ai.okou.android.auth.WorkspaceIdentity
@@ -153,6 +155,7 @@ data class ChatListUiState(
     internal val cachedUnread: CachedUnread? = null,
     internal val readIntents: Map<String, ChatReadIntent> = emptyMap(),
     internal val threadsByRecency: List<ConfirmedChat> = emptyList(),
+    internal val acceptedNewChats: List<ProvisionalChat> = emptyList(),
 )
 
 internal val ChatListUiState.displayUnreadAt: Map<String, String>?
@@ -871,7 +874,33 @@ class ChatListModel(
     private fun publishRows(state: ChatListUiState = mutable.value) {
         val recentThreads = outgoingActivity.values.toList().asReversed().map { it.threadId }
         val rows = confirmedRows.withLocalChanges(rowEdits, recentThreads)
-        mutable.value = state.copy(threads = rows.threads, threadsByRecency = rows.byRecency)
+        mutable.value =
+            state.copy(
+                threads = rows.threads,
+                threadsByRecency = rows.byRecency,
+                acceptedNewChats = unobservedNewChats(state.acceptedNewChats),
+            )
+    }
+
+    private fun unobservedNewChats(chats: List<ProvisionalChat>): List<ProvisionalChat> {
+        if (chats.isEmpty()) return chats
+        val observed = confirmedRows.threads.mapTo(hashSetOf()) { it.id }
+        confirmed?.checkpoint?.events?.forEach { event ->
+            if (
+                event is ChatEventsEventsItemVariant1 &&
+                    event.kind == ChatEventsEventsItemVariant1Kind.DELETED
+            )
+                observed.add(event.chatThreadId)
+        }
+        return chats.filterNot { it.threadId in observed }
+    }
+
+    internal fun retainAcceptedNewChats(chats: List<ProvisionalChat>) {
+        if (!current() || chats.isEmpty()) return
+        // A new draft can replace the composer target while these chats await their list rows.
+        val state = mutable.value
+        val accepted = (chats + state.acceptedNewChats).distinctBy { it.threadId }
+        mutable.value = state.copy(acceptedNewChats = unobservedNewChats(accepted))
     }
 
     internal fun reloadAfterRowActionFailure() {

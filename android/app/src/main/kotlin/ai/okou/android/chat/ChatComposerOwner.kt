@@ -78,6 +78,10 @@ internal class ChatComposerOwner(
 
     fun attach(connection: Connection) {
         connections += connection
+        if (!connection.current()) return
+        val journal = mutable.value.journal
+        if (journal == null) restoreJournal()
+        else connection.chatList?.retainAcceptedNewChats(journal.acceptedNewChats())
     }
 
     fun detach(connection: Connection): Boolean {
@@ -181,31 +185,40 @@ internal class ChatComposerOwner(
         replace(journal.copy(entries = entries), receiptMessages = receiptMessages)
     }
 
+    private fun restoreJournal() {
+        if (mutable.value.journal != null || restoring?.isActive == true) return
+        mutable.value = mutable.value.copy(persistence = ComposerPersistence.Loading)
+        restoring =
+            localScope.launch {
+                try {
+                    val saved = store.load(identity)
+                    if (connections.none { it.current() }) return@launch
+                    val restored = saved.journal.withServerDrafts()
+                    mutable.value =
+                        mutable.value.copy(
+                            journal = restored,
+                            persistence =
+                                if (saved.durable) ComposerPersistence.Durable
+                                else ComposerPersistence.Failed,
+                        )
+                    if (restored != saved.journal && saved.journal.entries.isNotEmpty())
+                        replace(restored)
+                    val accepted = restored.acceptedNewChats()
+                    connections
+                        .filter { it.current() }
+                        .forEach { it.chatList?.retainAcceptedNewChats(accepted) }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    if (connections.any { it.current() })
+                        mutable.value = mutable.value.copy(persistence = ComposerPersistence.Failed)
+                }
+            }
+    }
+
     fun open(connection: Connection, target: ComposerTarget) {
         if (!connection.current()) return
-        if (mutable.value.journal == null && restoring?.isActive != true) {
-            mutable.value = mutable.value.copy(persistence = ComposerPersistence.Loading)
-            restoring =
-                localScope.launch {
-                    try {
-                        val saved = store.load(identity)
-                        val restored = saved.journal.withServerDrafts()
-                        mutable.value =
-                            mutable.value.copy(
-                                journal = restored,
-                                persistence =
-                                    if (saved.durable) ComposerPersistence.Durable
-                                    else ComposerPersistence.Failed,
-                            )
-                        if (restored != saved.journal && saved.journal.entries.isNotEmpty())
-                            replace(restored)
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Exception) {
-                        mutable.value = mutable.value.copy(persistence = ComposerPersistence.Failed)
-                    }
-                }
-        }
+        restoreJournal()
         if (target.threadId == null && contextJob?.isActive != true) {
             contextConnection = connection
             mutable.value = mutable.value.copy(context = ComposerContext.Loading)
@@ -935,7 +948,13 @@ internal class ChatComposerOwner(
             journal.defaultAgentId?.let { synchronize(op.connection, ServerDraftTarget(it, false)) }
             synchronize(op.connection, ServerDraftTarget(pending.threadId, true))
         }
-        op.connection.chatList?.acknowledgeOutgoingActivity(pending)
+        val list = op.connection.chatList
+        val create = pending.create
+        if (create == null) list?.acknowledgeOutgoingActivity(pending)
+        else
+            list?.retainAcceptedNewChats(
+                listOf(ProvisionalChat(pending.threadId, create.projectId))
+            )
         op.connection.accepted(pending.threadId)
     }
 

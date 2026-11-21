@@ -4,6 +4,8 @@ import ai.okou.android.api.generated.IndicatorsThreadsValue
 
 data class ChatListGroup(val project: ConfirmedProject?, val threads: List<ConfirmedChat>)
 
+data class ProvisionalChat(val threadId: String, val projectId: String?)
+
 internal enum class ChatRowStatus {
     Running,
     Unread,
@@ -72,6 +74,7 @@ internal data class ChatListSection(
     val group: ChatListGroup,
     val firstRow: Int,
     val foldedActivity: ProjectActivity?,
+    val provisionalChats: List<ProvisionalChat>,
 ) {
     val foldedStatus: ChatRowStatus?
         get() = foldedActivity?.status
@@ -85,6 +88,7 @@ internal fun chatListSections(
     collapsed: List<String>,
     indicators: Map<String, IndicatorsThreadsValue>,
     unreadChatIds: Set<String>,
+    provisionalByProject: Map<String?, List<ProvisionalChat>> = emptyMap(),
 ): List<ChatListSection> {
     val foldedIds = collapsed.toSet()
     var row = 0
@@ -93,8 +97,11 @@ internal fun chatListSections(
             if (group.project?.id in foldedIds) {
                 collapsedProjectActivity(group.threads, indicators, unreadChatIds)
             } else null
-        val section = ChatListSection(group, row, foldedActivity)
-        row = section.firstChatRow + if (foldedActivity == null) group.threads.size else 0
+        val provisional = provisionalByProject[group.project?.id].orEmpty()
+        val section = ChatListSection(group, row, foldedActivity, provisional)
+        row =
+            section.firstChatRow +
+                if (foldedActivity == null) group.threads.size + provisional.size else 0
         section
     }
 }
