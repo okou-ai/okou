@@ -79,12 +79,15 @@ internal class ChatComposerOwner(
     fun attach(connection: Connection) {
         connections += connection
         if (!connection.current()) return
+        connection.chatList?.onAcceptedChatMissing = { acknowledge(connection, it) }
         val journal = mutable.value.journal
         if (journal == null) restoreJournal()
-        else connection.chatList?.retainAcceptedNewChats(journal.acceptedNewChats())
+        else
+            connection.chatList?.retainAcceptedNewChats(journal.acceptedNewChats(), restored = true)
     }
 
     fun detach(connection: Connection): Boolean {
+        connection.chatList?.onAcceptedChatMissing = null
         val retired = draftWork.values.filter { it.connection === connection }.toList()
         retired.forEach {
             draftWork.remove(it.target.key)
@@ -206,7 +209,7 @@ internal class ChatComposerOwner(
                     val accepted = restored.acceptedNewChats()
                     connections
                         .filter { it.current() }
-                        .forEach { it.chatList?.retainAcceptedNewChats(accepted) }
+                        .forEach { it.chatList?.retainAcceptedNewChats(accepted, restored = true) }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
