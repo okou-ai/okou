@@ -48,13 +48,71 @@ def wait_until(emulator, check, description, seconds):
     raise TimeoutError("Timed out waiting for " + description)
 
 
+def run_launch(device, emulator, evidence, description, launcher, component):
+    evidence.mkdir()
+
+    def observe(report, label, *args, timeout=15):
+        try:
+            result = device(*args, check=False, timeout=timeout)
+        except subprocess.TimeoutExpired as error:
+            report.write(f"{label} timed out after {timeout}s\n")
+            for output in (error.stdout, error.stderr):
+                if output:
+                    report.write(output.decode(errors="replace"))
+            raise
+        report.write(f"{label} exit: {result.returncode}\n{result.stdout}{result.stderr}")
+        return result
+
+    def auth_surface():
+        with (evidence / "ui-probe.txt").open("w") as probe:
+            dumped = observe(probe, "uiautomator", "shell", f"rm -f {UI_DUMP} && uiautomator dump {UI_DUMP}")
+            if dumped.returncode:
+                return False
+            output = observe(probe, "hierarchy read", "exec-out", "cat", UI_DUMP)
+        if output.returncode:
+            return False
+        (evidence / "ui.xml").write_text(output.stdout)
+        return has_public_auth_surface(output.stdout)
+
+    try:
+        device("shell", "am", "force-stop", PACKAGE)
+        with (evidence / "launcher.txt").open("w") as report:
+            started = observe(
+                report, "am start", "shell", "am", "start", "-W", *launcher,
+                "-n", shlex.quote(component), timeout=45,
+            )
+        if started.returncode or "Status: ok" not in started.stdout:
+            raise RuntimeError(f"Launcher failed: {started.stdout} {started.stderr}")
+        wait_until(emulator, auth_surface, description + " auth surface", 45)
+    except Exception:
+        for filename, args, binary in (
+            ("foreground.txt", ("shell", "dumpsys", "activity", "activities"), False),
+            ("screen.png", ("exec-out", "screencap", "-p"), True),
+        ):
+            try:
+                result = device(*args, check=False, timeout=5, text=not binary)
+                if binary:
+                    if result.returncode == 0 and result.stdout.startswith(b"\x89PNG\r\n\x1a\n"):
+                        (evidence / filename).write_bytes(result.stdout)
+                    else:
+                        print(f"Could not capture {filename}: adb exit {result.returncode}", file=sys.stderr)
+                else:
+                    (evidence / filename).write_text(
+                        f"dumpsys exit: {result.returncode}\n{result.stdout}{result.stderr}"
+                    )
+            except (OSError, UnicodeError, subprocess.TimeoutExpired) as error:
+                print(f"Could not capture {filename}: {error}", file=sys.stderr)
+        raise
+    print(f"Release smoke passed: {description}", flush=True)
+
+
 def run(apk, artifacts, avd_home):
     sdk = Path(os.environ["ANDROID_HOME"])
     adb = sdk / "platform-tools" / "adb"
 
-    def adb_command(*args, check=True, timeout=15):
+    def adb_command(*args, check=True, timeout=15, text=True):
         result = subprocess.run(
-            [adb, *args], capture_output=True, text=True, timeout=timeout,
+            [adb, *args], capture_output=True, text=text, timeout=timeout,
         )
         if check and result.returncode:
             raise RuntimeError(f"adb {' '.join(args)} failed: {result.stdout}{result.stderr}")
@@ -94,18 +152,8 @@ def run(apk, artifacts, avd_home):
         transport = candidate[1]
         return properties[1:] == ["1"]
 
-    def device(*args, check=True, timeout=15):
-        return adb_command("-t", transport, *args, check=check, timeout=timeout)
-
-    def auth_surface():
-        dumped = device("shell", f"rm -f {UI_DUMP} && uiautomator dump {UI_DUMP}", check=False)
-        if dumped.returncode:
-            return False
-        output = device("exec-out", "cat", UI_DUMP, check=False)
-        if output.returncode:
-            return False
-        (artifacts / "release-smoke-ui.xml").write_text(output.stdout)
-        return has_public_auth_surface(output.stdout)
+    def device(*args, **options):
+        return adb_command("-t", transport, *args, **options)
 
     with (artifacts / "release-smoke-emulator.log").open("w") as log:
         emulator = subprocess.Popen(
@@ -126,15 +174,10 @@ def run(apk, artifacts, avd_home):
             ).stdout.strip()
             if not component.startswith(f"{PACKAGE}/"):
                 raise RuntimeError(f"No launcher activity for {PACKAGE}: {component}")
-            for journey in ("cold start", "relaunch after process stop"):
-                device("shell", "am", "force-stop", PACKAGE)
-                started = device(
-                    "shell", "am", "start", "-W", *launcher, "-n", shlex.quote(component), timeout=45,
-                )
-                if "Status: ok" not in started.stdout:
-                    raise RuntimeError(f"Launcher failed: {started.stdout} {started.stderr}")
-                wait_until(emulator, auth_surface, journey + " auth surface", 45)
-                print(f"Release smoke passed: {journey}", flush=True)
+            run_launch(device, emulator, artifacts / "cold-start", "cold start", launcher, component)
+            run_launch(
+                device, emulator, artifacts / "relaunch", "relaunch after process stop", launcher, component,
+            )
             crashes = device("logcat", "-d", "-b", "crash").stdout
             if re.search(rf"^.*Process: {re.escape(PACKAGE)}, PID:", crashes, re.MULTILINE):
                 raise RuntimeError("Release app crashed during startup smoke")

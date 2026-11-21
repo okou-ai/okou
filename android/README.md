@@ -483,6 +483,11 @@ APK. Decompress that file with `gzip -d` before retracing a production stack tra
 Add narrowly scoped rules under `app/src/main/keepRules/*.keep` only when a
 runtime boundary such as reflection or JNI requires them.
 
+The Release smoke artifact keeps separate `cold-start/` and `relaunch/` evidence.
+Each directory records the launcher response, latest UI probe and last readable
+hierarchy from that launch. On failure CI also attempts to capture foreground
+activity state and a screenshot before the emulator stops.
+
 CI retains the original Release smoke diagnostics before starting its separate
 retrace job. On failure it extracts app Java crash stacks from logcat and runs the
 matching R8 version from Google Maven with a 30-second command budget. It validates
