@@ -237,7 +237,7 @@ internal fun ConversationReplyHeader(message: HistoryMessage? = null) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Image(
-                painterResource(R.drawable.okou_mark),
+                painterResource(R.drawable.okou_conversation_avatar),
                 null,
                 Modifier.size(24.dp).clip(RoundedCornerShape(8.dp)),
             )
