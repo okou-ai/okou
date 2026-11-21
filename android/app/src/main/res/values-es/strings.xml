@@ -159,4 +159,6 @@
     <string name="updates_waiting_to_check">Esperando para comprobar</string>
     <string name="updates_waiting_to_download">Esperando para descargar</string>
     <string name="instructions_placeholder">¿Qué quieres que Okou tenga en cuenta?</string>
+    <string name="instructions_markdown_edit">Editar</string>
+    <string name="instructions_markdown_preview">Vista previa</string>
 </resources>

@@ -159,4 +159,6 @@
     <string name="updates_waiting_to_check">확인 대기 중</string>
     <string name="updates_waiting_to_download">다운로드 대기 중</string>
     <string name="instructions_placeholder">Okou가 어떤 점을 기억하면 좋을까요?</string>
+    <string name="instructions_markdown_edit">편집</string>
+    <string name="instructions_markdown_preview">미리보기</string>
 </resources>

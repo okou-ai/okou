@@ -159,4 +159,6 @@
     <string name="updates_waiting_to_check">Menunggu pemeriksaan</string>
     <string name="updates_waiting_to_download">Menunggu unduhan</string>
     <string name="instructions_placeholder">Apa yang ingin Anda minta Okou perhatikan?</string>
+    <string name="instructions_markdown_edit">Edit</string>
+    <string name="instructions_markdown_preview">Pratinjau</string>
 </resources>

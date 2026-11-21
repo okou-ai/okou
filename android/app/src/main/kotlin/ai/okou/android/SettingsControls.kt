@@ -3,6 +3,7 @@ package ai.okou.android
 import ai.okou.android.state.rememberSettingsFlag
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -235,10 +236,10 @@ internal fun SettingsSheet(
     title: String,
     onDismiss: () -> Unit,
     actions: (@Composable () -> Unit)? = null,
+    scroll: ScrollState = rememberScrollState(),
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val windowHeight = currentWindowSizeDp().height.dp
-    val scroll = rememberScrollState()
     SettingsModal(onDismiss) { centered ->
         Column(
             Modifier.fillMaxWidth()

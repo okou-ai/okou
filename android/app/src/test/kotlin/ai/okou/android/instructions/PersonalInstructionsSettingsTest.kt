@@ -12,6 +12,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -21,6 +22,7 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
@@ -213,6 +215,21 @@ class PersonalInstructionsSettingsTest {
         val input = compose.onNodeWithTag("instructions_editor")
         input.performScrollTo().performTextReplacement("Keep **my** 中文 👋 draft")
         input.performTextInputSelection(TextRange(5, 8))
+        compose.onNodeWithText("Preview").performScrollTo().performClick()
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodesWithText("Keep my 中文 👋 draft", substring = true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        val rendered =
+            compose
+                .onNodeWithText("Keep my 中文 👋 draft", substring = true)
+                .fetchSemanticsNode()
+                .config[SemanticsProperties.Text]
+                .single()
+        assertTrue(rendered.spanStyles.any { it.item.fontWeight == FontWeight.Bold })
+        compose.onNodeWithText("Edit").performScrollTo().performClick()
         app.fixture.externalEdit("Changed on Web")
         compose.runOnIdle { model.refresh() }
         awaitPhase(InstructionsPhase.Conflict)
@@ -230,15 +247,17 @@ class PersonalInstructionsSettingsTest {
         awaitPhase(InstructionsPhase.Ready)
         input.assertTextEquals("Changed on Web")
         app.fixture.disconnectSave = true
-        input.performScrollTo().performTextReplacement("Accepted despite lost response")
-        compose.onNodeWithText("Save").performClick()
+        val markdown = "**Accepted** despite lost response"
+        input.performScrollTo().performTextReplacement(markdown)
+        compose.onNodeWithText("Preview").performScrollTo().performClick()
+        compose.onNodeWithText("Save").performScrollTo().performClick()
         compose.waitUntil(10_000) {
             compose.runOnIdle {
                 model.uiState.value.phase == InstructionsPhase.Ready &&
                     model.uiState.value.draft == null
             }
         }
-        assertEquals("Accepted despite lost response", app.fixture.saved.content)
+        assertEquals(markdown, app.fixture.saved.content)
         assertEquals(1, app.fixture.requests.count { it.method == "PUT" })
         input.assertDoesNotExist()
         compose.onNodeWithText("Personal Instructions").performScrollTo().performClick()
