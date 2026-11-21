@@ -2273,9 +2273,38 @@ class ChatListModelTest {
             runCurrent()
             assertEquals(listOf(originalId, originalId), service.sent)
             authorized = false
-            service.response.completeExceptionally(ApiFailure.Http(404, null, null, null))
-            advanceUntilIdle()
-            assertNull(model.uiState.value.projectRenameRejection)
+            val replacementStore = ViewModelStore()
+            val dispatcher = StandardTestDispatcher(testScheduler)
+            try {
+                val replacement =
+                    ViewModelProvider(
+                        replacementStore,
+                        viewModelFactory {
+                            initializer {
+                                ChatListModel(
+                                    HeldProjectRenameService(projectName = "Other workspace"),
+                                    cache(temporary.newFolder(), dispatcher),
+                                    identity.copy(workspaceId = "org-b"),
+                                    { true },
+                                    {},
+                                    dispatcher,
+                                )
+                            }
+                        },
+                    )[ChatListModel::class.java]
+                replacement.refresh()
+                advanceUntilIdle()
+                val replacementProjects = replacement.uiState.value.projectList
+                assertEquals("Other workspace", replacementProjects.rows.single().name)
+
+                service.response.completeExceptionally(ApiFailure.Http(404, null, null, null))
+                advanceUntilIdle()
+                assertNull(model.uiState.value.projectRenameRejection)
+                assertEquals(replacementProjects, replacement.uiState.value.projectList)
+            } finally {
+                replacementStore.clear()
+                runCurrent()
+            }
         }
     }
 
@@ -2297,8 +2326,22 @@ class ChatListModelTest {
             assertEquals(listOf(originalId, originalId), service.sent)
             service.receipt =
                 ProjectEventsEventsItem(
-                    id = originalId,
+                    id = CHAT_EVENT,
                     seqId = 1,
+                    projectId = CHAT_PROJECT,
+                    kind = ProjectEventsEventsItemKind.RENAMED,
+                    name = "From another client",
+                    createdAt = CHAT_DATE,
+                )
+            model.refreshMetadata()
+            advanceUntilIdle()
+            assertEquals("After", model.uiState.value.projects.single().name)
+            assertEquals(CHAT_PROJECT, model.uiState.value.renamingProjectId)
+
+            service.receipt =
+                ProjectEventsEventsItem(
+                    id = originalId,
+                    seqId = 2,
                     projectId = CHAT_PROJECT,
                     kind = ProjectEventsEventsItemKind.RENAMED,
                     name = "After",
@@ -2317,12 +2360,70 @@ class ChatListModelTest {
         }
     }
 
+    @Test
+    fun laterProjectRenameReceiptClearsOnlyItsRejection() = runTest {
+        val service = HeldProjectRenameService()
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.renameProject(CHAT_PROJECT, "After")
+            runCurrent()
+            val originalId = service.sent.single()
+            service.response.completeExceptionally(ApiFailure.Network(IOException("Lost response")))
+            advanceUntilIdle()
+            assertEquals(setOf(CHAT_PROJECT), model.uiState.value.unconfirmedProjectRenames)
+
+            service.response = CompletableDeferred()
+            model.retryProjectRename(CHAT_PROJECT)
+            runCurrent()
+            assertEquals(listOf(originalId, originalId), service.sent)
+
+            val unrelated =
+                ProjectEventsEventsItem(
+                    id = CHAT_EVENT,
+                    seqId = 1,
+                    projectId = CHAT_PROJECT,
+                    kind = ProjectEventsEventsItemKind.RENAMED,
+                    name = "After",
+                    createdAt = CHAT_DATE,
+                )
+            val eventRead = CompletableDeferred<Unit>()
+            service.receipt = unrelated
+            service.nextProjectRead = eventRead
+            model.refreshMetadata()
+            runCurrent()
+
+            service.response.completeExceptionally(ApiFailure.Http(409, "CONFLICT", null, null))
+            runCurrent()
+            val rejection = ProjectRenameRejection(CHAT_PROJECT, originalId)
+            val rejected = model.uiState.value
+            assertEquals(ChatReadPhase.Loading, rejected.projectsPhase)
+            assertEquals("Before", rejected.projects.single().name)
+            assertEquals(rejection, rejected.projectRenameRejection)
+
+            eventRead.complete(Unit)
+            advanceUntilIdle()
+            val afterUnrelatedReceipt = model.uiState.value
+            assertEquals("After", afterUnrelatedReceipt.projects.single().name)
+            assertEquals(rejection, afterUnrelatedReceipt.projectRenameRejection)
+
+            service.receipt = unrelated.copy(id = originalId, seqId = 2)
+            model.refreshMetadata()
+            advanceUntilIdle()
+            val afterMatchingReceipt = model.uiState.value
+            assertEquals("After", afterMatchingReceipt.projects.single().name)
+            assertNull(afterMatchingReceipt.projectRenameRejection)
+        }
+    }
+
     private inner class HeldProjectRenameService(
-        private val initialRead: CompletableDeferred<Unit>? = null
+        initialRead: CompletableDeferred<Unit>? = null,
+        private val projectName: String = "Before",
     ) : Service() {
         var response = CompletableDeferred<Unit>()
         val sent = mutableListOf<String>()
         var projectReads = 0
+        var nextProjectRead = initialRead
         var receipt: ProjectEventsEventsItem? = null
 
         override suspend fun projectSnapshot() =
@@ -2330,7 +2431,7 @@ class ChatListModelTest {
                 listOf(
                     ProjectSnapshotVariant1ProjectsItem(
                         CHAT_PROJECT,
-                        "Before",
+                        projectName,
                         CHAT_DATE,
                         CHAT_DATE,
                     )
@@ -2342,7 +2443,9 @@ class ChatListModelTest {
         override suspend fun projectEvents(since: Long): ProjectEvents {
             projectReads++
             val result = ProjectEvents(listOfNotNull(receipt?.takeIf { it.seqId > since }), false)
-            if (projectReads == 1) initialRead?.await()
+            val read = nextProjectRead
+            nextProjectRead = null
+            read?.await()
             return result
         }
 

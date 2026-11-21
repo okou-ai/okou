@@ -786,6 +786,7 @@ const createWorkflowInner$ = command(
       return bodyResult.response;
     }
     const namespace = await get(workflowNamespace$);
+    signal.throwIfAborted();
     const agentId =
       bodyResult.data.agentId ??
       namespace ??
@@ -1419,6 +1420,7 @@ const copyWorkflowInner$ = command(
       return workflowNotFound(params.workflowId);
     }
     const namespace = await get(workflowNamespace$);
+    signal.throwIfAborted();
     const targetId =
       bodyResult.data.toAgentId ??
       namespace ??

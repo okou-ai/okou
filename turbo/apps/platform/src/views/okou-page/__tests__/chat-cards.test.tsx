@@ -1,3 +1,4 @@
+import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { catalogFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { bankingUserContract } from "@okouai/api-contracts/contracts/banking";
@@ -1096,7 +1097,26 @@ test("A missing exact reconnect account never falls back to the default", async 
   expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
 });
 
-test("Connector account switches A → B → A keep their icon and continue with fresh callback IDs", async () => {
+function mockOwnedApprovalThread() {
+  context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
+    expect(params.id).toBe(THREAD_ID);
+    return respond(200, {
+      id: THREAD_ID,
+      agentId: AGENT_ID,
+      title: "Action requests",
+      selectedModel: null,
+      modelSettings: {},
+      serviceTier: null,
+      pinnedAt: null,
+      archived: false,
+      muted: false,
+      computerUseHostId: null,
+      cloudBrowserEnabled: false,
+    });
+  });
+}
+
+async function exerciseAccountSwitch(entry: "chat" | "direct") {
   const github = connectorSlugSchema.parse("github");
   const connectionId = "f0000000-0000-4000-a000-000000000901";
   const otherConnectionId = "f0000000-0000-4000-a000-000000000902";
@@ -1229,24 +1249,20 @@ test("Connector account switches A → B → A keep their icon and continue with
       });
     },
   });
+  if (entry === "direct") {
+    mockOwnedApprovalThread();
+  }
   await setupPage({
     context,
-    path: `/chats/${THREAD_ID}`,
+    path:
+      entry === "direct"
+        ? switchUrl.pathname + switchUrl.search
+        : `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
     featureSwitches: {},
   });
 
-  const chat = screen.getByRole("region", { name: "Chat thread" });
-  // These reply queries depend on text and children, not attribute changes.
-  const replyWaitOptions = {
-    container: chat,
-    mutationObserverOptions: {
-      subtree: true,
-      childList: true,
-      characterData: true,
-    },
-  };
-  const card = await within(chat).findByTestId("connector-account-action-card");
+  const card = await screen.findByTestId("connector-account-action-card");
   expect(card).toHaveTextContent("Switch to Work GitHub?");
   await waitFor(() => {
     expect(card.querySelector(`img[src="${iconUrl}"]`)).toBeInTheDocument();
@@ -1254,6 +1270,7 @@ test("Connector account switches A → B → A keep their icon and continue with
   expect(itemReads).toStrictEqual([github]);
   expect(statusReads).toBe(0);
 
+  expect(selectionWrites).toBe(0);
   click(buttonIn(card, "Switch"));
   await waitFor(() => {
     expect(callbackIds).toHaveLength(1);
@@ -1266,6 +1283,21 @@ test("Connector account switches A → B → A keep their icon and continue with
   await waitFor(() => {
     expect(card).toHaveTextContent("Switched to Work GitHub");
   });
+
+  const chat = screen.queryByRole("region", { name: "Chat thread" });
+  expect(Boolean(chat)).toBe(entry === "chat");
+  if (!chat) {
+    return;
+  }
+  // These reply queries depend on text and children, not attribute changes.
+  const replyWaitOptions = {
+    container: chat,
+    mutationObserverOptions: {
+      subtree: true,
+      childList: true,
+      characterData: true,
+    },
+  };
 
   const otherSwitchUrl = new URL(switchUrl);
   otherSwitchUrl.pathname = otherSwitchUrl.pathname.replace(
@@ -1339,7 +1371,12 @@ test("Connector account switches A → B → A keep their icon and continue with
       within(chat).queryByText("Continued with Work GitHub again"),
     ).toBeInTheDocument();
   }, replyWaitOptions);
-});
+}
+
+test.each(["chat", "direct"] as const)(
+  "Connector account switching from %s",
+  exerciseAccountSwitch,
+);
 
 test("Ordinary or code links remain message content", async () => {
   const ordinaryUrl = "https://example.com/reference";
@@ -1365,7 +1402,7 @@ test("Ordinary or code links remain message content", async () => {
   expect(document.querySelector("[data-testid$='action-card']")).toBeNull();
 });
 
-test("A valid banking request becomes an action card", async () => {
+async function reviewBankingRequest(entry: "chat" | "direct") {
   const reason = "Review quarterly subscription expenses";
   const bankingUrl = new URL("https://app.okou.ai/banking/access");
   bankingUrl.searchParams.set("reason", reason);
@@ -1386,10 +1423,21 @@ test("A valid banking request becomes an action card", async () => {
       });
     },
   );
-  await setupChat(["Banking request", "", bankingUrl.toString()].join("\n"));
-
-  await screen.findByText("Banking request");
+  if (entry === "direct") {
+    mockOwnedApprovalThread();
+    await setupPage({
+      context,
+      path: bankingUrl.pathname + bankingUrl.search,
+      host: "app.okou.ai",
+    });
+  } else {
+    await setupChat(["Banking request", "", bankingUrl.toString()].join("\n"));
+    await screen.findByText("Banking request");
+  }
   const card = await screen.findByTestId("banking-action-card");
+  expect(Boolean(screen.queryByRole("region", { name: "Chat thread" }))).toBe(
+    entry === "chat",
+  );
   expect(card).toHaveTextContent("Banking access request");
   expect(card).toHaveTextContent("Finance Assistant");
   expect(card).toHaveTextContent(reason);
@@ -1401,4 +1449,29 @@ test("A valid banking request becomes an action card", async () => {
       return link.getAttribute("href") === bankingUrl.toString();
     }),
   ).toBeFalsy();
+}
+
+test.each(["chat", "direct"] as const)(
+  "Review banking request from %s",
+  reviewBankingRequest,
+);
+
+test.each([
+  "/banking/access?reason=Review+spend&",
+  "/connectors/accounts/f0000000-0000-4000-a000-000000000901/select?kind=builtin&connectorSlug=github&",
+])("A direct approval requires access to its Chat (%s)", async (route) => {
+  context.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Chat thread not found" },
+    });
+  });
+  await setupPage({
+    context,
+    path: `${route}threadId=${THREAD_ID}&callbackPrompt=Continue`,
+    host: "app.okou.ai",
+  });
+  const heading = await screen.findByRole("heading", { level: 1 });
+  expect(heading).toHaveTextContent("That page isn't here.");
+  expect(screen.queryByTestId("banking-action-card")).toBeNull();
+  expect(screen.queryByTestId("connector-account-action-card")).toBeNull();
 });

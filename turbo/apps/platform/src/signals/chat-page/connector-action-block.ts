@@ -166,6 +166,28 @@ export const closeChatConnectorActionConnectDialog$ = command(({ set }) => {
   set(activeChatConnectorActionState$, null);
 });
 
+function parseConnectorActionCallback(
+  url: URL,
+  context: ChatActionContext,
+): ChatActionCallback | null {
+  // Saved links from the legacy CLI still identify the Chat's Agent. Remove
+  // this reader after old Runners drain and retained links are retired (#45476).
+  const legacyAgentId = url.searchParams.get("agentId");
+  if (legacyAgentId !== null) {
+    return context.agentId &&
+      chatActionIdMatches(legacyAgentId, context.agentId)
+      ? chatActionCallbackFromUrl(url, context)
+      : null;
+  }
+  const threadId = url.searchParams.get("threadId");
+  if (!threadId || !chatActionIdMatches(threadId, context.threadId)) {
+    return null;
+  }
+  return url.searchParams.has("callbackPrompt")
+    ? chatActionCallbackFromUrl(url, context)
+    : { threadId: null, callbackPrompt: null };
+}
+
 export function parseConnectorActionUrl(
   value: string,
   context: ChatActionContext | undefined,
@@ -188,23 +210,7 @@ export function parseConnectorActionUrl(
   }
   const connectorSlug = match?.[1]?.toLowerCase();
   const action = match?.[2];
-  const agentId = url.searchParams.get("agentId");
-  if (
-    !context ||
-    (agentId === null
-      ? !chatActionIdMatches(
-          url.searchParams.get("threadId") ?? "",
-          context.threadId,
-        )
-      : !context.agentId || !chatActionIdMatches(agentId, context.agentId))
-  ) {
-    return { status: "invalid", originalUrl: value };
-  }
-
-  const callback =
-    agentId === null && !url.searchParams.has("callbackPrompt")
-      ? { threadId: null, callbackPrompt: null }
-      : chatActionCallbackFromUrl(url, context);
+  const callback = context ? parseConnectorActionCallback(url, context) : null;
   if (!callback) {
     return { status: "invalid", originalUrl: value };
   }

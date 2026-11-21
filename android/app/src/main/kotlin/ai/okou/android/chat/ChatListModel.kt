@@ -128,8 +128,6 @@ internal constructor(val threadId: String, val action: ChatRowAction, internal v
             }
 }
 
-data class ProjectRenameRejection internal constructor(val projectId: String, val eventId: String)
-
 data class ChatListUiState(
     val threads: List<ConfirmedChat> = emptyList(),
     val listPhase: ChatReadPhase = ChatReadPhase.Idle,
@@ -139,16 +137,10 @@ data class ChatListUiState(
     val confirmedAt: Long? = null,
     val source: ChatListSource? = null,
     val cacheUnavailable: Boolean = false,
-    val projectCacheUnavailable: Boolean = false,
     val agents: Agents = emptyList(),
     val agentsPhase: ChatReadPhase = ChatReadPhase.Idle,
     val agentsSource: ChatListSource? = null,
-    val projects: List<ConfirmedProject> = emptyList(),
-    val projectsPhase: ChatReadPhase = ChatReadPhase.Idle,
-    val projectsSource: ChatListSource? = null,
-    val renamingProjectId: String? = null,
-    val unconfirmedProjectRenames: Set<String> = emptySet(),
-    internal val projectRenameRejection: ProjectRenameRejection? = null,
+    val projectList: ProjectListUiState = ProjectListUiState(),
     val indicators: Indicators? = null,
     val indicatorsPhase: ChatReadPhase = ChatReadPhase.Idle,
     val filter: ChatListFilter = ChatListFilter.Inbox,
@@ -161,10 +153,31 @@ data class ChatListUiState(
     internal val readIntents: Map<String, ChatReadIntent> = emptyMap(),
     internal val threadsByRecency: List<ConfirmedChat> = emptyList(),
     internal val acceptedNewChats: List<ProvisionalChat> = emptyList(),
-)
+) {
+    val projects: List<ConfirmedProject>
+        get() = projectList.rows
+
+    val projectsPhase: ChatReadPhase
+        get() = projectList.phase
+
+    val projectsSource: ChatListSource?
+        get() = projectList.source
+
+    val projectCacheUnavailable: Boolean
+        get() = projectList.cacheUnavailable
+
+    val renamingProjectId: String?
+        get() = projectList.renamingId
+
+    val unconfirmedProjectRenames: Set<String>
+        get() = projectList.unconfirmedRenames
+
+    internal val projectRenameRejection: ProjectRenameRejection?
+        get() = projectList.renameRejection
+}
 
 internal val ChatListUiState.canRenameProject: Boolean
-    get() = projectsSource != null && !offline && renamingProjectId == null
+    get() = projectList.canRename(offline)
 
 internal val ChatListUiState.displayUnreadAt: Map<String, String>?
     get() = indicators?.unreadAt ?: cachedUnread?.unreadAt
@@ -266,22 +279,26 @@ class ChatListModel(
     private val sync = ChatListSync(service, dispatcher)
     private var confirmed: CachedChats? = null
     private val projection = ChatListProjection()
-    private var confirmedProjects: CachedProjects? = null
-    private var confirmedProjectRows = emptyList<ConfirmedProject>()
-    private var projectRename: ProjectRename? = null
-    private val retryableProjectRenames = mutableMapOf<String, ProjectRename>()
+    private val projectOwner =
+        ProjectListOwner(
+            service,
+            cache,
+            viewModelScope,
+            current = ::current,
+            offline = { mutable.value.offline },
+            onFailure = onFailure,
+            dispatcher = dispatcher,
+            wallMillis = wallMillis,
+            readState = { mutable.value.projectList },
+            publish = { mutable.value = mutable.value.copy(projectList = it) },
+        )
     private var cacheRead = false
     private var restoreJob: Job? = null
-    private var projectsRestoreJob: Job? = null
     private var agentsJob: Job? = null
-    private var projectsJob: Job? = null
     private var indicatorsJob: Job? = null
     private val indicatorReadReceipts = mutableMapOf<String, ChatTimestamp>()
     private val readConfirmations = mutableMapOf<String, ReadConfirmation>()
     private val writes = Mutex()
-    private val projectSync = ProjectSync(service, dispatcher)
-
-    private data class ProjectRename(val id: String, val name: String, val eventId: String)
 
     private class ListReadBatch {
         var refresh = false
@@ -328,7 +345,6 @@ class ChatListModel(
     private var listRebaseJob: Job? = null
     private var readyListRebase: PreparedListRebase? = null
     private val listReadRequests = Channel<Unit>(Channel.CONFLATED)
-    private val projectInvalidations = Channel<Unit>(Channel.CONFLATED)
     private val indicatorInvalidations = Channel<Unit>(Channel.CONFLATED)
     private val unreadCacheWrites = Channel<CachedUnread>(Channel.CONFLATED)
     private var immediateIndicators = false
@@ -375,7 +391,7 @@ class ChatListModel(
             if (current()) {
                 if (changes.resync || changes.list) {
                     refreshList()
-                    projectInvalidations.trySend(Unit)
+                    projectOwner.invalidate()
                 }
                 if (changes.resync || changes.indicators || changes.readCursor)
                     requestIndicators(immediate = changes.resync || changes.readCursor)
@@ -418,15 +434,6 @@ class ChatListModel(
                 )
                     continue
                 if (cache.saveUnread(snapshot)) saved = snapshot
-            }
-        }
-        viewModelScope.launch {
-            for (ignored in projectInvalidations) {
-                projectsJob?.join()
-                if (current()) {
-                    refreshProjects()
-                    projectsJob?.join()
-                }
             }
         }
         viewModelScope.launch {
@@ -480,22 +487,6 @@ class ChatListModel(
                 mutable.value = mutable.value.copy(cacheUnavailable = true)
                 saved.copy(navigation = refs)
             }
-        }
-
-    private suspend fun persistProjects(saved: CachedProjects): CachedProjects =
-        try {
-            val written = cache.saveProjects(saved.checkpoint, saved.confirmedAt)
-            val disk = if (written) null else cache.loadProjects()
-            requireCurrent()
-            mutable.value = mutable.value.copy(projectCacheUnavailable = false)
-            if (disk != null && disk.checkpoint.cursor.seqId > saved.checkpoint.cursor.seqId) disk
-            else saved
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            requireCurrent()
-            mutable.value = mutable.value.copy(projectCacheUnavailable = true)
-            saved
         }
 
     private fun current() = !retired && authorized()
@@ -1115,21 +1106,7 @@ class ChatListModel(
                     if (current()) mutable.value = mutable.value.copy(cacheUnavailable = true)
                 }
             }
-        projectsRestoreJob =
-            viewModelScope.launch {
-                try {
-                    val saved = cache.loadProjects() ?: return@launch
-                    requireCurrent()
-                    confirmedProjects = saved
-                    showCachedProjects()
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    currentCoroutineContext().ensureActive()
-                    if (current())
-                        mutable.value = mutable.value.copy(projectCacheUnavailable = true)
-                }
-            }
+        projectOwner.restore()
     }
 
     private suspend fun restoreUnread() {
@@ -1150,15 +1127,6 @@ class ChatListModel(
         if (state.cachedUnread?.remainingMillis(wallMillis()) == 0L) {
             mutable.value = state.copy(cachedUnread = null)
         }
-    }
-
-    private suspend fun showCachedProjects() {
-        val saved = confirmedProjects ?: return
-        if (!current() || mutable.value.projectsSource == ChatListSource.Network) return
-        val rows = withContext(dispatcher) { replayProjects(saved.checkpoint) }
-        requireCurrent()
-        if (mutable.value.projectsSource != ChatListSource.Network)
-            publishProjects(rows, mutable.value.copy(projectsSource = ChatListSource.Cache))
     }
 
     private fun listReadBatch(): ListReadBatch =
@@ -1441,197 +1409,15 @@ class ChatListModel(
                     }
                 }
         }
-        refreshProjects()
+        projectOwner.refresh()
     }
 
-    internal fun renameProject(id: String, input: String) {
-        val name = input.trim()
-        if (name.length !in 1..120 || confirmedProjectRows.none { it.id == id && it.name != name })
-            return
-        submitProjectRename(ProjectRename(id, name, newProjectOperationId()))
-    }
+    internal fun renameProject(id: String, input: String) = projectOwner.renameProject(id, input)
 
-    private fun newProjectOperationId(): String {
-        val random = UUID.randomUUID()
-        // The Project API uses the UUIDv7 timestamp to bound receipt retries.
-        val timestamp = wallMillis() shl 16
-        val versionAndRandom = 0x7000L or (random.mostSignificantBits and 0x0fffL)
-        return UUID(timestamp or versionAndRandom, random.leastSignificantBits).toString()
-    }
+    internal fun retryProjectRename(id: String) = projectOwner.retryProjectRename(id)
 
-    internal fun retryProjectRename(id: String) {
-        retryableProjectRenames[id]?.let(::submitProjectRename)
-    }
-
-    internal fun dismissProjectRenameRejection(rejection: ProjectRenameRejection) {
-        if (current() && mutable.value.projectRenameRejection == rejection) {
-            mutable.value = mutable.value.copy(projectRenameRejection = null)
-        }
-    }
-
-    private fun hasProjectReceipt(eventId: String): Boolean =
-        confirmedProjects?.checkpoint?.let { checkpoint ->
-            checkpoint.archive.latestEventId == eventId ||
-                checkpoint.events.any { it.id == eventId }
-        } == true
-
-    private fun publishProjects(
-        rows: List<ConfirmedProject>,
-        state: ChatListUiState = mutable.value,
-    ) {
-        confirmedProjectRows = rows
-        val pending = projectRename
-        mutable.value =
-            state.copy(
-                projects =
-                    if (pending == null) rows
-                    else
-                        rows.map { project ->
-                            if (project.id == pending.id) project.copy(name = pending.name)
-                            else project
-                        },
-                renamingProjectId = pending?.id,
-                unconfirmedProjectRenames = retryableProjectRenames.keys.toSet(),
-            )
-    }
-
-    private fun submitProjectRename(rename: ProjectRename) {
-        val state = mutable.value
-        if (
-            !current() ||
-                !state.canRenameProject ||
-                confirmedProjectRows.none { it.id == rename.id }
-        )
-            return
-        projectRename = rename
-        retryableProjectRenames.remove(rename.id)
-        val previousRejection = state.projectRenameRejection
-        publishProjects(
-            confirmedProjectRows,
-            if (previousRejection?.projectId == rename.id) state.copy(projectRenameRejection = null)
-            else state,
-        )
-        viewModelScope.launch {
-            var rejected = false
-            try {
-                try {
-                    service.renameProject(rename.id, rename.name, rename.eventId)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    requireCurrent()
-                    if (error !is ApiFailure.Http || error.status != 404) onFailure(error)
-                    rejected =
-                        when (error) {
-                            is ApiFailure.Unauthenticated,
-                            is ApiFailure.UpdateRequired -> true
-                            is ApiFailure.Http -> error.status in setOf(400, 401, 403, 404, 409)
-                            else -> false
-                        }
-                    if (rejected) return@launch
-                }
-                requireCurrent()
-                // Wait out a read that could have started before the write.
-                while (projectsJob?.isCompleted == false) projectsJob?.join()
-                requireCurrent()
-                val previousRead = projectsJob
-                refreshProjects()
-                val readBack = projectsJob
-                readBack?.join()
-                requireCurrent()
-                val confirmedName = confirmedProjectRows.firstOrNull { it.id == rename.id }?.name
-                val observedName =
-                    readBack !== previousRead &&
-                        mutable.value.projectsPhase == ChatReadPhase.Ready &&
-                        confirmedName == rename.name
-                // The stream can deliver the receipt before the write response is lost.
-                if (!observedName && !hasProjectReceipt(rename.eventId) && confirmedName != null) {
-                    // The server deduplicates retries by this Project event ID.
-                    retryableProjectRenames[rename.id] = rename
-                }
-            } finally {
-                projectRename = null
-                if (current()) {
-                    val state = mutable.value
-                    // A retry can be rejected after the original write was confirmed.
-                    val settled =
-                        if (rejected && !hasProjectReceipt(rename.eventId))
-                            state.copy(
-                                projectRenameRejection =
-                                    ProjectRenameRejection(rename.id, rename.eventId)
-                            )
-                        else state
-                    publishProjects(confirmedProjectRows, settled)
-                }
-            }
-        }
-    }
-
-    private fun refreshProjects() {
-        if (current() && !mutable.value.offline && projectsJob?.isActive != true) {
-            mutable.value = mutable.value.copy(projectsPhase = ChatReadPhase.Loading)
-            projectsJob =
-                viewModelScope.launch {
-                    try {
-                        projectsRestoreJob?.join()
-                        requireCurrent()
-                        val previous = confirmedProjects
-                        val result = projectSync.synchronize(previous?.checkpoint)
-                        val candidate =
-                            if (
-                                !result.changed &&
-                                    previous != null &&
-                                    !mutable.value.projectCacheUnavailable
-                            )
-                                previous
-                            else CachedProjects(result.checkpoint, System.currentTimeMillis())
-                        val projected =
-                            withContext(dispatcher) { replayProjects(candidate.checkpoint) }
-                        requireCurrent()
-                        val saved =
-                            if (candidate === previous) candidate else persistProjects(candidate)
-                        val rows =
-                            if (saved === candidate) projected
-                            else withContext(dispatcher) { replayProjects(saved.checkpoint) }
-                        requireCurrent()
-                        confirmedProjects = saved
-                        if (retryableProjectRenames.isNotEmpty()) {
-                            val names = rows.associate { it.id to it.name }
-                            val appliedEvents = saved.checkpoint.events.mapTo(hashSetOf()) { it.id }
-                            saved.checkpoint.archive.latestEventId?.let(appliedEvents::add)
-                            retryableProjectRenames.entries.removeAll { (id, rename) ->
-                                names[id] == null ||
-                                    names[id] == rename.name ||
-                                    rename.eventId in appliedEvents
-                            }
-                        }
-                        publishProjects(
-                            rows,
-                            mutable.value.copy(
-                                projectsPhase = ChatReadPhase.Ready,
-                                projectsSource = ChatListSource.Network,
-                            ),
-                        )
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (error: Exception) {
-                        // A missing Projects collection does not revoke the workspace session.
-                        if (error is ApiFailure.Http && error.status == 404) {
-                            if (current()) {
-                                retryableProjectRenames.clear()
-                                publishProjects(
-                                    emptyList(),
-                                    mutable.value.copy(
-                                        projectsSource = null,
-                                        projectsPhase = ChatReadPhase.Failed,
-                                    ),
-                                )
-                            }
-                        } else fail(error) { it.copy(projectsPhase = ChatReadPhase.Failed) }
-                    }
-                }
-        }
-    }
+    internal fun dismissProjectRenameRejection(rejection: ProjectRenameRejection) =
+        projectOwner.dismissProjectRenameRejection(rejection)
 
     private fun invalidateIndicators() {
         requestIndicators(immediate = true)
@@ -1727,7 +1513,7 @@ class ChatListModel(
         listReadRequests.close()
         pendingListRead = null
         readyListRebase = null
-        projectInvalidations.close()
+        projectOwner.close()
         indicatorInvalidations.close()
         unreadCacheWrites.close()
         history.close()

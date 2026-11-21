@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.249.85](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.84...runner-rs-v0.249.85) (2026-11-21)
+
+
+### Refactoring
+
+* **runner:** centralize response inspection interruption diagnostics ([#49809](https://github.com/okou-ai/okou/issues/49809)) ([605efe1](https://github.com/okou-ai/okou/commit/605efe1d0381d914a3ef76460cb266a71f408572))
+* **runner:** share model usage parse warning budgets ([#49784](https://github.com/okou-ai/okou/issues/49784)) ([4d217d4](https://github.com/okou-ai/okou/commit/4d217d4fb20e828c207f4e78e1bc3e1224a64e31))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.84](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.83...runner-rs-v0.249.84) (2026-11-21)
 
 

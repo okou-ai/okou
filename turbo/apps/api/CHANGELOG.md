@@ -10,6 +10,22 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.100.6](https://github.com/okou-ai/okou/compare/api-v2.100.5...api-v2.100.6) (2026-11-21)
+
+
+### Bug Fixes
+
+* **app:** support member-scoped connector permission approvals ([#49815](https://github.com/okou-ai/okou/issues/49815)) ([d264a98](https://github.com/okou-ai/okou/commit/d264a981e964c318ca2535b8e0651315c09fcf19))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.858.5
+    * @okouai/db bumped to 2.57.6
+    * @okouai/pi-agent-runtime bumped to 1.52.24
+
 ## [2.100.5](https://github.com/okou-ai/okou/compare/api-v2.100.4...api-v2.100.5) (2026-11-21)
 
 
