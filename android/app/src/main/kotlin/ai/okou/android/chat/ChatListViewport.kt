@@ -25,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -46,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 
 internal val ChatListRowHeight = 52.dp
 internal val ChatListRowShape = RoundedCornerShape(8.dp)
@@ -125,17 +127,7 @@ internal fun ChatListViewport(
             } else null
         val rows =
             subcompose(ListLayer.Rows) {
-                    // Lazy item keys preserve the visible row. Keep the final row in view
-                    // when the reader is already at the end.
-                    val followEnd =
-                        remember(listState, reserve, height, short, lastContentKey) {
-                            listState.canScrollBackward && !listState.canScrollForward
-                        }
-                    LaunchedEffect(listState, reserve, height, short, lastContentKey) {
-                        val lastIndex = listState.layoutInfo.totalItemsCount - 1
-                        if (followEnd && !listState.isScrollInProgress && lastIndex >= 0)
-                            listState.requestScrollToItem(lastIndex)
-                    }
+                    KeepLazyListEndInView(listState, reserve, height, short, lastContentKey)
                     content(reserve, inline)
                 }
                 .single()
@@ -145,6 +137,27 @@ internal fun ChatListViewport(
             floating?.placeRelative(0, actionTop)
             feedbackLayer.placeRelative((bounds.maxWidth - feedbackLayer.width) / 2, feedbackTop)
         }
+    }
+}
+
+@Composable
+internal fun KeepLazyListEndInView(
+    listState: LazyListState,
+    vararg layoutChanges: Any?,
+    lastItemIndex: Int? = null,
+) {
+    // Lazy item keys retain older reading positions. Capture the end before the new layout.
+    val followEnd =
+        remember(listState, lastItemIndex, *layoutChanges) {
+            listState.canScrollBackward && !listState.canScrollForward
+        }
+    LaunchedEffect(listState, lastItemIndex, *layoutChanges) {
+        if (!followEnd) return@LaunchedEffect
+        if (lastItemIndex != null) {
+            snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > lastItemIndex }
+        }
+        val index = lastItemIndex ?: (listState.layoutInfo.totalItemsCount - 1)
+        if (!listState.isScrollInProgress && index >= 0) listState.requestScrollToItem(index)
     }
 }
 

@@ -4,6 +4,7 @@ import ai.okou.android.CHAT_DATE
 import ai.okou.android.CHAT_IN_PROJECT
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.ChatListApiFixture
+import ai.okou.android.HISTORY_LAST_EVENT
 import ai.okou.android.OkouTheme
 import ai.okou.android.R
 import ai.okou.android.RecoveryApiFixture
@@ -19,7 +20,10 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
@@ -31,6 +35,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -49,6 +55,7 @@ import kotlinx.serialization.json.Json
 import okhttp3.mockwebserver.MockResponse
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -178,6 +185,59 @@ class ConversationRouteTest {
                 fixture.readRequests.get() >= 6
         }
         assertEquals(6, fixture.readRequests.get())
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h320dp")
+    fun aReaderAtTheEndCanSeeTheSlowSyncNotice() {
+        val model = createListModel()
+        compose.setContent {
+            val list by model.uiState.collectAsStateWithLifecycle()
+            OkouTheme { ConversationRoute(model.history, CHAT_IN_PROJECT, list) }
+        }
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { model.uiState.value.listPhase == ChatReadPhase.Ready }
+        }
+        compose.runOnIdle {
+            model.history.open(model.uiState.value.threads.single { it.id == CHAT_IN_PROJECT })
+        }
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { model.history.uiState.value.phase == HistoryPhase.Ready }
+        }
+        val conversation = compose.onNodeWithTag("conversation")
+        conversation.performTouchInput { swipeUp() }
+        compose.waitUntil(5_000) {
+            val scroll =
+                conversation
+                    .fetchSemanticsNode()
+                    .config[SemanticsProperties.VerticalScrollAxisRange]
+            scroll.value() > 0f && scroll.value() == scroll.maxValue()
+        }
+        compose.onNodeWithTag("message_$HISTORY_LAST_EVENT").assertIsDisplayed()
+        val syncLabel = compose.activity.getString(R.string.history_syncing)
+        val refreshRequested = CountDownLatch(1)
+        val allowRefreshResponse = CountDownLatch(1)
+        val historyRows = fixture.historyRows
+        fixture.historyRows = { request ->
+            refreshRequested.countDown()
+            allowRefreshResponse.await()
+            historyRows(request)
+        }
+        try {
+            compose.runOnIdle { model.history.refresh() }
+            compose.waitUntil(5_000) { compose.runOnIdle { refreshRequested.count == 0L } }
+            compose.mainClock.advanceTimeBy(300)
+            val notice = compose.onNodeWithText(syncLabel).assertIsDisplayed()
+            val noticeBottom = notice.getUnclippedBoundsInRoot().bottom
+            val viewportBottom = conversation.getUnclippedBoundsInRoot().bottom
+            assertTrue(
+                "Sync notice ends at $noticeBottom beyond $viewportBottom",
+                noticeBottom <= viewportBottom,
+            )
+        } finally {
+            allowRefreshResponse.countDown()
+        }
+        compose.waitUntilDoesNotExist(hasText(syncLabel), 5_000)
     }
 
     @Test

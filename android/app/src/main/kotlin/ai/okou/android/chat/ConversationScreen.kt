@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.ButtonDefaults
@@ -138,12 +138,16 @@ fun ConversationRoute(
     val readState = visit?.readState?.collectAsStateWithLifecycle()?.value
     key(threadId) {
         val position = rememberLazyListState()
+        val historyHeaderCount = if (historyAvailable) 1 else 0
         LaunchedEffect(position, previews.lastOrNull()?.eventId) {
             if (previews.isNotEmpty())
-                position.scrollToItem(
-                    messages.size + previews.lastIndex + if (historyAvailable) 1 else 0
-                )
+                position.scrollToItem(historyHeaderCount + messages.size + previews.lastIndex)
         }
+        if (showSync)
+            KeepLazyListEndInView(
+                position,
+                lastItemIndex = historyHeaderCount + messages.size + previews.size,
+            )
         Column(modifier.fillMaxSize()) {
             LazyColumn(
                 Modifier.weight(1f).fillMaxWidth().testTag("conversation"),
@@ -227,14 +231,9 @@ fun ConversationRoute(
                         }
                     }
                 }
-                itemsIndexed(messages, key = { _, message -> message.id }) { index, message ->
-                    ConversationMessage(
-                        message,
-                        showSync = showSync && index == messages.lastIndex && previews.isEmpty(),
-                    )
-                }
-                itemsIndexed(previews, key = { _, preview -> preview.eventId }) { index, preview ->
-                    ConversationMessage(
+                items(messages, key = { it.id }) { message -> HistoryMessageCard(message) }
+                items(previews, key = { it.eventId }) { preview ->
+                    HistoryMessageCard(
                         HistoryMessage(
                             preview.eventId,
                             null,
@@ -245,11 +244,9 @@ fun ConversationRoute(
                             preview.disposition?.label()
                                 ?: if (preview.sending) R.string.composer_sending
                                 else R.string.composer_unconfirmed,
-                        showSync = showSync && index == previews.lastIndex,
                     )
                 }
-                if (showSync && messages.isEmpty() && previews.isEmpty())
-                    item(key = "conversation_sync") { HistorySyncNotice() }
+                if (showSync) item(key = "conversation_sync") { HistorySyncNotice() }
             }
             val historyNotice =
                 when {
@@ -286,22 +283,9 @@ fun ConversationRoute(
 }
 
 @Composable
-private fun ConversationMessage(
-    message: HistoryMessage,
-    showSync: Boolean,
-    @StringRes deliveryStatus: Int? = null,
-) {
-    Column {
-        HistoryMessageCard(message, deliveryStatus)
-        if (showSync) HistorySyncNotice(Modifier.padding(top = 4.dp))
-    }
-}
-
-@Composable
-private fun HistorySyncNotice(modifier: Modifier = Modifier) {
+private fun HistorySyncNotice() {
     val color = MaterialTheme.colorScheme.onSurfaceVariant
     Row(
-        modifier,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
