@@ -277,6 +277,76 @@ class ConversationHistoryTest {
     }
 
     @Test
+    fun historyReadbackReusesMatchingRowsButLoadsANewerStoredCursor() = runTest {
+        val lease = cache().open(identity) { true }
+        val incoming = checkpoint().copy(replaced = true)
+        lease.saveHistory(incoming, 100)
+        val matching = checkNotNull(lease.loadHistoryAfterSync(incoming))
+        assertSame(incoming.rows, matching.checkpoint.rows)
+        assertFalse(matching.checkpoint.replaced)
+        assertEquals(100L, matching.confirmedAt)
+
+        val addition = row(id = "another-event", seq = 38)
+        val newer =
+            incoming.copy(
+                rows = incoming.rows + addition,
+                cursor = HistoryCursor(addition.id, addition.seqId),
+                replaced = false,
+            )
+        lease.saveHistory(newer, 200)
+        val adopted = checkNotNull(lease.loadHistoryAfterSync(incoming))
+        assertEquals(newer, adopted.checkpoint)
+        assertEquals(200L, adopted.confirmedAt)
+    }
+
+    @Test
+    fun anInFlightCatchUpPublishesTheNewerStoredCursor() = runTest {
+        val received = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val baseline = checkpoint()
+        val older = row(id = "older-event", seq = 38)
+        val newer = row(id = "newer-event", seq = 39)
+        val service =
+            Service().apply {
+                rowsRead = { _, _ ->
+                    received.complete(Unit)
+                    release.await()
+                    HistoryPage(listOf(older), HistoryCursor(older.id, older.seqId), false)
+                }
+            }
+        val lease = cache().open(identity) { true }
+        lease.saveHistory(baseline, 100)
+        val model =
+            ConversationHistoryModel(
+                service,
+                lease,
+                backgroundScope,
+                { true },
+                {},
+                {},
+                StandardTestDispatcher(testScheduler),
+            )
+        try {
+            model.open(thread())
+            received.await()
+            val stored =
+                baseline.copy(
+                    rows = baseline.rows + listOf(older, newer),
+                    cursor = HistoryCursor(newer.id, newer.seqId),
+                )
+            lease.saveHistory(stored, 200)
+            release.complete(Unit)
+            val published = model.uiState.first { it.phase == HistoryPhase.Ready }
+            assertEquals(stored.cursor, published.confirmation?.cursor)
+            assertEquals(stored, model.checkpoint(CHAT_PERSONAL))
+            assertEquals(stored, lease.loadHistory(CHAT_PERSONAL)?.checkpoint)
+        } finally {
+            model.close()
+            lease.close()
+        }
+    }
+
+    @Test
     fun visibleReadEffectsAreSeparateFromLoadingAndThreadFailuresStayLocal() = runTest {
         val service = Service()
         val lease = cache().open(identity) { true }

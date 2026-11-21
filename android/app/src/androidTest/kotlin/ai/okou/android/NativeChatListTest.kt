@@ -39,6 +39,7 @@ class NativeChatListTest {
     fun cachedUnreadFilterOpensBeforeIndicatorsAndRemainsUsableAfterFailure() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext.applicationContext as TestOkouApplication
+        measureHistoryPublication(app)
         val device = UiDevice.getInstance(instrumentation)
         val previous = app.chatService
         val savedPreferences = app.snapshotApiPreferences()

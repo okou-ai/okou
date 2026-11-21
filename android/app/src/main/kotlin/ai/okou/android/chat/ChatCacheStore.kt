@@ -183,7 +183,16 @@ internal constructor(
                 }
             }
 
-        suspend fun loadHistory(threadId: String): CachedHistory? =
+        suspend fun loadHistory(threadId: String): CachedHistory? = readHistory(threadId)
+
+        /** A matching persisted cursor identifies the already decoded canonical history. */
+        internal suspend fun loadHistoryAfterSync(checkpoint: HistoryCheckpoint): CachedHistory? =
+            readHistory(checkpoint.threadId, checkpoint)
+
+        private suspend fun readHistory(
+            threadId: String,
+            candidate: HistoryCheckpoint? = null,
+        ): CachedHistory? =
             withContext(dispatcher) {
                 lock.withLock {
                     checkCurrent()
@@ -199,21 +208,24 @@ internal constructor(
                                     stored.authorization == authorization &&
                                         stored.eventVersion == ApiHeaders.CHAT_EVENT_SCHEMA_VERSION
                                 )
-                                val rows =
-                                    dao.historyEvents(key, threadId).map { entry ->
-                                        HistoryEvent.decode(entry.payload).also {
-                                            requireChatWire(
-                                                it.id == entry.id && it.seqId == entry.seqId
-                                            )
+                                val cursor = HistoryCursor(stored.eventId, stored.seqId)
+                                val checkpoint =
+                                    if (candidate != null && candidate.cursor == cursor) {
+                                        if (candidate.replaced) candidate.copy(replaced = false)
+                                        else candidate
+                                    } else {
+                                        val rows =
+                                            dao.historyEvents(key, threadId).map { entry ->
+                                                HistoryEvent.decode(entry.payload).also {
+                                                    requireChatWire(
+                                                        it.id == entry.id && it.seqId == entry.seqId
+                                                    )
+                                                }
+                                            }
+                                        HistoryCheckpoint(threadId, rows, cursor).also {
+                                            it.validate()
                                         }
                                     }
-                                val checkpoint =
-                                    HistoryCheckpoint(
-                                        threadId,
-                                        rows,
-                                        HistoryCursor(stored.eventId, stored.seqId),
-                                    )
-                                checkpoint.validate()
                                 currentCoroutineContext().ensureActive()
                                 checkCurrent()
                                 CachedHistory(checkpoint, stored.confirmedAt)
