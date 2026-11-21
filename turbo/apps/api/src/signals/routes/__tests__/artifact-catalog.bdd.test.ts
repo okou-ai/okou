@@ -301,18 +301,43 @@ async function completeChatRunWithMessage(
   await completeChatRunOk(runId, sandboxHeaders, 0);
 }
 
-async function uploadFile(args: {
-  readonly owner: CatalogActor;
-  readonly prompt: string;
+interface CatalogFileUpload {
   readonly filename: string;
   readonly contentType: string;
   readonly sizeBytes?: number;
   readonly fileId?: string;
-  readonly threadId?: string;
-  readonly objectStorage?: ReturnType<
-    typeof chatCallbacks.acceptChatObjectStorage
-  >;
-}): Promise<{
+  readonly objectStorage?: CatalogActor["storage"];
+}
+
+async function stageAndCompleteFileUpload(
+  owner: CatalogActor,
+  bearer: string,
+  file: CatalogFileUpload,
+): Promise<{ readonly fileId: string; readonly url: string }> {
+  const fileId = file.fileId ?? randomUUID();
+  stageUploadObject(
+    `artifacts/${owner.actor.userId}/${fileId}/${file.filename}`,
+    file.sizeBytes ?? 1024,
+    file.objectStorage,
+  );
+  const completed = await chat.completeUploadWithBearer(
+    bearer,
+    { id: fileId, contentType: file.contentType },
+    [200],
+  );
+  if (completed.status !== 200) {
+    throw new Error("Expected run upload completion to succeed");
+  }
+  return { fileId, url: completed.body.url };
+}
+
+async function uploadFile(
+  args: CatalogFileUpload & {
+    readonly owner: CatalogActor;
+    readonly prompt: string;
+    readonly threadId?: string;
+  },
+): Promise<{
   readonly fileId: string;
   readonly url: string;
   readonly threadId: string;
@@ -321,27 +346,14 @@ async function uploadFile(args: {
     prompt: args.prompt,
     ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
   });
-  const { execution: receivedExecution, sandboxHeaders } = await runExecution(
+  const { execution, sandboxHeaders } = await runExecution(
     args.owner.runnerGroup,
     run.runId,
   );
-  const bearer = `Bearer ${okouTokenFromExecution(receivedExecution)}`;
-  const fileId = args.fileId ?? randomUUID();
-  stageUploadObject(
-    `artifacts/${args.owner.actor.userId}/${fileId}/${args.filename}`,
-    args.sizeBytes ?? 1024,
-    args.objectStorage,
-  );
-  const completed = await chat.completeUploadWithBearer(
-    bearer,
-    { id: fileId, contentType: args.contentType },
-    [200],
-  );
-  if (completed.status !== 200) {
-    throw new Error("Expected run upload completion to succeed");
-  }
+  const bearer = `Bearer ${okouTokenFromExecution(execution)}`;
+  const uploaded = await stageAndCompleteFileUpload(args.owner, bearer, args);
   await completeChatRunOk(run.runId, sandboxHeaders);
-  return { fileId, url: completed.body.url, threadId: run.threadId };
+  return { ...uploaded, threadId: run.threadId };
 }
 
 async function publishHostedSite(args: {
@@ -820,21 +832,26 @@ describe("GET /api/artifacts/catalog", () => {
 
   it("lists native PPTX files as presentations while retaining file-backed detail and deletion", async () => {
     const owner = await catalogActor("Native PowerPoint catalog owner");
+    const { runId } = await sendChatRun(owner.actor, {
+      prompt: "Publish the presentations and supporting notes",
+    });
+    const { execution, sandboxHeaders } = await runExecution(
+      owner.runnerGroup,
+      runId,
+    );
+    const bearer = `Bearer ${okouTokenFromExecution(execution)}`;
     const filenames = ["quarterly-review.pptx", "BOARD-UPDATE.PPTX"];
     for (const filename of filenames) {
-      await uploadFile({
-        owner,
-        prompt: `Publish ${filename}`,
+      await stageAndCompleteFileUpload(owner, bearer, {
         filename,
         contentType: "application/octet-stream",
       });
     }
-    await uploadFile({
-      owner,
-      prompt: "Publish supporting notes",
+    await stageAndCompleteFileUpload(owner, bearer, {
       filename: "supporting-notes.pdf",
       contentType: "application/pdf",
     });
+    await completeChatRunOk(runId, sandboxHeaders);
 
     const presentations = await chat.listArtifactCatalog(owner.actor, {
       kind: "presentation",
