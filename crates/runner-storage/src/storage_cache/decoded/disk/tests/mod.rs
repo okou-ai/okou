@@ -495,6 +495,7 @@ fn orphaned_lock_collection_does_not_make_persistent_files_unreachable() {
 fn rejects_corrupt_content_and_index_without_returning_partial_files() {
     for target in [
         "content",
+        "uppercase-digest",
         "size",
         "identity",
         "truncated-index",
@@ -514,6 +515,10 @@ fn rejects_corrupt_content_and_index_without_returning_partial_files() {
             mutation => {
                 match mutation {
                     "size" => index["files"][0]["size"] = 4.into(),
+                    "uppercase-digest" => {
+                        let digest = &mut index["files"][0]["sha256"];
+                        *digest = digest.as_str().unwrap().to_ascii_uppercase().into();
+                    }
                     "identity" => index["version"] = "v2".into(),
                     "path" => index["files"][0]["path"] = "../outside".into(),
                     "mode" => index["files"][0]["mode"] = 0o4755.into(),
