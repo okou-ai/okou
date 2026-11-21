@@ -14,6 +14,7 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.services.storage.TestStorage
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
@@ -75,6 +76,20 @@ class ScreenshotScenario {
                 .click()
         }
 
+        fun enter(label: String, value: String) {
+            val editor = By.pkg(app.packageName).clazz("android.widget.EditText").desc(label)
+            checkNotNull(device.wait(Until.findObject(editor), 12_000)) { "Missing editor: $label" }
+                .click()
+            checkNotNull(device.wait(Until.findObject(editor.focused(true)), 12_000)) {
+                    "Editor did not take focus: $label"
+                }
+                .text = value
+            assertTrue(
+                "Editor did not show the entered value: $label",
+                device.wait(Until.hasObject(editor.text(value)), 12_000),
+            )
+        }
+
         ConnectorApiFixture().use { fixture ->
             try {
                 device.executeShellCommand("wm size 412x892")
@@ -93,101 +108,113 @@ class ScreenshotScenario {
                 )
                 auth.state.value = testAuthenticationState(user = user)
                 ActivityScenario.launch(MainActivity::class.java).use {
-                    text("连接器").click()
-                    text("发现")
-                    assertFalse(device.hasObject(By.text("Google Calendar")))
-                    releaseDirectory.countDown()
-                    text("Google Calendar")
-                    text("需要重新授权")
+                    try {
+                        text("连接器").click()
+                        text("发现")
+                        assertFalse(device.hasObject(By.text("Google Calendar")))
+                        releaseDirectory.countDown()
+                        text("Google Calendar")
+                        text("需要重新授权")
 
-                    // Load the precise scope state once before returning to the directory.
-                    text("Google Calendar").click()
-                    text("需要更新权限")
-                    description("返回").click()
-                    text("有账号需要处理")
-                    capture("discover.png")
+                        // Load the precise scope state once before returning to the directory.
+                        text("Google Calendar").click()
+                        text("需要更新权限")
+                        description("返回").click()
+                        text("有账号需要处理")
+                        capture("discover.png")
 
-                    checkNotNull(
-                            device.wait(
-                                Until.findObject(By.pkg(app.packageName).text("已连接")),
-                                12_000,
+                        checkNotNull(
+                                device.wait(
+                                    Until.findObject(By.pkg(app.packageName).text("已连接")),
+                                    12_000,
+                                )
                             )
-                        )
-                        .click()
-                    text("Slack")
-                    assertFalse(device.hasObject(By.text("Gmail")))
-                    capture("connected.png")
+                            .click()
+                        text("Slack")
+                        assertFalse(device.hasObject(By.text("Gmail")))
+                        capture("connected.png")
 
-                    description("搜索连接器").text = "team@example.com"
-                    text("Google Calendar")
-                    assertTrue(device.wait(Until.gone(By.text("Slack")), 12_000))
-                    description("清除关键词").click()
-                    text("发现").click()
-                    description("筛选服务类别").click()
-                    click("文档与文件")
-                    text("Google Drive")
-                    assertFalse(device.hasObject(By.text("Gmail")))
-                    description("搜索连接器").text = "Gmail"
-                    text("没有匹配的连接器")
-                    description("清除关键词").click()
-                    description("筛选服务类别").click()
-                    click("不限类别")
-                    text("推荐")
-                    description("搜索连接器").text = "Google Drive"
-                    text("Google Drive").click()
-                    text("连接账号")
-                    description("返回").click()
-                    text("Google Drive")
-                    assertFalse(device.hasObject(By.text("Gmail")))
-                    description("清除关键词").click()
-                    text("Gmail").click()
-                    text("连接账号").click()
-                    text("前往服务方")
-                    capture("authorization.png")
-                    text("取消").click()
-                    text("连接账号")
-                    description("返回").click()
-                    text("推荐")
+                        enter("搜索连接器", "team@example.com")
+                        text("Google Calendar")
+                        assertTrue(device.wait(Until.gone(By.text("Slack")), 12_000))
+                        description("清除关键词").click()
+                        text("发现").click()
+                        description("筛选服务类别").click()
+                        click("文档与文件")
+                        text("Google Drive")
+                        assertFalse(device.hasObject(By.text("Gmail")))
+                        enter("搜索连接器", "Gmail")
+                        text("没有匹配的连接器")
+                        description("清除关键词").click()
+                        description("筛选服务类别").click()
+                        click("不限类别")
+                        text("推荐")
+                        enter("搜索连接器", "Google Drive")
+                        text("Google Drive").click()
+                        text("连接账号")
+                        description("返回").click()
+                        text("Google Drive")
+                        assertFalse(device.hasObject(By.text("Gmail")))
+                        description("清除关键词").click()
+                        text("Gmail").click()
+                        text("连接账号").click()
+                        text("前往服务方")
+                        capture("authorization.png")
+                        text("取消").click()
+                        text("连接账号")
+                        description("返回").click()
+                        text("推荐")
 
-                    device.executeShellCommand("wm size 1180x820")
-                    text("选择连接器查看详情")
-                    text("Google Calendar").click()
-                    text("需要更新权限")
-                    val directory = text("推荐").visibleBounds
-                    val detail = text("服务可申请的权限").visibleBounds
-                    assertTrue(directory.right < detail.left)
-                    capture("wide-detail.png")
+                        device.executeShellCommand("wm size 1180x820")
+                        text("选择连接器查看详情")
+                        text("Google Calendar").click()
+                        text("需要更新权限")
+                        val directory = text("推荐").visibleBounds
+                        val detail = text("服务可申请的权限").visibleBounds
+                        assertTrue(directory.right < detail.left)
+                        capture("wide-detail.png")
 
-                    text("服务可申请的权限").click()
-                    text("读取日历与日程")
-                    capture("permissions.png")
-                    text("关闭").click()
+                        text("服务可申请的权限").click()
+                        text("读取日历与日程")
+                        capture("permissions.png")
+                        text("关闭").click()
 
-                    text("calendar@example.com").click()
-                    text("默认启用")
-                    capture("account-panel.png")
-                    click("默认启用")
-                    click("重命名")
-                    description("账号名称").text = "会议日历"
-                    fixture.loseRenameReply = true
-                    click("保存")
-                    text("会议日历")
-                    text("断开账号").click()
-                    text("2 个聊天明确选择了此账号。")
-                    text("取消").click()
-                    text("默认启用")
-                    text("断开账号").click()
-                    text("断开此账号？")
-                    text("2 个聊天明确选择了此账号。")
-                    val buttons = device.findObjects(By.pkg(app.packageName).text("断开账号"))
-                    checkNotNull(buttons.lastOrNull()).click()
-                    assertTrue(device.wait(Until.gone(By.textContains("会议日历")), 12_000))
-                    text("team@example.com")
-                    text("添加账号")
-                    app.connectivity.value = false
-                    text("联网后可以管理账号。")
-                    text("需要更新权限")
-                    app.connectivity.value = true
+                        text("calendar@example.com").click()
+                        text("默认启用")
+                        capture("account-panel.png")
+                        click("默认启用")
+                        click("重命名")
+                        enter("账号名称", "会议日历")
+                        fixture.loseRenameReply = true
+                        click("保存")
+                        text("会议日历")
+                        text("断开账号").click()
+                        text("2 个聊天明确选择了此账号。")
+                        text("取消").click()
+                        text("默认启用")
+                        text("断开账号").click()
+                        text("断开此账号？")
+                        text("2 个聊天明确选择了此账号。")
+                        val buttons = device.findObjects(By.pkg(app.packageName).text("断开账号"))
+                        checkNotNull(buttons.lastOrNull()).click()
+                        assertTrue(device.wait(Until.gone(By.textContains("会议日历")), 12_000))
+                        text("team@example.com")
+                        text("添加账号")
+                        app.connectivity.value = false
+                        text("联网后可以管理账号。")
+                        text("需要更新权限")
+                        app.connectivity.value = true
+                    } catch (error: Throwable) {
+                        try {
+                            ScreenshotCapture.capture("failure.png")
+                            TestStorage()
+                                .openOutputFile("failure-window.xml")
+                                .use(device::dumpWindowHierarchy)
+                        } catch (diagnostic: Throwable) {
+                            error.addSuppressed(diagnostic)
+                        }
+                        throw error
+                    }
                 }
             } finally {
                 releaseDirectory.countDown()

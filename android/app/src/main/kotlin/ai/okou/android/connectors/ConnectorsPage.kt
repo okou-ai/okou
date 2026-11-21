@@ -224,7 +224,7 @@ private fun ConnectorTopBar(title: String, back: () -> Unit) {
     TopAppBar(
         title = { Text(title, style = typography, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         navigationIcon = {
-            IconButton(onClick = back, modifier = Modifier.padding(start = 12.dp)) {
+            IconButton(onClick = back, modifier = Modifier.padding(start = 8.dp)) {
                 Icon(painterResource(R.drawable.ic_arrow_back), stringResource(R.string.back))
             }
         },

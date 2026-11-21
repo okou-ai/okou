@@ -129,8 +129,7 @@ internal fun ConnectorDetails(
         ) {
             val target = restoreActionFocus ?: return@LaunchedEffect
             restoreActionFocus = null
-            if (target !== reauthorizeFocus || account?.status?.needsAttention == true)
-                target.requestFocus()
+            if (target !== reauthorizeFocus || account.status.needsAttention) target.requestFocus()
         }
     }
 
@@ -318,9 +317,9 @@ internal fun ConnectorDetails(
                             action?.takeIf { it.target.connectionId == account.id },
                             state.offline,
                             onDefault = { model.setDefaultEnabled(account.id, it) },
-                            renameFocus = Modifier.focusRequester(renameFocus),
-                            reauthorizeFocus = Modifier.focusRequester(reauthorizeFocus),
-                            disconnectFocus = Modifier.focusRequester(disconnectFocus),
+                            renameFocus = renameFocus,
+                            reauthorizeFocus = reauthorizeFocus,
+                            disconnectFocus = disconnectFocus,
                             rename = {
                                 model.dismissAction()
                                 panel = ConnectorPanel.Rename
@@ -532,9 +531,9 @@ private fun ConnectorAccountSheet(
     action: ConnectorAction?,
     offline: Boolean,
     onDefault: (Boolean) -> Unit,
-    renameFocus: Modifier,
-    reauthorizeFocus: Modifier,
-    disconnectFocus: Modifier,
+    renameFocus: FocusRequester,
+    reauthorizeFocus: FocusRequester,
+    disconnectFocus: FocusRequester,
     rename: () -> Unit,
     reauthorize: () -> Unit,
     disconnect: () -> Unit,
@@ -559,7 +558,7 @@ private fun ConnectorAccountSheet(
                 else R.string.connector_reauthorize
             ),
             enabled = canModify,
-            modifier = reauthorizeFocus,
+            modifier = Modifier.focusRequester(reauthorizeFocus),
             onClick = reauthorize,
         )
     } else if (
@@ -601,13 +600,13 @@ private fun ConnectorAccountSheet(
     }
     ConnectorAccountAction(
         stringResource(R.string.connector_rename),
-        modifier = renameFocus,
+        modifier = Modifier.focusRequester(renameFocus),
         enabled = canModify,
         onClick = rename,
     )
     ConnectorAccountAction(
         stringResource(R.string.connector_disconnect),
-        modifier = disconnectFocus,
+        modifier = Modifier.focusRequester(disconnectFocus),
         enabled = canModify,
         destructive = true,
         onClick = disconnect,
