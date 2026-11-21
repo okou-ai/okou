@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.2](https://github.com/okou-ai/okou/compare/android-v0.34.1...android-v0.34.2) (2026-11-21)
+
+
+### Bug Fixes
+
+* **android:** align chat list context menus with v118 ([#49771](https://github.com/okou-ai/okou/issues/49771)) ([ea37fd8](https://github.com/okou-ai/okou/commit/ea37fd80936220810b3926476893545f5c497493))
+
 ## [0.34.1](https://github.com/okou-ai/okou/compare/android-v0.34.0...android-v0.34.1) (2026-11-21)
 
 
