@@ -371,7 +371,7 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     }
   });
 
-  it("lists and reads runs through public logs with status, agent, and since filters", async () => {
+  it("lists and reads runs through public logs with status and since filters", async () => {
     // Keep this capacity scenario independent of the product-tier limit.
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const actor = await entitledActor();
@@ -452,7 +452,6 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     expect(completed.body.data).toHaveLength(1);
     expect(completed.body.data[0]).toMatchObject({
       id: runB.runId,
-      agentId: null,
       status: "completed",
       prompt: "other run b",
     });

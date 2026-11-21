@@ -112,9 +112,7 @@ function metadataTouchFields(
     return { muted: event.muted };
   }
   if (event.pinOrder != null) {
-    return {
-      ...(thread.pinnedAt !== null ? { pinOrder: event.pinOrder } : {}),
-    };
+    return thread.pinnedAt !== null ? { pinOrder: event.pinOrder } : {};
   }
   return null;
 }

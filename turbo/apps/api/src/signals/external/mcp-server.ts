@@ -476,15 +476,9 @@ async function getThreadSnapshot(
   return toolBody({
     snapshot,
     ...page,
-    events: page.events.map(
-      ({
-        id,
-        chatThreadId,
-        ...event
-      }) => {
-        return { ...event, eventId: id, threadId: chatThreadId };
-      },
-    ),
+    events: page.events.map(({ id, chatThreadId, ...event }) => {
+      return { ...event, eventId: id, threadId: chatThreadId };
+    }),
   });
 }
 
@@ -636,6 +630,7 @@ function registerProjectTools(
           projectsContract.threads.responses[200].parse(await response.json());
         return toolBody({
           nextAfter,
+          threads: threads.map(({ id, ...thread }) => {
             return { ...thread, threadId: id };
           }),
         });
