@@ -182,7 +182,6 @@ export const loadActiveEmailIntegrationContext$ = command(
           ...args,
           mailboxes: selection.mailboxes,
           snapshot,
-          policies: null,
           networkPolicies: Object.fromEntries(
             refreshes.map((refresh) => {
               return [refresh.connectorSlug, refresh.networkPolicy];
@@ -198,7 +197,6 @@ export const loadActiveEmailIntegrationContext$ = command(
       resolveIntegrationNotePrompt({
         triggerSource: "email",
         featureSwitchContext: args.featureSwitchContext,
-        emailHasConnectedMailbox: mailboxes.length > 0,
       }),
       mailboxes,
       messageContext,

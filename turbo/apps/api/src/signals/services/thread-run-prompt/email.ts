@@ -22,7 +22,6 @@ export function createEmailThreadPrompt(
               resolveIntegrationNotePrompt({
                 triggerSource: "email",
                 featureSwitchContext: await get(featureSwitches$),
-                emailHasConnectedMailbox: mailboxes.length > 0,
               }),
               mailboxes,
             ),

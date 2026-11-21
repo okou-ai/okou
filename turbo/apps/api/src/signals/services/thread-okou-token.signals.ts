@@ -24,16 +24,16 @@ export function createOkouTokenInputSignals(
   threadContext: ThreadContext,
 ) {
   return computed(async (get): Promise<OkouTokenInput> => {
-    const [event, features, snapshot, phoneGrant] = await Promise.all([
+    const [event, features, snapshot] = await Promise.all([
       get(pickedEvent$),
       get(bootstrap.featureSwitches$),
       get(threadContext.connectorSnapshot$),
-      get(threadContext.phoneUseGrant$),
     ]);
     if (!event) {
       throw new Error("The Okou run token requires a picked event");
     }
-    const hostGrant = event.preparation.computerUseHostGrant;
+    const { computerUseHostGrant: hostGrant, phoneUseGrant: phoneGrant } =
+      event.preparation;
     if ("status" in snapshot) {
       throw new Error("The Okou run token requires a connector snapshot");
     }
