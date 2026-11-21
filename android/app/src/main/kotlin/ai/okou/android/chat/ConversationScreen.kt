@@ -289,8 +289,7 @@ internal fun ConversationRoute(
         SideEffect {
             if (positioned) {
                 if (atEnd) newReply = false
-                else if (lastReply != null && newestReply != null && newestReply != lastReply)
-                    newReply = true
+                else if (newestReply != null && newestReply != lastReply) newReply = true
                 lastReply = newestReply
             }
         }
@@ -483,6 +482,7 @@ private fun rememberConversationReadVisit(
 private fun ConversationJump(labelId: Int, modifier: Modifier, onClick: () -> Unit) {
     val label = stringResource(labelId)
     val colors = MaterialTheme.colorScheme
+    val iconOnly = labelId == R.string.conversation_jump_latest
     Surface(
         onClick = onClick,
         modifier =
@@ -501,13 +501,27 @@ private fun ConversationJump(labelId: Int, modifier: Modifier, onClick: () -> Un
         shadowElevation = 2.dp,
     ) {
         Row(
-            Modifier.padding(horizontal = 14.dp),
+            Modifier.padding(
+                horizontal = if (iconOnly) 14.dp else 12.dp,
+                vertical = if (iconOnly) 0.dp else 8.dp,
+            ),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(painterResource(R.drawable.ic_arrow_downward), null, Modifier.size(20.dp))
-            if (labelId != R.string.conversation_jump_latest)
-                Text(label, style = MaterialTheme.typography.bodySmall)
+            Icon(
+                painterResource(R.drawable.ic_arrow_downward),
+                null,
+                Modifier.size(if (iconOnly) 20.dp else 16.dp),
+            )
+            if (!iconOnly)
+                Text(
+                    label,
+                    style =
+                        MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 13.sp,
+                            lineHeight = 20.sp,
+                        ),
+                )
         }
     }
 }

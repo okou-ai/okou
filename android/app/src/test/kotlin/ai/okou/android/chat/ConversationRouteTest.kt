@@ -305,7 +305,7 @@ class ConversationRouteTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h320dp")
-    fun newReplyPreservesAnOlderAnchorAndDefersReadUntilJumpingToLatest() {
+    fun firstReplyPreservesAnOlderAnchorAndDefersReadUntilJumpingToLatest() {
         val received = AtomicInteger(12)
         fun eventId(sequence: Int) =
             "aaaaaaaa-aaaa-4aaa-8aaa-${sequence.toString().padStart(12, '0')}"
@@ -314,11 +314,16 @@ class ConversationRouteTest {
             val last = received.get()
             val rows =
                 ((after + 1)..last).joinToString(",") { sequence ->
+                    val isReply = sequence > 12
                     historyEventWire(
                         id = eventId(sequence),
                         seq = sequence.toLong(),
                         thread = CHAT_IN_PROJECT,
-                        payload = """{"content":"Reply number $sequence"}""",
+                        type = if (isReply) "output.message" else "input.prompt",
+                        payload =
+                            if (isReply) """{"content":"The first reply"}"""
+                            else
+                                """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Prompt number $sequence"}]}}""",
                         run = "bbbbbbbb-bbbb-4bbb-8bbb-${sequence.toString().padStart(12, '0')}",
                     )
                 }
@@ -341,7 +346,7 @@ class ConversationRouteTest {
             compose.runOnIdle { model.history.uiState.value.phase != HistoryPhase.Loading }
         }
         assertEquals(HistoryPhase.Ready, model.history.uiState.value.phase)
-        compose.onNodeWithText("Reply number 12").assertIsDisplayed()
+        compose.onNodeWithText("Prompt number 12").assertIsDisplayed()
         compose.waitUntil("the visible latest history is acknowledged", 10_000) {
             compose.runOnIdle { fixture.readRequests.get() > 0 }
         }
@@ -359,7 +364,7 @@ class ConversationRouteTest {
         assertEquals(bounds, anchor.getUnclippedBoundsInRoot())
         assertEquals(readCount, fixture.readRequests.get())
         compose.onNodeWithTag("conversation_jump").performClick()
-        compose.onNodeWithText("Reply number 13").assertIsDisplayed()
+        compose.onNodeWithText("The first reply").assertIsDisplayed()
         compose.waitUntil(10_000) {
             compose.runOnIdle { fixture.readRequests.get() == readCount + 1 }
         }

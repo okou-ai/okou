@@ -76,6 +76,7 @@ class ConversationHistoryModel(
     // The active timeline is kept separately. Only inactive visits count toward this limit.
     private val recent = linkedMapOf<String, ConfirmedTimeline>()
     private val reading = linkedMapOf<String, ConversationAnchor?>()
+    private var readingWrite: Job? = null
 
     internal suspend fun restoreReadingAnchor(threadId: String): ConversationAnchor? {
         if (reading.containsKey(threadId)) return reading[threadId]
@@ -92,7 +93,13 @@ class ConversationHistoryModel(
         reading.remove(threadId)
         reading[threadId] = anchor
         if (reading.size > 4) reading.remove(reading.keys.first())
-        scope.launch { cache.saveReadingAnchor(threadId, anchor) }
+        val previousWrite = readingWrite
+        readingWrite =
+            scope.launch {
+                // Preserve the order of the UI actions across the IO dispatcher.
+                previousWrite?.join()
+                cache.saveReadingAnchor(threadId, anchor)
+            }
     }
 
     internal fun checkpoint(threadId: String): HistoryCheckpoint? =
