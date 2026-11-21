@@ -109,7 +109,7 @@ function ForYouStack() {
     ...settled,
   ];
   return (
-    <div className="relative mx-auto -mt-26 w-full max-w-176 pb-6 sm:-mt-44 @min-[64rem]/for-you:-mt-52">
+    <div className="relative mx-auto -mt-26 w-full max-w-176 pb-6 sm:-mt-28 @min-[64rem]/for-you:-mt-36">
       <div
         className="relative isolate mb-6 grid min-h-(--for-you-card-min-height)"
         style={
@@ -288,14 +288,14 @@ function ForYouCover() {
   const cover = useGet(forYouCover$);
   const select = useSet(selectForYouCover$);
   return (
-    <div className="group/cover relative -mx-4 h-44 shrink-0 sm:-mx-8 sm:h-64">
+    <div className="group/cover relative -mx-4 h-44 shrink-0 sm:-mx-8 sm:h-48">
       <img
         data-slot="for-you-cover"
         src={cover.src}
         alt=""
         draggable={false}
         style={COVER_MASK}
-        className="pointer-events-none size-full select-none object-cover"
+        className="pointer-events-none size-full select-none object-cover object-[50%_65%]"
       />
       <Popover>
         {/* The control sits in the banner's lower corner only when the page is
@@ -542,7 +542,7 @@ export function ForYouPage() {
             {complete && (
               <SuggestionsComplete
                 celebrate={settled.length > 0}
-                className="absolute inset-x-4 top-44 mx-auto max-w-160 pt-8 sm:top-64 sm:pt-12"
+                className="absolute inset-x-4 top-44 mx-auto max-w-160 pt-8 sm:top-48 sm:pt-12"
               />
             )}
             <ForYouStack />
