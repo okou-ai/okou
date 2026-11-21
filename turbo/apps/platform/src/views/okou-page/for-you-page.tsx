@@ -68,9 +68,9 @@ const STACK_CARD =
 
 // The torn-paper edge is an alpha strip repeated along the banner's bottom;
 // the solid layer above it overlaps the strip's opaque top rows. Its top fades
-// in from the page, so the banner grows out from under the header.
+// in from the page behind the header, which sits on the banner.
 const COVER_MASK = {
-  maskImage: `linear-gradient(transparent, #000 40px), url("${forYouCoverTornEdge}")`,
+  maskImage: `linear-gradient(transparent, #000 16px), url("${forYouCoverTornEdge}")`,
   maskSize: "100% calc(100% - 56px), 1200px 60px",
   maskPosition: "top left, bottom left",
   maskRepeat: "no-repeat, repeat-x",
@@ -109,7 +109,7 @@ function ForYouStack() {
     ...settled,
   ];
   return (
-    <div className="relative mx-auto -mt-26 w-full max-w-176 pb-6 sm:-mt-36 @min-[64rem]/for-you:-mt-44">
+    <div className="relative mx-auto -mt-26 w-full max-w-176 pb-6 sm:-mt-29">
       <div
         className="relative isolate mb-6 grid min-h-(--for-you-card-min-height)"
         style={
@@ -288,7 +288,7 @@ function ForYouCover() {
   const cover = useGet(forYouCover$);
   const select = useSet(selectForYouCover$);
   return (
-    <div className="group/cover relative -mx-4 h-44 shrink-0 sm:-mx-8 sm:h-56">
+    <div className="group/cover relative -mx-4 h-58 shrink-0 sm:-mx-8 sm:h-56">
       <img
         data-slot="for-you-cover"
         src={cover.src}
@@ -305,7 +305,7 @@ function ForYouCover() {
             <Button
               variant="neutral"
               size="sm"
-              className="absolute top-10 right-4 gap-1.5 bg-card/85 opacity-0 shadow-surface backdrop-blur-md transition-opacity group-hover/cover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100 sm:right-6 @min-[64rem]/for-you:top-auto @min-[64rem]/for-you:bottom-14"
+              className="absolute top-24 right-4 gap-1.5 bg-card/85 opacity-0 shadow-surface backdrop-blur-md transition-opacity group-hover/cover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100 sm:top-17 sm:right-6 @min-[64rem]/for-you:top-auto @min-[64rem]/for-you:bottom-14"
             />
           }
         >
@@ -397,7 +397,7 @@ function ForYouHeader() {
   const browse = useSet(browseForYou$);
   const signal = useGet(pageSignal$);
   return (
-    <header className="relative grid h-14 shrink-0 grid-flow-col grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 px-4 sm:h-15 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8 sm:px-8">
+    <header className="absolute inset-x-0 top-0 z-10 grid h-14 grid-flow-col grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 px-4 sm:h-15 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8 sm:px-8">
       <div className="min-w-0">
         <h1 className="text-base font-semibold sm:text-lg">
           {t(($) => {
@@ -502,8 +502,9 @@ export function ForYouPage() {
   const complete = deck.state === "hasData" && cards.length === 0;
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-brand-off-white dark:bg-background">
-      <ForYouHeader />
       <main className="@container/for-you relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-4 pb-safe-offset-8 sm:px-8">
+        {/* The header sits on the banner and scrolls away with it. */}
+        <ForYouHeader />
         <ForYouCover />
         {deck.state === "hasError" ? (
           <div
@@ -542,7 +543,7 @@ export function ForYouPage() {
             {complete && (
               <SuggestionsComplete
                 celebrate={settled.length > 0}
-                className="absolute inset-x-4 top-44 mx-auto max-w-160 pt-8 sm:top-56 sm:pt-12"
+                className="absolute inset-x-4 top-58 mx-auto max-w-160 pt-8 sm:top-56 sm:pt-12"
               />
             )}
             <ForYouStack />
