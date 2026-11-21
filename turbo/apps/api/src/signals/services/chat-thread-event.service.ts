@@ -304,7 +304,9 @@ function toApiChatThreadEvent(row: ChatThreadEventRow): ChatThreadEvent {
     seqId: row.seqId,
     chatThreadId: row.chatThreadId,
     ...(row.agentId ? { agentId: row.agentId } : {}),
-    ...(row.kind === "agent_reassigned" && row.agentId ? { reassignedAgentId: row.agentId } : {}),
+    ...(row.kind === "agent_reassigned" && row.agentId
+      ? { reassignedAgentId: row.agentId }
+      : {}),
     title: row.title,
     pinOrder: row.pinOrder,
     ...(row.muted === null ? {} : { muted: row.muted }),

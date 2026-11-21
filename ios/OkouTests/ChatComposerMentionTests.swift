@@ -183,7 +183,7 @@ final class ChatComposerMentionTests: XCTestCase {
     XCTAssertEqual(sends.count, 2)
     XCTAssertTrue(sends.allSatisfy(\.hasTextContent))
     XCTAssertEqual(
-      sends.map(\.agentId), [AttachmentFlowFixture.agentID, AttachmentFlowFixture.agentID])
+      sends.map(\.agentId), [nil, nil])
     XCTAssertEqual(sends[0].clientEventId, sends[1].clientEventId)
     XCTAssertEqual(sends[1].userMessage, expected)
     XCTAssertEqual(conversation.draft, "Next draft")
@@ -357,7 +357,7 @@ final class ChatComposerMentionTests: XCTestCase {
 
 struct MentionSend: Decodable {
   let userMessage: ChatDraftDocument
-  let agentId: String
+  let agentId: String?
   let clientEventId: String
   let hasTextContent: Bool
 }

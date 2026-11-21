@@ -191,9 +191,9 @@ async function scenario(f: Awaited<ReturnType<typeof fixture>>) {
     expect(JSON.stringify(response.body)).not.toContain("private-page-code");
     expect(response.body.action).not.toHaveProperty("window");
     expect(response.body.action).not.toHaveProperty("agentId");
-    expect(new URL(response.body.actionUrl).searchParams.has("agentId")).toBe(
-      false,
-    );
+    expect(
+      new URL(response.body.actionUrl).searchParams.has("agentId"),
+    ).toBeFalsy();
     return { requestToken: response.body.action.requestToken };
   }
   return {

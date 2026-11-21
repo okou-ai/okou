@@ -2816,7 +2816,9 @@ test("paginates owner-isolated recorded spend history and retains it after reaut
         client().listSpends({ headers: other.headers, query: {} }),
         [200],
       )
-    ).body.data.map((row) => row.id),
+    ).body.data.map((row) => {
+      return row.id;
+    }),
   ).toEqual(expect.arrayContaining([first.body.id, second.body.id]));
   await accept(
     client().listSpends({

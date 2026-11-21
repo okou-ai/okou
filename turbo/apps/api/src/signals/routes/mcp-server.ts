@@ -94,7 +94,9 @@ const mcpSendChat$ = command(async ({ get, set }, signal: AbortSignal) => {
         ),
       );
     signal.throwIfAborted();
-    if (!thread) return notFound("Chat thread not found");
+    if (!thread) {
+      return notFound("Chat thread not found");
+    }
   }
   const eventId = randomUUID();
   const response = await set(

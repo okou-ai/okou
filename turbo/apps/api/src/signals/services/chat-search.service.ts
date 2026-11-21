@@ -60,8 +60,6 @@ function chatSearchScope(
     eq(chatThreads.userId, args.userId),
     eq(chatThreads.orgId, args.orgId),
     eq(chatThreads.hidden, false),
-    eq(chatThreads.orgId, args.orgId),
-    eq(chatThreads.userId, args.userId),
     args.projectId ? eq(chatThreads.projectId, args.projectId) : undefined,
   );
 }

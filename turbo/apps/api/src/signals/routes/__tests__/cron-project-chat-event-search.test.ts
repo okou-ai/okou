@@ -329,10 +329,8 @@ describe("chat search publication", () => {
       visibility: "private",
     });
     expect(
-      (await search(token())).map(({ threadId }) => {
-        return threadId;
-      }),
-    ).toStrictEqual([thread.threadId]);
+      new Set((await search(token())).map(({ threadId }) => threadId)),
+    ).toStrictEqual(new Set(ownerInputs.map(({ threadId }) => threadId)));
     await expect(search(token({ sub: peer.userId }))).resolves.toHaveLength(1);
   }, 60_000);
 

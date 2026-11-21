@@ -264,8 +264,8 @@ const countCanonicalSlackMentioners$ = command(
 );
 
 const readSlackResponsePresentation$ = command(
-  async (
-    { get },
+  (
+    _store,
     args: {
       readonly orgId: string;
       readonly runId: string;
