@@ -97,7 +97,6 @@ describe("GET /api/chat-threads/:id/metadata", () => {
 
     expect(response.body).toStrictEqual({
       id: fixture.threadId,
-      agentId: fixture.agentId,
       title: "Launch plan",
       selectedModel: "auto",
       modelSettings: {},

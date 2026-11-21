@@ -291,7 +291,6 @@ export function installContinuityWorkspace(
       }
       return respond(200, {
         id: thread.id,
-        agentId: thread.agentId,
         title: thread.title,
         selectedModel: thread.selectedModel,
         modelSettings: thread.modelSettings ?? {},

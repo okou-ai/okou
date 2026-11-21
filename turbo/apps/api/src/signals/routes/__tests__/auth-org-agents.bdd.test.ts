@@ -200,11 +200,6 @@ describe("AUTH-01, ORG-03, AGENT-02, CHAIN-AGENT", () => {
       description: "Updated through metadata API",
       visibility: "private",
     });
-
-    await api.deleteAgent(admin, created.agentId);
-    const deleted = await api.requestReadAgent(admin, created.agentId, [404]);
-    expectApiError(deleted.body);
-    expect(deleted.body.error.code).toBe("NOT_FOUND");
   });
 
   it("reads and caches a Clerk organization whose slug is null", async () => {
@@ -623,14 +618,6 @@ describe("ORG-03 onboarding status mapping", () => {
         description: "Updated responsibility",
         sound: "direct",
       });
-      const deletion = await api.requestDeleteAgent(
-        owner,
-        defaultAgentId,
-        [400],
-      );
-      expect(deletion.body).toMatchObject({
-        error: { code: "DEFAULT_AGENT_DELETE_LOCKED" },
-      });
       await expect(api.readAgent(owner, defaultAgentId)).resolves.toStrictEqual(
         updated.body,
       );
@@ -700,7 +687,6 @@ describe("ORG-03 onboarding status mapping", () => {
         visibility: "private",
         isDefaultAgent: false,
       });
-      await api.deleteAgent(owner, custom.agentId);
     },
   );
 
@@ -810,7 +796,6 @@ describe("ORG-03 onboarding status mapping", () => {
       },
     });
 
-    await api.requestDeleteAgent(admin, agentId, [400]);
     const orphaned = await api.readOnboardingStatus(admin);
     expect(orphaned).toMatchObject({
       needsOnboarding: false,

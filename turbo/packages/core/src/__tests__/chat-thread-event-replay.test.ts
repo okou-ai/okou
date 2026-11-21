@@ -7,7 +7,7 @@ const created = chatThreadEventSchema.parse({
   seqId: 1,
   kind: "created",
   chatThreadId: "00000000-0000-4000-8000-000000000002",
-  agentId: "00000000-0000-4000-8000-000000000003",
+
   title: null,
   selectedModel: "claude-sonnet-5",
   modelSettings: { "claude-sonnet-5": { effort: "high" } },
@@ -114,8 +114,8 @@ describe("archive event replay", () => {
   });
 });
 
-describe("integration thread agent changes", () => {
-  it("rebinds an existing thread without resetting its conversation metadata", () => {
+describe("thread activity touches", () => {
+  it("touches an existing thread without resetting its conversation metadata", () => {
     const renamed = {
       ...created,
       kind: "renamed" as const,
@@ -140,13 +140,11 @@ describe("integration thread agent changes", () => {
     const rebound = {
       ...created,
       kind: "sort_touched" as const,
-      agentId: "00000000-0000-4000-8000-000000000099",
-      reassignedAgentId: "00000000-0000-4000-8000-000000000099",
+
       createdAt: "2026-09-09T00:00:04.000Z",
     };
 
     const expected = {
-      agentId: rebound.agentId,
       title: renamed.title,
       createdAt: created.createdAt,
       renamedAt: renamed.createdAt,
@@ -168,35 +166,30 @@ describe("integration thread agent changes", () => {
     ).toMatchObject(expected);
   });
 
-  it("keeps the new agent when later non-identity events carry the former agent", () => {
+  it("applies model selections after an activity touch", () => {
     const rebound = {
       ...created,
       kind: "sort_touched" as const,
-      agentId: "00000000-0000-4000-8000-000000000099",
-      reassignedAgentId: "00000000-0000-4000-8000-000000000099",
+
       createdAt: "2026-09-09T00:00:04.000Z",
     };
     expect(
       replayChatThreadEvents([], [created, rebound, selected])[0],
     ).toMatchObject({
-      agentId: rebound.agentId,
       selectedModel: selected.selectedModel,
     });
   });
 
   it.each(["2026-09-09T00:00:03.000Z", "2026-09-09T00:00:05.000Z"])(
-    "ignores a former agent on a later committed activity touch at %s",
+    "uses the latest activity timestamp on a later committed touch at %s",
     (createdAt) => {
       const rebound = {
         ...created,
         seqId: 2,
         kind: "sort_touched" as const,
-        agentId: "00000000-0000-4000-8000-000000000099",
-        reassignedAgentId: "00000000-0000-4000-8000-000000000099",
+
         createdAt: "2026-09-09T00:00:04.000Z",
       };
-      // The activity writer captured the former agent before reassignment,
-      // then appended after the reassignment transaction committed.
       const lateActivity = {
         ...created,
         seqId: 3,
@@ -204,7 +197,6 @@ describe("integration thread agent changes", () => {
         createdAt,
       };
       const expected = {
-        agentId: rebound.reassignedAgentId,
         sortAt: createdAt > rebound.createdAt ? createdAt : rebound.createdAt,
       };
       expect(
@@ -337,7 +329,7 @@ describe("project membership event replay", () => {
     const moved = replayChatThreadEvents(joined, [membership(projectB, 11)]);
     expect(moved[0]).toMatchObject({
       projectId: projectB,
-      agentId: created.agentId,
+
       sortAt: created.createdAt,
       title: created.title,
       selectedModel: created.selectedModel,
@@ -347,7 +339,7 @@ describe("project membership event replay", () => {
       replayChatThreadEvents(moved, [membership(null, 12)])[0],
     ).toMatchObject({
       projectId: null,
-      agentId: created.agentId,
+
       sortAt: created.createdAt,
     });
   });

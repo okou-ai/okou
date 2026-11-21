@@ -86,7 +86,6 @@
           "title": "提供方暫時不可用"
         }
       },
-      "fallbackAgent": "Okou",
       "fields": {
         "duration": "時長",
         "model": "模型",

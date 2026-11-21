@@ -266,7 +266,7 @@ export const applyBrowserAuthorizationRequest$ = command(
           eq(chatThreads.orgId, args.orgId),
         ),
       )
-      .returning({ id: chatThreads.id, agentId: chatThreads.agentId });
+      .returning({ id: chatThreads.id });
     const completedRequest = db
       .update(browserAuthorizationRequests)
       .set({ completedAt: now, updatedAt: now })
@@ -292,7 +292,6 @@ export const applyBrowserAuthorizationRequest$ = command(
           {
             cte: sql`enabled_thread AS (${enabledThread.getSQL()})`,
             gate: sql`EXISTS (SELECT 1 FROM enabled_thread)`,
-            agentId: sql`(SELECT agent_id FROM enabled_thread)`,
             result: sql`, completed_request AS (${completedRequest.getSQL()})
               SELECT EXISTS (SELECT 1 FROM enabled_thread) AS applied`,
           },

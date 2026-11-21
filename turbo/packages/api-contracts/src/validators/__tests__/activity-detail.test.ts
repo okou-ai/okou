@@ -28,8 +28,6 @@ it.each([undefined, "private diagnostic"])(
     expect(displayed).toStrictEqual({
       id: wire.id,
       sessionId: null,
-      agentId: null,
-      displayName: "Failed task",
       framework: "codex",
       modelProvider: "codex-oauth-token",
       selectedModel: null,

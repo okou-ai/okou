@@ -22,8 +22,7 @@ function makeLogDetail(overrides: Partial<LogDetail>): LogDetail {
   return {
     id: RUN_ID,
     sessionId: "session_test",
-    agentId: "e0000000-0000-4000-a000-000000000010",
-    displayName: "Test Agent",
+
     framework: "claude-code",
     modelProvider: null,
     selectedModel: null,
@@ -91,7 +90,7 @@ test("A completed activity appears only after its full event history is ready", 
 
   await secondPageStarted.promise;
   await expect(
-    screen.findByRole("heading", { name: "Test Agent" }),
+    screen.findByRole("heading", { name: "Okou" }),
   ).resolves.toBeInTheDocument();
   expect(screen.queryByText("Page one content")).not.toBeInTheDocument();
 

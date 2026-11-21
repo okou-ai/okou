@@ -59,7 +59,6 @@ export function chatListThread(
   const timestamp = `2026-08-01T00:${minute}:00.000Z`;
   return {
     id: chatListThreadId(index),
-    agentId: CHAT_LIST_AGENT_ID,
     title,
     sortAt: timestamp,
     createdAt: timestamp,
@@ -154,7 +153,7 @@ export function installChatListStream(
     return respond(200, { draftThreadIds: [] });
   });
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, { agents: {}, threads: {}, unreadAt: {} });
+    return respond(200, { threads: {}, unreadAt: {} });
   });
   context.mocks.api(computerUseHostsContract.list, ({ respond }) => {
     return respond(200, { hosts: [] });
@@ -224,7 +223,6 @@ export function installActiveChatBoundaries(
     }
     return respond(200, {
       id: thread.id,
-      agentId: thread.agentId,
       title: thread.title,
       selectedModel: thread.selectedModel ?? null,
       modelSettings: thread.modelSettings ?? {},

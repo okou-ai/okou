@@ -59,6 +59,7 @@ class ChatReplayTest {
                     event(12, "sort_touched"),
                 )
                 .single()
+
         assertEquals(true, row.muted)
         assertEquals("2026-11-13T00:00:00.000Z", row.sortAt)
         assertEquals(setOf("codex/test", "claude-code/test"), row.modelSettings?.keys)
@@ -123,12 +124,12 @@ class ChatReplayTest {
                     ),
                 indicators =
                     Indicators(
-                        emptyMap(),
                         mapOf(projectRow.id to IndicatorsThreadsValue.UNREAD),
                         mapOf(projectRow.id to "2026-11-13T00:00:00Z"),
                     ),
                 filter = ChatListFilter.Unread,
             )
+        assertEquals(projectRow.id, chatListGroups(state).first().threads.single().id)
         assertTrue(chatListGroups(state).last().threads.isEmpty())
         assertTrue(
             chatListGroups(state.copy(threads = listOf(projectRow.copy(muted = true)))).all {
@@ -169,7 +170,6 @@ class ChatReplayTest {
                 projectList = ProjectListUiState(rows = listOf(project)),
                 indicators =
                     Indicators(
-                        emptyMap(),
                         mapOf(CHAT_IN_PROJECT to IndicatorsThreadsValue.UNREAD),
                         mapOf(CHAT_IN_PROJECT to "2026-11-13T00:00:00Z"),
                     ),

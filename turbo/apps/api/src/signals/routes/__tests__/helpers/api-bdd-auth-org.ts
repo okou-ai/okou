@@ -1369,36 +1369,6 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
       );
     },
 
-    async deleteAgent(actor: ApiTestUser, agentId: string): Promise<void> {
-      const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
-        agentsByIdContract,
-      );
-      await accept(
-        client.delete({
-          params: { id: agentId },
-          headers: authenticate(actor),
-        }),
-        [204],
-      );
-    },
-
-    async requestDeleteAgent(
-      actor: ApiTestUser | null,
-      agentId: string,
-      statuses: readonly (204 | 400 | 401 | 403 | 404 | 409)[],
-    ) {
-      const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
-        agentsByIdContract,
-      );
-      return await accept(
-        client.delete({
-          params: { id: agentId },
-          headers: authenticate(actor),
-        }),
-        statuses,
-      );
-    },
-
     async createCustomConnector(
       actor: ApiTestUser,
       body: CreateCustomConnectorBody,

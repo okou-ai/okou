@@ -36,7 +36,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], application = TestOkouApplication::class)
 class ComposerJournalRecoveryTest {
     @get:Rule val temporary = TemporaryFolder()
-    private val target = ComposerTarget(CHAT_PERSONAL)
+    private val target = ComposerTarget(threadId = CHAT_PERSONAL)
 
     private class Fixture(val root: File, private val dispatcher: CoroutineDispatcher) {
         val api = ComposerApiFixture()

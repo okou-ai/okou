@@ -86,7 +86,6 @@
           "title": "Anbieter vorübergehend nicht erreichbar"
         }
       },
-      "fallbackAgent": "Okou",
       "fields": {
         "duration": "Dauer",
         "model": "Modell",

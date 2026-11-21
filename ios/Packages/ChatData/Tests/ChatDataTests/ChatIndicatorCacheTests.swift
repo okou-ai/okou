@@ -211,7 +211,6 @@ final class ChatIndicatorCacheTests: XCTestCase {
 private let indicatorThread = "66000000-0000-4000-8000-000000000001"
 private let indicatorOtherThread = "66000000-0000-4000-8000-000000000002"
 private let indicatorAgent = "66000000-0000-4000-8000-000000000003"
-private let indicatorOtherAgent = "66000000-0000-4000-8000-000000000004"
 private let indicatorDate = Date(timeIntervalSince1970: 1_794_182_400)
 private let indicatorLaterDate = indicatorDate.addingTimeInterval(60)
 
@@ -222,10 +221,9 @@ private func indicatorScope(_ fixture: ChatHTTPFixture) -> ChatCacheScope {
 private func unreadResponse(later: Bool = false, running: Bool = false) -> ChatHTTPResponse {
   let timestamp = later ? "2026-11-09T00:01:00Z" : "2026-11-09T00:00:00Z"
   let activeThread = running ? ",\"\(indicatorOtherThread)\":\"active\"" : ""
-  let activeAgent = running ? ",\"\(indicatorOtherAgent)\":\"active\"" : ""
   return ChatHTTPResponse(
     body: """
-      {"agents":{"\(indicatorAgent)":"unread"\(activeAgent)},"threads":{"\(indicatorThread)":"unread"\(activeThread)},"unreadAt":{"\(indicatorThread)":"\(timestamp)"}}
+      {"threads":{"\(indicatorThread)":"unread"\(activeThread)},"unreadAt":{"\(indicatorThread)":"\(timestamp)"}}
       """)
 }
 

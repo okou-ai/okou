@@ -1340,7 +1340,6 @@ test("A custom direction continues its named chat before the chat list has loade
     return params.id === threadId
       ? respond(200, {
           id: threadId,
-          agentId,
           title: "Referenced decision",
           selectedModel: null,
           modelSettings: {},

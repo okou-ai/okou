@@ -42,7 +42,7 @@ import org.robolectric.annotation.Config
 class ChatComposerModelTest {
     @get:Rule val temporary = TemporaryFolder()
     private val identity = WorkspaceIdentity("https://api.example/", "user-a", "session-a", "org-a")
-    private val existing = ComposerTarget(CHAT_PERSONAL)
+    private val existing = ComposerTarget(threadId = CHAT_PERSONAL)
 
     private class Service : ChatComposerService {
         val requests = mutableListOf<SendRequestVariant1>()

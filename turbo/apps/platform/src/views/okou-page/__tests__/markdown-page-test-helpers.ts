@@ -146,7 +146,6 @@ export function createMarkdownChatFixture(
         ({ params, respond }) => {
           return respond(200, {
             id: params.id,
-            agentId: MARKDOWN_AGENT_ID,
             title: "Rich content",
             selectedModel: "claude-sonnet-5",
             modelSettings: {},

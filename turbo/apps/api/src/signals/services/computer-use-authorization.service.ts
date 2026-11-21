@@ -254,7 +254,6 @@ const loadTeamsChatThread$ = command(
     const [thread] = await get(db$)
       .select({
         id: chatThreads.id,
-        agentId: chatThreads.agentId,
         computerUseHostId: chatThreads.computerUseHostId,
       })
       .from(teamsChatThreadRoutes)
@@ -381,7 +380,7 @@ const applyChatAuthorizationScope$ = command(
           eq(chatThreads.userId, args.userId),
         ),
       )
-      .returning({ id: chatThreads.id, agentId: chatThreads.agentId });
+      .returning({ id: chatThreads.id });
     const eligibleThread = sql`EXISTS (SELECT 1 FROM updated_thread)`;
     const [result] = parseRawRows(
       object({ applied: boolean() }),
@@ -399,7 +398,6 @@ const applyChatAuthorizationScope$ = command(
           {
             cte: sql`updated_thread AS (${updatedThread.getSQL()})`,
             gate: eligibleThread,
-            agentId: sql`(SELECT agent_id FROM updated_thread)`,
             result: sql`SELECT ${eligibleThread} AS applied`,
           },
         ),
@@ -450,7 +448,6 @@ const applyTeamsAuthorizationScope$ = command(
     const selectedRoute = db
       .select({
         id: chatThreads.id,
-        agentId: chatThreads.agentId,
         computerUseHostId: chatThreads.computerUseHostId,
       })
       .from(teamsChatThreadRoutes)
@@ -483,7 +480,6 @@ const applyTeamsAuthorizationScope$ = command(
       )
       .returning({
         id: chatThreads.id,
-        agentId: chatThreads.agentId,
       });
     // Route selection, preference and durable event share one statement.
     const [result] = parseRawRows(
@@ -503,7 +499,6 @@ const applyTeamsAuthorizationScope$ = command(
             cte: sql`selected_route AS (${selectedRoute.getSQL()}),
             updated_thread AS (${updatedThread.getSQL()})`,
             gate: sql`EXISTS (SELECT 1 FROM updated_thread)`,
-            agentId: sql`(SELECT agent_id FROM updated_thread)`,
             result: sql`SELECT EXISTS (SELECT 1 FROM updated_thread) AS applied`,
           },
         ),

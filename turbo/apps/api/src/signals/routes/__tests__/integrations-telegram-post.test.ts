@@ -524,7 +524,7 @@ async function readTelegramSourcePart(
     throw new Error("Expected Telegram thread lifecycle events");
   }
   const thread = lifecycle.body.events.find((event) => {
-    return event.kind === "created" && event.agentId === fixture.composeId;
+    return event.kind === "created";
   });
   if (!thread) {
     throw new Error("Expected a Telegram chat thread");
@@ -2512,7 +2512,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     expect(first.seqId).toBeLessThan(second.seqId);
     for (const event of created) {
       expect(event).toMatchObject({
-        agentId: fixture.composeId,
         title: null,
         selectedModel: "claude-fable-5-1",
         modelSettings: preference.body.modelSettings,
@@ -2526,7 +2525,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         event.chatThreadId,
       );
       expect(thread).toMatchObject({
-        agentId: event.agentId,
         selectedModel: event.selectedModel,
         modelSettings: event.modelSettings,
         serviceTier: event.serviceTier,

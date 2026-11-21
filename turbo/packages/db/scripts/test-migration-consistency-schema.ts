@@ -470,29 +470,20 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
   const client = new Client({ connectionString: dbUrl });
   await client.connect();
 
-  const agentId = "00000000-0000-4000-8000-000000074401";
+  const historicalExecutorId = "00000000-0000-4000-8000-000000074401";
   let threadId: string | undefined;
 
   try {
-    await client.query(
-      `INSERT INTO "agents" ("id", "org_id", "owner", "name")
-       VALUES ($1, 'append-only-test-org', 'append-only-test-user',
-         'append-only-migration-test')`,
-      [agentId],
-    );
-
     const thread = await client.query<{ id: string }>(
       `
         INSERT INTO "chat_threads" (
           "user_id",
           "org_id",
-          "agent_id",
           "title"
         )
-        VALUES ('append-only-test-user', 'append-only-test-org', $1, 'append-only migration test')
+        VALUES ('append-only-test-user', 'append-only-test-org', 'append-only migration test')
         RETURNING "id"
       `,
-      [agentId],
     );
     threadId = thread.rows[0]?.id;
     if (!threadId) {
@@ -519,7 +510,7 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
         )
         RETURNING "id", "seq_id" AS "seqId"
       `,
-      [threadId, agentId],
+      [threadId, historicalExecutorId],
     );
     const eventId = event.rows[0]?.id;
     if (!eventId) {
@@ -557,7 +548,7 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
         )
         RETURNING "id", "seq_id" AS "seqId"
       `,
-      [threadId, agentId],
+      [threadId, historicalExecutorId],
     );
     const nextEventId = nextEvent.rows[0]?.id;
     if (!nextEventId) {
@@ -610,7 +601,11 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
           AND "org_id" = 'append-only-test-org'
       `,
     );
-    await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [agentId]);
+    if (threadId !== undefined) {
+      await client.query(`DELETE FROM "chat_threads" WHERE "id" = $1`, [
+        threadId,
+      ]);
+    }
     await client.end();
   }
 }
@@ -622,7 +617,6 @@ async function validateChatEventContextPointerConstraints(
   const client = new Client({ connectionString: dbUrl });
   await client.connect();
 
-  const agentId = "00000000-0000-4000-8000-000000074501";
   const threadId = "00000000-0000-4000-8000-000000074502";
 
   try {
@@ -660,30 +654,20 @@ async function validateChatEventContextPointerConstraints(
     ]);
     await client.query(
       `
-        INSERT INTO "agents" ("id", "org_id", "owner", "name")
-        VALUES ($1, 'context-pointer-test-org', 'context-pointer-test-user',
-          'context-pointer-test')
-      `,
-      [agentId],
-    );
-    await client.query(
-      `
         INSERT INTO "chat_threads" (
           "id",
           "user_id",
           "org_id",
-          "agent_id",
           "title"
         )
         VALUES (
           $1,
           'context-pointer-test-user',
           'context-pointer-test-org',
-          $2,
           'context pointer test'
         )
       `,
-      [threadId, agentId],
+      [threadId],
     );
 
     await client.query(
@@ -883,7 +867,9 @@ async function validateChatEventContextPointerConstraints(
       "   ✅ Chat event contexts require input discriminators, including rejected inputs\n",
     );
   } finally {
-    await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [agentId]);
+    await client.query(`DELETE FROM "chat_threads" WHERE "id" = $1`, [
+      threadId,
+    ]);
     await client.end();
   }
 }
@@ -1435,10 +1421,10 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     identityArguments:
       "p_agent_id uuid, p_org_id text, p_member_user_id text, p_is_org_admin boolean",
     kind: "f",
-    volatility: "v",
+    volatility: "i",
     securityDefiner: false,
-    parallel: "u",
-    bodyHash: "31117fd9ca18b99afbe6e0272a7a81d4",
+    parallel: "s",
+    bodyHash: "f512f7d0b4a266cfa2e3619179027a0c",
   },
   {
     schemaName: "public",

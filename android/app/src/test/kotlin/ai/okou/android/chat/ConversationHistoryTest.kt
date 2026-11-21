@@ -470,6 +470,7 @@ class ConversationHistoryTest {
         model.open(thread())
         model.uiState.first { it.phase == HistoryPhase.Ready }
         assertEquals(0, service.markCount)
+        assertEquals(CHAT_PERSONAL, model.uiState.value.thread!!.id)
         val visit = checkNotNull(model.beginVisit(CHAT_PERSONAL, model.uiState.value.generation))
         model.uiState.first { it.phase == HistoryPhase.Ready }
         runCurrent()

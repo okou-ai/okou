@@ -678,7 +678,6 @@ try {
     published = puts;
   const replayed = await replayPublishedMetadata();
   assert.ok(replayed);
-  assert.equal(replayed.agentId, target);
   assert.notEqual(replayed.projectId, originalProject);
   assert.equal(
     replayed.sortAt,
@@ -820,7 +819,6 @@ try {
   );
   const restoredProjection = await replayPublishedMetadata();
   assert.ok(restoredProjection);
-  assert.equal(restoredProjection.agentId, privateAgent);
   assert.equal(restoredProjection.projectId, originalProject);
   assert.equal(restoredProjection.sortAt, snapshotProjection.sortAt);
   const recoveredEvents = await eventsState();

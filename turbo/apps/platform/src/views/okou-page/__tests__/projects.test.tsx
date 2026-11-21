@@ -1,3 +1,4 @@
+import { CHAT_LIST_AGENT_ID } from "./chat-list-test-helpers.ts";
 import {
   act,
   cleanup,
@@ -899,7 +900,6 @@ test("A folded Project prioritizes unread over running chats, and an unfolded on
   ]);
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: {},
       threads: {
         [researchOlderUnread.id]: "unread",
         [researchRunning.id]: "active",
@@ -1305,7 +1305,6 @@ test("Deleting a Project closes its dialog before its chats finish synchronizing
       seqId: 2,
       kind: "project_updated",
       chatThreadId: member.id,
-      agentId: member.agentId,
       projectId: null,
       title: member.title,
       selectedModel: member.selectedModel,
@@ -1475,7 +1474,6 @@ test("Creating a Project from a chat moves it immediately and survives navigatio
       seqId: 2,
       kind: "project_updated",
       chatThreadId: ordinary.id,
-      agentId: ordinary.agentId,
       projectId: body.id,
       title: ordinary.title,
       selectedModel: ordinary.selectedModel,
@@ -1702,7 +1700,6 @@ test("Thread menu searches and changes Project membership while preserving the o
         seqId: events.length + 2,
         kind: "project_updated",
         chatThreadId: params.id,
-        agentId: ordinary.agentId,
         title: ordinary.title,
         projectId: body.projectId,
         selectedModel: ordinary.selectedModel,
@@ -1820,7 +1817,6 @@ test("A rejected Project move does not replace a later confirmed move", async ()
       seqId: events.length + 2,
       kind: "project_updated",
       chatThreadId: thread.id,
-      agentId: thread.agentId,
       title: thread.title,
       projectId,
       selectedModel: thread.selectedModel,
@@ -1913,7 +1909,6 @@ test("Dropping over an existing Project chat moves immediately while the request
         seqId: 2,
         kind: "project_updated",
         chatThreadId: params.id,
-        agentId: ordinary.agentId,
         title: ordinary.title,
         projectId: body.projectId,
         selectedModel: ordinary.selectedModel,
@@ -1998,7 +1993,6 @@ test.each(["chat row", "empty list space"] as const)(
           seqId: 2,
           kind: "project_updated",
           chatThreadId: params.id,
-          agentId: member.agentId,
           title: member.title,
           projectId: body.projectId,
           selectedModel: member.selectedModel,
@@ -2263,7 +2257,7 @@ test("Home, Project, and conversation navigation preserves the correct draft and
   mockThreadCreation(created);
   await setupPage({
     context,
-    path: `/agents/${ordinary.agentId}/chat`,
+    path: "/?compose=1",
     ...workspace.pageOptions,
   });
   const editor = () => {
@@ -2409,7 +2403,7 @@ test("The composer's + menu starts a new chat in a Project and keeps the message
   mockThreadCreation(created);
   await setupPage({
     context,
-    path: `/agents/${ordinary.agentId}/chat`,
+    path: "/?compose=1",
     ...workspace.pageOptions,
   });
   await fill(
@@ -2612,7 +2606,7 @@ test("A Project named from the composer's + menu opens with the message and acce
   });
   await setupPage({
     context,
-    path: `/agents/${ordinary.agentId}/chat`,
+    path: "/?compose=1",
     ...workspace.pageOptions,
   });
   await fill(
@@ -2727,7 +2721,6 @@ test("The Project home starts a conversation with the default Agent after visiti
       seqId: 2,
       kind: "created",
       chatThreadId: thread.id,
-      agentId: thread.agentId,
       projectId: thread.projectId,
       title: thread.title,
       selectedModel: thread.selectedModel,
@@ -3010,7 +3003,6 @@ test.each([
           seqId: 2,
           kind: "project_updated",
           chatThreadId: params.id,
-          agentId: thread.agentId,
           projectId: body.projectId,
           title: thread.title,
           selectedModel: thread.selectedModel,

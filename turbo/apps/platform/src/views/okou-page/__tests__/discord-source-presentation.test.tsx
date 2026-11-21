@@ -169,8 +169,6 @@ test("Activity identifies a Discord run as its source", async () => {
     return respond(200, {
       id: RUN_ID,
       sessionId: "discord-activity-session",
-      agentId: "c0000000-0000-4000-a000-000000000051",
-      displayName: "Discord launch review",
       framework: "codex",
       modelProvider: null,
       selectedModel: null,
@@ -195,7 +193,7 @@ test("Activity identifies a Discord run as its source", async () => {
   await setupPage({ context, path: `/activities/${RUN_ID}` });
 
   await expect(
-    screen.findByRole("heading", { name: "Discord launch review" }),
+    screen.findByRole("heading", { name: "Okou" }),
   ).resolves.toBeInTheDocument();
   expect(screen.getByText("Source")).toBeInTheDocument();
   expect(screen.getByText("Discord")).toBeInTheDocument();

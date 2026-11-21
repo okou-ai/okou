@@ -702,7 +702,10 @@ internal fun OkouApp(
                                                     controls != null
                                             ) {
                                                 val composerTarget =
-                                                    ComposerTarget(thread.id, thread.projectId)
+                                                    ComposerTarget(
+                                                        threadId = thread.id,
+                                                        projectId = thread.projectId,
+                                                    )
                                                 RunControlsPanel(controls, chats.history, thread.id)
                                                 recovery?.let {
                                                     AssistantRecoveryPanel(

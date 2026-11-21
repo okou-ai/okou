@@ -71,7 +71,6 @@ function snapshotThread(
 ): ChatThreadSnapshotProjection {
   return {
     id,
-    agentId: AGENT_ID,
     title,
     sortAt: CREATED_AT,
     createdAt: CREATED_AT,
@@ -90,7 +89,6 @@ function snapshotThread(
 function threadMetadata(id: string, title: string): ChatThreadMetadata {
   return {
     id,
-    agentId: AGENT_ID,
     title,
     selectedModel: "claude-sonnet-5",
     modelSettings: {},
@@ -115,7 +113,6 @@ function threadEvent(args: {
     seqId: args.seqId,
     kind: args.kind,
     chatThreadId: args.threadId,
-    agentId: AGENT_ID,
     title: args.title,
     selectedModel: "claude-sonnet-5",
     serviceTier: null,

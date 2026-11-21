@@ -86,7 +86,6 @@
           "title": "제공자 일시적 사용 불가"
         }
       },
-      "fallbackAgent": "Okou",
       "fields": {
         "duration": "소요 시간",
         "model": "모델",

@@ -748,7 +748,6 @@ function useOrdinaryOAuthRuns() {
 
   return function createOrdinaryOAuthRunApi() {
     const runs = createRunsApi(context);
-    const agents = new Map<string, ApiTestUser>();
     const personalAccounts = new Map<string, ApiTestUser>();
     const ownedRuns = new Map<
       string,
@@ -762,7 +761,6 @@ function useOrdinaryOAuthRuns() {
     cleanups.push(async () => {
       const cleanupRuns = createRunsApi(context);
       const cleanupConnectors = createConnectorBddApi(context);
-      const cleanupAgents = createBddApi(context);
       // A notification failure belongs to its assertion, not to owned teardown.
       context.mocks.ably.publish.mockResolvedValue(undefined);
       for (const [runId, owned] of [...ownedRuns].reverse()) {
@@ -789,10 +787,6 @@ function useOrdinaryOAuthRuns() {
           account.slug,
           account.id,
         );
-        await flushWaitUntilForTest();
-      }
-      for (const [agentId, actor] of [...agents].reverse()) {
-        await cleanupAgents.deleteAgent(actor, agentId);
         await flushWaitUntilForTest();
       }
       for (const [id, actor] of personalAccounts) {
@@ -826,7 +820,6 @@ function useOrdinaryOAuthRuns() {
       },
       async entitledRunActor(...args: Parameters<typeof entitledRunActor>) {
         const entitled = await entitledRunActor(...args);
-        agents.set(entitled.agentId, entitled.actor);
         personalAccounts.set(entitled.personalProviderId, entitled.actor);
         return entitled;
       },
@@ -834,7 +827,6 @@ function useOrdinaryOAuthRuns() {
         ...args: Parameters<ReturnType<typeof createBddApi>["createAgent"]>
       ) {
         const agent = await createBddApi(context).createAgent(...args);
-        agents.set(agent.agentId, args[0]);
         return agent;
       },
       async finishCancelledRun(runId: string, sandboxToken: string) {
@@ -2638,11 +2630,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           visibility: "private",
         });
 
-        const ownedRuns = publicRunOwner(context, actor, {
-          afterRuns: async () => {
-            await bdd.deleteAgent(actor, agent.agentId);
-          },
-        });
+        const ownedRuns = publicRunOwner(context, actor);
         const run = await api.createThreadRun(actor, {
           agentId: agent.agentId,
           prompt: "subscription subscription run",
@@ -5387,7 +5375,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           if (connectorId) {
             await connectors.deleteCustomConnector(actor, connectorId);
           }
-          await createBddApi(context).deleteAgent(actor, agentId);
           cleaned = true;
         };
         onTestFinished(cleanup);
@@ -10825,7 +10812,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             return row.userId === admin.userId;
           })?.breakdown[0],
         );
-        await bdd.deleteAgent(admin, agentId);
         const afterDeletion = await billing.readUsageMembers(admin, {
           range: "24h",
         });

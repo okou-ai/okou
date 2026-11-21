@@ -694,7 +694,7 @@ test("preserves a running Agent after rejected completion and accepts cancellati
   await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
     status: "running",
   });
-  await bdd.deleteAgent(actor, agent.agentId);
+  await bdd.expectAgentDeleteUnavailable(actor, agent.agentId);
   await runs.requestCancelRun(actor, run.runId, [200]);
   await flushWaitUntilForTest();
   await finish(run.runId, execution.sandboxToken);

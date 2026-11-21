@@ -1094,7 +1094,6 @@ function mockOwnedApprovalThread() {
     expect(params.id).toBe(THREAD_ID);
     return respond(200, {
       id: THREAD_ID,
-      agentId: AGENT_ID,
       title: "Action requests",
       selectedModel: null,
       modelSettings: {},

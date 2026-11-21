@@ -93,7 +93,7 @@ class NativeRealtimeTest {
         var controls: RunControlsModel? = null
         val controlPosts = AtomicInteger()
         val controlResponse = CountDownLatch(1)
-        val target = ComposerTarget(CHAT_PERSONAL)
+        val target = ComposerTarget(threadId = CHAT_PERSONAL)
         var step = "Launch native realtime scenario"
         var stopBounds = "not located"
         fun diagnostics(): String {

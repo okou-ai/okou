@@ -26,7 +26,6 @@ import { mockNow } from "../../../__tests__/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const AGENT_ID = "10000000-0000-4000-a000-000000000001";
 const THREAD_ID = "20000000-0000-4000-a000-000000000001";
 const items = [
   { connectorSlug: "slack", permission: "chat:write" },
@@ -92,7 +91,6 @@ function installResources({
   context.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
     return respond(200, {
       id: THREAD_ID,
-      agentId: AGENT_ID,
       title: "Review",
       selectedModel: "claude-sonnet-5",
       modelSettings: {},

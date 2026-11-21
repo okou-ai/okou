@@ -50,9 +50,8 @@ function installChat() {
     snapshot: [
       chatListThread(1, "Run conversation", {
         id: RUN_THREAD_ID,
-        agentId: AGENT_ID,
       }),
-      chatListThread(2, "Earlier title", { agentId: AGENT_ID }),
+      chatListThread(2, "Earlier title"),
     ],
   });
   let events: ChatThreadEvent[] = [];
@@ -73,7 +72,6 @@ function installChat() {
   );
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: unread ? { [AGENT_ID]: "unread" } : {},
       threads: unread ? { [OTHER_THREAD_ID]: "unread" } : {},
       unreadAt: unread ? { [OTHER_THREAD_ID]: "2026-08-01T01:00:02.000Z" } : {},
     });
@@ -82,7 +80,6 @@ function installChat() {
     advance(title = "Updated while away") {
       events = [
         chatListEvent(91, 2, "renamed", OTHER_THREAD_ID, {
-          agentId: AGENT_ID,
           title,
         }),
       ];

@@ -12,7 +12,6 @@ import {
   fileArtifactDetail,
   buttonNamed,
   mockArtifactConversation,
-  NAVIGATION_ARTIFACT_AGENT_ID,
   NAVIGATION_ARTIFACT_THREAD_ID,
 } from "./chat-navigation-artifact-test-helpers.ts";
 
@@ -197,7 +196,6 @@ export async function setupOverflowResources(
     }
     return respond(200, {
       id: NAVIGATION_ARTIFACT_THREAD_ID,
-      agentId: NAVIGATION_ARTIFACT_AGENT_ID,
       title: "Artifact navigation",
       selectedModel: null,
       modelSettings: {},

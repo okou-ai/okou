@@ -104,11 +104,7 @@ class ChatListModelTest {
     private open inner class Service : TestChatService() {
         var listRead: suspend () -> ChatEvents = { page() }
         var statusRead: suspend () -> Indicators = {
-            Indicators(
-                emptyMap(),
-                mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
-                emptyMap(),
-            )
+            Indicators(mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD), emptyMap())
         }
 
         override suspend fun chatSnapshot() =
@@ -229,7 +225,6 @@ class ChatListModelTest {
         val relaunchedStore = ViewModelStore()
         val initial =
             Indicators(
-                emptyMap(),
                 mapOf(
                     CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD,
                     CHAT_IN_PROJECT to IndicatorsThreadsValue.ACTIVE,
@@ -339,7 +334,7 @@ class ChatListModelTest {
             assertEquals(ChatReadPhase.Failed, relaunched.uiState.value.indicatorsPhase)
             assertNull(relaunched.uiState.value.displayUnreadAt)
 
-            service.statusRead = { Indicators(emptyMap(), emptyMap(), emptyMap()) }
+            service.statusRead = { Indicators(emptyMap(), emptyMap()) }
             relaunched.refreshIndicators()
             runCurrent()
             assertEquals(ChatReadPhase.Ready, relaunched.uiState.value.indicatorsPhase)
@@ -420,7 +415,7 @@ class ChatListModelTest {
             advanceUntilIdle()
             assertFalse(model.uiState.value.threads.single { it.id == CHAT_PERSONAL }.archived)
             assertNull(model.uiState.value.rowUndo)
-            indicators.complete(Indicators(emptyMap(), emptyMap(), emptyMap()))
+            indicators.complete(Indicators(emptyMap(), emptyMap()))
             advanceUntilIdle()
         }
     }
@@ -500,11 +495,10 @@ class ChatListModelTest {
     fun aDefinitiveUnreadUndoSettlesWhileIndicatorsAreStillRefreshing() = runTest {
         val unread =
             Indicators(
-                emptyMap(),
                 mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
                 mapOf(CHAT_PERSONAL to CHAT_DATE),
             )
-        val read = Indicators(emptyMap(), emptyMap(), emptyMap())
+        val read = Indicators(emptyMap(), emptyMap())
         for (rejected in listOf(false, true)) {
             val receipt = CompletableDeferred<ReadState>()
             val readback = CompletableDeferred<Indicators>()
@@ -550,7 +544,6 @@ class ChatListModelTest {
         val displayedRead = CompletableDeferred<Unit>()
         val unread =
             Indicators(
-                emptyMap(),
                 mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
                 mapOf(CHAT_PERSONAL to CHAT_DATE),
             )
@@ -593,7 +586,7 @@ class ChatListModelTest {
             model.refresh()
             advanceUntilIdle()
             model.selectFilter(ChatListFilter.Unread)
-            source.statusRead = { Indicators(emptyMap(), emptyMap(), emptyMap()) }
+            source.statusRead = { Indicators(emptyMap(), emptyMap()) }
             assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
             advanceUntilIdle()
             val offer = checkNotNull(model.uiState.value.rowUndo)
@@ -1104,11 +1097,10 @@ class ChatListModelTest {
         val commitUnread = CompletableDeferred<ReadState>()
         fun status(time: String) =
             Indicators(
-                emptyMap(),
                 mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
                 mapOf(CHAT_PERSONAL to time),
             )
-        val read = Indicators(emptyMap(), emptyMap(), emptyMap())
+        val read = Indicators(emptyMap(), emptyMap())
         val source =
             object : Service() {
                     override suspend fun markRead(threadId: String) = commitRead.await()
@@ -1151,10 +1143,9 @@ class ChatListModelTest {
     fun earlierUnreadReadbackCannotUndoAReadWithoutAPreviousWatermark() = runTest {
         val unreadReadback = CompletableDeferred<Indicators>()
         val readWrite = CompletableDeferred<ReadState>()
-        val read = Indicators(emptyMap(), emptyMap(), emptyMap())
+        val read = Indicators(emptyMap(), emptyMap())
         val unread =
             Indicators(
-                emptyMap(),
                 mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
                 mapOf(CHAT_PERSONAL to CHAT_DATE),
             )
@@ -1200,7 +1191,6 @@ class ChatListModelTest {
                 .apply {
                     statusRead = {
                         Indicators(
-                            emptyMap(),
                             mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
                             mapOf(CHAT_PERSONAL to CHAT_DATE),
                         )
@@ -1227,7 +1217,7 @@ class ChatListModelTest {
             assertNull(model.uiState.value.failedRowAction)
             assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
 
-            source.statusRead = { Indicators(emptyMap(), emptyMap(), emptyMap()) }
+            source.statusRead = { Indicators(emptyMap(), emptyMap()) }
             model.refreshIndicators()
             advanceUntilIdle()
             assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
@@ -1240,7 +1230,6 @@ class ChatListModelTest {
         val readback = CompletableDeferred<Indicators>()
         fun unread(time: String) =
             Indicators(
-                emptyMap(),
                 mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
                 mapOf(CHAT_PERSONAL to time),
             )
@@ -1280,14 +1269,13 @@ class ChatListModelTest {
         val source =
             object : Service() {
                     override suspend fun markRead(threadId: String): ReadState {
-                        statusRead = { Indicators(emptyMap(), emptyMap(), emptyMap()) }
+                        statusRead = { Indicators(emptyMap(), emptyMap()) }
                         throw IOException("response lost")
                     }
                 }
                 .apply {
                     statusRead = {
                         Indicators(
-                            emptyMap(),
                             mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
                             mapOf(CHAT_PERSONAL to CHAT_DATE),
                         )
@@ -1311,7 +1299,7 @@ class ChatListModelTest {
             object : Service() {
                     override suspend fun markUnread(threadId: String) = response.await()
                 }
-                .apply { statusRead = { Indicators(emptyMap(), emptyMap(), emptyMap()) } }
+                .apply { statusRead = { Indicators(emptyMap(), emptyMap()) } }
         withCatchUpModel(source) { model ->
             model.refresh()
             advanceUntilIdle()
@@ -1327,7 +1315,6 @@ class ChatListModelTest {
 
             source.statusRead = {
                 Indicators(
-                    emptyMap(),
                     mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
                     mapOf(CHAT_PERSONAL to CHAT_DATE),
                 )
@@ -1544,7 +1531,7 @@ class ChatListModelTest {
             assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
             assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
 
-            statusResponse.complete(Indicators(emptyMap(), emptyMap(), emptyMap()))
+            statusResponse.complete(Indicators(emptyMap(), emptyMap()))
             advanceUntilIdle()
             assertEquals(initialReads + 1, reads)
             val state = model.uiState.value
@@ -1975,7 +1962,7 @@ class ChatListModelTest {
                 }
                 statusRead = {
                     indicatorReads++
-                    Indicators(emptyMap(), emptyMap(), emptyMap())
+                    Indicators(emptyMap(), emptyMap())
                 }
             }
         val service =
@@ -2100,7 +2087,7 @@ class ChatListModelTest {
     @Test
     fun aRejectedUnmuteKeepsItsReadReceiptWhileIndicatorsAreHeld() = runTest {
         val refresh = CompletableDeferred<Indicators>()
-        val unread = Indicators(emptyMap(), emptyMap(), mapOf(CHAT_PERSONAL to CHAT_DATE))
+        val unread = Indicators(emptyMap(), mapOf(CHAT_PERSONAL to CHAT_DATE))
         val source =
             object : Service() {
                 override suspend fun chatEvents(since: Long?) =
@@ -2167,7 +2154,7 @@ class ChatListModelTest {
                         """{"events":[${tail.joinToString(",")}],"hasMore":false}"""
                     )
                 }
-                statusRead = { Indicators(emptyMap(), emptyMap(), emptyMap()) }
+                statusRead = { Indicators(emptyMap(), emptyMap()) }
             }
         val service =
             object : ChatListService by source {
@@ -2213,7 +2200,6 @@ class ChatListModelTest {
 
             oldStatus.complete(
                 Indicators(
-                    emptyMap(),
                     mapOf(
                         CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD,
                         CHAT_IN_PROJECT to IndicatorsThreadsValue.ACTIVE,
@@ -2268,11 +2254,7 @@ class ChatListModelTest {
                 model.uiState.value.indicators?.threads?.get(CHAT_PERSONAL),
             )
             service.statusRead = {
-                Indicators(
-                    emptyMap(),
-                    mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.ACTIVE),
-                    emptyMap(),
-                )
+                Indicators(mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.ACTIVE), emptyMap())
             }
             model.refreshIndicators()
             runCurrent()

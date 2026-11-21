@@ -1,5 +1,12 @@
 import { sql } from "drizzle-orm";
-import { check, foreignKey, index, pgTable, unique } from "drizzle-orm/pg-core";
+import {
+  check,
+  foreignKey,
+  index,
+  pgTable,
+  unique,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { agents } from "./agent";
 import { projects } from "./project";
 import { chatThreadColumns } from "../columns/chat-thread";
@@ -11,7 +18,16 @@ import { chatThreadColumns } from "../columns/chat-thread";
  */
 export const chatThreads = pgTable(
   "chat_threads",
-  chatThreadColumns(),
+  {
+    ...chatThreadColumns(),
+    // Retained for outgoing API binaries until the rollback window closes.
+    agentId: uuid("agent_id").references(
+      () => {
+        return agents.id;
+      },
+      { onDelete: "cascade" },
+    ),
+  },
   (table) => {
     return [
       unique("uq_chat_threads_id_user").on(table.id, table.userId),

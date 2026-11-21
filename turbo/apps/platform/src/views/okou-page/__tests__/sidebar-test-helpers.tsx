@@ -57,12 +57,6 @@ export function createSidebarHelpers(context: TestContext) {
         remoteGate,
       );
     },
-    mockUnreadAgents: (
-      unreadAgentIds: () => readonly string[],
-      onRequest?: () => void,
-    ) => {
-      return mockUnreadAgents(context, unreadAgentIds, onRequest);
-    },
     mockSidebarThreadStory: (
       firstPageThreads: SidebarThread[],
       extraThreads?: SidebarThread[],
@@ -300,7 +294,6 @@ export function mockChatThreadSnapshot(
   });
   targetContext.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: {},
       threads: Object.fromEntries(
         activeThreadIds().map((threadId) => {
           return [threadId, "active" as const];
@@ -319,25 +312,6 @@ export function mockChatThreadSnapshot(
   });
   targetContext.mocks.api(computerUseHostsContract.list, ({ respond }) => {
     return respond(200, { hosts: [] });
-  });
-}
-
-export function mockUnreadAgents(
-  context: TestContext,
-  unreadAgentIds: () => readonly string[],
-  onRequest: () => void = () => {},
-): void {
-  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    onRequest();
-    return respond(200, {
-      agents: Object.fromEntries(
-        unreadAgentIds().map((agentId) => {
-          return [agentId, "unread" as const];
-        }),
-      ),
-      threads: {},
-      unreadAt: {},
-    });
   });
 }
 

@@ -44,10 +44,7 @@ async function openWhitespaceDraft(kind: "agent" | "thread") {
 
   await setupPage({
     context,
-    path:
-      kind === "agent"
-        ? `/agents/${thread.agentId}/chat`
-        : `/chats/${thread.id}`,
+    path: kind === "agent" ? "/?compose=1" : `/chats/${thread.id}`,
     ...workspace.pageOptions,
   });
   const composer = await screen.findByRole("textbox", { name: "Message" });

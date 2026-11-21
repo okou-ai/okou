@@ -1,3 +1,4 @@
+import { CHAT_LIST_AGENT_ID } from "./chat-list-test-helpers.ts";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";

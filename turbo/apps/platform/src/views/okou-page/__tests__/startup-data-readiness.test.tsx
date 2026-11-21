@@ -1,3 +1,4 @@
+import { CHAT_LIST_AGENT_ID } from "./chat-list-test-helpers.ts";
 import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";

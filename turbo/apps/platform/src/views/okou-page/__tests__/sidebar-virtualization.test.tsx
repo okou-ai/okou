@@ -87,7 +87,7 @@ function mockThreads(
     return respond(200, { events: [], hasMore: false });
   });
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, { agents: {}, threads: {}, unreadAt: {} });
+    return respond(200, { threads: {}, unreadAt: {} });
   });
   context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
     return respond(200, {
@@ -342,7 +342,6 @@ async function openFoldList({
   if (unread) {
     context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
       return respond(200, {
-        agents: { [AGENT_ID]: "unread" },
         threads: Object.fromEntries(
           Array.from({ length: members + outside }, (_, index) => {
             return [threadId(index), "unread" as const];
@@ -979,7 +978,6 @@ async function setupUnreadHistoryBeyondCurrentWindow() {
   context.mocks.api(chatThreadsContract.indicators, async ({ respond }) => {
     await indicators.promise;
     return respond(200, {
-      agents: { [AGENT_ID]: "unread" },
       threads: {
         ...Object.fromEntries(
           unreadIndexes.map((index) => {
@@ -1040,7 +1038,6 @@ test("Follow full-list wave positions across scrolling and pinning", async () =>
   });
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: { [AGENT_ID]: "active" },
       threads: Object.fromEntries(
         Array.from({ length: 120 }, (_, index) => {
           return [threadId(index), index === 1 ? "unread" : "active"] as const;
@@ -1178,7 +1175,6 @@ test("Show all chats from the tail of a scrolled mobile unread list", async () =
   mockThreads(40);
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: { [AGENT_ID]: "unread" },
       threads: Object.fromEntries(
         unreadIndexes.map((index) => {
           return [threadId(index), "unread" as const];

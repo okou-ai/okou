@@ -3,6 +3,7 @@ package ai.okou.android.chat
 import ai.okou.android.*
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ResetSubscriptionResultOutcome
+import ai.okou.android.auth.workspaceStorageKey
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
@@ -739,6 +740,11 @@ class AssistantRecoveryModelTest {
             val before = f.journal.load(f.api.identity).journal
             f.owners.clear()
             f.journal.close()
+            val file = directory.resolve("${f.api.identity.workspaceStorageKey()}.json")
+            val saved = file.readText()
+            val legacy = saved.replace("\"agentId\":null", "\"agentId\":\"$CHAT_AGENT\"")
+            assertNotEquals(saved, legacy)
+            file.writeText(legacy)
             val reopened =
                 ComposerJournalStore(
                     ApplicationProvider.getApplicationContext(),
