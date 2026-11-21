@@ -131,19 +131,32 @@ function unionSelectors(
         );
       });
       return (byVariant[0] ?? []).flatMap((tag) => {
-        const matches = byVariant.map((candidates) =>
-          candidates.find((candidate) => {
+        const matches = byVariant.map((candidates) => {
+          return candidates.find((candidate) => {
             return (
               candidate.path.length === tag.path.length &&
-              candidate.path.every((key, part) => key === tag.path[part])
+              candidate.path.every((key, part) => {
+                return key === tag.path[part];
+              })
             );
-          }),
-        );
-        if (!matches.every((match) => match !== undefined)) return [];
+          });
+        });
+        if (
+          !matches.every((match) => {
+            return match !== undefined;
+          })
+        )
+          return [];
         return [
           {
             path: tag.path,
-            values: [...new Set(matches.flatMap((match) => match.values))],
+            values: [
+              ...new Set(
+                matches.flatMap((match) => {
+                  return match.values;
+                }),
+              ),
+            ],
           },
         ];
       });
@@ -304,15 +317,21 @@ function unionSelectors(
     return Object.keys(fields).find((field) => {
       return (
         required[index]!.has(field) &&
-        properties.every(
-          (other, otherIndex) => otherIndex === index || !(field in other),
-        )
+        properties.every((other, otherIndex) => {
+          return otherIndex === index || !(field in other);
+        })
       );
     });
   });
-  if (uniqueKeys.every((key) => key !== undefined)) {
+  if (
+    uniqueKeys.every((key) => {
+      return key !== undefined;
+    })
+  ) {
     return guarded(
-      uniqueKeys.map((key) => `value.containsKey(${kotlinQuote(key)})`),
+      uniqueKeys.map((key) => {
+        return `value.containsKey(${kotlinQuote(key)})`;
+      }),
     );
   }
   // Some request branches carry the tag inside a required event configuration.
@@ -335,10 +354,12 @@ function unionSelectors(
             return nestedTags[otherIndex]!.some((otherTag) => {
               return (
                 tag.path.length === otherTag.path.length &&
-                tag.path.every(
-                  (field, part) => field === otherTag.path[part],
-                ) &&
-                tag.values.every((value) => !otherTag.values.includes(value))
+                tag.path.every((field, part) => {
+                  return field === otherTag.path[part];
+                }) &&
+                tag.values.every((value) => {
+                  return !otherTag.values.includes(value);
+                })
               );
             });
           })
@@ -346,11 +367,13 @@ function unionSelectors(
       })
     )
       return undefined;
-    const keys = Object.keys(fields).filter((field) =>
-      required[index]!.has(field),
-    );
+    const keys = Object.keys(fields).filter((field) => {
+      return required[index]!.has(field);
+    });
     return [
-      ...keys.map((field) => `value.containsKey(${kotlinQuote(field)})`),
+      ...keys.map((field) => {
+        return `value.containsKey(${kotlinQuote(field)})`;
+      }),
       ...tags.map((tag) => {
         const [first, ...rest] = tag.path;
         const access = rest.reduce(
@@ -363,7 +386,11 @@ function unionSelectors(
       }),
     ].join(" && ");
   });
-  if (complementary.every((selector): selector is string => !!selector))
+  if (
+    complementary.every((selector): selector is string => {
+      return !!selector;
+    })
+  )
     return guarded(complementary);
   throw new Error(`${name}: unsupported ambiguous object union`);
 }
@@ -618,6 +645,8 @@ object CanonicalEmptyArraySerializer : KSerializer<CanonicalEmptyArray> {
     const required = new Set(
       Array.isArray(value.required) ? value.required : [],
     );
+    const overrides =
+      parent === currentBinding?.name ? currentBinding?.unionFields : undefined;
     const fields = Object.entries(value.properties).flatMap(
       ([field, schema]) => {
         if (isNever(schema)) {
@@ -627,31 +656,28 @@ object CanonicalEmptyArraySerializer : KSerializer<CanonicalEmptyArray> {
         }
         const wireType = render(schema, `${name}${suffix(field)}`);
         const optional = !required.has(field);
-        const opaque = optional && schemaObject(schema) && isJsonValue(schema);
-        if (opaque) optionalJson();
-        const optionalNullable =
+        const declaration = `    ${overrides?.includes(field) ? "override " : ""}val ${kotlinIdentifier(field)}`;
+        if (optional && schemaObject(schema) && isJsonValue(schema)) {
+          optionalJson();
+          return [
+            `${declaration}: CanonicalOptionalJson = CanonicalOptionalJson.Absent,`,
+          ];
+        }
+        if (
           optional &&
           requestBinding &&
           schemaObject(schema) &&
-          nullableSchema(schema, `${name}${suffix(field)}`) !== undefined;
-        if (optionalNullable) optionalInput();
-        const propertyType = opaque
-          ? "CanonicalOptionalJson"
-          : optionalNullable
-            ? `CanonicalOptional<${wireType}>`
-            : optional && !wireType.endsWith("?")
-              ? `${wireType}?`
-              : wireType;
-        const defaultValue = opaque
-          ? " = CanonicalOptionalJson.Absent"
-          : optionalNullable
-            ? " = CanonicalOptional.Absent"
-            : optional
-              ? " = null"
-              : "";
-        return [
-          `    ${parent === currentBinding?.name && currentBinding?.unionFields?.includes(field) ? "override " : ""}val ${kotlinIdentifier(field)}: ${propertyType}${defaultValue},`,
-        ];
+          nullableSchema(schema, `${name}${suffix(field)}`) !== undefined
+        ) {
+          optionalInput();
+          return [
+            `${declaration}: CanonicalOptional<${wireType}> = CanonicalOptional.Absent,`,
+          ];
+        }
+        const propertyType =
+          optional && !wireType.endsWith("?") ? `${wireType}?` : wireType;
+        const defaultValue = optional ? " = null" : "";
+        return [`${declaration}: ${propertyType}${defaultValue},`];
       },
     );
     if (fields.length === 0) {
@@ -753,6 +779,169 @@ object ${name}Serializer : KSerializer<${name}> {
     }
   }
 
+  function renderScalarUnion(
+    union: readonly unknown[],
+    name: string,
+  ): string | undefined {
+    const scalarKinds = new Set(["string", "integer", "boolean"]);
+    const schemas = union.filter(schemaObject);
+    if (
+      schemas.length >= 2 &&
+      schemas.length === union.length &&
+      schemas.every((variant) => {
+        return scalarKinds.has(String(variant.type));
+      }) &&
+      new Set(
+        schemas.map((variant) => {
+          return variant.type;
+        }),
+      ).size === schemas.length
+    ) {
+      reserve(name);
+      reserve(`${name}Serializer`);
+      serializerImports();
+      imports.add("kotlinx.serialization.json.doubleOrNull");
+      imports.add("kotlinx.serialization.json.booleanOrNull");
+      imports.add("kotlinx.serialization.json.double");
+      imports.add("kotlinx.serialization.json.boolean");
+      const variants = schemas.map((variant, index) => {
+        const type = render(variant, `${name}Variant${index + 1}`);
+        if (!["String", "Long", "Boolean"].includes(type))
+          throw new Error(`${name}: unsupported scalar union variant`);
+        return {
+          name: `Variant${index + 1}`,
+          type,
+          accessor: {
+            String: "content",
+            Long: "double.toLong()",
+            Boolean: "boolean",
+          }[type],
+          predicate: scalarPredicate(variant, "value"),
+        };
+      });
+      declarations.push(`@Serializable(with = ${name}Serializer::class)
+sealed interface ${name} {
+${variants
+  .map((variant) => {
+    return `    data class ${variant.name}(val value: ${variant.type}) : ${name}`;
+  })
+  .join("\n")}
+}
+
+object ${name}Serializer : KSerializer<${name}> {
+override val descriptor = JsonPrimitive.serializer().descriptor
+override fun deserialize(decoder: Decoder): ${name} {
+    val input = decoder as? JsonDecoder ?: throw SerializationException("Expected JSON scalar for ${name}")
+    val value = input.decodeJsonElement()
+    return when {
+${variants
+  .map((variant) => {
+    return `            ${variant.predicate} -> ${name}.${variant.name}(value.${variant.accessor})`;
+  })
+  .join("\n")}
+        else -> throw SerializationException("Unknown ${name} variant")
+    }
+}
+override fun serialize(encoder: Encoder, value: ${name}) {
+    val output = encoder as? JsonEncoder ?: throw SerializationException("Expected JSON scalar for ${name}")
+    output.encodeJsonElement(when (value) {
+${variants
+  .map((variant) => {
+    return `            is ${name}.${variant.name} -> JsonPrimitive(value.value)`;
+  })
+  .join("\n")}
+    })
+}
+}`);
+      return name;
+    }
+    return undefined;
+  }
+
+  function renderUnion(union: readonly unknown[], name: string): string {
+    const scalar = renderScalarUnion(union, name);
+    if (scalar) return scalar;
+    const variants = objectUnionVariants(union);
+    if (variants.length < 2) throw new Error(`${name}: unsupported union`);
+    const selectors = unionSelectors(variants, name);
+    if (
+      selectors.some((selector) => {
+        return selector.includes("doubleOrNull");
+      })
+    )
+      imports.add("kotlinx.serialization.json.doubleOrNull");
+    if (
+      selectors.some((selector) => {
+        return selector.includes("booleanOrNull");
+      })
+    )
+      imports.add("kotlinx.serialization.json.booleanOrNull");
+    if (
+      selectors.some((selector) => {
+        return selector.includes("JsonNull");
+      })
+    )
+      imports.add("kotlinx.serialization.json.JsonNull");
+    reserve(name);
+    reserve(`${name}Serializer`);
+    serializerImports();
+    const fields =
+      name === currentBinding?.name ? currentBinding.unionFields : undefined;
+    const properties = fields?.map((field) => {
+      const schemas = variants.map((variant) => {
+        if (
+          !Array.isArray(variant.required) ||
+          !variant.required.includes(field) ||
+          !schemaObject(variant.properties) ||
+          !schemaObject(variant.properties[field])
+        )
+          throw new Error(`${name}: common field ${field} must be required`);
+        return variant.properties[field];
+      });
+      if (
+        schemas.some((schema) => {
+          return JSON.stringify(schema) !== JSON.stringify(schemas[0]);
+        })
+      )
+        throw new Error(`${name}: common field ${field} must have one shape`);
+      const type = render(schemas[0], `${name}${suffix(field)}`);
+      return `    val ${kotlinIdentifier(field)}: ${type}`;
+    });
+    declarations.push(
+      `@Serializable(with = ${name}Serializer::class)\nsealed interface ${name}${properties?.length ? ` {\n${properties.join("\n")}\n}` : ""}`,
+    );
+    const types = variants.map((variant, index) => {
+      return render(variant, `${name}Variant${index + 1}`, name);
+    });
+    declarations.push(`object ${name}Serializer : KSerializer<${name}> {
+  override val descriptor = buildClassSerialDescriptor(${kotlinQuote(`${packageName}.${name}`)})
+  override fun deserialize(decoder: Decoder): ${name} {
+      val input = decoder as? JsonDecoder ?: throw SerializationException("Expected JSON object for ${name}")
+      val value = input.decodeJsonElement() as? JsonObject ?: throw SerializationException("Expected object for ${name}")
+      val matches = listOf(${selectors.join(", ")})
+      if (matches.count { it } != 1) throw SerializationException("Unknown or ambiguous ${name} variant")
+      return when (matches.indexOf(true)) {
+${types
+  .map((type, index) => {
+    return `            ${index} -> input.json.decodeFromJsonElement(${type}.serializer(), value)`;
+  })
+  .join("\n")}
+          else -> throw SerializationException("Unknown ${name} variant")
+      }
+  }
+  override fun serialize(encoder: Encoder, value: ${name}) {
+      when (value) {
+${types
+  .map((type) => {
+    return `            is ${type} -> encoder.encodeSerializableValue(${type}.serializer(), value)`;
+  })
+  .join("\n")}
+      }
+  }
+}`);
+    return name;
+  }
+
   const render = (value: unknown, name: string, parent?: string): string => {
     if (!schemaObject(value))
       throw new Error(`${name}: expected a JSON schema`);
@@ -785,153 +974,7 @@ object ${name}Serializer : KSerializer<${name}> {
       throw new Error(`${name}: unsupported literal`);
     }
     const union = value.anyOf ?? value.oneOf;
-    if (Array.isArray(union)) {
-      const scalarKinds = new Set(["string", "integer", "boolean"]);
-      if (
-        union.length >= 2 &&
-        union.every((variant) => {
-          return schemaObject(variant) && scalarKinds.has(String(variant.type));
-        }) &&
-        new Set(union.map((variant) => variant.type)).size === union.length
-      ) {
-        reserve(name);
-        reserve(`${name}Serializer`);
-        serializerImports();
-        imports.add("kotlinx.serialization.json.doubleOrNull");
-        imports.add("kotlinx.serialization.json.booleanOrNull");
-        imports.add("kotlinx.serialization.json.double");
-        imports.add("kotlinx.serialization.json.boolean");
-        const variants = union.map((variant, index) => {
-          const type = render(variant, `${name}Variant${index + 1}`);
-          if (!["String", "Long", "Boolean"].includes(type))
-            throw new Error(`${name}: unsupported scalar union variant`);
-          return {
-            name: `Variant${index + 1}`,
-            type,
-            accessor: {
-              String: "content",
-              Long: "double.toLong()",
-              Boolean: "boolean",
-            }[type],
-            predicate: scalarPredicate(variant, "value"),
-          };
-        });
-        declarations.push(`@Serializable(with = ${name}Serializer::class)
-sealed interface ${name} {
-${variants.map((variant) => `    data class ${variant.name}(val value: ${variant.type}) : ${name}`).join("\n")}
-}
-
-object ${name}Serializer : KSerializer<${name}> {
-    override val descriptor = JsonPrimitive.serializer().descriptor
-    override fun deserialize(decoder: Decoder): ${name} {
-        val input = decoder as? JsonDecoder ?: throw SerializationException("Expected JSON scalar for ${name}")
-        val value = input.decodeJsonElement()
-        return when {
-${variants.map((variant) => `            ${variant.predicate} -> ${name}.${variant.name}(value.${variant.accessor})`).join("\n")}
-            else -> throw SerializationException("Unknown ${name} variant")
-        }
-    }
-    override fun serialize(encoder: Encoder, value: ${name}) {
-        val output = encoder as? JsonEncoder ?: throw SerializationException("Expected JSON scalar for ${name}")
-        output.encodeJsonElement(when (value) {
-${variants.map((variant) => `            is ${name}.${variant.name} -> JsonPrimitive(value.value)`).join("\n")}
-        })
-    }
-}`);
-        return name;
-      }
-      // A URI or a hostless reference still has one wire representation.
-      if (
-        Array.isArray(value.anyOf) &&
-        union.some(
-          (item) =>
-            schemaObject(item) &&
-            item.type === "string" &&
-            Object.keys(item).length === 1,
-        ) &&
-        union.every((item) => schemaObject(item) && item.type === "string")
-      )
-        return "String";
-      const variants = objectUnionVariants(union);
-      if (variants.length < 2) throw new Error(`${name}: unsupported union`);
-      const selectors = unionSelectors(variants, name);
-      if (
-        selectors.some((selector) => {
-          return selector.includes("doubleOrNull");
-        })
-      )
-        imports.add("kotlinx.serialization.json.doubleOrNull");
-      if (
-        selectors.some((selector) => {
-          return selector.includes("booleanOrNull");
-        })
-      )
-        imports.add("kotlinx.serialization.json.booleanOrNull");
-      if (
-        selectors.some((selector) => {
-          return selector.includes("JsonNull");
-        })
-      )
-        imports.add("kotlinx.serialization.json.JsonNull");
-      reserve(name);
-      reserve(`${name}Serializer`);
-      serializerImports();
-      const fields =
-        name === currentBinding?.name ? currentBinding.unionFields : undefined;
-      const properties = fields?.map((field) => {
-        const schemas = variants.map((variant) => {
-          if (
-            !Array.isArray(variant.required) ||
-            !variant.required.includes(field) ||
-            !schemaObject(variant.properties) ||
-            !schemaObject(variant.properties[field])
-          )
-            throw new Error(`${name}: common field ${field} must be required`);
-          return variant.properties[field];
-        });
-        if (
-          schemas.some(
-            (schema) => JSON.stringify(schema) !== JSON.stringify(schemas[0]),
-          )
-        )
-          throw new Error(`${name}: common field ${field} must have one shape`);
-        const type = render(schemas[0], `${name}${suffix(field)}`);
-        return `    val ${kotlinIdentifier(field)}: ${type}`;
-      });
-      declarations.push(
-        `@Serializable(with = ${name}Serializer::class)\nsealed interface ${name}${properties?.length ? ` {\n${properties.join("\n")}\n}` : ""}`,
-      );
-      const types = variants.map((variant, index) => {
-        return render(variant, `${name}Variant${index + 1}`, name);
-      });
-      declarations.push(`object ${name}Serializer : KSerializer<${name}> {
-    override val descriptor = buildClassSerialDescriptor(${kotlinQuote(`${packageName}.${name}`)})
-    override fun deserialize(decoder: Decoder): ${name} {
-        val input = decoder as? JsonDecoder ?: throw SerializationException("Expected JSON object for ${name}")
-        val value = input.decodeJsonElement() as? JsonObject ?: throw SerializationException("Expected object for ${name}")
-        val matches = listOf(${selectors.join(", ")})
-        if (matches.count { it } != 1) throw SerializationException("Unknown or ambiguous ${name} variant")
-        return when (matches.indexOf(true)) {
-${types
-  .map((type, index) => {
-    return `            ${index} -> input.json.decodeFromJsonElement(${type}.serializer(), value)`;
-  })
-  .join("\n")}
-            else -> throw SerializationException("Unknown ${name} variant")
-        }
-    }
-    override fun serialize(encoder: Encoder, value: ${name}) {
-        when (value) {
-${types
-  .map((type) => {
-    return `            is ${type} -> encoder.encodeSerializableValue(${type}.serializer(), value)`;
-  })
-  .join("\n")}
-        }
-    }
-}`);
-      return name;
-    }
+    if (Array.isArray(union)) return renderUnion(union, name);
     return renderValue(value, name, parent);
   };
   for (const binding of bindings) {

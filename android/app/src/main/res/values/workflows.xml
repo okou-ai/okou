@@ -64,14 +64,14 @@
     <string name="workflow_notion_item">Notion database item created</string>
     <string name="workflow_notion_updated">Notion page updated</string>
     <string name="workflow_offline">Connect to load workflows</string>
-    <string name="workflow_offline_cache">Offline · Showing saved data</string>
+    <string name="workflow_offline_cache">Offline · Showing last loaded data</string>
     <string name="workflow_offline_changes">Connect to save. Your changes are still here.</string>
     <string name="workflow_pause">Pause</string>
     <string name="workflow_paused">Automations paused</string>
     <string name="workflow_private">Only me</string>
     <string name="workflow_purpose">Purpose</string>
     <string name="workflow_recent_runs">Recent automation runs</string>
-    <string name="workflow_refresh_failed">Could not refresh. Showing saved data.</string>
+    <string name="workflow_refresh_failed">Could not refresh. Showing last loaded data.</string>
     <string name="workflow_rule_paused">Paused</string>
     <string name="workflow_rule_stays_enabled">This rule stays enabled when saved.</string>
     <string name="workflow_rule_stays_paused">This rule stays paused until you enable it.</string>

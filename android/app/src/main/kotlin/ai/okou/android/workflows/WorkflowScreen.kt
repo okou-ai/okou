@@ -702,7 +702,7 @@ private fun WorkflowDetailPane(
 
 @Composable
 private fun WorkflowDetailHeader(detail: WorkflowDetail) {
-    Column(Modifier.padding(bottom = 12.dp)) {
+    Column(Modifier.padding(bottom = 20.dp)) {
         Text(
             detail.displayName ?: detail.name,
             Modifier.semantics { heading() }.testTag("workflow_detail_title"),
