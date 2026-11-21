@@ -77,7 +77,8 @@ export function retireWorkflowAttachmentSql(
   if (attachments?.kind !== "bundle") {
     return sql`SELECT NULL WHERE false`;
   }
-  // The copy reads immutable content; only the retained source owns this upload.
+  // Updating a copy must leave the source Workflow's upload intact.
+  // https://github.com/okou-ai/okou/issues/46783
   if (
     isMigratedWorkflowAttachment({ ...owner, objectKey: attachments.objectKey })
   ) {

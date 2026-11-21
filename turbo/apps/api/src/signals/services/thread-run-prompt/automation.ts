@@ -34,7 +34,9 @@ export function createAutomationThreadPrompt(
       return null;
     }
     // Invoke the same ordinary Workflow name that the Runner will mount.
-    // Official Workflow names retain the staff cutover's compatibility rule.
+    // A queued staff event can still carry the old name. Use the live Official
+    // Workflow name until those events drain.
+    // https://github.com/okou-ai/okou/issues/46783
     const workflowName =
       target?.ordinaryWorkflowName ??
       (target?.workflow.orgId === STAFF_SINGLE_AGENT_ORG_ID &&
