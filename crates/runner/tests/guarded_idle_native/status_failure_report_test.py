@@ -14,7 +14,7 @@ import cleanup_report as cleanup
 import report
 import report_test
 import status_failure_report as failure
-from progress_report_fixture import foreground_heartbeat
+from progress_report_fixture import foreground_heartbeat, joined_observer
 
 
 class StatusFailureReportTests(unittest.TestCase):
@@ -66,9 +66,7 @@ class StatusFailureReportTests(unittest.TestCase):
                 {"policy": self.policy, "published_status": baseline, "status_path": status_path,
                     "receiver_polled_pending": True, "coverage": first},
                 {"pool_held_ns": at(6), "status_held_ns": at(7), "heartbeat_pending_ns": at(8),
-                    "heartbeat_polled_pending": True, "observer": {"started_ns": at(9),
-                        "completed_ns": at(10), "available_bytes": 32*gib, "age_ns": 2,
-                        "read_duration_ns": 1, "joined": True}, "tracker_shutdown_pending": True,
+                    "heartbeat_polled_pending": True, "observer": joined_observer(at(9), at(10)), "tracker_shutdown_pending": True,
                     "accounting_shutdown_pending": True, "coverage": covered},
                 {"pool_released_ns": at(13), "status_held_ns": at(7),
                     "heartbeat": foreground_heartbeat(runner, 1, at(14), at(15), (2, 4096)),

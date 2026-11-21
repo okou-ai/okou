@@ -15,7 +15,7 @@ import cleanup_report as cleanup
 import report
 import report_test
 import status_failure_report_test as failure_test
-from progress_report_fixture import foreground_heartbeat
+from progress_report_fixture import foreground_heartbeat, joined_observer
 
 
 class BatchAbaReportTests(unittest.TestCase):
@@ -51,8 +51,7 @@ class BatchAbaReportTests(unittest.TestCase):
             empty = {k:v for k,v in current.items() if k != "idle_sandboxes"}
             empty["updated_at"] = "2026-10-19T02:00:03Z"
             def observer(start, end):
-                return {"started_ns":at(start),"completed_ns":at(end),"available_bytes":32*1024**3,
-                        "age_ns":2,"read_duration_ns":1,"joined":True}
+                return joined_observer(at(start), at(end))
             values = (
                 {"policy":self.policy,"status_path":str(self.root/f"case-{index}"/"status.json"),
                     "published_status":initial,"selected_revision":1,"source_read_blocked":True,
