@@ -72,6 +72,7 @@ import {
   contextProjectionSchema,
 } from "./context-rowset";
 import { createGlobalModelContext } from "./execution-global-model-context.service";
+import { createExecutionPackageSources } from "./execution-package-sources";
 import { createExecutionOrgMemberContext } from "./execution-org-member-context.signals";
 import type { ExecutionMemberMetadata } from "./execution-member-metadata.service";
 import {
@@ -113,6 +114,9 @@ export interface AgentRunContextSignals {
   readonly userId: string;
   readonly orgId: string;
   readonly chatThreadId: string;
+  readonly executionPackageSources$: ReturnType<
+    typeof createExecutionPackageSources
+  >;
   readonly orgRows$: Computed<Promise<ExecutionOrgRows>>;
   readonly orgMetadata$: Computed<Promise<RunOrgMetadata | null>>;
   readonly plan$: Computed<Promise<OrgPlanCapabilities | null>>;
@@ -519,6 +523,9 @@ function createIdentityContext(
     ...modelSources,
     memberMetadata$,
     ...requestSources,
+    executionPackageSources$:
+      sharedMember?.executionPackageSources$ ??
+      createExecutionPackageSources(scope),
     selectedImageModel$:
       sharedMember?.selectedImageModel$ ??
       createSelectedImageModel(memberMetadata$),

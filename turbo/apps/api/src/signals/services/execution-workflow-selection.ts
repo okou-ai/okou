@@ -11,19 +11,15 @@ import {
   contentBundleSchema,
   type ContentBundle,
 } from "@okouai/api-contracts/contracts/content-bundle";
-import { BUILT_IN_SKILLS } from "@okouai/core/built-in-skills";
 import {
   STAFF_SINGLE_AGENT_ORG_ID,
   staffWorkflowCopyId,
 } from "@okouai/core/single-agent-migration";
-import { workflows } from "@okouai/db/schema/workflow";
-import { and, eq, isNull, notInArray, or, sql } from "drizzle-orm";
-import { array, object, string, unknown, uuid, type infer as Infer } from "zod";
 import { logger } from "../../lib/log";
-import {
-  memberInstructionsSelectionSql,
-  type ExecutionPackageScope,
-} from "./execution-instructions-selection";
+import type {
+  ExecutionPackageScope,
+  ExecutionPackageSources,
+} from "./execution-package-sources";
 import type { OfficialWorkflowObservation } from "./official-workflow-run.service";
 import {
   resolveRunSkillVolumes,
@@ -33,16 +29,6 @@ import { normalizeMountOverlay } from "./storage-mount-overlay";
 import type { ThreadAutomationTarget } from "./thread-automation-context.service";
 
 const log = logger("api:execution-workflows");
-
-export const executionPackageSourcesSchema = object({
-  memberInstructions: unknown(),
-  workflows: array(
-    object({ id: uuid(), name: string(), contentBundle: unknown() }),
-  ),
-});
-export type ExecutionPackageSources = Infer<
-  typeof executionPackageSourcesSchema
->;
 
 export interface CapturedExecutionPackages {
   readonly workflows: readonly {
@@ -56,37 +42,6 @@ export type ExecutionPackageMounts = Pick<
   PreparedExecutionContext,
   "officialWorkflowBundles" | "seedSkillBundles" | "templateGuidanceBundles"
 >;
-
-/**
- * Shared projection for prompt picks and the Automation target statement.
- * Mount exclusions apply to the captured winner for each Workflow name.
- */
-export function executionPackageSourcesSql(scope: ExecutionPackageScope) {
-  return sql`(
-    WITH selected_workflows AS (
-      SELECT DISTINCT ON (${workflows.name}) ${workflows.id} AS id,
-        ${workflows.name} AS name, ${workflows.contentBundle} AS "contentBundle"
-      FROM ${workflows}
-      WHERE ${and(
-        eq(workflows.orgId, scope.orgId),
-        isNull(workflows.officialDefinitionName),
-        or(
-          eq(workflows.visibility, "public"),
-          eq(workflows.ownerUserId, scope.userId),
-        ),
-        notInArray(workflows.name, [...BUILT_IN_SKILLS]),
-      )}
-      ORDER BY ${workflows.name},
-        (${workflows.visibility} = 'private' AND ${workflows.ownerUserId} = ${scope.userId}) DESC,
-        ${workflows.createdAt}, ${workflows.id}
-    )
-    SELECT jsonb_build_object(
-      'memberInstructions', ${memberInstructionsSelectionSql(scope)},
-      'workflows', (SELECT COALESCE(jsonb_agg(to_jsonb(selected_workflows) ORDER BY name), '[]'::jsonb)
-        FROM selected_workflows)
-    )
-  )`;
-}
 
 export function resolveOrdinaryAutomationWorkflowName(
   target: Pick<ThreadAutomationTarget, "automation" | "workflow">,

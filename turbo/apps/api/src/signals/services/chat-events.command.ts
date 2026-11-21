@@ -339,6 +339,7 @@ const resolveChatAgentRunSourceById$ = command(
     signal: AbortSignal,
   ): Promise<{
     readonly annotation: ChatAgentRunSourceAnnotation | null;
+    readonly autonomyBudget: number;
   } | null> => {
     const db = get(db$);
     const [source] = await db
@@ -378,7 +379,7 @@ const resolveChatAgentRunSourceById$ = command(
             threadId: source.threadId,
             titleSnapshot: agentRunSourceTitleSnapshot(source.title),
           };
-    return { annotation };
+    return { annotation, autonomyBudget: source.autonomyBudget };
   },
 );
 const resolveNormalSendAgentRunSource$ = command(
@@ -393,6 +394,7 @@ const resolveNormalSendAgentRunSource$ = command(
   ): Promise<
     | {
         readonly source: ChatAgentRunSourceAnnotation | null;
+        readonly sourceAutonomyBudget: number | null;
       }
     | {
         readonly response: ReturnType<typeof badRequestMessage>;
@@ -432,10 +434,10 @@ const resolveNormalSendAgentRunSource$ = command(
           ),
         };
       }
-      return { source: resolved.annotation };
+      return { source: resolved.annotation, sourceAutonomyBudget: null };
     }
     if (params.auth.tokenType !== "agent") {
-      return { source: null };
+      return { source: null, sourceAutonomyBudget: null };
     }
     const resolved = await set(
       resolveChatAgentRunSourceById$,
@@ -453,7 +455,10 @@ const resolveNormalSendAgentRunSource$ = command(
         ),
       };
     }
-    return { source: resolved.annotation };
+    return {
+      source: resolved.annotation,
+      sourceAutonomyBudget: resolved.autonomyBudget,
+    };
   },
 );
 /** A started source resolution; its outcome is observed after authorization. */
@@ -1036,6 +1041,7 @@ function normalSendInputFacts(
   args: NormalSendArgs,
   chatThreadId: string,
   event: Pick<EnqueuedChatInputFacts, "id" | "userMessage" | "modelSelection">,
+  sourceAutonomyBudget: number | null,
 ): EnqueuedChatInputFacts {
   return {
     orgId: args.orgId,
@@ -1046,6 +1052,7 @@ function normalSendInputFacts(
     modelSelection: event.modelSelection,
     requiredOfficialWorkflowIds: args.requiredOfficialWorkflowIds,
     captureNetworkBodies: Boolean(args.body.captureNetworkBodies),
+    ...(sourceAutonomyBudget === null ? {} : { sourceAutonomyBudget }),
     ...(args.requestReceivedAt === undefined
       ? {}
       : { requestReceivedAt: args.requestReceivedAt }),
@@ -1551,6 +1558,7 @@ const createdSendThreadSelection = Object.freeze({
 
 interface NormalSendInput {
   readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
+  readonly sourceAutonomyBudget: number | null;
   readonly thread: SendThread;
   readonly event: ReturnType<typeof normalSendEvent>;
   readonly attachFileMetadata: readonly ResolvedChatAttachment[];
@@ -2131,6 +2139,7 @@ const prepareNormalSend$ = command(
   ): Promise<
     | {
         readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
+        readonly sourceAutonomyBudget: number | null;
         readonly catalog: ModelCatalog;
       }
     | NormalSendFailure
@@ -2164,7 +2173,11 @@ const prepareNormalSend$ = command(
     ) {
       return badRequestMessage(`Unknown model "${args.body.model}"`);
     }
-    return { agentRunSource: source.source, catalog };
+    return {
+      agentRunSource: source.source,
+      sourceAutonomyBudget: source.sourceAutonomyBudget,
+      catalog,
+    };
   },
 );
 const normalSendThreadTouch$ = command(
@@ -2463,7 +2476,7 @@ const prepareNormalSendModels$ = command(
 );
 
 const prepareNormalSendContext$ = command(
-  async ({ set }, request: NormalSendRequest, signal: AbortSignal) => {
+  async ({ get, set }, request: NormalSendRequest, signal: AbortSignal) => {
     // MCP attribution is server-owned. Reject a forged source even on an
     // idempotent retry, before any read starts.
     if (
@@ -2519,6 +2532,7 @@ const prepareNormalSendContext$ = command(
     );
     // Start the remaining reads before authorization and reuse the same context in the picker.
     set(preloadAgentRunContext$, context, signal);
+    waitUntil(settle(get(context.executionPackageSources$)));
     // Start the passive attachment read in this batch. Only a validated send
     // consumes it and asks storage to verify an object.
     const attachmentRecords = set(
@@ -2589,7 +2603,14 @@ const publishPreparedNormalSend$ = command(
           ...(enqueueCommit ? { enqueueCommit } : {}),
           ...(publishedLease ? { publishedLease } : {}),
           context,
-          requestInput: normalSendInputFacts(args, thread.threadId, event),
+          requestInput: normalSendInputFacts(
+            args,
+            thread.threadId,
+            event,
+            event.agentRunContext === undefined
+              ? null
+              : publication.input.sourceAutonomyBudget,
+          ),
         },
         signal,
       ),
@@ -2720,6 +2741,7 @@ export const sendNormalEvent$ = command(
               event,
               attachFileMetadata,
               agentRunSource: prepared.agentRunSource,
+              sourceAutonomyBudget: prepared.sourceAutonomyBudget,
               replacementTarget: revocation?.replacementTarget,
             },
             context,

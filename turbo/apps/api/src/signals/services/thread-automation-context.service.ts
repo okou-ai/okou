@@ -21,9 +21,9 @@ import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
   executionPackageSourcesSchema,
   executionPackageSourcesSql,
-  resolveOrdinaryAutomationWorkflowName,
   type ExecutionPackageSources,
-} from "./execution-workflow-selection";
+} from "./execution-package-sources";
+import { resolveOrdinaryAutomationWorkflowName } from "./execution-workflow-selection";
 import { officialWorkflowSourcePlan } from "./official-workflow-context.signals";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 import { restoredWorkflowAutomationEventPayload } from "./workflow-automation-context.service";
