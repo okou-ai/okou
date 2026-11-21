@@ -159,9 +159,8 @@ private struct ForkDismissObserver: UIViewControllerRepresentable {
       var host: UIViewController? = self
       while let parent = host?.parent { host = parent }
       var inset: CGFloat = 0
-      if let host, let navigation = Self.findNavigationController(in: host) {
-        inset = navigation.navigationBar.convert(navigation.navigationBar.bounds, to: host.view)
-          .maxY
+      if let host, let bar = Self.findNavigationController(in: host)?.navigationBar {
+        inset = bar.convert(bar.bounds, to: host.view).maxY
       }
       onPresented(ceil(max(0, inset)))
       guard let presentation = host?.presentationController,
