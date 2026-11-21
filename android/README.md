@@ -108,11 +108,13 @@ Signed archive URLs are confined to a snapshot fetch, and credentials belong to
 the authentication owner. Personal Instructions drafts use the separate intent
 store described above.
 
-Pin, pin reorder, rename, mute and archive actions project their visible result
-from memory before the request completes. Canonical event IDs settle these
-changes, including events observed before a snapshot rebase. If an outcome
-cannot be confirmed, Refresh chats reads back the list and clears the unresolved
-projection once that read succeeds.
+Pin, pin reorder, rename, mute, archive and delete project their visible result
+from memory before the request completes. Definitive refusals remove their
+local edits immediately, including any unsent reorder steps. Canonical event
+IDs settle submitted changes, including events observed before a snapshot
+rebase. Transient list reads retry in the background while the list is visible
+in the foreground. If an outcome stays unconfirmed, Refresh chats reads back
+the list and clears the unresolved projection once that read succeeds.
 
 Sending a first message adds a provisional inbox row that opens its pending
 conversation. The list adopts the confirmed row by thread ID. Sending in an

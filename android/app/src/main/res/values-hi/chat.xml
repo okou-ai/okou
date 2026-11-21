@@ -43,6 +43,7 @@
     <string name="chat_unarchive">आर्काइव से निकालें</string>
     <string name="chat_row_action_pending">चैट अपडेट हो रही है…</string>
     <string name="chat_row_action_failed">चैट में हुए बदलाव की पुष्टि नहीं हो सकी।</string>
+    <string name="chat_row_action_rejected">चैट में बदलाव पूरा नहीं हो सका।</string>
     <string name="chat_rename">चैट का नाम बदलें</string>
     <string name="chat_pin">चैट पिन करें</string>
     <string name="chat_unpin">चैट अनपिन करें</string>
