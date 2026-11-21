@@ -19,6 +19,7 @@ import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithText
@@ -470,7 +471,7 @@ class ChatListRootTest {
         compose.onNodeWithContentDescription("Loading chats…").assertExists()
         compose.onNodeWithContentDescription("Switch workspace", substring = true).performClick()
         compose.onNodeWithText("Workspace B").assertExists()
-        compose.onNodeWithText("Workspace A").assertIsSelected().performClick()
+        compose.onNode(hasText("Workspace A") and isSelectable()).assertIsSelected().performClick()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Display mode").assertExists()
         (compose.activity.application as ChatListApplication).responseGate.countDown()
