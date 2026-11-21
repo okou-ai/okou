@@ -5,13 +5,15 @@ import {
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { RunPrompt } from "../run-prompt-and-skills";
+import type { PickedThreadInputEvent } from "./types";
+
 export function createPhoneUsePrompt(
-  grant$: Computed<Promise<{ deviceId: string; grantId: string } | null>>,
-  featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
-) {
+  event$: Computed<Promise<PickedThreadInputEvent | null>>,
+  features$: Computed<Promise<FeatureSwitchContext>>,
+): Computed<Promise<RunPrompt>> {
   return computed(async (get): Promise<RunPrompt> => {
-    const features = await get(featureSwitches$);
-    const grant = await get(grant$);
+    const [event, features] = await Promise.all([get(event$), get(features$)]);
+    const grant = event?.preparation.phoneUseGrant;
     const enabled = isFeatureEnabled(FeatureSwitchKey.PhoneUse, features);
     return {
       systemPromptVariables: {

@@ -8,6 +8,7 @@ import {
   memberMemories,
   memoryVersions,
 } from "@okouai/db/schema/member-memory";
+import { phoneUseDevices, phoneUseGrants } from "@okouai/db/schema/phone-use";
 import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import { computed } from "ccstate";
 import {
@@ -155,7 +156,31 @@ function pickedPromptColumns(
   };
 }
 
-/** Capture availability, the FIFO head, the native binding, and the Memory HEAD together. */
+function pickedPhoneUseGrant(hasCapacity: SQL) {
+  return new QueryBuilder()
+    .select({ deviceId: phoneUseGrants.deviceId, grantId: phoneUseGrants.id })
+    .from(phoneUseGrants)
+    .innerJoin(
+      phoneUseDevices,
+      and(
+        eq(phoneUseDevices.id, phoneUseGrants.deviceId),
+        eq(phoneUseDevices.orgId, phoneUseGrants.orgId),
+        eq(phoneUseDevices.userId, phoneUseGrants.userId),
+        eq(phoneUseDevices.generation, phoneUseGrants.deviceGeneration),
+      ),
+    )
+    .where(
+      and(
+        hasCapacity,
+        eq(phoneUseGrants.orgId, chatThreads.orgId),
+        eq(phoneUseGrants.userId, chatThreads.userId),
+        eq(phoneUseGrants.threadId, chatThreads.id),
+      ),
+    )
+    .as("preparation_phone_use_grant");
+}
+
+/** Capture availability, the FIFO head, its device grants, and the Memory HEAD together. */
 export function createChatRunPreparationSnapshot(
   claim: { readonly orgId: string; readonly chatThreadId: string },
   bootstrap: AgentRunContextSignals,
@@ -172,6 +197,7 @@ export function createChatRunPreparationSnapshot(
     );
     const hasCapacity =
       capacity === 0 ? sql`true` : lt(occupancy.activeCount, capacity);
+    const phoneGrant = pickedPhoneUseGrant(hasCapacity);
     const [row] = await database
       .with(occupancy, head)
       .select({
@@ -190,19 +216,11 @@ export function createChatRunPreparationSnapshot(
           hostId: computerUseHosts.id,
           displayName: computerUseHosts.displayName,
         },
-        head: {
-          id: head.id,
-          chatThreadId: head.chatThreadId,
-          createdAt: head.createdAt,
-          seqId: head.seqId,
-          eventType: head.eventType,
-          contextType: head.contextType,
-          contextId: head.contextId,
-          userMessage: head.userMessage,
-          requiredOfficialWorkflowIds: head.requiredOfficialWorkflowIds,
-          modelSelection: head.modelSelection,
-          sourceAutonomyBudget: head.sourceAutonomyBudget,
+        phoneUseGrant: {
+          deviceId: phoneGrant.deviceId,
+          grantId: phoneGrant.grantId,
         },
+        head: { ...head._.selectedFields },
         ...pickedPromptColumns(
           head,
           hasCapacity,
@@ -234,6 +252,7 @@ export function createChatRunPreparationSnapshot(
           isNull(computerUseHosts.revokedAt),
         ),
       )
+      .leftJoinLateral(phoneGrant, sql`true`)
       .leftJoin(
         memberMemories,
         and(
@@ -277,6 +296,7 @@ export function createChatRunPreparationSnapshot(
         isOfficialWorkflowThread: row.isOfficialWorkflowThread,
         captureNetworkBodies: row.captureNetworkBodies,
         computerUseHostGrant: row.computerUseHostGrant,
+        phoneUseGrant: row.phoneUseGrant,
         ...(owned?.projectReferences
           ? { projectReferences: owned.projectReferences }
           : {}),

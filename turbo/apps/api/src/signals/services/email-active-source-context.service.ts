@@ -182,7 +182,6 @@ export const loadActiveEmailIntegrationContext$ = command(
           ...args,
           mailboxes: selection.mailboxes,
           snapshot,
-          policies: null,
           networkPolicies: Object.fromEntries(
             refreshes.map((refresh) => {
               return [refresh.connectorSlug, refresh.networkPolicy];
