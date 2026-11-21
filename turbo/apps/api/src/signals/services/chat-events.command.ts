@@ -111,7 +111,6 @@ import {
   queuedChatThreadPublicationPlan,
   type PublishedChatThreadLease,
 } from "./queued-chat-thread.service";
-import { mcpClientDisplayName } from "./mcp-client-display-name.service";
 import {
   measureChatEnqueue,
   ChatEnqueueTimingCollector,
@@ -1390,9 +1389,6 @@ function normalSendUserMessage(
             type: "source",
             kind: "mcp",
             clientId: args.auth.clientId,
-            ...(args.auth.clientName === undefined
-              ? {}
-              : { clientName: args.auth.clientName }),
           },
         ],
       };
@@ -3329,16 +3325,6 @@ export const handleSendChatEvent$ = command(
     if (!isNormalSendBody(body)) {
       return badRequestMessage("Prompt is required");
     }
-    const clientName =
-      auth.tokenType === "oauth"
-        ? await measureChatEnqueue(
-            get(chatEnqueueTiming$),
-            "mcp_attribution",
-            () => {
-              return mcpClientDisplayName(auth.clientId, signal);
-            },
-          )
-        : undefined;
     signal.throwIfAborted();
     const timing = get(chatEnqueueTiming$);
     const result = await set(
@@ -3348,7 +3334,7 @@ export const handleSendChatEvent$ = command(
         projectId,
         projectReferences,
         body,
-        auth: auth.tokenType === "oauth" ? { ...auth, clientName } : auth,
+        auth,
         userId: auth.userId,
         orgId: auth.orgId,
         requestReceivedAt: get(apiStartTime$),
