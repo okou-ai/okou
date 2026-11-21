@@ -14,7 +14,6 @@ import { orgPlanCapabilitiesFromRow } from "./org-plan-entitlement-read.service"
 const rawDecoder = zodDriverValueDecoder(zUnknown());
 const metadataSchema = object({
   credits: number(),
-  defaultAgentId: string().nullable(),
   openrouterPreset: string().nullable(),
 });
 const planSchema = object({
@@ -61,7 +60,6 @@ export function executionOrgQuery(orgId: string, at: Date, attached?: SQL) {
         metadata:
           sql`CASE WHEN ${orgMetadata.orgId} IS NULL THEN NULL ELSE jsonb_build_object(
         'credits', ${orgMetadata.credits},
-        'defaultAgentId', ${orgMetadata.defaultAgentId},
         'openrouterPreset', ${orgMetadata.openrouterPreset}) END`
             .mapWith(rawDecoder)
             .as("metadata"),

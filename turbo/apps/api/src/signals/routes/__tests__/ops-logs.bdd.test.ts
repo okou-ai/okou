@@ -155,7 +155,6 @@ describe("OPS-01: user data export", () => {
       }
       const peerAgent = await bdd.createAgent(peer, { visibility: "private" });
       const peerThread = await chat.createThread(peer, {
-        agentId: peerAgent.agentId,
         title: "Another user's private thread",
       });
 

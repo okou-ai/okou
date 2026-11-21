@@ -237,7 +237,7 @@ describe("POST /api/welcome-chat-threads", () => {
     );
     const sent = await chat.requestSendEvent(
       actor,
-      { agentId, threadId: body.id, prompt: "Tell me about these examples" },
+      { threadId: body.id, prompt: "Tell me about these examples" },
       [201],
     );
     expect(sent.body).toMatchObject({ threadId: body.id });

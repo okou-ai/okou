@@ -51,7 +51,6 @@ describe("Runner first-start Thread binding", () => {
       await chat.requestSendEvent(
         owned.actor,
         {
-          agentId: owned.agentId,
           threadId: first.threadId,
           clientEventId,
           prompt: "Cancel while execution content URLs are being signed",
@@ -114,7 +113,6 @@ describe("Runner first-start Thread binding", () => {
       await chat.requestSendEvent(
         owned.actor,
         {
-          agentId: owned.agentId,
           threadId: first.threadId,
           clientEventId,
           prompt: "Recall this waiting input before execution",
@@ -124,7 +122,6 @@ describe("Runner first-start Thread binding", () => {
       await chat.requestSendEvent(
         owned.actor,
         {
-          agentId: owned.agentId,
           threadId: first.threadId,
           clientEventId: randomUUID(),
           revokesEventId: clientEventId,

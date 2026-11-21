@@ -1522,7 +1522,6 @@ describe("Suggestion custom follow-ups", () => {
       parts: [contextPart, background],
     };
     const body = {
-      agentId: fixture.agentId,
       threadId: thread.body.id,
       clientEventId: randomUUID(),
       prompt: "Evaluate the unresolved budget",
@@ -1704,7 +1703,6 @@ describe("Suggestion custom follow-ups", () => {
       chatEventsContract,
     );
     const body = {
-      agentId: fixture.agentId,
       threadId: thread.body.id,
       prompt: "Compare both decisions",
       hasTextContent: true,
@@ -1867,7 +1865,6 @@ describe("Suggestion custom follow-ups", () => {
       chatEventsContract,
     );
     const body = {
-      agentId: fixture.agentId,
       threadId: thread.body.id,
       prompt: "Review the risks",
       userMessage: document,

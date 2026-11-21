@@ -2231,7 +2231,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const sameOrgUser = bdd.user({ orgId: actor.orgId });
         const crossUser = await chat.requestSendEvent(
           sameOrgUser,
-          { agentId, threadId: first.threadId, prompt: "steal the session" },
+          { threadId: first.threadId, prompt: "steal the session" },
           [404],
         );
         expectApiError(crossUser.body);
@@ -2242,7 +2242,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const crossOrg = await chat.requestSendEvent(
           otherOrgUser,
           {
-            agentId,
             threadId: first.threadId,
             prompt: "steal the session from another organization",
           },
@@ -2461,7 +2460,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             prompt: "keep the thread busy before its next input",
           });
           const waiting = await owned.sendWaitingChatInput(owned.actor, {
-            agentId: owned.agentId,
             threadId: blocker.threadId,
             prompt: "pending launch timestamp should reflect durable insert",
           });
@@ -2491,10 +2489,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("accepts session and PAT cancellation while rejecting run-scoped tokens", async () => {
         const api = createRunsApi(context);
         const owned = await publicChatActor(context);
-        const { actor, agentId } = owned;
+        const { actor } = owned;
         await owned.run(async () => {
           const sessionRun = await owned.sendChatRun(actor, {
-            agentId,
             prompt: "cancel with a Clerk session",
           });
           await api.requestCancelRun(actor, sessionRun.runId, [200]);
@@ -2507,12 +2504,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           );
 
           const run = await owned.sendChatRun(actor, {
-            agentId,
             prompt: "cancel with accepted credential types",
           });
 
           const source = await owned.sendChatRun(actor, {
-            agentId,
             prompt: "issue real run-scoped credentials",
           });
           const { execution: sourceExecution } = await owned.runExecution(
@@ -2566,7 +2561,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           member,
           {
             threadId: owned.threadId,
-            agentId,
             prompt: "continue another member's thread",
           },
           [404],
@@ -2713,7 +2707,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           throw new Error("Expected limited-free bootstrap agent");
         }
         await bdd.completeOnboarding(actor);
-        const agentId = onboarding.defaultAgentId;
+
         await expect(api.readBillingStatus(actor)).resolves.toMatchObject({
           tier: "limited-free-1",
           credits: 0,
@@ -2733,7 +2727,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }),
         ).toStrictEqual(["auto"]);
 
-        const thread = await chat.createThread(actor, { agentId, model: null });
+        const thread = await chat.createThread(actor, { model: null });
         await expect(
           chat.readThreadMetadata(actor, thread.id),
         ).resolves.toMatchObject({
@@ -2752,7 +2746,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const input = await chat.requestSendEvent(
             actor,
             {
-              agentId,
               threadId: thread.id,
               prompt,
               model,
@@ -2878,7 +2871,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
         const selectedModel = "gpt-6-sol";
-        const { actor, agentId } = await entitledRunActor();
+        const { actor } = await entitledRunActor();
 
         await createBddIntegrationApi(context)
           .configureNativeSubscriptionModels(actor)
@@ -2890,7 +2883,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         preparePiSandboxExecution();
 
         const sent = await chat.sendAndLaunch(actor, {
-          agentId,
           prompt: "personal Codex GPT 6 model provider",
           model: selectedModel,
         });
@@ -3851,7 +3843,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         "dispatches a public Codex subscription generation $generation with its captured tier",
         async ({ generation, serviceTier }) => {
           const api = createRunsApi(context);
-          const { actor, agentId } = await entitledRunActor();
+          const { actor } = await entitledRunActor();
           preparePiSandboxExecution();
           const ownedRuns = publicRunOwner(context, actor);
 
@@ -3860,7 +3852,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             const run = await createChatFilesBddApi(context).sendAndLaunch(
               actor,
               {
-                agentId,
                 model: "gpt-6-luna",
                 prompt: "execute with a captured Codex subscription route",
                 runOptions: {
@@ -9263,7 +9254,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("keeps Preview bypass outside Guest dispatch", async () => {
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
-        const { actor, agentId } = await entitledRunActor();
+        const { actor } = await entitledRunActor();
         const previewBypass = "bdd-preview-bypass";
         const requests = [
           {
@@ -9293,7 +9284,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const sent = await chat.requestSendEvent(
             actor,
             {
-              agentId,
               prompt: request.prompt,
               model: "claude-fable-5-1",
               clientEventId,
@@ -9532,18 +9522,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
         const owned = await publicChatActor(context);
-        const { actor, agentId } = owned;
+        const { actor } = owned;
         await owned.run(async () => {
           const completed = await owned.sendChatRun(actor, {
-            agentId,
             prompt: "complete before heartbeat",
           });
           const failed = await owned.sendChatRun(actor, {
-            agentId,
             prompt: "fail before heartbeat",
           });
           const cancelled = await owned.sendChatRun(actor, {
-            agentId,
             prompt: "cancel before heartbeat",
           });
 
@@ -9604,10 +9591,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const fixture = await publicChatActor(context, {
           optionalEnvironmentNames: ["AXIOM_TOKEN_TELEMETRY"],
         });
-        const { actor, agentId, runnerGroup } = fixture;
+        const { actor, runnerGroup } = fixture;
         await fixture.run(async () => {
           const created = await fixture.sendChatRun(actor, {
-            agentId,
             prompt: "report snapshots and telemetry",
           });
           await api.heartbeatRunner(runnerGroup);
@@ -9880,9 +9866,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const webhooks = createWebhookCallbackApi(context);
           const modelProvider = args.modelProvider ?? "claude-code-oauth-token";
           const selectedModel = "claude-fable-5-1";
-          const { actor, agentId, runnerGroup } = await entitledRunActor();
+          const { actor, runnerGroup } = await entitledRunActor();
           const run = await chat.sendAndLaunch(actor, {
-            agentId,
             model: selectedModel,
             prompt: `fail ${modelProvider} with ${args.failureReason}`,
           });
@@ -10473,10 +10458,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
         const owned = await publicChatActor(context);
-        const { actor, agentId } = owned;
+        const { actor } = owned;
         await owned.run(async () => {
           const run = await owned.sendChatRun(actor, {
-            agentId,
             prompt: "complete without native session outputs",
           });
           const execution = await owned.executionInput(run.runId);
@@ -10516,10 +10500,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
         const owned = await publicChatActor(context);
-        const { actor, agentId } = owned;
+        const { actor } = owned;
         await owned.run(async () => {
           const run = await owned.sendChatRun(actor, {
-            agentId,
             prompt: "cancel before the completion report",
           });
           const execution = await owned.executionInput(run.runId);
@@ -10571,12 +10554,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
         const owned = await publicChatActor(context);
-        const { actor, agentId } = owned;
+        const { actor } = owned;
         await owned.run(async () => {
           await api.ensurePersonalSubscriptionModel(actor, NATIVE_RUNNER_ROUTE);
 
           const run = await owned.sendChatRun(actor, {
-            agentId,
             prompt: "publish outputs, cancel, then complete",
           });
           const { execution } = await owned.runExecution(run.runId);
@@ -10615,11 +10597,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
         const owned = await publicChatActor(context);
-        const { actor, agentId } = owned;
+        const { actor } = owned;
         await owned.run(async () => {
           await api.ensurePersonalSubscriptionModel(actor, NATIVE_RUNNER_ROUTE);
           const run = await owned.sendChatRun(actor, {
-            agentId,
             prompt: "publish outputs without vars",
           });
           const { execution } = await owned.runExecution(run.runId);
@@ -11607,7 +11588,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         // At capacity the chat input waits in its thread without a run.
         const waiting = await piExecutionFixture.sendWaitingChatInput(actor, {
-          agentId,
           prompt: "pick this chat input",
         });
         // Finish this enqueue request's finite preload/pick while both slots are occupied.

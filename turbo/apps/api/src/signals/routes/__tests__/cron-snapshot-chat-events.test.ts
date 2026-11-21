@@ -102,7 +102,6 @@ describe("cron snapshot chat events", () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const run = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Archive a provider usage-limit failure",
       });
       const execution = await owned.executionInput(run.runId);
@@ -179,7 +178,6 @@ describe("cron snapshot chat events", () => {
       await chat.requestSendEvent(
         owned.actor,
         {
-          agentId: owned.agentId,
           threadId: run.threadId,
           clientEventId,
           prompt: "Continue after the archived failure",
@@ -279,13 +277,13 @@ describe("cron snapshot chat events", () => {
     bdd.acceptAgentStorageWrites();
     const chat = createChatFilesBddApi(context);
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
-    const agent = await bdd.createAgent(owner, {
+    await bdd.createAgent(owner, {
       displayName: "Concurrent snapshot deletion agent",
     });
     const marker = `snapshot-deletion-${randomUUID()}`;
     const threadIds: string[] = [];
     for (let index = 0; index < 2; index += 1) {
-      const thread = await chat.createThread(owner, { agentId: agent.agentId });
+      const thread = await chat.createThread(owner, {});
       const sent = await chat.requestSendEvent(
         owner,
         { threadId: thread.id, model: null, prompt: marker },
@@ -380,7 +378,7 @@ describe("cron snapshot chat events", () => {
     const bdd = createBddApi(context);
     const chat = createChatFilesBddApi(context);
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
-    const agent = await bdd.createAgent(owner, {
+    await bdd.createAgent(owner, {
       displayName: "Snapshot publication agent",
     });
     const objects = mockSnapshotStorage();
@@ -389,9 +387,7 @@ describe("cron snapshot chat events", () => {
       `snapshot-first-${randomUUID()}`,
       `snapshot-second-${randomUUID()}`,
     ];
-    const { id: threadId } = await chat.createThread(owner, {
-      agentId: agent.agentId,
-    });
+    const { id: threadId } = await chat.createThread(owner, {});
     let priorRows: ChatEventRow[] = [];
     let priorSeqId = 0;
     for (const marker of markers) {

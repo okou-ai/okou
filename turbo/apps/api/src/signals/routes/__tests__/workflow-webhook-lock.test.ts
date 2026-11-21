@@ -61,7 +61,6 @@ async function scenario() {
     name: "webhook-lock-test",
   });
   const thread = await chat.createThread(org.actor, {
-    agentId: org.defaultAgentId,
     title: "Unrelated chat",
   });
   return { ...org, workflowId, thread };

@@ -51,7 +51,6 @@ async function dispatchedChatRun(
   prompt: string,
 ) {
   const run = await fixture.sendChatRun(entitled.actor, {
-    agentId: entitled.agentId,
     prompt,
   });
   let active = true;

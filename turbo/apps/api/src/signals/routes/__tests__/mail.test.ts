@@ -192,7 +192,6 @@ async function createOutlookMailFixture() {
       visibility: "private",
     });
     const thread = await chat.createThread(owner.actor, {
-      agentId: agent.agentId,
       title: "Outlook review",
     });
     const start = await startMailAccountOAuth(owner.actor, "outlook-mail");
@@ -976,7 +975,6 @@ async function seedGmailMailCardFixture(
     await bdd.deleteAgent(actor, agent.agentId);
   });
   const thread = await chat.createThread(actor, {
-    agentId: agent.agentId,
     title: "Mail review",
   });
   mockGmailConnectorOAuth({
@@ -1044,7 +1042,6 @@ async function createPublicGmailMailCardFixture(
     agentId = agent.agentId;
     const thread = await own(() => {
       return chat.createThread(actor, {
-        agentId: agent.agentId,
         title: "Mail review",
       });
     });
@@ -1223,7 +1220,6 @@ describe("POST /api/mail/drafts/link", () => {
 
       const otherThread = await fixture.run(() => {
         return chat.createThread(fixture.actor, {
-          agentId: fixture.agent.agentId,
           title: "Concurrent mail conflict",
         });
       });
@@ -1557,7 +1553,6 @@ describe("POST /api/mail/drafts/link", () => {
       });
       const newThread = await fixture.run(() => {
         return chat.createThread(fixture.actor, {
-          agentId: fixture.agent.agentId,
           title: "Default Gmail projection",
         });
       });
@@ -1694,7 +1689,6 @@ describe("POST /api/mail/drafts/link", () => {
         state,
       });
       const source = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Link the existing Gmail draft",
       });
       const fixture = {
@@ -1709,7 +1703,6 @@ describe("POST /api/mail/drafts/link", () => {
         throw new Error("Expected the Runner-issued connector token");
       }
       const otherThread = await chat.createThread(owned.actor, {
-        agentId: owned.agentId,
         title: "Another mail review",
       });
       await accept(
@@ -2593,7 +2586,6 @@ describe("POST /api/mail/drafts/link", () => {
     // The Gmail draft itself survives and is no longer claimed by the deleted
     // chat, so another chat can link it instead of hitting "already linked".
     const otherThread = await chat.createThread(fixture.actor, {
-      agentId: fixture.agent.agentId,
       title: "Relinked mail review",
     });
     const relinked = await accept(

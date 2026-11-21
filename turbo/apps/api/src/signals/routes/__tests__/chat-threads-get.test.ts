@@ -27,12 +27,11 @@ interface ChatThreadFixture {
 async function seedChatThread(title: string): Promise<ChatThreadFixture> {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
-  const agent = await bdd.createAgent(actor, {
+  await bdd.createAgent(actor, {
     displayName: "Chat thread metadata agent",
     visibility: "private",
   });
   const thread = await chat.createThread(actor, {
-    agentId: agent.agentId,
     title,
   });
   if (!actor.orgId) {

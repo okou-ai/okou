@@ -144,7 +144,6 @@ test("deletes retired sibling previews without losing the surviving Browser reco
     for (let index = 0; index < 3; index++) {
       // Cleanup needs a thread-owned Browser, without a Run lifecycle.
       const thread = await chat.createThread(f.owned.actor, {
-        agentId: f.owned.agentId,
         model: f.owned.model,
       });
       const current = { threadId: thread.id };

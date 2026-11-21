@@ -55,7 +55,6 @@ describe("shared SDK ingestion", () => {
     // the run through public endpoints and keep route tests on HTTP outcomes.
     const owned = await publicChatActor(context);
     const { runId } = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "measure rootfs and home independently",
     });
     const { execution } = await owned.runExecution(runId);
@@ -280,7 +279,6 @@ describe("shared SDK ingestion", () => {
     // exposes it. Use the real webhook to cover validation and projection.
     const owned = await publicChatActor(context);
     const { runId } = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "check archive startup",
     });
     const { execution } = await owned.runExecution(runId);
@@ -383,7 +381,6 @@ describe("shared SDK ingestion", () => {
     // its validated, allowlisted SDK ingest payload is this suite's boundary.
     const owned = await publicChatActor(context);
     const { runId } = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "observe archive staging",
     });
     const { execution } = await owned.runExecution(runId);
@@ -503,7 +500,6 @@ describe("shared SDK ingestion", () => {
     // validation and field projection remain part of this transport contract.
     const owned = await publicChatActor(context);
     const { runId } = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "measure storage batch application",
     });
     const { execution } = await owned.runExecution(runId);

@@ -3452,7 +3452,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     ).toBeTruthy();
 
     const webSend = await chat.sendAndLaunch(actor, {
-      agentId: thread.agentId,
       threadId: thread.chatThreadId,
       prompt: "continue from the web",
     });

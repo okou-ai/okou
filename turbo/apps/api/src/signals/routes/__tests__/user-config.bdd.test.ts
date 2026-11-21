@@ -437,7 +437,6 @@ describe("AUTH-01 sandbox and agent bearers", () => {
       };
       carrier = activeCarrier;
       const run = await fixture.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "read the identity issued to this Run",
         model: "claude-fable-5-1",
       });
@@ -474,7 +473,6 @@ describe("AUTH-01 sandbox and agent bearers", () => {
   it("rejects push registration with an execution token", async () => {
     const owned = await publicChatActor(context);
     const run = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "register for push with the issued agent credential",
     });
     const { execution } = await owned.runExecution(run.runId);
@@ -505,7 +503,6 @@ describe("AUTH-01 sandbox and agent bearers", () => {
   it("drops the organization from execution agent identity after public member removal", async () => {
     const owned = await publicChatActor(context);
     const run = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: "read identity after organization membership removal",
     });
     const { execution } = await owned.runExecution(run.runId);

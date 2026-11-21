@@ -86,7 +86,7 @@ describe("accepted Connector preparation", () => {
       mockNow(startedAt);
       const owned = await publicChatActor(context);
       owned.ownsFeatureSwitches();
-      const { actor, agentId } = owned;
+      const { actor } = owned;
       const connector = await owned.run(async () => {
         const connector = await connectors.createCustomConnector(actor, {
           displayName: "Temporary Slack permissions",
@@ -118,7 +118,6 @@ describe("accepted Connector preparation", () => {
         return connector;
       });
       const run = await owned.sendChatRun(actor, {
-        agentId,
         prompt: "use the captured temporary grant",
       });
       const { execution } = await owned.runExecution(run.runId);
@@ -167,7 +166,7 @@ describe("accepted Connector preparation", () => {
   it("retains the first Thread account choice while input is prepared", async () => {
     const owned = await publicChatActor(context);
     owned.ownsFeatureSwitches();
-    const { actor, agentId } = owned;
+    const { actor } = owned;
     const { firstAccount, nextAccount, thread } = await owned.run(async () => {
       const firstAccount = await connectors.connectManualGrant(
         actor,
@@ -182,7 +181,7 @@ describe("accepted Connector preparation", () => {
         { apiKey: "next-runtime-key" },
         { intent: "add", displayName: "Later account" },
       );
-      const thread = await fixture.chat.createThread(actor, { agentId });
+      const thread = await fixture.chat.createThread(actor, {});
       return { firstAccount, nextAccount, thread };
     });
     const selectAccount = async (connectionId: string) => {
@@ -212,7 +211,6 @@ describe("accepted Connector preparation", () => {
     const held = holdAttachment(actor.userId);
     const sending = settleIncludingAbort(
       owned.sendChatRun(actor, {
-        agentId,
         threadId: thread.id,
         prompt: "use the first account",
         userMessage: held.userMessage,
@@ -246,7 +244,6 @@ describe("accepted Connector preparation", () => {
       );
     });
     const next = await owned.sendChatRun(actor, {
-      agentId,
       threadId: thread.id,
       prompt: "use the later account",
     });
@@ -261,7 +258,7 @@ describe("accepted Connector preparation", () => {
     async (change) => {
       const owned = await publicChatActor(context);
       owned.ownsFeatureSwitches();
-      const { actor, agentId } = owned;
+      const { actor } = owned;
       const body = {
         displayName: "Accepted custom source",
         authMode: "none" as const,
@@ -284,7 +281,6 @@ describe("accepted Connector preparation", () => {
       const held = holdAttachment(actor.userId);
       const sending = settleIncludingAbort(
         owned.sendChatRun(actor, {
-          agentId,
           prompt: "use the accepted custom source",
           userMessage: held.userMessage,
         }),
@@ -352,7 +348,6 @@ describe("accepted Connector preparation", () => {
         );
       });
       const next = await owned.sendChatRun(actor, {
-        agentId,
         prompt: "use the later custom source",
       });
       const execution = await owned.runExecution(next.runId);

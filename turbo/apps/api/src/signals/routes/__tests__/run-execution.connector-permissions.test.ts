@@ -61,9 +61,8 @@ async function sharedGrants(
   );
 }
 
-async function executeAndCancel(actor: ApiTestUser, agentId: string) {
+async function executeAndCancel(actor: ApiTestUser) {
   const run = await sendChatRun(actor, {
-    agentId,
     prompt: "use the current connector permission definitions",
   });
   const { execution, sandboxHeaders } = await runExecution(run.runId);
@@ -79,7 +78,7 @@ test("uses current permission definitions after publication with a warm executio
       isolatePg: true,
     })
   )(cronConnectorCatalogContract);
-  const { actor, agentId } = await entitledNativeChatActor();
+  const { actor } = await entitledNativeChatActor();
   await connectors.connectManualGrant(actor, "figma", "api-token", {
     accessToken: "execution-catalog-figma-token",
   });
@@ -162,7 +161,7 @@ test("uses current permission definitions after publication with a warm executio
   }
 
   await publish(original);
-  const first = await executeAndCancel(actor, agentId);
+  const first = await executeAndCancel(actor);
   expect(first.networkPolicies?.figma).toStrictEqual({
     allow: ["file_content:read"],
     deny: [],
@@ -170,7 +169,6 @@ test("uses current permission definitions after publication with a warm executio
     unknownPolicy: "allow",
   });
   const queued = await queueChatRun(actor, {
-    agentId,
     prompt: "use definitions published after this Run was queued",
   });
   const artifact = connectorCatalogArtifactSchema.parse(
@@ -245,9 +243,8 @@ describe("Execution connector permissions", () => {
         ]);
       }
 
-      await executeAndCancel(actor, agentId);
+      await executeAndCancel(actor);
       const queued = await queueChatRun(actor, {
-        agentId,
         prompt: "use the current GitHub permissions for execution",
       });
       if (change === "add") {
@@ -392,11 +389,11 @@ describe("Execution connector permissions", () => {
           }
           return sign(...args);
         });
-        run = await sendChatRun(actor, { agentId, prompt });
+        run = await sendChatRun(actor, { prompt });
         expect(now()).toBe(expiresAt);
       } else {
-        await executeAndCancel(actor, agentId);
-        const queued = await queueChatRun(actor, { agentId, prompt });
+        await executeAndCancel(actor);
+        const queued = await queueChatRun(actor, { prompt });
         mockNow(
           expiry === "expired-before-preparation"
             ? expiresAt

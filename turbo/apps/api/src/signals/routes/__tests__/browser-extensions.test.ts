@@ -159,7 +159,6 @@ async function browserOwner() {
     actor: { ...owned.actor, orgId },
     async startRun() {
       const sent = await chat.sendAndLaunch(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Open a managed browser",
         cloudBrowserEnabled: true,
       });

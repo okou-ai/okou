@@ -52,7 +52,7 @@ async function entitledNativeChatActor(): Promise<
 
 describe("CHAT-02: run-level model overrides", () => {
   it("reuses Codex sessions across account switches with the newly captured account", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     const firewall = createFirewallApi(context);
 
     mockCodexDeviceAuthProvider({
@@ -112,7 +112,6 @@ describe("CHAT-02: run-level model overrides", () => {
     await api.updateUserModelPreference(actor, "gpt-6-astra");
 
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: "start with account A",
       model: "gpt-6-astra",
     });
@@ -152,7 +151,6 @@ describe("CHAT-02: run-level model overrides", () => {
     await flushWaitUntilForTest();
 
     const second = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "continue with account B",
     });
@@ -195,7 +193,6 @@ describe("CHAT-02: run-level model overrides", () => {
     await flushWaitUntilForTest();
 
     const third = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "continue again with account B",
     });
@@ -216,7 +213,7 @@ describe("CHAT-02: run-level model overrides", () => {
   }, 90_000);
 
   it("resumes Claude Code with the current model selection", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     // Claude subscription credentials stay on the native Claude Code harness
     // for every Claude model, so a same-family switch keeps the CLI session.
     await misc.upsertPersonalModelProvider(
@@ -230,7 +227,6 @@ describe("CHAT-02: run-level model overrides", () => {
     await api.updateUserModelPreference(actor, "claude-opus-5-5");
 
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: "start on opus before switching within Claude",
       model: "claude-opus-5-5",
     });
@@ -248,7 +244,6 @@ describe("CHAT-02: run-level model overrides", () => {
       "claude-sonnet-5-5",
     );
     const second = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "continue on sonnet in the same session",
     });
@@ -267,10 +262,9 @@ describe("CHAT-02: run-level model overrides", () => {
   }, 90_000);
 
   it("keeps the Pi session across subscription and Auto model switches", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     await configureSubscriptionPiModel(actor);
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: "start with my subscription model",
       model: "gpt-6-luna",
     });
@@ -292,7 +286,6 @@ describe("CHAT-02: run-level model overrides", () => {
 
     await chat.updateThreadModelSelection(actor, first.threadId, null);
     const second = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "continue with Auto in the same native session",
     });
@@ -315,7 +308,6 @@ describe("CHAT-02: run-level model overrides", () => {
     await flushWaitUntilForTest();
 
     const third = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "return to my subscription without losing the native context",
       model: "gpt-6-luna",
@@ -335,7 +327,7 @@ describe("CHAT-02: run-level model overrides", () => {
   it.each(["claude-code", "pi"] as const)(
     "retains the newer %s producer after delayed initialization and repeated completion",
     async (framework) => {
-      const { actor, agentId } =
+      const { actor } =
         framework === "pi"
           ? await entitledChatActor()
           : await entitledNativeChatActor();
@@ -343,7 +335,6 @@ describe("CHAT-02: run-level model overrides", () => {
         await configureSubscriptionPiModel(actor);
       }
       const first = await sendChatRun(actor, {
-        agentId,
         prompt: "initialize the first native context",
         model: framework === "pi" ? "gpt-6-luna" : "claude-fable-5-1",
       });
@@ -372,7 +363,6 @@ describe("CHAT-02: run-level model overrides", () => {
       await flushWaitUntilForTest();
 
       const second = await sendChatRun(actor, {
-        agentId,
         threadId: first.threadId,
         prompt: "continue with a newer producer",
       });
@@ -428,7 +418,6 @@ describe("CHAT-02: run-level model overrides", () => {
       await waitForRunStatus(actor, first.runId, "completed");
 
       const third = await sendChatRun(actor, {
-        agentId,
         threadId: first.threadId,
         prompt: "inspect the winning native binding",
       });
@@ -443,9 +432,8 @@ describe("CHAT-02: run-level model overrides", () => {
   );
 
   it("saves a released Run's recovery outputs without replacing a newer native binding", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: "fail before native initialization",
       model: "claude-fable-5-1",
     });
@@ -458,7 +446,6 @@ describe("CHAT-02: run-level model overrides", () => {
     await waitForRunStatus(actor, first.runId, "failed");
 
     const second = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "establish the current native context",
     });
@@ -499,7 +486,6 @@ describe("CHAT-02: run-level model overrides", () => {
     );
 
     const third = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "resume the current context after late recovery",
     });
@@ -514,9 +500,8 @@ describe("CHAT-02: run-level model overrides", () => {
   it.each(["failed", "cancelled"] as const)(
     "keeps the first native context fresh when initialization arrives after a %s Run released its slot",
     async (status) => {
-      const { actor, agentId } = await entitledNativeChatActor();
+      const { actor } = await entitledNativeChatActor();
       const first = await sendChatRun(actor, {
-        agentId,
         prompt: "finish without native initialization",
         model: "claude-fable-5-1",
       });
@@ -548,7 +533,6 @@ describe("CHAT-02: run-level model overrides", () => {
       );
       await flushWaitUntilForTest();
       const second = await sendChatRun(actor, {
-        agentId,
         threadId: first.threadId,
         prompt: "start the first native context",
       });
@@ -568,7 +552,7 @@ describe("CHAT-02: run-level model overrides", () => {
   it.each(["claude-code", "pi"] as const)(
     "captures %s initialization during cancellation recovery before releasing the slot",
     async (framework) => {
-      const { actor, agentId } =
+      const { actor } =
         framework === "pi"
           ? await entitledChatActor()
           : await entitledNativeChatActor();
@@ -576,7 +560,6 @@ describe("CHAT-02: run-level model overrides", () => {
         await configureSubscriptionPiModel(actor);
       }
       const first = await sendChatRun(actor, {
-        agentId,
         prompt: "cancel while native initialization is in flight",
         model: framework === "pi" ? "gpt-6-luna" : "claude-fable-5-1",
       });
@@ -604,7 +587,6 @@ describe("CHAT-02: run-level model overrides", () => {
       await failChatRun(first.runId, execution.sandboxHeaders, "Run cancelled");
       await waitForRunStatus(actor, first.runId, "cancelled");
       const second = await sendChatRun(actor, {
-        agentId,
         threadId: first.threadId,
         prompt: "continue from the cancelled native context",
       });
@@ -621,7 +603,7 @@ describe("CHAT-02: run-level model overrides", () => {
   it.each(["claude-code", "pi"] as const)(
     "preserves the %s binding when initialization, completion and cancellation overlap",
     async (framework) => {
-      const { actor, agentId } =
+      const { actor } =
         framework === "pi"
           ? await entitledChatActor()
           : await entitledNativeChatActor();
@@ -629,7 +611,6 @@ describe("CHAT-02: run-level model overrides", () => {
         await configureSubscriptionPiModel(actor);
       }
       const first = await sendChatRun(actor, {
-        agentId,
         prompt: "race native initialization against finalization",
         model: framework === "pi" ? "gpt-6-luna" : "claude-fable-5-1",
       });
@@ -661,7 +642,6 @@ describe("CHAT-02: run-level model overrides", () => {
       const settled = await api.readRun(actor, first.runId);
       expect(["completed", "cancelled"]).toContain(settled.status);
       const second = await sendChatRun(actor, {
-        agentId,
         threadId: first.threadId,
         prompt: "resume after concurrent finalization",
       });
@@ -679,9 +659,8 @@ describe("CHAT-02: run-level model overrides", () => {
     // Two blockers keep the next send waiting, independent of the plan's own
     // concurrency limit.
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: "establish the session before organization capacity fills",
     });
     const firstExecution = await runExecution(first.runId);
@@ -690,15 +669,12 @@ describe("CHAT-02: run-level model overrides", () => {
     await flushWaitUntilForTest();
 
     const blockerOne = await sendChatRun(actor, {
-      agentId,
       prompt: "occupy the first organization slot",
     });
     const blockerTwo = await sendChatRun(actor, {
-      agentId,
       prompt: "occupy the second organization slot",
     });
     const waiting = await sendWaitingChatInput(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "continue the same session after capacity becomes available",
     });
@@ -744,7 +720,7 @@ describe("CHAT-02: run-level model overrides", () => {
   ] as const)(
     "uses the previous Run's resource and recovers native context across $from -> $to -> $from",
     async ({ from, fromRuntime, to, toRuntime }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, runnerGroup } = await entitledChatActor();
 
       await createBddIntegrationApi(context)
         .configureNativeSubscriptionModels(actor)
@@ -752,7 +728,6 @@ describe("CHAT-02: run-level model overrides", () => {
           return api.updateUserModelPreference(actor, from);
         });
       const first = await sendChatRun(actor, {
-        agentId,
         prompt: "establish native history before switching models",
         model: from,
       });
@@ -784,7 +759,6 @@ describe("CHAT-02: run-level model overrides", () => {
         maxConcurrent: 1,
       });
       const second = await sendChatRun(actor, {
-        agentId,
         threadId: first.threadId,
         prompt: "continue with the selected model",
         model: to,
@@ -839,7 +813,6 @@ describe("CHAT-02: run-level model overrides", () => {
         });
       }
       const third = await sendChatRun(actor, {
-        agentId,
         threadId: first.threadId,
         prompt:
           "continue with both earlier rounds when returning to the first model",
@@ -874,7 +847,7 @@ describe("CHAT-02: run-level model overrides", () => {
   );
 
   it("requires Chat recovery after a Framework switch", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
 
     // Fable and Astra keep both families on their native Runner harnesses.
     await createBddIntegrationApi(context)
@@ -885,7 +858,6 @@ describe("CHAT-02: run-level model overrides", () => {
 
     const firstPrompt = "plan the migration in several steps";
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: firstPrompt,
       model: "claude-fable-5-1",
     });
@@ -908,7 +880,6 @@ describe("CHAT-02: run-level model overrides", () => {
     // The next Framework must recover the durable Chat context on a fresh launch.
     await chat.updateThreadModelSelection(actor, first.threadId, "gpt-6-astra");
     const second = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "continue after the Framework switch",
     });
@@ -929,11 +900,10 @@ describe("CHAT-02: run-level model overrides", () => {
   it.each(["failed", "cancelled"] as const)(
     "recovers durable Chat after an executed attempt was %s before initialization",
     async (status) => {
-      const { actor, agentId } = await entitledNativeChatActor();
+      const { actor } = await entitledNativeChatActor();
 
       const firstPrompt = "complete the migration without losing this request";
       const first = await sendChatRun(actor, {
-        agentId,
         prompt: firstPrompt,
         model: "claude-fable-5-1",
       });
@@ -955,7 +925,6 @@ describe("CHAT-02: run-level model overrides", () => {
       await waitForRunStatus(actor, first.runId, status);
 
       const second = await sendChatRun(actor, {
-        agentId,
         threadId: first.threadId,
         prompt: "retry with the same model",
         model: "claude-fable-5-1",
@@ -983,11 +952,10 @@ describe("CHAT-02: run-level model overrides", () => {
   );
 
   it("keeps durable Chat and native identity independent of a history archive", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
 
     const firstPrompt = "finish work before native history becomes oversized";
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: firstPrompt,
     });
     const firstExecution = await runExecution(first.runId);
@@ -1038,7 +1006,6 @@ describe("CHAT-02: run-level model overrides", () => {
     );
 
     const second = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "continue in a fresh native session",
     });
@@ -1060,10 +1027,9 @@ describe("CHAT-02: run-level model overrides", () => {
   }, 90_000);
 
   it("resumes a sticky model through personal credential replacement and reconnect", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
 
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: "pin fable model-first",
       model: "claude-fable-5-1",
     });
@@ -1088,7 +1054,6 @@ describe("CHAT-02: run-level model overrides", () => {
     await api.updateUserModelPreference(actor, "claude-fable-5-1");
 
     const second = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "follow up after reconnecting the Claude subscription",
     });
@@ -1129,7 +1094,6 @@ describe("CHAT-02: run-level model overrides", () => {
     });
 
     const third = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "follow up after the upstream provider changes",
     });
@@ -1157,7 +1121,6 @@ describe("CHAT-02: run-level model overrides", () => {
     );
 
     const fourth = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "continue on the same canonical session",
     });
@@ -1172,12 +1135,11 @@ describe("CHAT-02: run-level model overrides", () => {
   }, 90_000);
 
   it("rejects an explicit disconnected personal model instead of capturing Auto", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
 
     const sent = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         prompt: "do not bill Auto for my unavailable personal model",
         model: "gpt-6-luna",
       },

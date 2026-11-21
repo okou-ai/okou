@@ -2164,7 +2164,6 @@ describe("canonical Discord ingress", () => {
     const sent = await chatApi.requestSendEvent(
       actor.actor,
       {
-        agentId: actor.defaultAgentId,
         threadId: thread.id,
         prompt: "continue the DM from the web using my new default",
         model: "gpt-6-astra",

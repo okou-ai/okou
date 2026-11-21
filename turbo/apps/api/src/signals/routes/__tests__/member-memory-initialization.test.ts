@@ -172,7 +172,6 @@ describe("member memory account initialization", () => {
       const prompt = "Start my first Run with an attachment";
       const sending = onRejection(
         sendChatRun(actor, {
-          agentId,
           prompt,
           userMessage: {
             version: 1,

@@ -25,7 +25,6 @@ describe("captured My Okou execution guidance", () => {
       });
 
       const run = await owned.sendChatRun(actor, {
-        agentId: status.defaultAgentId,
         prompt: "Work with my personal Instructions",
       });
       const { execution } = await owned.runExecution(run.runId);
@@ -66,12 +65,12 @@ describe("captured My Okou execution guidance", () => {
 
   it("uses member Instructions on a thread with a historical non-default binding", async () => {
     const owned = await publicChatActor(context);
-    const { actor, agentId } = owned;
+    const { actor } = owned;
     if (!actor.orgId) {
       throw new Error("Expected a workspace member");
     }
     await owned.run(async () => {
-      const thread = await fixture.chat.createThread(actor, { agentId });
+      const thread = await fixture.chat.createThread(actor, {});
       const run = await owned.sendChatRun(actor, {
         threadId: thread.id,
         prompt: "Read this retained executor's history",

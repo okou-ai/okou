@@ -49,10 +49,9 @@ describe("CHAT-02: run-level model overrides", () => {
   it("describes raw chat history sync by default", async () => {
     // This checks the appended prompt, not Pi execution. Keep the run
     // claimable by the native Runner until the test cancels it.
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
 
     const run = await sendChatRun(actor, {
-      agentId,
       prompt: "inspect raw thread history",
     });
     const stored = await api.executionInput(run.runId);
@@ -68,7 +67,7 @@ describe("CHAT-02: run-level model overrides", () => {
   }, 60_000);
 
   it("persists a send model selection on the thread while preserving same-family sessions", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     // Claude subscription credentials stay on the native Claude Code harness
     // for every Claude model, so a same-family override keeps the CLI session.
     await misc.upsertPersonalModelProvider(
@@ -85,7 +84,6 @@ describe("CHAT-02: run-level model overrides", () => {
 
     const firstPrompt = "first turn on the selected opus model";
     const first = await sendChatRun(actor, {
-      agentId,
       prompt: firstPrompt,
       model: "claude-opus-5-5",
     });
@@ -116,7 +114,6 @@ describe("CHAT-02: run-level model overrides", () => {
     // which already carries the prior web round, so the prompt does not
     // replay it.
     const second = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "switch to sonnet",
       model: "claude-sonnet-5-5",
@@ -158,7 +155,6 @@ describe("CHAT-02: run-level model overrides", () => {
     // Follow-ups without a model selection run on the thread's stored model,
     // which is now the last selection. The session continues in the family.
     const third = await sendChatRun(actor, {
-      agentId,
       threadId: first.threadId,
       prompt: "continue on the thread model",
     });
@@ -173,10 +169,9 @@ describe("CHAT-02: run-level model overrides", () => {
   }, 90_000);
 
   it("rejects a disconnected personal thread model even when the member default is Auto", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor } = await entitledChatActor();
     await api.updateUserModelPreference(actor, null);
     const thread = await chat.createThread(actor, {
-      agentId,
       model: "claude-sonnet-5-5",
     });
     await misc.deletePersonalModelProvider(
@@ -188,7 +183,6 @@ describe("CHAT-02: run-level model overrides", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: thread.id,
         prompt: "keep my personal credential source",
         clientEventId,
@@ -258,7 +252,7 @@ describe("CHAT-02: run-level model overrides", () => {
   )(
     "hands native $name subscription $selectedModel runs to a generation-$generation Sandbox with $outcome outcome and no built-in billing",
     async ({ tier, generation, outcome, selectedModel }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, runnerGroup } = await entitledChatActor();
       const firewall = createFirewallApi(context);
       const externalAccountId = "chat-codex-pi-subscription-account";
       const refreshToken = "rt_pi_subscription_fixture_high_entropy";
@@ -279,7 +273,6 @@ describe("CHAT-02: run-level model overrides", () => {
 
       const prompt = "use the Okou CLI through native subscription Luna";
       const run = await sendChatRun(actor, {
-        agentId,
         prompt,
         model: selectedModel,
         runOptions: { codexServiceTier: tier },
@@ -413,7 +406,6 @@ describe("CHAT-02: run-level model overrides", () => {
       }
 
       const continued = await sendChatRun(actor, {
-        agentId,
         threadId: run.threadId,
         prompt: "continue on the same subscription account",
         model: selectedModel,

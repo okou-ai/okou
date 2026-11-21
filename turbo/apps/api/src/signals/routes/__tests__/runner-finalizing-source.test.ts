@@ -398,7 +398,6 @@ describe("Independent finalizing resource dispatch", () => {
     await f.owned.run(async () => {
       const chat = createChatFilesBddApi(context);
       const thread = await chat.createThread(f.actor, {
-        agentId: f.agentId,
         title: "Independent Chat",
       });
       await heartbeat(f, {
@@ -438,11 +437,9 @@ describe("Independent finalizing resource dispatch", () => {
     const [firstThread, secondThread] = await f.owned.run(async () => {
       const chat = createChatFilesBddApi(context);
       const first = await chat.createThread(f.actor, {
-        agentId: f.agentId,
         title: "Home snapshot bound",
       });
       const second = await chat.createThread(f.actor, {
-        agentId: f.agentId,
         title: "Empty Home snapshot",
       });
       return [first, second] as const;

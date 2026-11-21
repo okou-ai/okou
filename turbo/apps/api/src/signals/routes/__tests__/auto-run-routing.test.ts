@@ -10,8 +10,8 @@ describe("Auto selection through public Thread creation", () => {
   it.each([null, "auto"])(
     "writes canonical Thread identity for Auto intent %s",
     async (model) => {
-      const { actor, agentId } = await entitledNativeChatActor();
-      const thread = await chat.createThread(actor, { agentId, model });
+      const { actor } = await entitledNativeChatActor();
+      const thread = await chat.createThread(actor, { model });
       await expectThreadCreatedModelEvent(actor, thread.id, "auto");
       await expect(
         chat.readThreadMetadata(actor, thread.id),

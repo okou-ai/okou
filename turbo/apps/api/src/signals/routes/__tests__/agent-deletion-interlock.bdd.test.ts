@@ -47,7 +47,6 @@ describe("DELETE /api/agents/:id lifecycle cleanup", () => {
       const sent = await chat.requestSendEvent(
         actor,
         {
-          agentId: target.agentId,
           prompt: "continue through legacy Agent deletion",
           clientEventId,
         },

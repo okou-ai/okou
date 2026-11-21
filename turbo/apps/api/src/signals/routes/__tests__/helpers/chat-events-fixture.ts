@@ -117,7 +117,6 @@ export interface EntitledChatActor {
 }
 
 export interface ChatRunSendBody {
-  readonly agentId?: string;
   readonly prompt: string;
   readonly userMessage?: UserMessageInputDocument;
   readonly threadId?: string;
@@ -767,7 +766,6 @@ export function createChatEventsFixture(context: TestContext) {
     }) => void,
   ) {
     const blocker = await sendChatRun(actor, {
-      agentId: body.agentId,
       model: body.model,
       prompt: "Hold the following input until its configuration is ready",
     });

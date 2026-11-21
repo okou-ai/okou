@@ -42,7 +42,6 @@ async function seedChatThread(title: string): Promise<ChatThreadFixture> {
     visibility: "private",
   });
   const thread = await chat.createThread(actor, {
-    agentId: agent.agentId,
     title,
   });
   if (!actor.orgId) {
@@ -95,7 +94,6 @@ describe("pinned thread ordering", () => {
   it("persists client ranks in events without changing pin time", async () => {
     const fixture = await seedChatThread("First");
     const second = await chat.createThread(fixture.actor, {
-      agentId: fixture.agentId,
       title: "Second",
     });
     await chat.pinThread(fixture.actor, fixture.threadId);
@@ -150,7 +148,6 @@ describe("pinned thread ordering", () => {
   it("accepts equal client ranks with deterministic id ordering", async () => {
     const fixture = await seedChatThread("First");
     const second = await chat.createThread(fixture.actor, {
-      agentId: fixture.agentId,
       title: "Second",
     });
     for (const id of [fixture.threadId, second.id]) {

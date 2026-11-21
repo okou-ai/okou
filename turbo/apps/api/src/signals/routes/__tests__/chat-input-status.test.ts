@@ -87,7 +87,7 @@ describe("retained chat input observation", () => {
     async (modern) => {
       const f = await fixture();
       await f.run(async () => {
-        const thread = await chat.createThread(f.actor, { agentId: f.agentId });
+        const thread = await chat.createThread(f.actor, {});
         const eventId = randomUUID();
         const app = createAppWithRoutes({
           routes: mcpServerRoutes,
@@ -261,7 +261,6 @@ describe("retained chat input observation", () => {
       await f.run(async () => {
         const eventId = randomUUID();
         const run = await f.sendChatRun(f.actor, {
-          agentId: f.agentId,
           prompt: "Observe the terminal outcome",
           clientEventId: eventId,
         });
@@ -309,7 +308,6 @@ describe("retained chat input observation", () => {
     await f.run(async () => {
       const firstEventId = randomUUID();
       const first = await f.sendChatRun(f.actor, {
-        agentId: f.agentId,
         prompt: "Complete the first request",
         clientEventId: firstEventId,
       });
@@ -328,7 +326,6 @@ describe("retained chat input observation", () => {
 
       const nextEventId = randomUUID();
       const next = await f.sendChatRun(f.actor, {
-        agentId: f.agentId,
         threadId: first.threadId,
         prompt: "Start a separate execution",
         clientEventId: nextEventId,
@@ -382,7 +379,6 @@ describe("retained chat input observation", () => {
     const f = await fixture();
     await f.run(async () => {
       const active = await f.sendChatRun(f.actor, {
-        agentId: f.agentId,
         prompt: "Wait for additional inputs",
       });
       await f.runExecution(active.runId);
@@ -390,7 +386,6 @@ describe("retained chat input observation", () => {
       await f.requestSendEvent(
         f.actor,
         {
-          agentId: f.agentId,
           threadId: active.threadId,
           prompt: "Wait for the Runner to consume this input",
           clientEventId: eventId,
@@ -438,7 +433,7 @@ describe("retained chat input observation", () => {
       bdd.acceptAgentStorageWrites();
       f.captureStorageMocks();
       await bdd.completeOnboarding(f.actor);
-      const agent = await bdd.createAgent(f.actor, {
+      await bdd.createAgent(f.actor, {
         displayName: "Rejected input",
       });
       await f.activateWithoutCredits();
@@ -447,7 +442,6 @@ describe("retained chat input observation", () => {
       const sent = await chat.requestSendEvent(
         f.actor,
         {
-          agentId: agent.agentId,
           prompt: "Rejected before a Run",
           model: null,
           clientEventId: eventId,
@@ -474,7 +468,7 @@ describe("retained chat input observation", () => {
   it("exposes observation by default and enforces the read scope and validation", async () => {
     const f = await fixture();
     await f.run(async () => {
-      const thread = await chat.createThread(f.actor, { agentId: f.agentId });
+      const thread = await chat.createThread(f.actor, {});
       const eventId = randomUUID();
       expect(
         (await tools(f.token())).find((tool) => {
@@ -510,7 +504,6 @@ describe("retained chat input observation", () => {
     await f.run(async () => {
       const eventId = randomUUID();
       const run = await f.sendChatRun(f.actor, {
-        agentId: f.agentId,
         prompt: "Owned input",
         clientEventId: eventId,
       });
@@ -518,9 +511,7 @@ describe("retained chat input observation", () => {
       if (!known.replacement) {
         throw new Error("Expected a consuming event coordinate");
       }
-      const otherThread = await chat.createThread(f.actor, {
-        agentId: f.agentId,
-      });
+      const otherThread = await chat.createThread(f.actor, {});
       await expect(
         read(f.token(), otherThread.id, eventId),
       ).resolves.toMatchObject({

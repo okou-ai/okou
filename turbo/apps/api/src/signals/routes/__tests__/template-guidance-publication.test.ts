@@ -306,7 +306,6 @@ test.each([
       return Promise.resolve();
     });
     const run = await owner.sendChatRun(owner.actor, {
-      agentId: owner.agentId,
       prompt: "Use the accepted template",
       template: selection(kind, id),
     });
@@ -356,16 +355,14 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
       throw new Error("Expected two distinct template selections");
     }
     const blocker = await owner.sendChatRun(owner.actor, {
-      agentId: owner.agentId,
       prompt: "Occupy the organization slot",
     });
     const blockerExecution = await owner.runExecution(blocker.runId);
     const thread = await owner.run(() => {
-      return chat.chat.createThread(owner.actor, { agentId: owner.agentId });
+      return chat.chat.createThread(owner.actor, {});
     });
     waitingThreadId = thread.id;
     const head = await owner.sendWaitingChatInput(owner.actor, {
-      agentId: owner.agentId,
       threadId: thread.id,
       prompt: "Use the head template",
       template: selection(kind, headId),
@@ -375,7 +372,6 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
     // already queued head with that send's different request context.
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");
     const later = await owner.sendWaitingChatInput(owner.actor, {
-      agentId: owner.agentId,
       threadId: head.threadId,
       prompt: "Use the later template",
       template: selection(kind, laterId),
@@ -452,7 +448,6 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
       }
       const id = published.body.id;
       const firstRun = await owner.sendChatRun(owner.actor, {
-        agentId: owner.agentId,
         model,
         prompt: "Use this template",
         template: selection(kind, id),
@@ -480,7 +475,6 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
         });
       }
       const nextRun = await owner.sendChatRun(owner.actor, {
-        agentId: owner.agentId,
         model,
         prompt: "Use the current template",
         template: selection(kind, id),
@@ -524,7 +518,6 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
         const sent = await chat.chat.requestSendEvent(
           owner.actor,
           {
-            agentId: owner.agentId,
             prompt: "Use the deleted template",
             clientEventId,
             userMessage: {
@@ -678,7 +671,6 @@ test("delivers a Skill and template with the same immutable bundle at their own 
     throw new Error("Expected a published template");
   }
   const run = await owner.sendChatRun(owner.actor, {
-    agentId: owner.agentId,
     prompt: "Use the selected template and Connector Skill",
     userMessage: {
       version: 1,
@@ -793,7 +785,6 @@ test("mounts every user-template kind and presentation guidance once in selectio
     });
   }
   const run = await owner.sendChatRun(owner.actor, {
-    agentId: owner.agentId,
     model: "claude-fable-5-1",
     prompt: "Use both attached templates",
     userMessage: {
@@ -909,7 +900,6 @@ test("allows package replacement and retry after a completed metadata edit", asy
     });
   });
   const run = await owner.sendChatRun(owner.actor, {
-    agentId: owner.agentId,
     model: "claude-fable-5-1",
     prompt: "Read the replacement after renaming",
     template: selection("user-template", id),
@@ -1022,7 +1012,6 @@ test.each(["replacement", "metadata edit"] as const)(
     }
     expect(stale.value.status).toBe(409);
     const run = await owner.sendChatRun(owner.actor, {
-      agentId: owner.agentId,
       model: "claude-fable-5-1",
       prompt: "Read the winning template",
       template: selection("user-template", id),
@@ -1055,7 +1044,6 @@ test("delivers a valid template archive larger than the Skill bundle ceiling", a
     throw new Error("Expected a published template");
   }
   const run = await owner.sendChatRun(owner.actor, {
-    agentId: owner.agentId,
     model: "claude-fable-5-1",
     prompt: "Read the large template",
     template: selection("user-template", published.body.id),

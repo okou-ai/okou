@@ -297,10 +297,9 @@ describe("GET /api/model-catalog", () => {
 
 describe("public selections of replaced models", () => {
   it("normalizes a requested retired model when creating a thread and runs its successor", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const thread = await chat.createThread(actor, {
-      agentId,
       model: "claude-fable-5",
     });
 
@@ -308,7 +307,6 @@ describe("public selections of replaced models", () => {
     expect(projected.selectedModel).toBe("claude-fable-5-1");
 
     const run = await sendChatRun(actor, {
-      agentId,
       threadId: thread.id,
       prompt: "continue the legacy Fable thread",
     });
@@ -327,13 +325,12 @@ describe("public selections of replaced models", () => {
   }, 90_000);
 
   it("rejects an explicitly requested replacement whose subscription was never connected", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
-    const thread = await chat.createThread(actor, { agentId, model: null });
+    const { actor } = await entitledNativeChatActor();
+    const thread = await chat.createThread(actor, { model: null });
     const before = await chat.listThreadEvents(actor, thread.id);
     const sent = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: thread.id,
         prompt: "request a retired Codex model without a Codex account",
         model: "gpt-5.5",
@@ -357,16 +354,14 @@ describe("public selections of replaced models", () => {
   }, 90_000);
 
   it("accepts a pinned model whose retained subscription was disconnected and reports the reconnect error", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const active = await sendChatRun(actor, {
-      agentId,
       prompt: "keep the subscription account in use",
       model: "claude-fable-5-1",
     });
     const activeExecution = await runExecution(active.runId);
     const thread = await chat.createThread(actor, {
-      agentId,
       model: "claude-fable-5-1",
     });
     // The running run retains the disconnected account.
@@ -380,7 +375,6 @@ describe("public selections of replaced models", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId: thread.id,
         prompt: "continue through my disconnected subscription",
         clientEventId,
@@ -417,9 +411,8 @@ describe("public selections of replaced models", () => {
   }, 90_000);
 
   it("retains the persisted model in raw lifecycle events after its provider is disconnected", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     const thread = await chat.createThread(actor, {
-      agentId,
       model: "claude-fable-5-1",
     });
     await misc.deletePersonalModelProvider(
@@ -432,15 +425,13 @@ describe("public selections of replaced models", () => {
   }, 90_000);
 
   it("stores an explicitly requested replaced model as its successor on the thread and member preference", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const thread = await chat.createThread(actor, {
-      agentId,
       model: null,
     });
 
     const run = await sendChatRun(actor, {
-      agentId,
       threadId: thread.id,
       prompt: "continue on the retired Fable name",
       model: "claude-fable-5",
@@ -459,10 +450,9 @@ describe("public selections of replaced models", () => {
   }, 90_000);
 
   it("clears Fast when an explicitly requested replacement does not offer it", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     await configureSubscriptionPiModel(actor);
     const thread = await chat.createThread(actor, {
-      agentId,
       model: "gpt-6-astra",
     });
     await chat.updateThreadModelSelection(actor, thread.id, "gpt-6-astra", {
@@ -480,7 +470,6 @@ describe("public selections of replaced models", () => {
     );
 
     const run = await sendChatRun(actor, {
-      agentId,
       threadId: thread.id,
       prompt: "continue without Fast",
       model: "claude-fable-5",

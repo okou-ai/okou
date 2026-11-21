@@ -226,7 +226,6 @@ export function createChatRunPreparationSnapshot(
         ? (owned.requiredOfficialWorkflowIds ?? null)
         : picked.requiredOfficialWorkflowIds,
       userId: thread.userId,
-      agentId: thread.agentId,
       thread,
       preparation: {
         isOfficialWorkflowThread: row.isOfficialWorkflowThread,

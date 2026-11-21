@@ -136,12 +136,11 @@ describe("GET /api/billing/status", () => {
       store.set(seedBillingStatusOrg$, { credits: 100_000 }, context.signal),
     );
     const chat = createChatEventsFixture(context);
-    const { actor, agentId } = await chat.entitledNativeChatActor({
+    const { actor } = await chat.entitledNativeChatActor({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });
     const run = await chat.sendChatRun(actor, {
-      agentId,
       prompt: "Read billing status",
     });
     const execution = await chat.runExecution(run.runId);

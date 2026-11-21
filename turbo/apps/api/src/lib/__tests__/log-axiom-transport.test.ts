@@ -165,7 +165,6 @@ test.each([
       }
       const threads = createChatFilesBddApi(context);
       const sibling = await threads.createThread(f.owned.actor, {
-        agentId: f.owned.agentId,
         model: f.owned.model,
       });
       const privateDetail = "private-provider-window-detail";
@@ -292,7 +291,6 @@ test.each([
       }
       const threads = createChatFilesBddApi(context);
       const sibling = await threads.createThread(f.owned.actor, {
-        agentId: f.owned.agentId,
         model: f.owned.model,
       });
       const privateDetail = "private-provider-auth-detail";
@@ -756,7 +754,6 @@ describe("template usage Axiom transport", () => {
         },
       ];
       const run = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         clientEventId: sourceEventId,
         prompt: "Use each selected template around its marker",
         userMessage: {
@@ -893,7 +890,6 @@ describe("template usage Axiom transport", () => {
           selection: { userTemplateId: published.body.id },
         };
         const run = await owned.sendChatRun(owned.actor, {
-          agentId: owned.agentId,
           clientEventId: sourceEventId,
           prompt: "Use both imported template markers",
           userMessage: {
@@ -946,7 +942,6 @@ describe("template usage Axiom transport", () => {
           authorization: `Bearer ${input.sandboxToken}`,
         });
         await owned.sendChatRun(owned.actor, {
-          agentId: owned.agentId,
           threadId: run.threadId,
           prompt: "Continue without selecting a template",
         });
@@ -1008,7 +1003,6 @@ describe("template usage Axiom transport", () => {
       const privatePreviewUrl =
         "https://private.example.test/confidential-deck";
       const run = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Use the imported presentation",
         template: {
           type: "presentation",
@@ -1055,7 +1049,6 @@ describe("template usage Axiom transport", () => {
     const fixture = createChatEventsFixture(context);
     await owned.run(async () => {
       const anchor = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Keep the thread busy",
       });
       const execution = await owned.runExecution(anchor.runId);
@@ -1063,7 +1056,6 @@ describe("template usage Axiom transport", () => {
       await owned.requestSendEvent(
         owned.actor,
         {
-          agentId: owned.agentId,
           threadId: anchor.threadId,
           clientEventId: sourceEventId,
           prompt: "Prepare an invoice",
@@ -1112,7 +1104,6 @@ describe("template usage Axiom transport", () => {
     const fixture = createChatEventsFixture(context);
     await owned.run(async () => {
       const run = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Start without a template",
       });
       const { execution } = await owned.runExecution(run.runId);
@@ -1120,7 +1111,6 @@ describe("template usage Axiom transport", () => {
       await owned.requestSendEvent(
         owned.actor,
         {
-          agentId: owned.agentId,
           threadId: run.threadId,
           clientEventId: sourceEventId,
           prompt: "Prepare an invoice",
@@ -1181,7 +1171,6 @@ describe("template usage Axiom transport", () => {
     const fixture = createChatEventsFixture(context);
     await owned.run(async () => {
       const run = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Start without template volumes",
       });
       const { execution } = await owned.runExecution(run.runId);
@@ -1189,7 +1178,6 @@ describe("template usage Axiom transport", () => {
       await owned.requestSendEvent(
         owned.actor,
         {
-          agentId: owned.agentId,
           threadId: run.threadId,
           clientEventId: sourceEventId,
           prompt: "Apply both templates",
@@ -1321,7 +1309,6 @@ describe("template usage Axiom transport", () => {
     await owned.run(async () => {
       const sourceEventId = randomUUID();
       const run = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         clientEventId: sourceEventId,
         prompt: "Prepare an invoice despite refused delivery",
         template: {
@@ -1354,7 +1341,6 @@ describe("template usage Axiom transport", () => {
         eventTypes: ["template_used"],
       });
       const run = await owned.sendChatRun(owned.actor, {
-        agentId: owned.agentId,
         prompt: "Prepare an invoice",
         template: {
           type: "document",
@@ -1375,7 +1361,6 @@ describe("template usage Axiom transport", () => {
 async function ownedTelemetryUpload() {
   const owned = await publicChatActor(context);
   const { runId } = await owned.sendChatRun(owned.actor, {
-    agentId: owned.agentId,
     prompt: "Exercise Axiom error diagnostics",
   });
   const { execution } = await owned.runExecution(runId);
@@ -1435,7 +1420,6 @@ describe("completed chat callback failure diagnostics", () => {
           return "Safe generated summary";
         });
         const run = await fixture.sendChatRun(owned.actor, {
-          agentId: owned.agentId,
           prompt: "Keep the completed answer",
         });
         await fixture.chatCallbacks.registerPushSubscription(owned.actor);

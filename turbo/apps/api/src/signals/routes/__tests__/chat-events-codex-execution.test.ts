@@ -73,7 +73,7 @@ describe("Codex execution switch", () => {
     async ({ model, tier }) => {
       const owned = await ownedChatActor();
       await owned.run(async () => {
-        const { actor, agentId, sendChatRun, runExecution } = owned;
+        const { actor, sendChatRun, runExecution } = owned;
         const accountId = `codex-switch-${randomUUID()}`;
         const connected = await configureSubscriptionPiModel(
           actor,
@@ -99,7 +99,6 @@ describe("Codex execution switch", () => {
           }),
         );
         const run = await sendChatRun(actor, {
-          agentId,
           model,
           prompt: "run the same subscription through Codex",
           runOptions: { codexServiceTier: tier, reasoningEffort: "high" },
@@ -135,7 +134,6 @@ describe("Codex execution switch", () => {
       const accountId = `codex-workflow-${randomUUID()}`;
       await configureSubscriptionPiModel(actor, { accountId }, "gpt-6-luna");
       const thread = await chat.createThread(actor, {
-        agentId,
         model: "gpt-6-luna",
       });
       await updateFeatureSwitchesForUser(
@@ -161,14 +159,13 @@ describe("Codex execution switch", () => {
   it("leaves Claude subscriptions on Claude Code", async () => {
     const owned = await ownedChatActor();
     await owned.run(async () => {
-      const { actor, agentId, sendChatRun, runExecution } = owned;
+      const { actor, sendChatRun, runExecution } = owned;
       await updateFeatureSwitchesForUser(
         context,
         { ...actor, orgId: requireOrgId(actor) },
         { [FeatureSwitchKey.CodexExecution]: true },
       );
       const run = await sendChatRun(actor, {
-        agentId,
         model: "claude-fable-5-1",
         prompt: "keep Claude on its own harness",
       });
@@ -184,13 +181,13 @@ describe("Codex execution switch", () => {
   it("rotates native sessions and preserves visible context when switching both ways", async () => {
     const owned = await ownedChatActor();
     await owned.run(async () => {
-      const { actor, agentId, sendChatRun, runExecution } = owned;
+      const { actor, sendChatRun, runExecution } = owned;
       await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
       mockPiResourceArchiveDownloads(true);
       const historyObjects = mockPiObjectStore();
 
       const prompt = "start this conversation on Pi";
-      const first = await sendChatRun(actor, { agentId, prompt });
+      const first = await sendChatRun(actor, { prompt });
       const firstExecution = await runExecution(first.runId);
       expect(firstExecution.execution.cliAgentType).toBe("pi");
       // Changing the switch does not rewrite the dispatched Pi Run.
@@ -209,7 +206,6 @@ describe("Codex execution switch", () => {
         responsesModel: { provider: "openai-codex", model: "gpt-6-luna" },
       });
       const second = await sendChatRun(actor, {
-        agentId,
         threadId: first.threadId,
         prompt: "continue this conversation on Codex",
       });
@@ -247,7 +243,6 @@ describe("Codex execution switch", () => {
         { [FeatureSwitchKey.CodexExecution]: false },
       );
       const third = await sendChatRun(actor, {
-        agentId,
         threadId: first.threadId,
         prompt: "return this conversation to Pi",
       });

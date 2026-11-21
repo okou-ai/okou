@@ -23,7 +23,7 @@ export type PickedThreadInputEvent = Readonly<
     | "requiredOfficialWorkflowIds"
     | "modelSelection"
   > &
-    Pick<typeof chatThreads.$inferSelect, "userId" | "agentId"> & {
+    Pick<typeof chatThreads.$inferSelect, "userId"> & {
       readonly thread: PickedChatThread;
       readonly preparation: ChatRunPreparationFacts;
       userMessage: ChatEventUserMessage | null;

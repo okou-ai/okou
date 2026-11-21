@@ -70,7 +70,7 @@ async function fixture() {
   await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
-  const agent = await bdd.createAgent(actor, {
+  await bdd.createAgent(actor, {
     displayName: "Attachment sharing",
   });
   const storage = installSharedThreadStorage(context);
@@ -124,7 +124,6 @@ async function fixture() {
   }
   async function send(parts: readonly UserMessageInputPart[]) {
     const sent = await chat.sendAndLaunch(actor, {
-      agentId: agent.agentId,
       prompt: "Use these files",
       userMessage: { version: 1, parts: [...parts] },
     });

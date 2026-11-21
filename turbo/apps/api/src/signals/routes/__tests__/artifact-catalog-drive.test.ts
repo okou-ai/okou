@@ -44,7 +44,6 @@ function catalog() {
 async function uploadedArtifact() {
   const owner = await publicChatActor(context);
   const run = await owner.sendChatRun(owner.actor, {
-    agentId: owner.agentId,
     prompt: "Create an artifact for lazy Drive status",
   });
   const execution = await owner.runExecution(run.runId);
@@ -155,7 +154,7 @@ describe("artifact catalog lazy Drive detail metadata", () => {
   it("uses exact upload identity across owned view threads and retains original plus conversion state", async () => {
     const { owner, run, artifactId, fileId, runToken } =
       await uploadedArtifact();
-    const { actor, agentId } = owner;
+    const { actor } = owner;
     const defaultAccount = await connectDrive(actor);
     mockGoogleDriveConnectorOAuth({
       userInfo: {
@@ -190,7 +189,7 @@ describe("artifact catalog lazy Drive detail metadata", () => {
     if (!connection) {
       throw new Error("Expected selected Drive connection");
     }
-    const view = await chat.createThread(actor, { agentId, model: null });
+    const view = await chat.createThread(actor, { model: null });
     await accept(
       setupApp({ context, routes: chatThreadRoutes })(
         chatThreadConnectorSelectionContract,
@@ -303,7 +302,6 @@ describe("artifact catalog lazy Drive detail metadata", () => {
     );
 
     const currentRun = await owner.sendChatRun(actor, {
-      agentId,
       threadId: view.id,
       prompt: "Export the owned artifact from this Chat",
     });
@@ -409,12 +407,11 @@ describe("artifact catalog lazy Drive detail metadata", () => {
     const { actor } = owner;
     await connectDrive(actor);
     const peer = bdd.user({ orgId: actor.orgId });
-    const peerAgent = await bdd.createAgent(peer, {
+    await bdd.createAgent(peer, {
       displayName: "Peer context",
       visibility: "private",
     });
     const peerThread = await chat.createThread(peer, {
-      agentId: peerAgent.agentId,
       model: null,
     });
     const provider = mockGoogleDriveFilesList(() => {

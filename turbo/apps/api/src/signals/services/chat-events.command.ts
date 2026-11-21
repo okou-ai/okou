@@ -3136,11 +3136,7 @@ const assertOwnedThread$ = command(
   },
 );
 export const recallChatEvent$ = command(
-  async (
-    { get, set },
-    body: Omit<RecallSendBody, "agentId">,
-    signal: AbortSignal,
-  ) => {
+  async ({ get, set }, body: RecallSendBody, signal: AbortSignal) => {
     const { userId, orgId } = get(organizationAuthContext$);
     const ownership = await set(
       assertOwnedThread$,

@@ -17,7 +17,6 @@ describe("Auto native routing", () => {
   it("claims the OpenRouter preset for a completed initial run and its successor", async () => {
     const {
       actor,
-      agentId,
       run: own,
       sendChatRun,
       runExecution,
@@ -42,7 +41,6 @@ describe("Auto native routing", () => {
 
     const initialPrompt = "start with Auto";
     const initial = await sendChatRun(actor, {
-      agentId,
       prompt: initialPrompt,
       model: "auto",
     });
@@ -72,7 +70,6 @@ describe("Auto native routing", () => {
 
     const successorPrompt = "continue without selecting another model";
     const successor = await sendChatRun(actor, {
-      agentId,
       threadId: initial.threadId,
       prompt: successorPrompt,
     });

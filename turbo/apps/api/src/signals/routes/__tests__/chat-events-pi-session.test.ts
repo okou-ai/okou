@@ -31,7 +31,6 @@ describe("CHAT-02: personal subscription model selection", () => {
     const {
       run: own,
       actor,
-      agentId,
       runExecution,
       sendChatRun,
     } = await publicChatActor(context);
@@ -46,7 +45,6 @@ describe("CHAT-02: personal subscription model selection", () => {
     const models = [...GPT_PI_BDD_MODELS, "gpt-6-luna"] as const;
     for (const [index, model] of models.entries()) {
       const run = await sendChatRun(actor, {
-        agentId,
         threadId,
         model,
         prompt: `continue with ${model}`,
@@ -93,7 +91,6 @@ describe("CHAT-02: personal subscription model selection", () => {
     const {
       run: own,
       actor,
-      agentId,
       runExecution,
       sendChatRun,
     } = await publicChatActor(context);
@@ -115,7 +112,6 @@ describe("CHAT-02: personal subscription model selection", () => {
 
     const firstPiPrompt = "start the first Pi generation";
     const firstPi = await sendChatRun(actor, {
-      agentId,
       prompt: firstPiPrompt,
       model: piModel,
     });
@@ -140,7 +136,6 @@ describe("CHAT-02: personal subscription model selection", () => {
     const firstCodexPrompt = "continue through Codex between Pi generations";
     const firstCodexAnswer = "Codex answer between Pi generations";
     const firstCodex = await sendChatRun(actor, {
-      agentId,
       threadId: firstPi.threadId,
       prompt: firstCodexPrompt,
       model: "gpt-6-astra",
@@ -189,7 +184,6 @@ describe("CHAT-02: personal subscription model selection", () => {
       );
     });
     const returnedPi = await sendChatRun(actor, {
-      agentId,
       threadId: firstPi.threadId,
       prompt: returnedPiPrompt,
       model: piModel,
@@ -231,7 +225,6 @@ describe("CHAT-02: personal subscription model selection", () => {
 
     const piFollowUpPrompt = "resume the returned Pi generation once";
     const piFollowUp = await sendChatRun(actor, {
-      agentId,
       threadId: firstPi.threadId,
       prompt: piFollowUpPrompt,
       model: piModel,
@@ -262,7 +255,6 @@ describe("CHAT-02: personal subscription model selection", () => {
     const repeatedCodexPrompt = "cross Codex before returning to Pi again";
     const repeatedCodexAnswer = "second intervening Codex answer";
     const repeatedCodex = await sendChatRun(actor, {
-      agentId,
       threadId: firstPi.threadId,
       prompt: repeatedCodexPrompt,
       model: "gpt-6-astra",
@@ -303,7 +295,6 @@ describe("CHAT-02: personal subscription model selection", () => {
       );
     });
     const repeatedPi = await sendChatRun(actor, {
-      agentId,
       threadId: firstPi.threadId,
       prompt: repeatedPiPrompt,
       model: piModel,

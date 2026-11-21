@@ -127,7 +127,6 @@ function collectorEvidence(stage: "initial" | "sample" | "cleanup" | "tasks") {
 async function createEventWebhookRun(prompt: string) {
   const owned = await publicChatActor(context);
   const run = await owned.sendChatRun(owned.actor, {
-    agentId: owned.agentId,
     prompt,
   });
   const execution = await owned.runExecution(run.runId);
@@ -196,7 +195,6 @@ async function sandboxStorageWriteFixture(label: string) {
   const execution = await owned.run(async () => {
     await runs.updateUserModelPreference(owned.actor, "claude-fable-5-1");
     const sent = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
       prompt: `write ${label} from the sandbox`,
     });
     return {
@@ -262,7 +260,6 @@ async function sandboxStorageWriteFixture(label: string) {
     currentMount: () => {
       return run(async () => {
         const next = await owned.sendChatRun(owned.actor, {
-          agentId: owned.agentId,
           threadId: execution.threadId,
           prompt: "Read the current storage mount",
         });
@@ -424,7 +421,7 @@ async function sendChatInputAtCapacity(
 ): Promise<string> {
   const sent = await createChatFilesBddApi(context).requestSendEvent(
     actor,
-    { agentId, prompt, model: "claude-fable-5-1" },
+    { prompt, model: "claude-fable-5-1" },
     [201],
   );
   if (sent.status !== 201) {
@@ -1231,7 +1228,6 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
     owned.ownsFeatureSwitches();
     const { actor } = owned;
     const run = await owned.sendChatRun(actor, {
-      agentId: owned.agentId,
       prompt: "emit events to Axiom",
     });
     const { sandboxHeaders: headers } = await owned.runExecution(run.runId);
@@ -2045,10 +2041,9 @@ describe("WHCB-09: sandbox storage writes and native history blobs land in the r
   it("prepares, commits, dedups, and bounds sandbox storage writes for the run org", async () => {
     const runs = createRunsApi(context);
     const fixture = await publicChatActor(context);
-    const { actor, agentId } = fixture;
+    const { actor } = fixture;
     await fixture.run(async () => {
       const run = await fixture.sendChatRun(actor, {
-        agentId,
         prompt: "write artifacts from the sandbox",
       });
       const { execution } = await fixture.runExecution(run.runId);
@@ -2187,7 +2182,6 @@ describe("WHCB-09: sandbox storage writes and native history blobs land in the r
         [200],
       );
       const next = await fixture.sendChatRun(actor, {
-        agentId,
         prompt: "Read the committed Memory",
       });
       const nextExecution = await fixture.runExecution(next.runId);
@@ -5415,7 +5409,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
           visibility: "public",
         });
       });
-      const doomedAgent = await own(() => {
+      await own(() => {
         return bdd.createAgent(doomed, {
           displayName: "BDD Doomed Agent",
           visibility: "private",
@@ -5430,7 +5424,6 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
       });
       const connectorSelectionThread = await own(() => {
         return chat.createThread(doomed, {
-          agentId: doomedAgent.agentId,
           title: "BDD doomed connector selection",
         });
       });
@@ -5615,7 +5608,6 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
         visibility: "public",
       });
       const peerThread = await chat.createThread(peer, {
-        agentId: doomedPublicAgent.agentId,
         title: "BDD peer thread on the deleted user's Agent",
       });
       // The peer owns its initialized memory and personal subscription.

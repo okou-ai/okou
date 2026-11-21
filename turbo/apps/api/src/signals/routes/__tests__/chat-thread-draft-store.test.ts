@@ -32,7 +32,6 @@ async function createDraftFixture(): Promise<DraftFixture> {
   const actor = bdd.user();
   const agent = await chat.createAgentForChatThread(actor);
   const thread = await chat.createThread(actor, {
-    agentId: agent.agentId,
     title: `Draft ${randomUUID()}`,
   });
   return { actor, agentId: agent.agentId, threadId: thread.id };
@@ -42,7 +41,6 @@ async function sendWithoutCredits(fixture: DraftFixture): Promise<void> {
   const sent = await chat.requestSendEvent(
     fixture.actor,
     {
-      agentId: fixture.agentId,
       threadId: fixture.threadId,
       prompt: "Send the saved draft",
       clientEventId: randomUUID(),
@@ -171,7 +169,6 @@ describe("thread drafts", () => {
   it("keeps drafts separate per thread and per user", async () => {
     const fixture = await createDraftFixture();
     const sibling = await chat.createThread(fixture.actor, {
-      agentId: fixture.agentId,
       title: `Sibling ${randomUUID()}`,
     });
     await chat.patchThread(fixture.actor, fixture.threadId, draftBody("mine"));
@@ -270,7 +267,7 @@ describe("thread drafts", () => {
 
 describe("sends and drafts", () => {
   it("publishes a rich send containing unpaired surrogates", async () => {
-    const { actor, agentId, threadId } = await createDraftFixture();
+    const { actor, threadId } = await createDraftFixture();
     await runs.ensurePersonalSubscriptionModel(actor);
     const image = persistedAttachment(
       randomUUID(),
@@ -284,7 +281,6 @@ describe("sends and drafts", () => {
     await chat.requestSendEvent(
       actor,
       {
-        agentId,
         threadId,
         clientEventId,
         prompt: malformedText,

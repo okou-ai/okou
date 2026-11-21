@@ -101,7 +101,6 @@ describe("CHAT-02: default assistant identity", () => {
     }
 
     const anchor = await sendChatRun(actor, {
-      agentId: defaultAgentId,
       prompt: "start an Okou run",
     });
     const anchorRun = await api.executionInput(anchor.runId);
@@ -118,7 +117,6 @@ describe("CHAT-02: default assistant identity", () => {
     const queued = await chat.requestSendEvent(
       actor,
       {
-        agentId: defaultAgentId,
         threadId: anchor.threadId,
         prompt: "continue the Okou run",
         clientEventId: queuedEventId,
@@ -175,13 +173,11 @@ describe("CHAT-02: default assistant identity", () => {
     await cancelChatRun(actor, promoted.runId);
 
     mockEnv("APP_URL", "https://preview.example.test");
-    const customAgent = await bdd.createAgent(actor, {
+    await bdd.createAgent(actor, {
       displayName: "Nova",
       visibility: "private",
     });
-    const legacyThread = await chat.createThread(actor, {
-      agentId: customAgent.agentId,
-    });
+    const legacyThread = await chat.createThread(actor, {});
     const customRun = await sendChatRun(actor, {
       threadId: legacyThread.id,
       prompt: "keep my custom name",
@@ -205,7 +201,7 @@ describe("CHAT-02: default assistant identity", () => {
 describe("CHAT-02: run-scoped agent-token chat launches", () => {
   it("preserves the caller's run annotation on immediate and queued handoffs", async () => {
     const owned = await publicChatActor(context);
-    const { actor, agentId } = owned;
+    const { actor } = owned;
     await owned.run(async () => {
       await api.updateUserModelPreference(actor, "claude-fable-5-1");
       if (!actor.orgId) {
@@ -213,7 +209,6 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       }
 
       const caller = await owned.sendChatRun(actor, {
-        agentId,
         prompt: "launch chat work from this run",
       });
       const callerExecution = await owned.runExecution(caller.runId);
@@ -355,7 +350,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         clockTime: now,
         beforeWorkspaceCleanup: hosts.cleanup,
       });
-      const { actor, agentId } = owned;
+      const { actor } = owned;
       await owned.run(() => {
         return api.updateUserModelPreference(actor, "claude-fable-5-1");
       });
@@ -368,7 +363,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
       // granted token can create write commands on the host, while an
       // ungranted token cannot. Chat messaging remains available independently.
       const plain = await owned.sendChatRun(actor, {
-        agentId,
         prompt: "no computer use selected",
       });
       const plainExecution = await owned.runExecution(plain.runId);
@@ -411,7 +405,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
       // Selecting an online host pins it to the thread and grants the run
       // token computer-use write access on that host.
       const granted = await owned.sendChatRun(actor, {
-        agentId,
         prompt: "open the remote browser",
         computerUseHostId: hostId,
       });
@@ -443,7 +436,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
 
       // Follow-up sends without the field stay granted via the sticky host.
       const sticky = await owned.sendChatRun(actor, {
-        agentId,
         threadId: granted.threadId,
         prompt: "keep using the same host",
       });
@@ -468,7 +460,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
       // An explicit null clears the sticky host: the next run on the same
       // thread is no longer granted.
       const cleared = await owned.sendChatRun(actor, {
-        agentId,
         threadId: granted.threadId,
         prompt: "drop the host",
         computerUseHostId: null,
@@ -493,7 +484,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
 
       mockNow(now() + 91_000);
       const staleGranted = await owned.sendChatRun(actor, {
-        agentId,
         threadId: granted.threadId,
         prompt: "use the computer after it went offline",
         computerUseHostId: hostId,
@@ -605,7 +595,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
       await run(() => {
         return api.ensurePersonalSubscriptionModel(actor);
       });
-      const { defaultAgentId: agentId } = await run(() => {
+      await run(() => {
         return api.grantProEntitlement(actor);
       });
 
@@ -613,7 +603,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         return chat.requestSendEvent(
           actor,
           {
-            agentId,
             prompt: "use an unknown host",
             computerUseHostId: randomUUID(),
           },
@@ -633,7 +622,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         return chat.requestSendEvent(
           actor,
           {
-            agentId,
             prompt: "pin the durable host before stopping it",
             computerUseHostId: installed.hostId,
           },
@@ -656,7 +644,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         return chat.requestSendEvent(
           actor,
           {
-            agentId,
             threadId: installedPinned.body.threadId,
             prompt: "use a stopped durable host",
             computerUseHostId: installed.hostId,
@@ -676,7 +663,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         return chat.requestSendEvent(
           actor,
           {
-            agentId,
             prompt: "pin a host for a later sticky send",
             computerUseHostId: survivor.hostId,
           },
@@ -695,7 +681,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         return chat.requestSendEvent(
           actor,
           {
-            agentId,
             prompt: "use a stale host",
             computerUseHostId: survivor.hostId,
           },
@@ -709,7 +694,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         return chat.requestSendEvent(
           actor,
           {
-            agentId,
             threadId: survivorThread.body.threadId,
             prompt: "send while the sticky host is stale",
           },

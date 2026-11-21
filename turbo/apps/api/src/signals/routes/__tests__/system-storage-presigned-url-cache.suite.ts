@@ -99,7 +99,6 @@ describe("system storage presigned URL cache", () => {
           return api.registerDirectRunner(owned.runnerGroup);
         });
         const run = await owned.sendChatRun(owned.actor, {
-          agentId: owned.agentId,
           prompt,
         });
         const execution = await owned.runExecution(run.runId);

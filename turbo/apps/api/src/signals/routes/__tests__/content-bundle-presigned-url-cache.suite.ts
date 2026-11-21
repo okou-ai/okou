@@ -91,7 +91,6 @@ describe("content bundle presigned URL cache", () => {
     const readWorkflowExecution = async () => {
       await createRunsApi(context).registerDirectRunner(runnerGroup);
       const run = await chats.sendChatRun(actor, {
-        agentId,
         prompt: "Read the immutable Workflow attachment",
       });
       const { execution, sandboxHeaders } = await chats.runExecution(run.runId);
@@ -250,11 +249,10 @@ describe("content bundle presigned URL cache", () => {
   });
 
   it("pins dispatched Workflow URLs and selects later edits for the following Run", async () => {
-    const { actor, agentId, workflow, misc, chats, readWorkflowExecution } =
+    const { actor, workflow, misc, chats, readWorkflowExecution } =
       await workflowCacheFixture();
     const cached = await readWorkflowExecution();
     const queued = await chats.sendChatRun(actor, {
-      agentId,
       prompt: "use the latest Workflow",
     });
     await misc.updateWorkflow(
@@ -285,8 +283,7 @@ describe("content bundle presigned URL cache", () => {
   });
 
   it("settles a preparation signing failure and caches URLs for a later fresh Run", async () => {
-    const { actor, agentId, readWorkflowExecution } =
-      await workflowCacheFixture();
+    const { actor, readWorkflowExecution } = await workflowCacheFixture();
     const api = createRunsApi(context);
     context.mocks.s3.getSignedUrl.mockRejectedValueOnce(
       new Error("Fixture signer unavailable"),
@@ -296,7 +293,6 @@ describe("content bundle presigned URL cache", () => {
     const sent = await chat.requestSendEvent(
       actor,
       {
-        agentId,
         clientEventId,
         prompt: "A cold signing failure",
       },

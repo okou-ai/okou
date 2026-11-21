@@ -50,7 +50,6 @@ async function appendCancelledRun(args: {
   readonly threadId?: string;
 }): Promise<string> {
   const { runId, threadId } = await chat.sendAndLaunch(args.actor, {
-    agentId: args.agentId,
     prompt: `agent read ${randomUUID()}`,
     ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
   });

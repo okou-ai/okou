@@ -112,7 +112,6 @@ test("persists preparation failure and releases admission before another Run", a
   const sent = await chat.requestSendEvent(
     f.actor,
     {
-      agentId: f.agentId,
       prompt: "Fail execution preparation",
       clientEventId,
     },
@@ -220,7 +219,6 @@ test("recovers interrupted delivery through the ordinary Run heartbeat timeout",
   const sent = await chat.requestSendEvent(
     f.actor,
     {
-      agentId: f.agentId,
       clientEventId,
       prompt: "Interrupt this invocation after publication",
     },
@@ -595,7 +593,6 @@ test("launches the following queued input after a definite refusal releases its 
         await chat.requestSendEvent(
           f.actor,
           {
-            agentId: f.agentId,
             threadId: reuseKey.slice("thread:".length),
             clientEventId,
             prompt: "Continue after refused delivery",

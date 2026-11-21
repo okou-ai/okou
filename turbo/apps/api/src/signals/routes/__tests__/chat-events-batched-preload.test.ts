@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
   paidToolsContract,
   DISABLED_PAID_TOOLS_ENV_VAR,
@@ -34,7 +33,6 @@ describe("batched identity preload through chat entry", () => {
     const result = await chat.requestSendEvent(
       actor,
       {
-        agentId: randomUUID(),
         model: "claude-fable-5-1",
         prompt: "missing organization snapshots",
       },
@@ -97,7 +95,6 @@ describe("batched identity preload through chat entry", () => {
       { actor: member, agentId, disabled: [], cloudBrowserEnabled: true },
     ]) {
       const run = await sendChatRun(entry.actor, {
-        agentId: entry.agentId,
         model: "claude-fable-5-1",
         prompt: "member snapshot isolation",
       });

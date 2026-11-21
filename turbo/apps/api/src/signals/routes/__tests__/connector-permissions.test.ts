@@ -76,14 +76,10 @@ describe("Member connector permissions", () => {
   it("starts from connector defaults, shares rules across Chats/Agents and preserves deny, expiry and reset", async () => {
     const actor = member();
     bdd.acceptAgentStorageWrites();
-    const first = await bdd.createAgent(actor);
-    const second = await bdd.createAgent(actor);
-    const firstChat = await chat.createThread(actor, {
-      agentId: first.agentId,
-    });
-    const secondChat = await chat.createThread(actor, {
-      agentId: second.agentId,
-    });
+    await bdd.createAgent(actor);
+    await bdd.createAgent(actor);
+    const firstChat = await chat.createThread(actor, {});
+    const secondChat = await chat.createThread(actor, {});
     mockSlackConnectorOAuth();
     const start = await connectors.startOauth(actor, "slack", "oauth");
     const state = new URL(start.authorizationUrl).searchParams.get("state");
@@ -203,8 +199,8 @@ describe("Member connector permissions", () => {
   it("shares custom rules across accounts and permits editing with all accounts disabled", async () => {
     const actor = member();
     bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(actor);
-    const thread = await chat.createThread(actor, { agentId: agent.agentId });
+    await bdd.createAgent(actor);
+    const thread = await chat.createThread(actor, {});
     const definition = await connectors.createCustomConnector(
       actor,
       manualHttpCustomConnectorCreateBody({

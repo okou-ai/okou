@@ -118,7 +118,6 @@ describe("thread-bound Pi Automation execution", () => {
     ).resolves.toBe(threadId);
 
     const user = await sendChatRun(actor, {
-      agentId,
       threadId,
       prompt: "continue this Automation conversation",
     });

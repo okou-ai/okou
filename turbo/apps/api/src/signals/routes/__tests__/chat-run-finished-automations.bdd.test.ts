@@ -173,7 +173,6 @@ async function startWatchedChatRun(
   const sent = await chat.requestSendEvent(
     fixture.actor,
     {
-      agentId: fixture.agentId,
       prompt,
       clientEventId: randomUUID(),
       model,
@@ -327,7 +326,6 @@ describe("chat-run-finished workflow automations", () => {
   it("shares one created destination across concurrent creates and rebinds after deletion", async () => {
     const fixture = await setupChatAutomationFixture();
     const watched = await chat.createThread(fixture.actor, {
-      agentId: fixture.agentId,
       model: null,
     });
     const create = async () => {
@@ -434,12 +432,11 @@ describe("chat-run-finished workflow automations", () => {
       orgId: fixture.actor.orgId ?? undefined,
       orgRole: "org:member",
     });
-    const otherAgent = await bdd.createAgent(otherUser, {
+    await bdd.createAgent(otherUser, {
       displayName: "Other member agent",
       visibility: "private",
     });
     const otherThread = await chat.createThread(otherUser, {
-      agentId: otherAgent.agentId,
       model: null,
     });
     // Restore the fixture actor's session after acting as the other member.
@@ -466,7 +463,6 @@ describe("chat-run-finished workflow automations", () => {
   it("prevents a workflow from watching its own chat thread", async () => {
     const fixture = await setupChatAutomationFixture();
     const workflowThread = await chat.createThread(fixture.actor, {
-      agentId: fixture.agentId,
       model: null,
     });
     const workflowId = await wf.createWorkflow(fixture.actor, {
