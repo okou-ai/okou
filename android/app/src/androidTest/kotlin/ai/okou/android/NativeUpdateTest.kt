@@ -108,7 +108,11 @@ class NativeUpdateTest {
                 takeScreenshot().writeToTestStorage("android-update-$name")
             }
             device.awaitChatList(app)
-            val updateTarget = app.getString(R.string.updates_target, "99.0.0")
+            val searchLabel = app.getString(R.string.chat_search)
+            val search = By.pkg(app.packageName).desc(searchLabel)
+            val searchBounds = button(search).visibleBounds
+            captureState("toolbar-current")
+            val updateTarget = app.getString(R.string.updates_version, "99.0.0")
             fun closeDetails() {
                 device.pressBack()
                 assertTrue(
@@ -130,7 +134,7 @@ class NativeUpdateTest {
             gate.complete(Unit)
             exists(R.string.updates_error_check)
             captureState("details-check-failed")
-            click(R.string.retry)
+            click(R.string.updates_retry_check)
             exists(R.string.updates_current)
             captureState("details-up-to-date")
             candidate.set(release)
@@ -140,7 +144,8 @@ class NativeUpdateTest {
             backToChatList()
 
             val updateAction = app.getString(R.string.updates_toolbar)
-            val updateBounds = button(By.pkg(app.packageName).text(updateAction)).visibleBounds
+            val updateBounds = button(By.pkg(app.packageName).desc(updateAction)).visibleBounds
+            assertEquals(searchBounds, button(search).visibleBounds)
             captureState("toolbar-available")
             assertTrue(
                 device.wait(Until.gone(By.desc(app.getString(R.string.chat_filter))), 10_000)
@@ -152,7 +157,7 @@ class NativeUpdateTest {
                         10_000,
                     )
                 )
-            assertEquals(1, device.findObjects(By.pkg(app.packageName).text(updateAction)).size)
+            assertEquals(1, device.findObjects(By.pkg(app.packageName).desc(updateAction)).size)
             assertFalse(
                 device.hasObject(By.pkg(app.packageName).desc(app.getString(R.string.settings)))
             )
@@ -187,7 +192,7 @@ class NativeUpdateTest {
             device.awaitKeyboardFocus(By.pkg(app.packageName).desc(moreLabel))
             assertTrue(device.wait(Until.gone(By.pkg(app.packageName).text(filter)), 10_000))
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_DPAD_LEFT))
-            device.awaitKeyboardFocus(By.pkg(app.packageName).text(updateAction))
+            device.awaitKeyboardFocus(By.pkg(app.packageName).desc(updateAction))
             captureState("toolbar-focused")
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_DPAD_RIGHT))
             device.awaitKeyboardFocus(By.pkg(app.packageName).desc(moreLabel))
@@ -211,7 +216,7 @@ class NativeUpdateTest {
             captureState("details-available")
             closeDetails()
             backToChatList()
-            requireNotNull(text(updateAction)).click()
+            button(By.pkg(app.packageName).desc(updateAction)).click()
             val preparing = app.getString(R.string.updates_preparing)
             val preparation = button(By.pkg(app.packageName).desc(preparing))
             assertEquals(updateBounds, preparation.visibleBounds)
@@ -265,7 +270,7 @@ class NativeUpdateTest {
             exists(R.string.updates_open_settings)
             captureState("install-permission")
             click(R.string.updates_later)
-            exists(R.string.updates_install_toolbar)
+            button(By.pkg(app.packageName).desc(app.getString(R.string.updates_ready)))
             captureState("toolbar-ready")
             openOverflow()
             click(R.string.settings)
@@ -281,7 +286,7 @@ class NativeUpdateTest {
             candidate.set(release.copy(version = "99.1.0"))
             owner.requireUpdate(RequiredUpdate("99.1.0"))
             exists(R.string.updates_required)
-            exists(R.string.updates_toolbar)
+            exists(R.string.updates_download)
             captureState("update-required")
             scenario.recreate()
             exists(R.string.updates_required)
@@ -293,7 +298,7 @@ class NativeUpdateTest {
             scenario.close()
             scenario = ActivityScenario.launch(MainActivity::class.java)
             exists(R.string.updates_required)
-            click(R.string.updates_toolbar)
+            click(R.string.updates_download)
             assertNotNull(text(progressLabel))
             captureState("required-progress")
         } catch (error: Throwable) {

@@ -106,7 +106,8 @@ internal fun OkouApp(
     projectExpansion: ProjectExpansionModel?,
     settingsContent: @Composable (SettingsDestination, openInstructions: () -> Unit) -> Unit,
     recovery: AssistantRecoveryModel? = null,
-    workspaceTitle: @Composable (() -> Unit)? = null,
+    workspaceAvatar: @Composable (() -> Unit)? = null,
+    workspaceName: String? = null,
     updateToolbarAction: UpdateToolbarAction? = null,
     onUpdateEditingChanged: (Boolean) -> Unit = {},
     startupRecovery: @Composable (() -> Unit)? = null,
@@ -466,12 +467,7 @@ internal fun OkouApp(
                     list = list,
                     selectFilter = chats::selectFilter,
                     markAllRead = chats::markAllRead,
-                    openSearch = if (showList) ::openSearch else null,
                     update = updateToolbarAction.takeIf { showList && composer != null },
-                    stackUpdateLabel =
-                        with(LocalDensity.current) {
-                            (listWidth ?: window.width).dp <= 16.sp.toDp() * 19
-                        },
                     settingsFocus = settingsFocus,
                     openSettings =
                         if (composer == null) null
@@ -497,19 +493,9 @@ internal fun OkouApp(
             WorkspaceListToolbar(
                 widthDp = window.width,
                 listWidth = listWidth,
-                title = {
-                    if (workspaceTitle != null) {
-                        workspaceTitle()
-                    } else {
-                        Text(
-                            stringResource(R.string.app_name),
-                            Modifier.padding(start = 8.dp),
-                            style = workspaceListTitleStyle(window.width, listWidth),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                },
+                avatar = workspaceAvatar,
+                workspaceName = workspaceName,
+                openSearch = if (chats != null) ::openSearch else null,
                 actions = toolbarActions,
             )
         }

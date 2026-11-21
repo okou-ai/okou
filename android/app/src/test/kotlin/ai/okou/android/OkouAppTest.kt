@@ -269,23 +269,36 @@ class OkouAppTest {
 
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun updateToolbarKeepsTheLabelReadableWithLargerText() {
-        render(fontScale = 1.3f, updateState = { availableUpdate })
+    fun updateToolbarKeepsThePercentageReadableWithLargerText() {
+        val percent = "50%"
+        render(
+            fontScale = 2f,
+            updateState = {
+                availableUpdate.copy(
+                    transfer = UpdateTransfer.Downloading(release, release.size / 2)
+                )
+            },
+        )
         val layouts = mutableListOf<TextLayoutResult>()
-        val action = compose.onNodeWithText("Update").assertWidthIsEqualTo(104.dp)
+        val action =
+            compose
+                .onNodeWithContentDescription(
+                    compose.activity.getString(R.string.updates_downloading, percent)
+                )
+                .assertWidthIsEqualTo(48.dp)
         val bounds = action.getUnclippedBoundsInRoot()
         assertTrue(bounds.bottom - bounds.top >= 48.dp)
-        compose.onNodeWithText("Update", useUnmergedTree = true).performSemanticsAction(
+        compose.onNodeWithText(percent, useUnmergedTree = true).performSemanticsAction(
             SemanticsActions.GetTextLayoutResult
         ) {
             it(layouts)
         }
         val layout = layouts.single()
         assertEquals(1, layout.lineCount)
-        assertEquals("Update".length, layout.getLineEnd(0, visibleEnd = true))
+        assertEquals(percent.length, layout.getLineEnd(0, visibleEnd = true))
         assertFalse(layout.didOverflowHeight || layout.isLineEllipsized(0))
         assertTrue(
-            "Update glyphs at ${layout.getLineLeft(0)}..${layout.getLineRight(0)} exceed ${layout.size.width}px",
+            "Progress glyphs at ${layout.getLineLeft(0)}..${layout.getLineRight(0)} exceed ${layout.size.width}px",
             layout.getLineLeft(0) >= -1f && layout.getLineRight(0) <= layout.size.width + 1f,
         )
     }
@@ -296,19 +309,26 @@ class OkouAppTest {
     fun updateToolbarKeepsItsBoundsAcrossLocalizedActionsWithLargeText() {
         val update = mutableStateOf(availableUpdate.copy(transfer = UpdateTransfer.Failed))
         render(fontScale = 2f, updateState = { update.value })
-        val retry = compose.onNodeWithText("Erneut versuchen").assertIsDisplayed()
+        val retry =
+            compose
+                .onNodeWithContentDescription(
+                    compose.activity.getString(R.string.updates_retry_download)
+                )
+                .assertIsDisplayed()
         val actionBounds = retry.getUnclippedBoundsInRoot()
         val listBounds = compose.onNodeWithTag("chat_list").getUnclippedBoundsInRoot()
         val percent = NumberFormat.getPercentInstance(Locale.GERMANY).format(0.5)
         listOf(
-                UpdateTransfer.Idle to "Update",
-                UpdateTransfer.Downloading(release) to "Vorbereitung…",
-                UpdateTransfer.Downloading(release, release.size / 2) to percent,
-                UpdateTransfer.Ready(release) to "Installieren",
+                UpdateTransfer.Idle to compose.activity.getString(R.string.updates_toolbar),
+                UpdateTransfer.Downloading(release) to
+                    compose.activity.getString(R.string.updates_preparing),
+                UpdateTransfer.Downloading(release, release.size / 2) to
+                    compose.activity.getString(R.string.updates_downloading, percent),
+                UpdateTransfer.Ready(release) to compose.activity.getString(R.string.updates_ready),
             )
             .forEach { (transfer, label) ->
                 compose.runOnIdle { update.value = availableUpdate.copy(transfer = transfer) }
-                val action = compose.onNodeWithText(label).assertIsDisplayed()
+                val action = compose.onNodeWithContentDescription(label).assertIsDisplayed()
                 assertEquals(actionBounds, action.getUnclippedBoundsInRoot())
                 assertEquals(
                     listBounds,
@@ -375,7 +395,7 @@ class OkouAppTest {
         compose
             .onNodeWithTag("workspace_popup")
             .assertWidthIsEqualTo(244.dp)
-            .assertHeightIsEqualTo(158.dp)
+            .assertHeightIsEqualTo(110.dp)
         compose.onNodeWithText("Filter").performClick()
         compose.onNodeWithText("Inbox").assertIsSelected()
         compose.onNodeWithText("Mark all as read").assertIsNotEnabled()

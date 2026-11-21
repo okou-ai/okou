@@ -45,6 +45,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -86,6 +87,7 @@ internal fun SettingsRow(
     onClick: (() -> Unit)? = null,
     enabled: Boolean = true,
     showChevron: Boolean = onClick != null,
+    valueMaxLines: Int = Int.MAX_VALUE,
     valueLeading: (@Composable () -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -112,7 +114,13 @@ internal fun SettingsRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     valueLeading?.invoke()
-                    Text(value, color = muted, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        value,
+                        color = muted,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = valueMaxLines,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         }
@@ -128,6 +136,8 @@ internal fun SettingsRow(
                     color = muted,
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.End,
+                    maxLines = valueMaxLines,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
