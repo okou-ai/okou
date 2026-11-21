@@ -33,11 +33,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 
-data class CachedChats(
-    val checkpoint: ChatCheckpoint,
-    val confirmedAt: Long,
-    val navigation: CachedChatNavigation,
-)
+data class CachedChats(val checkpoint: ChatCheckpoint, val confirmedAt: Long)
 
 data class CachedProjects(val checkpoint: ProjectCheckpoint, val confirmedAt: Long)
 
@@ -137,16 +133,7 @@ internal constructor(
                         events,
                         events.lastOrNull()?.cursor() ?: snapshot,
                     )
-                val navigation =
-                    CachedChatNavigation(
-                        agents =
-                            if (scope.hasAgents)
-                                dao.agents(key).map { json.decodeFromString(it.payload) }
-                            else null
-                    )
-                checkpoint.validate()
-                navigation.validate()
-                CachedChats(checkpoint, scope.confirmedAt, navigation)
+                CachedChats(checkpoint, scope.confirmedAt)
             }
         }
 
@@ -563,14 +550,9 @@ internal constructor(
             }
 
         /** Returns false when the transaction preserves a strictly newer chat checkpoint. */
-        suspend fun save(
-            checkpoint: ChatCheckpoint,
-            confirmedAt: Long,
-            navigation: CachedChatNavigation = CachedChatNavigation(),
-        ): Boolean =
+        suspend fun save(checkpoint: ChatCheckpoint, confirmedAt: Long): Boolean =
             withContext(dispatcher) {
                 checkpoint.validate()
-                navigation.validate()
                 require(confirmedAt > 0)
                 persist(clear = { it.deleteScope(key) }, saved = { rebuild = false }) { dao ->
                     val stored = dao.scope(key)
@@ -593,7 +575,6 @@ internal constructor(
                             confirmedAt,
                             checkpoint.snapshotCursor.eventId,
                             checkpoint.snapshotCursor.seqId,
-                            navigation.agents != null,
                         )
                     )
                     if (replacement) {
@@ -617,12 +598,6 @@ internal constructor(
                                     json.encodeToString(it),
                                 )
                             }
-                    )
-                    dao.clearAgents(key)
-                    dao.putAgents(
-                        navigation.agents.orEmpty().mapIndexed { position, row ->
-                            ChatAgentRecord(key, row.agentId, position, json.encodeToString(row))
-                        }
                     )
                     true
                 }
@@ -730,7 +705,7 @@ private fun chatDatabaseFactory(
         // Native statements avoid CursorWindow's per-row limit for canonical metadata.
         .setDriver(BundledSQLiteDriver())
         .setQueryCoroutineContext(dispatcher)
-        .addMigrations(chatCacheMigration2To3)
+        .addMigrations(chatCacheMigration2To3, chatCacheMigration3To4)
         // Only rebuildable server data belongs here, never drafts or credentials.
         .fallbackToDestructiveMigration(dropAllTables = true)
         .build()

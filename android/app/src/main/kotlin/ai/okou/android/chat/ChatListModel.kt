@@ -1,7 +1,6 @@
 package ai.okou.android.chat
 
 import ai.okou.android.api.ApiFailure
-import ai.okou.android.api.generated.Agents
 import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.IndicatorsThreadsValue
 import ai.okou.android.auth.WorkspaceIdentity
@@ -173,9 +172,6 @@ data class ChatListUiState(
     val confirmedAt: Long? = null,
     val source: ChatListSource? = null,
     val cacheUnavailable: Boolean = false,
-    val agents: Agents = emptyList(),
-    val agentsPhase: ChatReadPhase = ChatReadPhase.Idle,
-    val agentsSource: ChatListSource? = null,
     val projectList: ProjectListUiState = ProjectListUiState(),
     val indicators: Indicators? = null,
     val indicatorsPhase: ChatReadPhase = ChatReadPhase.Idle,
@@ -333,7 +329,6 @@ class ChatListModel(
         )
     private var cacheRead = false
     private var restoreJob: Job? = null
-    private var agentsJob: Job? = null
     private var indicatorsJob: Job? = null
     private val indicatorReadReceipts = mutableMapOf<String, ChatTimestamp>()
     private val readConfirmations = mutableMapOf<String, ReadConfirmation>()
@@ -504,31 +499,25 @@ class ChatListModel(
         }
     }
 
-    private fun navigation() =
-        mutable.value.let { state ->
-            CachedChatNavigation(agents = state.agents.takeIf { state.agentsSource != null })
-        }
-
     /** The commit identifies when a newer checkpoint already on disk needs to be loaded. */
     private suspend fun persistChats(adoptNewerCheckpoint: Boolean = false): CachedChats? =
         writes.withLock {
             val saved = confirmed ?: return@withLock null
             requireCurrent()
-            val refs = navigation()
             try {
-                val written = cache.save(saved.checkpoint, saved.confirmedAt, refs)
+                val written = cache.save(saved.checkpoint, saved.confirmedAt)
                 val disk = if (!written && adoptNewerCheckpoint) cache.load() else null
                 requireCurrent()
                 mutable.value = mutable.value.copy(cacheUnavailable = false)
                 if (disk != null && disk.checkpoint.cursor.seqId > saved.checkpoint.cursor.seqId)
                     disk
-                else saved.copy(navigation = refs)
+                else saved
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
                 requireCurrent()
                 mutable.value = mutable.value.copy(cacheUnavailable = true)
-                saved.copy(navigation = refs)
+                saved
             }
         }
 
@@ -1213,19 +1202,8 @@ class ChatListModel(
                     confirmed = saved
                     projection.restore(saved.checkpoint, rows)
                     publishRows(
-                        state.copy(
-                            confirmedAt = saved.confirmedAt,
-                            source = ChatListSource.Cache,
-                            agents =
-                                if (state.agentsSource == ChatListSource.Network) state.agents
-                                else saved.navigation.agents.orEmpty(),
-                            agentsSource =
-                                if (state.agentsSource == ChatListSource.Network)
-                                    ChatListSource.Network
-                                else saved.navigation.agents?.let { ChatListSource.Cache },
-                        )
+                        state.copy(confirmedAt = saved.confirmedAt, source = ChatListSource.Cache)
                     )
-                    if (navigation() != saved.navigation) persistChats()
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
@@ -1458,9 +1436,7 @@ class ChatListModel(
 
     private fun refreshFailedListDependencies() {
         val state = mutable.value
-        if (
-            state.agentsPhase == ChatReadPhase.Failed || state.projectsPhase == ChatReadPhase.Failed
-        ) {
+        if (state.projectsPhase == ChatReadPhase.Failed) {
             refreshMetadata()
         }
         if (state.indicatorsPhase == ChatReadPhase.Failed) refreshIndicators()
@@ -1504,7 +1480,7 @@ class ChatListModel(
                 val confirmedAt =
                     previous?.confirmedAt?.takeUnless { result.changed }
                         ?: System.currentTimeMillis()
-                confirmed = CachedChats(checkpoint, confirmedAt, navigation())
+                confirmed = CachedChats(checkpoint, confirmedAt)
                 checkNotNull(persistChats(adoptNewerCheckpoint = true))
             }
         val rows =
@@ -1537,30 +1513,6 @@ class ChatListModel(
 
     fun refreshMetadata() {
         if (!current() || mutable.value.offline) return
-        if (agentsJob?.isActive != true) {
-            mutable.value = mutable.value.copy(agentsPhase = ChatReadPhase.Loading)
-            agentsJob =
-                viewModelScope.launch {
-                    try {
-                        val result = service.agents()
-                        withContext(dispatcher) { CachedChatNavigation(agents = result).validate() }
-                        requireCurrent()
-                        val changed =
-                            mutable.value.agentsSource == null || result != mutable.value.agents
-                        mutable.value =
-                            mutable.value.copy(
-                                agents = result,
-                                agentsPhase = ChatReadPhase.Ready,
-                                agentsSource = ChatListSource.Network,
-                            )
-                        if (changed || mutable.value.cacheUnavailable) persistChats()
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (error: Exception) {
-                        fail(error) { it.copy(agentsPhase = ChatReadPhase.Failed) }
-                    }
-                }
-        }
         projectOwner.refresh()
     }
 

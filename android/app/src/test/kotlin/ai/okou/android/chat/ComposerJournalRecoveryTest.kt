@@ -126,10 +126,7 @@ class ComposerJournalRecoveryTest {
             it.sync(target) == ComposerSync.Unsupported &&
                 it.persistence == ComposerPersistence.Durable
         }
-        assertEquals(
-            rich,
-            fixture.api.service.composerDraft(ServerDraftTarget(CHAT_PERSONAL, true)),
-        )
+        assertEquals(rich, fixture.api.service.composerDraft(ServerDraftTarget(CHAT_PERSONAL)))
         assertEquals(
             "A separate native candidate",
             fixture.store.load(fixture.api.identity).journal.drafts[target.key]!!.text,
@@ -165,7 +162,7 @@ class ComposerJournalRecoveryTest {
         }
         assertEquals(
             "Offline input retained across process owners 👋",
-            fixture.api.service.composerDraft(ServerDraftTarget(CHAT_PERSONAL, true)).plainText(),
+            fixture.api.service.composerDraft(ServerDraftTarget(CHAT_PERSONAL)).plainText(),
         )
         assertEquals(0, fixture.posts())
     }

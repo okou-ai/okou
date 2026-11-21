@@ -230,9 +230,11 @@ private struct ChatSearchContent: View {
                 .foregroundStyle(OkouColor.mutedForeground)
               VStack(alignment: .leading, spacing: OkouSpace.xs) {
                 Text(workflow.title).lineLimit(1)
-                Text(workflow.description ?? agentName(workflow.agentId))
-                  .font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
-                  .lineLimit(1)
+                if let description = workflow.description {
+                  Text(description)
+                    .font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
+                    .lineLimit(1)
+                }
               }
               .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
               Spacer(minLength: 0)
@@ -393,10 +395,6 @@ private struct ChatSearchContent: View {
       }
     }
     return order.compactMap { groups[$0] }
-  }
-
-  private func agentName(_ id: String) -> String {
-    workspace.list.agents.first { $0.agentId == id }?.displayName ?? id
   }
 
   private func resultButton<Content: View>(threadID: String, @ViewBuilder label: () -> Content)

@@ -22,7 +22,6 @@ internal data class ChatScopeRecord(
     val confirmedAt: Long,
     val snapshotEventId: String?,
     val snapshotSeqId: Long,
-    val hasAgents: Boolean,
 )
 
 @Entity(
@@ -63,26 +62,6 @@ internal data class ChatEventRecord(
     val scope: String,
     val id: String,
     val seqId: Long,
-    val payload: String,
-)
-
-@Entity(
-    tableName = "chat_agents",
-    primaryKeys = ["scope", "id"],
-    foreignKeys =
-        [
-            ForeignKey(
-                entity = ChatScopeRecord::class,
-                parentColumns = ["scope"],
-                childColumns = ["scope"],
-                onDelete = ForeignKey.CASCADE,
-            )
-        ],
-)
-internal data class ChatAgentRecord(
-    val scope: String,
-    val id: String,
-    val position: Int,
     val payload: String,
 )
 
@@ -215,13 +194,6 @@ internal interface ChatCacheDao {
 
     @Insert suspend fun putEvents(values: List<ChatEventRecord>)
 
-    @Query("SELECT * FROM chat_agents WHERE scope = :scope ORDER BY position")
-    suspend fun agents(scope: String): List<ChatAgentRecord>
-
-    @Query("DELETE FROM chat_agents WHERE scope = :scope") suspend fun clearAgents(scope: String)
-
-    @Insert suspend fun putAgents(values: List<ChatAgentRecord>)
-
     @Query("SELECT * FROM project_snapshot WHERE scope = :scope ORDER BY position")
     suspend fun projects(scope: String): List<ChatProjectRecord>
 
@@ -256,14 +228,13 @@ internal interface ChatCacheDao {
             ChatScopeRecord::class,
             ChatSnapshotRecord::class,
             ChatEventRecord::class,
-            ChatAgentRecord::class,
             ChatProjectRecord::class,
             ProjectScopeRecord::class,
             ProjectEventRecord::class,
             HistoryScopeRecord::class,
             HistoryEventRecord::class,
         ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 internal abstract class ChatCacheDatabase : RoomDatabase() {
@@ -274,5 +245,13 @@ internal val chatCacheMigration2To3 =
     object : Migration(2, 3) {
         override fun migrate(connection: SQLiteConnection) {
             connection.execSQL("ALTER TABLE chat_scopes DROP COLUMN projectsEnabled")
+        }
+    }
+
+internal val chatCacheMigration3To4 =
+    object : Migration(3, 4) {
+        override fun migrate(connection: SQLiteConnection) {
+            connection.execSQL("DROP TABLE chat_agents")
+            connection.execSQL("ALTER TABLE chat_scopes DROP COLUMN hasAgents")
         }
     }

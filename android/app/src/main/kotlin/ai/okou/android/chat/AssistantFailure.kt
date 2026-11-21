@@ -1,10 +1,10 @@
 package ai.okou.android.chat
 
 import ai.okou.android.api.generated.KnownRunFailureReason
-import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonIgnoreUnknownKeys
 import kotlinx.serialization.json.JsonObject
 
 sealed interface AssistantFailure {
@@ -246,13 +246,12 @@ private fun unsupportedCodexModel(text: String): Boolean {
     return false
 }
 
+@OptIn(ExperimentalSerializationApi::class)
+@JsonIgnoreUnknownKeys
 @Serializable
 data class RecoverySelection(
     val threadId: String,
     val failureId: String,
     val model: String?,
     val priority: Boolean,
-) {
-    // Older composer journals include this field. It is separate from recovery identity.
-    @OptIn(ExperimentalSerializationApi::class) @EncodeDefault private val agentId: String? = null
-}
+)

@@ -62,7 +62,6 @@ data class ComposerJournal(
     val entries: Map<String, ComposerEntry> = emptyMap(),
     val drafts: Map<String, EditableComposerDraft> = emptyMap(),
     val retainedDrafts: Map<String, String> = emptyMap(),
-    val defaultAgentId: String? = null,
 )
 
 internal fun ComposerJournal.acceptedNewChats(): List<ProvisionalChat> =
@@ -96,7 +95,6 @@ data class ComposerState(
     val journal: ComposerJournal? = null,
     val persistence: ComposerPersistence = ComposerPersistence.Loading,
     val context: ComposerContext = ComposerContext.Idle,
-    val defaultAgentId: String? = null,
     val busy: Set<String> = emptySet(),
     val checking: Set<String> = emptySet(),
     val failed: Set<String> = emptySet(),
@@ -106,10 +104,7 @@ data class ComposerState(
 ) {
     fun draftKey(target: ComposerTarget): String {
         val redirected = journal?.entries?.get(target.key)?.createdThreadId
-        return redirected?.let { "thread:$it" }
-            ?: target.threadId?.let { "thread:$it" }
-            ?: (defaultAgentId ?: journal?.defaultAgentId)?.let { "agent:$it" }
-            ?: "new:"
+        return redirected?.let { "thread:$it" } ?: target.threadId?.let { "thread:$it" } ?: "new:"
     }
 
     fun entry(target: ComposerTarget): ComposerEntry {
