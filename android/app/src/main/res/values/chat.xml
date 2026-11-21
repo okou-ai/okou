@@ -3,6 +3,10 @@
     <string name="chat_undo_unarchived">Chat unarchived</string>
     <string name="chat_undo_marked_read">Chat marked as read</string>
     <string name="chat_undo">Undo</string>
+    <string name="chat_undo_offline">%1$s\nUndo when you’re back online.</string>
+    <string name="chat_undo_checking">Checking undo result…</string>
+    <string name="chat_undo_failed">Could not undo the change.</string>
+    <string name="chat_undo_unconfirmed">Could not confirm the undo.</string>
     <string name="chat_feedback_dismiss">Dismiss</string>
     <string name="chat_list_offline">Offline</string>
     <string name="chat_list_refresh_failed">Chat list refresh failed</string>

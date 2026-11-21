@@ -1198,7 +1198,9 @@ class ChatListRootTest {
         }
         compose.onNodeWithTag(rowTag).assertDoesNotExist()
         compose.onNodeWithText("Undo").performClick()
-        compose.waitUntil(10_000) { unread.get() && commands.size == 2 }
+        compose.waitUntil(10_000) {
+            unread.get() && commands.size == 2 && currentList()?.rowUndo == null
+        }
         compose.onNodeWithTag(rowTag).assertExists()
         assertEquals(listOf("read", "unread"), commands.toList())
         compose.onNodeWithText("Undo").assertDoesNotExist()
@@ -1211,6 +1213,7 @@ class ChatListRootTest {
         val events = app.fixture.rowEventTail()
         val commands = CopyOnWriteArrayList<RecordedRequest>()
         val releaseRename = CountDownLatch(1)
+        val releaseUndo = CountDownLatch(1)
         app.fixture.commandResponse = { request ->
             when (request.requestUrl?.encodedPath) {
                 "/api/chat-threads/$CHAT_PERSONAL/archive" -> {
@@ -1220,6 +1223,7 @@ class ChatListRootTest {
                 }
                 "/api/chat-threads/$CHAT_PERSONAL/unarchive" -> {
                     commands.add(request)
+                    releaseUndo.await()
                     events.add(26L to request.rowEvent(26, CHAT_PERSONAL, "unarchived"))
                     MockResponse().setResponseCode(204)
                 }
@@ -1264,6 +1268,19 @@ class ChatListRootTest {
         compose.onNodeWithContentDescription("Filter").performClick()
         compose.onNodeWithText("Archived").performClick()
         val undo = compose.onNodeWithText("Undo").assertIsDisplayed()
+        val dismiss = compose.onNodeWithContentDescription("Dismiss")
+        val undoBounds = undo.getUnclippedBoundsInRoot()
+        val dismissBounds = dismiss.getUnclippedBoundsInRoot()
+        val messageBounds = compose.onNodeWithText("Chat archived").getUnclippedBoundsInRoot()
+        assertEquals(
+            (messageBounds.top + messageBounds.bottom).value / 2,
+            (undoBounds.top + undoBounds.bottom).value / 2,
+            1f,
+        )
+        assertEquals(4f, (dismissBounds.left - undoBounds.right).value, 1f)
+        for (bounds in listOf(undoBounds, dismissBounds)) {
+            assertTrue(bounds.right - bounds.left >= 48.dp && bounds.bottom - bounds.top >= 48.dp)
+        }
         awaitRowActionSettled(CHAT_PERSONAL)
         try {
             compose.runOnIdle {
@@ -1282,11 +1299,35 @@ class ChatListRootTest {
             releaseRename.countDown()
         }
         awaitRowActionSettled(CHAT_PERSONAL)
-        undo.assertIsEnabled().performClick()
+        compose.runOnIdle { app.connectivity.value = false }
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodesWithText("Undo when you’re back online.", substring = true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        undo.assertIsNotEnabled()
+        compose.onNodeWithText("Offline").assertIsDisplayed()
+        compose.runOnIdle { app.connectivity.value = true }
+        compose.waitUntil(10_000) { currentList()?.offline == false }
+        assertEquals(2, commands.size)
+        try {
+            undo.assertIsEnabled().performClick()
+            compose.waitUntil(10_000) {
+                compose
+                    .onAllNodesWithText("Checking undo result…")
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            }
+            undo.assertIsNotEnabled()
+            dismiss.assertIsDisplayed()
+        } finally {
+            releaseUndo.countDown()
+        }
         compose.waitUntil(10_000) {
             currentList()?.threads?.any {
                 it.id == CHAT_PERSONAL && !it.archived && it.title == "Weekly brief"
-            } == true && commands.size == 3
+            } == true && commands.size == 3 && currentList()?.rowUndo == null
         }
         assertEquals(
             listOf("archive", "rename", "unarchive"),
@@ -1811,36 +1852,6 @@ class ChatListRootTest {
 
     private fun RecordedRequest.jsonCommandBody() =
         Json.parseToJsonElement(body.clone().readUtf8()).jsonObject
-
-    private fun ChatListApiFixture.rowEventTail(
-        beforeReadback: (Long) -> Unit = {}
-    ): MutableList<Pair<Long, String>> {
-        val initialEvents = events
-        val tail = CopyOnWriteArrayList<Pair<Long, String>>()
-        events = { request ->
-            val since = request.requestUrl?.queryParameter("sinceSeqId")?.toLong()
-            if (since == null) initialEvents(request)
-            else {
-                if (tail.isNotEmpty()) beforeReadback(since)
-                val observed = tail.filter { it.first > since }.joinToString(",") { it.second }
-                jsonResponse("""{"events":[$observed],"hasMore":false}""")
-            }
-        }
-        return tail
-    }
-
-    private fun RecordedRequest.rowEvent(
-        seq: Long,
-        thread: String,
-        kind: String,
-        extra: String = "",
-    ): String {
-        val id = checkNotNull(requestUrl?.queryParameter("eventId"))
-        assertEquals(id, UUID.fromString(id).toString())
-        assertEquals("Bearer fixture-token", getHeader("Authorization"))
-        assertEquals(0L, bodySize)
-        return chatEventWire(id = id, seq = seq, thread = thread, kind = kind, extra = extra)
-    }
 
     private fun awaitListAndNames() {
         compose.waitUntil(10_000) {

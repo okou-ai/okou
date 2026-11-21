@@ -3,6 +3,10 @@
     <string name="chat_undo_unarchived">Chat aus dem Archiv geholt</string>
     <string name="chat_undo_marked_read">Chat als gelesen markiert</string>
     <string name="chat_undo">Rückgängig</string>
+    <string name="chat_undo_offline">%1$s\nSobald du wieder online bist, kannst du die Änderung rückgängig machen.</string>
+    <string name="chat_undo_checking">Ergebnis wird geprüft …</string>
+    <string name="chat_undo_failed">Die Änderung konnte nicht rückgängig gemacht werden.</string>
+    <string name="chat_undo_unconfirmed">Es konnte nicht bestätigt werden, dass die Änderung rückgängig gemacht wurde.</string>
     <string name="chat_feedback_dismiss">Schließen</string>
     <string name="chat_list_offline">Offline</string>
     <string name="chat_list_refresh_failed">Chatliste konnte nicht aktualisiert werden</string>

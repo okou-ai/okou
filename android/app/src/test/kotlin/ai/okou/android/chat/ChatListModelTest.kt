@@ -32,6 +32,7 @@ import ai.okou.android.api.generated.SendRequestVariant1
 import ai.okou.android.api.generated.ThreadDetail
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.chatEventWire
+import ai.okou.android.historyEventWire
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
@@ -153,12 +154,16 @@ class ChatListModelTest {
                     ),
             )
         var beforeArchive: suspend (String) -> Unit = {}
+        var beforeUnarchive: suspend () -> Unit = {}
+        var beforeEvents: suspend () -> Unit = {}
 
-        override suspend fun chatEvents(since: Long?) =
-            page(events.filter { it.first > (since ?: 0) }.map { it.second })
+        override suspend fun chatEvents(since: Long?): ChatEvents {
+            beforeEvents()
+            return page(events.filter { it.first > (since ?: 0) }.map { it.second })
+        }
 
         override suspend fun setArchived(threadId: String, archived: Boolean, eventId: String) {
-            if (archived) beforeArchive(threadId)
+            if (archived) beforeArchive(threadId) else beforeUnarchive()
             val seq = events.last().first + 1
             events.add(
                 seq to
@@ -437,6 +442,216 @@ class ChatListModelTest {
             assertNull(model.uiState.value.rowUndo)
             indicators.complete(Indicators(emptyMap(), emptyMap(), emptyMap()))
             advanceUntilIdle()
+        }
+    }
+
+    @Test
+    fun archiveUndoWaitsForTheNetworkAndDistinguishesRejectionFromAnUnknownResult() = runTest {
+        for (error in
+            listOf(ApiFailure.Http(403, null, null, null), IOException("Lost response"))) {
+            val connectivity = MutableStateFlow(true)
+            val source = ArchiveService()
+            val release = CompletableDeferred<Unit>()
+            var inverseWrites = 0
+            source.beforeUnarchive = {
+                inverseWrites++
+                release.await()
+                throw error
+            }
+            withCatchUpModel(source, connectivity = connectivity) { model ->
+                model.refresh()
+                advanceUntilIdle()
+                assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Archive))
+                advanceUntilIdle()
+                val offer = checkNotNull(model.uiState.value.rowUndo)
+
+                connectivity.value = false
+                runCurrent()
+                model.undoRowAction(offer)
+                runCurrent()
+                assertSame(offer, model.uiState.value.rowUndo)
+                assertEquals(0, inverseWrites)
+
+                connectivity.value = true
+                advanceUntilIdle()
+                assertSame(offer, model.uiState.value.rowUndo)
+                assertEquals(0, inverseWrites)
+                model.undoRowAction(offer)
+                runCurrent()
+                val checking = checkNotNull(model.uiState.value.rowUndo)
+                assertEquals(ChatUndoPhase.Checking, checking.phase)
+                assertEquals(offer.sequence, checking.sequence)
+                model.undoRowAction(offer)
+                model.undoRowAction(checking)
+                assertEquals(1, inverseWrites)
+
+                val rejected = error is ApiFailure.Http
+                val readback = CompletableDeferred<Unit>()
+                if (rejected) {
+                    source.beforeEvents = {
+                        readback.await()
+                        throw IOException("Readback unavailable")
+                    }
+                }
+                release.complete(Unit)
+                if (rejected) {
+                    runCurrent()
+                    val state = model.uiState.value
+                    assertEquals(ChatUndoPhase.Failed, state.rowUndo?.phase)
+                    assertTrue(state.threads.single { it.id == CHAT_PERSONAL }.archived)
+                    assertTrue(state.pendingRowActions.isEmpty())
+                    readback.complete(Unit)
+                }
+                advanceUntilIdle()
+                val state = model.uiState.value
+                assertEquals(
+                    if (rejected) ChatUndoPhase.Failed else ChatUndoPhase.Unconfirmed,
+                    state.rowUndo?.phase,
+                )
+                if (rejected) assertTrue(state.threads.single { it.id == CHAT_PERSONAL }.archived)
+                assertNull(state.failedRowAction)
+                assertTrue(state.pendingRowActions.isEmpty())
+                assertEquals(1, inverseWrites)
+            }
+        }
+    }
+
+    @Test
+    fun aDefinitiveUnreadUndoSettlesWhileIndicatorsAreStillRefreshing() = runTest {
+        val unread =
+            Indicators(
+                emptyMap(),
+                mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                mapOf(CHAT_PERSONAL to CHAT_DATE),
+            )
+        val read = Indicators(emptyMap(), emptyMap(), emptyMap())
+        for (rejected in listOf(false, true)) {
+            val receipt = CompletableDeferred<ReadState>()
+            val readback = CompletableDeferred<Indicators>()
+            val source =
+                object : Service() {
+                        override suspend fun markRead(threadId: String) = ReadState(CHAT_DATE)
+
+                        override suspend fun markUnread(threadId: String) = receipt.await()
+                    }
+                    .apply { statusRead = { unread } }
+            withCatchUpModel(source) { model ->
+                model.refresh()
+                advanceUntilIdle()
+                model.selectFilter(ChatListFilter.Unread)
+                source.statusRead = { read }
+                assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
+                advanceUntilIdle()
+                val offer = checkNotNull(model.uiState.value.rowUndo)
+                source.statusRead = { readback.await() }
+                model.undoRowAction(offer)
+                runCurrent()
+                assertEquals(ChatUndoPhase.Checking, model.uiState.value.rowUndo?.phase)
+
+                if (rejected) receipt.completeExceptionally(ApiFailure.Http(403, null, null, null))
+                else receipt.complete(ReadState(null))
+                runCurrent()
+                val settled = model.uiState.value
+                assertEquals(ChatReadPhase.Loading, settled.indicatorsPhase)
+                assertEquals(if (rejected) ChatUndoPhase.Failed else null, settled.rowUndo?.phase)
+                assertFalse(CHAT_PERSONAL in settled.pendingRowActions)
+                assertEquals(!rejected, settled.isUnread(CHAT_PERSONAL))
+
+                readback.complete(if (rejected) read else unread)
+                advanceUntilIdle()
+                assertEquals(!rejected, model.uiState.value.isUnread(CHAT_PERSONAL))
+            }
+        }
+    }
+
+    @Test
+    fun reconnectingBeforeAnUndoCanSendStillRequiresAnotherPress() = runTest {
+        val connectivity = MutableStateFlow(true)
+        val displayedRead = CompletableDeferred<Unit>()
+        val unread =
+            Indicators(
+                emptyMap(),
+                mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                mapOf(CHAT_PERSONAL to CHAT_DATE),
+            )
+        var latestReply = HistoryCursor(HISTORY_LAST_EVENT, 37)
+        var reads = 0
+        var inverseWrites = 0
+        val source =
+            object : Service() {
+                    override suspend fun historySnapshot(threadId: String): Nothing =
+                        throw ApiFailure.Http(404, "CHAT_EVENT_SNAPSHOT_NOT_FOUND", null, null)
+
+                    override suspend fun historyRows(threadId: String, cursor: HistoryCursor) =
+                        if (latestReply.seqId <= cursor.seqId)
+                            HistoryPage(emptyList(), cursor, false)
+                        else {
+                            val event =
+                                HistoryEvent.decode(
+                                    historyEventWire(
+                                        checkNotNull(latestReply.eventId),
+                                        latestReply.seqId,
+                                    )
+                                )
+                            HistoryPage(listOf(event), latestReply, false)
+                        }
+
+                    override suspend fun threadDetail(threadId: String) = ThreadDetail(null, false)
+
+                    override suspend fun markRead(threadId: String): ReadState {
+                        if (++reads == 2) displayedRead.await()
+                        return ReadState(CHAT_DATE)
+                    }
+
+                    override suspend fun markUnread(threadId: String): ReadState {
+                        inverseWrites++
+                        return ReadState(null)
+                    }
+                }
+                .apply { statusRead = { unread } }
+        withCatchUpModel(source, connectivity = connectivity) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.selectFilter(ChatListFilter.Unread)
+            source.statusRead = { Indicators(emptyMap(), emptyMap(), emptyMap()) }
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
+            advanceUntilIdle()
+            val offer = checkNotNull(model.uiState.value.rowUndo)
+            val history = model.history
+            history.open(model.uiState.value.threads.single())
+            val visit =
+                checkNotNull(history.beginVisit(CHAT_PERSONAL, history.uiState.value.generation))
+            advanceUntilIdle()
+            visit.confirmDisplayed(checkNotNull(history.uiState.value.confirmation))
+            runCurrent()
+            assertEquals(HistoryReadState.Pending, visit.readState.value)
+
+            model.undoRowAction(offer)
+            runCurrent()
+            assertEquals(ChatUndoPhase.Checking, model.uiState.value.rowUndo?.phase)
+            connectivity.value = false
+            runCurrent()
+            assertTrue(model.uiState.value.offline)
+            connectivity.value = true
+            runCurrent()
+            assertFalse(model.uiState.value.offline)
+            displayedRead.complete(Unit)
+            advanceUntilIdle()
+            assertSame(offer, model.uiState.value.rowUndo)
+            assertEquals(0, inverseWrites)
+
+            latestReply = HistoryCursor("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", 38)
+            history.refresh()
+            advanceUntilIdle()
+            visit.confirmDisplayed(checkNotNull(history.uiState.value.confirmation))
+            advanceUntilIdle()
+            assertEquals(3, reads)
+            assertEquals(0, inverseWrites)
+
+            model.undoRowAction(offer)
+            advanceUntilIdle()
+            assertEquals(1, inverseWrites)
+            assertNull(model.uiState.value.rowUndo)
         }
     }
 
