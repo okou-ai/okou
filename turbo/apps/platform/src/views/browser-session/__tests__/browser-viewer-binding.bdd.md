@@ -19,6 +19,8 @@ Original test `Explicit reconnect waits for a fresh binding before admitting a r
 - **When** The user selects Reconnect while the fresh viewer request is still pending, then the request is released.
 - **Then** Before release, the replacement has not connected and remote browser input remains disabled. After release, the replacement page is shown, its sibling window is excluded, and a new tab targets the replacement window. The viewer is requested twice in total.
 
+Batch 36 retained clause. A Router control kept input disabled during the pending viewer lookup and observed the replacement socket opening only after release. The replacement address became interactive, its sibling was excluded, and the new tab belonged to window 202. The final clause requires an exact count of viewer requests, which docs/app/app-testing.md excludes. This ID remains open.
+
 ## browser-viewer-binding-003
 
 Original test `Changing connection mode cancels pending socket opening before reusing the same descriptor`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-binding.test.tsx#L167).

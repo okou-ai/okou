@@ -41,6 +41,7 @@ export function mockBrowserCdp(
   cdpUrl: string,
   options: {
     readonly autoOpen?: boolean;
+    readonly onConnecting?: (url: string) => void;
     readonly streaming?: boolean;
     readonly targets?: readonly BrowserTarget[];
     readonly unavailableTargets?: readonly string[];
@@ -746,7 +747,10 @@ export function mockBrowserCdp(
     return { result: {} };
   }
 
-  const socketOptions = { autoOpen: options.autoOpen };
+  const socketOptions = {
+    autoOpen: options.autoOpen,
+    onConnecting: options.onConnecting,
+  };
   const socket = context.mocks.browser.webSocket((data, url, peer) => {
     if (!endpoints.has(url)) {
       throw new Error("Unexpected viewer endpoint");
@@ -1026,9 +1030,16 @@ export function mockBrowserCdp(
         get received() {
           return response.promise.then((reply) => reply.message);
         },
-        async release() {
+        async release(result?: unknown) {
           const reply = await response.promise;
-          reply.peer.receive(reply.message);
+          if (result === undefined) {
+            reply.peer.receive(reply.message);
+          } else {
+            const { id } = object({ id: number() }).parse(
+              JSON.parse(reply.message),
+            );
+            reply.peer.receive(JSON.stringify({ id, result }));
+          }
         },
       };
     },

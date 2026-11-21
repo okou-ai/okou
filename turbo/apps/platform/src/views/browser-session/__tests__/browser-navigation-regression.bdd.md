@@ -28,6 +28,8 @@ Registered test `A pending initial history response does not block live remote i
 - **When** The user types into the remote page.
 - **Then** Text reaches that page and the address remains usable. When history arrives, the confirmed URL is shown.
 
+Batch 36 accepted this selected ID as the substitute for browser-viewer-binding-002. The remaining selected IDs keep this BDD open.
+
 ## browser-navigation-regression-03
 
 Original test `A history failure has local feedback without disabling live input`.
