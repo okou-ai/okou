@@ -38,23 +38,37 @@ data class PreferenceChange(
     val locale: UserPreferencesLocale? = null,
     val theme: UserPreferencesTheme? = null,
     val timezone: String? = null,
+    val timezoneToReconcile: String? = null,
 ) {
+    val timezoneToWrite: String?
+        get() = timezone ?: timezoneToReconcile
+
     fun request() =
         UpdatePreferencesRequest(
-            timezone = timezone,
+            timezone = timezoneToWrite,
             colorTheme = colorTheme?.let { UpdatePreferencesRequestColorTheme.valueOf(it.name) },
             locale = locale?.let { UpdatePreferencesRequestLocale.valueOf(it.name) },
             theme = theme?.let { UpdatePreferencesRequestTheme.valueOf(it.name) },
         )
 
-    fun after(sent: PreferenceChange): PreferenceChange? =
-        PreferenceChange(
+    fun after(sent: PreferenceChange): PreferenceChange? {
+        val writtenTimezone = sent.timezoneToWrite
+        return PreferenceChange(
                 colorTheme = colorTheme.takeUnless { it == sent.colorTheme },
                 locale = locale.takeUnless { it == sent.locale },
                 theme = theme.takeUnless { it == sent.theme },
-                timezone = timezone.takeUnless { it == sent.timezone },
+                timezone = timezone.takeUnless { it == writtenTimezone },
+                timezoneToReconcile = timezoneToReconcile.takeIf { writtenTimezone == null },
             )
             .takeUnless { it == PreferenceChange() }
+    }
+
+    fun afterReadback(confirmed: UserPreferences): PreferenceChange? {
+        val remaining = after(confirmed.asChoice())
+        // Reading preferences confirms the stored value, but only the write confirms its schedules.
+        val timezone = timezoneToReconcile?.takeIf { it == confirmed.timezone } ?: return remaining
+        return (remaining ?: PreferenceChange()).copy(timezoneToReconcile = timezone)
+    }
 }
 
 private fun UserPreferences.asChoice() =
@@ -87,6 +101,25 @@ data class MemberPreferencesState(
                 ?: UserPreferencesLocale.EN_US
 }
 
+private fun MemberPreferencesState.afterTimezoneConflict(
+    sent: PreferenceChange
+): MemberPreferencesState {
+    // The timezone endpoint returns this conflict after saving the fields and before finishing
+    // Morning Brief reconciliation. Keep the schedule repair pending and acknowledge the values.
+    val timezone = checkNotNull(sent.timezoneToWrite)
+    val remaining = pending?.after(sent) ?: PreferenceChange()
+    return copy(
+        confirmed =
+            confirmed.copy(
+                colorTheme = sent.colorTheme ?: confirmed.colorTheme,
+                locale = sent.locale ?: confirmed.locale,
+                theme = sent.theme ?: confirmed.theme,
+                timezone = timezone,
+            ),
+        pending = remaining.copy(timezoneToReconcile = timezone),
+    )
+}
+
 /** Workspace-owned confirmed data and explicit user intent; native locale state is presentation. */
 class MemberPreferencesModel(
     initial: UserPreferences,
@@ -97,7 +130,7 @@ class MemberPreferencesModel(
     initialPending: PreferenceChange? = null,
 ) : ViewModel() {
     private val mutable =
-        MutableStateFlow(MemberPreferencesState(initial, initialPending?.after(initial.asChoice())))
+        MutableStateFlow(MemberPreferencesState(initial, initialPending?.afterReadback(initial)))
     val uiState = mutable.asStateFlow()
     private var retired = false
     private var online = true
@@ -183,7 +216,9 @@ class MemberPreferencesModel(
     fun retry() {
         if (!current()) return
         clearRecovery()
-        if (mutable.value.pending == null) readRequested = true
+        val state = mutable.value
+        if (state.pending == null) readRequested = true
+        else if (!online) mutable.value = state.copy(recovering = true)
         synchronize()
     }
 
@@ -194,8 +229,14 @@ class MemberPreferencesModel(
         readRequested = false
         val saving = change != null
         val verifying = saving && needsWriteReadback
+        val pendingForWrite =
+            change?.let {
+                if (verifying || it.timezoneToWrite == null) it
+                else it.copy(timezoneToReconcile = it.timezoneToWrite)
+            }
         mutable.value =
             mutable.value.copy(
+                pending = pendingForWrite,
                 status = if (saving) PreferenceStatus.Saving else PreferenceStatus.Refreshing,
                 recovering = false,
             )
@@ -215,7 +256,7 @@ class MemberPreferencesModel(
                         val latest = mutable.value.pending
                         val pending =
                             when {
-                                verifying -> latest?.after(confirmed.asChoice())
+                                verifying -> latest?.afterReadback(confirmed)
                                 change != null -> latest?.after(change)
                                 else -> latest
                             }
@@ -227,7 +268,7 @@ class MemberPreferencesModel(
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
-                    fail(error, saving)
+                    fail(error, saving, sent = change.takeUnless { verifying })
                 } finally {
                     request = null
                     if (success) synchronize()
@@ -243,12 +284,16 @@ class MemberPreferencesModel(
         retryDelay = 5_000L
     }
 
-    private fun fail(error: Exception, saving: Boolean) {
+    private fun fail(error: Exception, saving: Boolean, sent: PreferenceChange?) {
         if (!current()) return
         // Authorization/update failures retire the parent workspace before another publication.
         onFailure(error)
         if (!current()) return
-        val pending = mutable.value.pending != null
+        val conflict = error is ApiFailure.Http && error.status == 409 && error.code == "CONFLICT"
+        val state =
+            if (conflict && sent?.timezoneToWrite != null) mutable.value.afterTimezoneConflict(sent)
+            else mutable.value
+        val pending = state.pending != null
         val recoverable =
             when (error) {
                 is ApiFailure.Network,
@@ -258,7 +303,7 @@ class MemberPreferencesModel(
                 else -> false
             }
         mutable.value =
-            mutable.value.copy(
+            state.copy(
                 status =
                     if (saving) PreferenceStatus.SaveFailed else PreferenceStatus.RefreshFailed,
                 recovering = recoverable,
