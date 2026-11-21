@@ -537,7 +537,7 @@ export async function publishChatIndicatorsChangedSafely(target: {
 
 type ChatThreadReadCursorUpdatedPayload =
   | {
-      readonly agentId: string;
+      readonly agentId?: string;
       readonly threadId: string;
       readonly lastReadAt: string | null;
     }

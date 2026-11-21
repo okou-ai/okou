@@ -9,7 +9,6 @@ import {
 } from "@okouai/db/schema/wechat";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { db$ } from "../external/db";
 import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
@@ -87,14 +86,13 @@ function contextQuery(args: Source) {
       ),
     )
     .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
     .where(
       and(
         eq(chatEvents.id, args.eventId),
         eq(chatEvents.chatThreadId, args.chatThreadId),
         eq(chatEvents.contextType, "wechat"),
         eq(chatThreads.userId, args.userId),
-        eq(agents.orgId, args.orgId),
+        eq(chatThreads.orgId, args.orgId),
         eq(wechatConnections.userId, args.userId),
         eq(wechatConnections.orgId, args.orgId),
         eq(wechatConnections.status, "active"),

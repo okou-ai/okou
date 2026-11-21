@@ -89,14 +89,12 @@ export const linkWalletSpends = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
-    agentId: uuid("agent_id")
-      .notNull()
-      .references(
-        () => {
-          return agents.id;
-        },
-        { onDelete: "cascade" },
-      ),
+    agentId: uuid("agent_id").references(
+      () => {
+        return agents.id;
+      },
+      { onDelete: "cascade" },
+    ),
     connectionId: uuid("connection_id")
       .notNull()
       .references(() => {
@@ -137,6 +135,11 @@ export const linkWalletSpends = pgTable(
         table.orgId,
         table.userId,
         table.agentId,
+        table.intentId,
+      ),
+      uniqueIndex("idx_link_wallet_spends_member_intent").on(
+        table.orgId,
+        table.userId,
         table.intentId,
       ),
       uniqueIndex("idx_link_wallet_spends_provider").on(table.providerSpendId),

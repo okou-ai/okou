@@ -3,24 +3,63 @@ import {
   projectCommittedChatThreadSearch$,
 } from "./chat-event-publication.service";
 import {
-  emailDeliveryTargetSchema,
-  type EmailDeliveryTarget,
-} from "./email-chat-callback-payload";
-import { createEmailQueuedDelivery } from "./email-queued-launch-context.service";
-import {
   dispatchEmailChatDeliveryOnce$,
   deliverEmailChatAdmissionFailure$,
 } from "./internal-email-chat-run-callback.service";
-import {
-  wechatDeliveryTargetSchema,
-  type WechatDeliveryTarget,
-} from "./wechat-chat-callback-payload";
 import { loadWechatQueuedDelivery$ } from "./wechat-context.service";
 import { reconcileWechatThreadTyping$ } from "./wechat-thread-typing.service";
 import {
   sendWechatChatReply$,
   dispatchWechatChatDelivery$,
 } from "./wechat-delivery.service";
+import { db$, writeDb$ } from "../external/db";
+import { recordLastEventToComplete$ } from "./internal-chat-run-output-timing.service";
+import {
+  clearCanonicalSlackThreadStatusIfIdle$,
+  reconcileCanonicalSlackThreadStatus$,
+} from "./canonical-slack-thread-status.service";
+import {
+  insertAssistantEvents$,
+  insertRecommendedFollowupsEvent$,
+  touchChatThreadLastMessageAtIndependently$,
+} from "./chat-event-shared.service";
+import { dispatchConfiguredChatRunFinishedEvent$ } from "./chat-run-finished-event-dispatch.service";
+import { loadDiscordQueuedDelivery$ } from "./discord-queued-launch-context.service";
+import { scheduleDiscordRunTyping$ } from "./discord-run-typing.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
+import {
+  deliverAgentPhoneChatAdmissionFailure$,
+  dispatchAgentPhoneChatDeliveryOnce$,
+} from "./internal-agentphone-chat-run-callback.service";
+import {
+  clearCanonicalFeishuThinkingReaction$,
+  deliverFeishuChatAdmissionFailure$,
+  dispatchFeishuChatDeliveryOnce$,
+} from "./internal-feishu-chat-run-callback.service";
+import {
+  deliverSlackChatAdmissionFailure$,
+  dispatchSlackChatDeliveryOnce$,
+} from "./internal-slack-chat-run-callback.service";
+import {
+  deliverTeamsChatAdmissionFailure$,
+  dispatchTeamsChatDeliveryOnce$,
+} from "./internal-teams-chat-run-callback.service";
+import {
+  deliverTelegramChatAdmissionFailure$,
+  dispatchTelegramChatDeliveryOnce$,
+} from "./internal-telegram-chat-run-callback.service";
+import { sendUserPushNotifications$ } from "./push-notifications.service";
+import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
+import { saveRunSummary$ } from "./run-summary.service";
+import {
+  emailDeliveryTargetSchema,
+  type EmailDeliveryTarget,
+} from "./email-chat-callback-payload";
+import { createEmailQueuedDelivery } from "./email-queued-launch-context.service";
+import {
+  wechatDeliveryTargetSchema,
+  type WechatDeliveryTarget,
+} from "./wechat-chat-callback-payload";
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { v5 as uuidv5 } from "uuid";
@@ -41,13 +80,11 @@ import { logger } from "../../lib/log";
 import { safeSqlStateCode } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
-import { db$, writeDb$ } from "../external/db";
 import {
   publishChatIndicatorsChangedSafely,
   publishChatThreadDetailChangedSafely,
   publishThreadListChangedSafely,
 } from "../external/realtime";
-import { recordLastEventToComplete$ } from "./internal-chat-run-output-timing.service";
 import { settle, settleIncludingAbort, tapError, throwIfAbort } from "../utils";
 import {
   agentphoneDeliveryTargetSchema,
@@ -56,18 +93,9 @@ import {
 import { createAgentPhoneQueuedDelivery } from "./agentphone-queued-launch-context.service";
 import { integrationCompletionFallbackEventIdForRun } from "./assistant-event-id";
 import {
-  loadCompletedRunOutput$,
   type CompletedRunOutput,
+  loadCompletedRunOutput$,
 } from "./chat-event-row-read.service";
-import {
-  clearCanonicalSlackThreadStatusIfIdle$,
-  reconcileCanonicalSlackThreadStatus$,
-} from "./canonical-slack-thread-status.service";
-import {
-  insertAssistantEvents$,
-  insertRecommendedFollowupsEvent$,
-  touchChatThreadLastMessageAtIndependently$,
-} from "./chat-event-shared.service";
 import {
   assistantErrorEventInsertSql,
   assistantErrorEventType,
@@ -84,31 +112,27 @@ import type {
   QueuedUserMessageTriggerSource,
 } from "./chat-queued-event.service";
 import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
-import { dispatchConfiguredChatRunFinishedEvent$ } from "./chat-run-finished-event-dispatch.service";
 import {
   canonicalDeliveryEventReadPlan,
   integrationCompletionFallbackReadPlan,
-  loadTerminalChatCallback$,
-  loadTerminalChatCallbackLocator$,
-  requireSourceChatCallback$,
   runLifecycleMarkerReadPlan,
   type ChatRunInfo,
   type ChatThreadForRunRow,
+  loadTerminalChatCallback$,
+  loadTerminalChatCallbackLocator$,
+  requireSourceChatCallback$,
 } from "./chat-run-state-read.service";
 import {
   generateChatNotificationSummary,
   generateChatThreadRecommendedFollowupsFromContext,
+  type ChatCompletionContextMessage,
   loadChatThreadRecommendedFollowupContext$,
   generateAndPersistChatThreadTitle$,
-  type ChatCompletionContextMessage,
 } from "./chat-title.service";
 import {
   discordDeliveryTargetSchema,
   type DiscordDeliveryTarget,
 } from "./discord-chat-callback-payload";
-import { loadDiscordQueuedDelivery$ } from "./discord-queued-launch-context.service";
-import { scheduleDiscordRunTyping$ } from "./discord-run-typing.service";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import {
   feishuDeliveryTargetSchema,
   type FeishuDeliveryTarget,
@@ -122,37 +146,13 @@ import {
   type FeishuRunFileIndex,
 } from "./feishu-run-file-index";
 import {
-  deliverAgentPhoneChatAdmissionFailure$,
-  dispatchAgentPhoneChatDeliveryOnce$,
-} from "./internal-agentphone-chat-run-callback.service";
-import {
-  sendDiscordChatReply$,
   type DiscordReplyRequest,
+  sendDiscordChatReply$,
 } from "./internal-discord-chat-run-callback.service";
-import {
-  clearCanonicalFeishuThinkingReaction$,
-  deliverFeishuChatAdmissionFailure$,
-  dispatchFeishuChatDeliveryOnce$,
-} from "./internal-feishu-chat-run-callback.service";
 import type {
   InternalRunCallbackEnvelope,
   TerminalRunCallbackKind,
 } from "./internal-run-callback";
-import {
-  deliverSlackChatAdmissionFailure$,
-  dispatchSlackChatDeliveryOnce$,
-} from "./internal-slack-chat-run-callback.service";
-import {
-  deliverTeamsChatAdmissionFailure$,
-  dispatchTeamsChatDeliveryOnce$,
-} from "./internal-teams-chat-run-callback.service";
-import {
-  deliverTelegramChatAdmissionFailure$,
-  dispatchTelegramChatDeliveryOnce$,
-} from "./internal-telegram-chat-run-callback.service";
-import { sendUserPushNotifications$ } from "./push-notifications.service";
-import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
-import { saveRunSummary$ } from "./run-summary.service";
 import { createSlackQueuedDelivery } from "./slack-queued-launch-context.service";
 import {
   slackChatDeliveryFields,
@@ -172,7 +172,6 @@ import { createTelegramQueuedDelivery } from "./telegram-queued-launch-context.s
 const log = logger("callback:chat");
 const chatCallbackPayloadSchema = object({
   threadId: string(),
-  agentId: string(),
   slackDelivery: object({
     workspaceId: string().optional(),
     channelId: string(),
@@ -239,7 +238,6 @@ export type RunLaunchCallbackRecord =
 
 export function queuedChatRunCallbackInputs(input: {
   readonly threadId: string;
-  readonly agentId: string;
   readonly queuedMessageId: string;
   readonly delivery: QueuedIntegrationDeliveries;
 }): RunLaunchCallbackRecord[] {
@@ -248,7 +246,6 @@ export function queuedChatRunCallbackInputs(input: {
       internalKind: "chat",
       payload: {
         threadId: input.threadId,
-        agentId: input.agentId,
         queuedMessageId: input.queuedMessageId,
         ...input.delivery,
       },
@@ -1535,10 +1532,7 @@ async function runTerminalChatCallbackSideEffects(args: {
 export interface QueuedChatPromptData {
   readonly threadId: string;
   readonly userId: string;
-  readonly agent: {
-    readonly id: string;
-    readonly orgId: string;
-  };
+  readonly orgId: string;
   readonly queuedMessage: QueuedUserMessage;
 }
 
@@ -1594,30 +1588,25 @@ type QueuedAdmissionFailureChannel = QueuedAdmissionFailureDelivery &
   (
     | {
         readonly kind: "Slack";
-        readonly agentId: string;
         readonly target: SlackDeliveryTarget;
       }
     | { readonly kind: "Feishu"; readonly target: FeishuDeliveryTarget }
     | {
         readonly kind: "Teams";
-        readonly agentId: string;
         readonly target: TeamsDeliveryTarget;
       }
     | { readonly kind: "Discord"; readonly target: DiscordDeliveryTarget }
     | { readonly kind: "Wechat"; readonly target: WechatDeliveryTarget }
     | {
         readonly kind: "Telegram";
-        readonly agentId: string;
         readonly target: TelegramDeliveryTarget;
       }
     | {
         readonly kind: "Email";
-        readonly agentId: string;
         readonly target: EmailDeliveryTarget;
       }
     | {
         readonly kind: "AgentPhone";
-        readonly agentId: string;
         readonly target: AgentPhoneDeliveryTarget;
       }
   );
@@ -1630,9 +1619,8 @@ function queuedPromptRejectionChannel(
   const base = {
     chatThreadId: input.threadId,
     userId: input.userId,
-    orgId: input.agent.orgId,
+    orgId: input.orgId,
   };
-  const agentId = input.agent.id;
   const contextType = input.queuedMessage.contextType;
   switch (contextType) {
     case "web":
@@ -1643,7 +1631,6 @@ function queuedPromptRejectionChannel(
       return {
         ...base,
         kind: "Slack",
-        agentId,
         target: requiredQueuedDelivery(delivery.slackDelivery, contextType),
       };
     }
@@ -1658,7 +1645,6 @@ function queuedPromptRejectionChannel(
       return {
         ...base,
         kind: "Teams",
-        agentId,
         target: requiredQueuedDelivery(delivery.teamsDelivery, contextType),
       };
     }
@@ -1680,7 +1666,6 @@ function queuedPromptRejectionChannel(
       return {
         ...base,
         kind: "Telegram",
-        agentId,
         target: requiredQueuedDelivery(delivery.telegramDelivery, contextType),
       };
     }
@@ -1688,7 +1673,6 @@ function queuedPromptRejectionChannel(
       return {
         ...base,
         kind: "Email",
-        agentId,
         target: requiredQueuedDelivery(delivery.emailDelivery, contextType),
       };
     }
@@ -1696,7 +1680,6 @@ function queuedPromptRejectionChannel(
       return {
         ...base,
         kind: "AgentPhone",
-        agentId,
         target: requiredQueuedDelivery(
           delivery.agentphoneDelivery,
           contextType,
@@ -1733,7 +1716,6 @@ const sendQueuedAdmissionFailure$ = command(
             orgId: channel.orgId,
             userId: channel.userId,
             chatEventId,
-            agentId: channel.agentId,
             ...channel.target,
           },
           signal,
@@ -1762,7 +1744,6 @@ const sendQueuedAdmissionFailure$ = command(
             orgId: channel.orgId,
             userId: channel.userId,
             chatEventId,
-            agentId: channel.agentId,
             target: channel.target,
           },
           signal,
@@ -1813,7 +1794,6 @@ const sendQueuedAdmissionFailure$ = command(
             userId: channel.userId,
             orgId: channel.orgId,
             chatEventId,
-            agentId: channel.agentId,
             target: channel.target,
           },
           signal,
@@ -1828,7 +1808,6 @@ const sendQueuedAdmissionFailure$ = command(
             userId: channel.userId,
             orgId: channel.orgId,
             chatEventId,
-            agentId: channel.agentId,
             target: channel.target,
           },
           signal,
@@ -1979,7 +1958,6 @@ const prepareCompletedTerminalChatCallbackWork$ = command(
         runStatus: "completed",
         failureReason: null,
         lastResultText: completed.lastResultText,
-        sourceAgentId: args.chatThread.agentId,
         sourceThreadTitle: args.chatThread.title,
       },
       deferredSideEffects: {
@@ -2065,7 +2043,6 @@ const prepareFailedTerminalChatCallbackWork$ = command(
         // Failed runs surface their error separately; patterns only ever
         // match assistant output, so terminal errors carry no matchable text.
         lastResultText: null,
-        sourceAgentId: args.chatThread.agentId,
         sourceThreadTitle: args.chatThread.title,
       },
       deferredSideEffects: {
@@ -2659,7 +2636,7 @@ const processChatInternalCallback$ = command(
 
 type QueuedRejectionHead = Pick<
   ChatQueueHeadContext,
-  "id" | "chatThreadId" | "orgId" | "userId" | "agentId" | "contextType"
+  "id" | "chatThreadId" | "orgId" | "userId" | "contextType"
 >;
 
 /** Data for a static delivery command; it never captures a Store. */
@@ -2682,7 +2659,7 @@ const loadQueuedRejectionChannel$ = command(
       userId: head.userId,
     };
     const source = { ...owner, eventId: head.id };
-    const delivery = { ...owner, agentId: head.agentId };
+    const delivery = owner;
     signal.throwIfAborted();
     switch (head.contextType) {
       case "slack": {

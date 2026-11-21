@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import type { SharedMessage } from "@okouai/api-contracts/contracts/shared-threads";
 import { joinAll, onRejection, settle } from "../utils";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
-import { agents } from "@okouai/db/schema/agent";
 import { artifacts } from "@okouai/db/schema/artifact";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -233,12 +232,11 @@ const ownsSharedThreadSource$ = command(
     const [thread] = await get(db$)
       .select({ id: chatThreads.id })
       .from(chatThreads)
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .where(
         and(
           eq(chatThreads.id, args.threadId),
           eq(chatThreads.userId, args.userId),
-          eq(agents.orgId, args.orgId),
+          eq(chatThreads.orgId, args.orgId),
         ),
       )
       .limit(1);

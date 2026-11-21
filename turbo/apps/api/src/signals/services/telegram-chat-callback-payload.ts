@@ -15,7 +15,6 @@ export const telegramDeliveryTargetSchema = object({
   rootMessageId: string().nullable(),
   userLinkId: uuid(),
   userLinkKind: literal("official"),
-  agentId: string().min(1),
   isDM: boolean(),
   messageThreadId: number().int().optional(),
   thinkingMessageId: string().nullable().optional(),

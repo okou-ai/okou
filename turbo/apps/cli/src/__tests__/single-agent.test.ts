@@ -152,27 +152,13 @@ describe("captured personal CLI help and dispatch", () => {
     }
   });
 
-  it("creates chats on the workspace executor instead of a retained non-default current Agent", async () => {
+  it("creates member chats even when the environment carries a legacy Agent ID", async () => {
     vi.stubEnv("OKOU_TOKEN", token());
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_AGENT_ID", "00000000-0000-4000-8000-000000000002");
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     let created: unknown;
     server.use(
-      http.get("*/api/agents", () => {
-        return HttpResponse.json([
-          {
-            agentId: executorId,
-            isDefaultAgent: true,
-            ownerId: "workspace-owner",
-            description: "Shared role",
-            displayName: "Okou",
-            sound: "friendly",
-            avatarUrl: null,
-            visibility: "public",
-          },
-        ]);
-      }),
       http.post("*/api/chat-threads", async ({ request }) => {
         created = await request.json();
         return HttpResponse.json(
@@ -196,8 +182,8 @@ describe("captured personal CLI help and dispatch", () => {
       await command.parseAsync(["chat", "create", "Personal plan", "--json"], {
         from: "user",
       });
+      expect(created).not.toHaveProperty("agentId");
       expect(created).toMatchObject({
-        agentId: executorId,
         title: "Personal plan",
       });
       expect(JSON.parse(log.mock.calls[0]![0] as string)).not.toHaveProperty(

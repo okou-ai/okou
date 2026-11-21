@@ -115,7 +115,7 @@ final class ChatBatchPermissionTests: XCTestCase {
       fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, 2)
   }
 
-  func testDisabledMissingOrReassignedRequestsCannotWrite() async throws {
+  func testDisabledMissingOrMismatchedRequestsCannotWrite() async throws {
     for variant in 0..<3 {
       var state = FixtureData.State()
       if variant == 1 { state.metadataStatus["google-drive"] = 404 }
@@ -125,7 +125,7 @@ final class ChatBatchPermissionTests: XCTestCase {
       let reviewed = try await service.load(action)
       fixture.state.withLock {
         if variant == 0 { $0.enabled = false }
-        if variant == 2 { $0.threadAgentID = UUID().uuidString }
+        if variant == 2 { $0.metadataThreadID = UUID().uuidString }
       }
       do {
         _ = try await service.apply(action, duration: .hour, reviewing: reviewed)

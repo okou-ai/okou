@@ -126,7 +126,6 @@ struct ComposerAddSheet: View {
           .accessibilityHidden(true)
       }
     }
-    .disabled(store.agentID == nil)
     .accessibilityIdentifier("composer-connectors")
   }
 }

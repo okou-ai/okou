@@ -23,7 +23,6 @@ import {
   threadId,
   type Field,
 } from "../../browser-user-action/__tests__/browser-input-request-fixture.ts";
-import { AGENT_ID } from "./chat-lifecycle-test-helpers.ts";
 import {
   assistantEvent,
   completedEvent,
@@ -31,7 +30,7 @@ import {
 } from "./chat-run-test-fixtures.ts";
 
 const context = testContext();
-const path = browserInputPath(AGENT_ID);
+const path = browserInputPath();
 async function openConversation(
   fields: Field[],
   messages: string[],
@@ -54,10 +53,7 @@ async function openConversation(
     ];
   });
   createChatRunFixtures(context).installRunChat({ threadId, chatEvents });
-  const request = installBrowserRequest(context, fields, {
-    agentId: AGENT_ID,
-    ...options.initial,
-  });
+  const request = installBrowserRequest(context, fields, options.initial);
   options.arrange?.(request);
   await setupPage({
     context,

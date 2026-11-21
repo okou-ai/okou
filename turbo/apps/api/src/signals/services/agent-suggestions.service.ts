@@ -13,7 +13,7 @@ import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-t
 import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
 import { isDeepStrictEqual } from "node:util";
 import { command } from "ccstate";
-import { and, arrayContains, eq, not, sql } from "drizzle-orm";
+import { and, arrayContains, eq, isNull, or, not, sql } from "drizzle-orm";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { feedItems } from "@okouai/db/schema/feed-item";
@@ -128,7 +128,10 @@ export const suggestionAccess$ = command(
           orgMetadata,
           and(
             eq(orgMetadata.orgId, auth.orgId),
-            eq(orgMetadata.defaultAgentId, agentRuns.agentId),
+            or(
+              isNull(agentRuns.agentId),
+              eq(orgMetadata.defaultAgentId, agentRuns.agentId),
+            ),
           ),
         )
         .where(
@@ -172,7 +175,7 @@ export const suggestionAccess$ = command(
         );
         if (
           !preference.suggestions.active ||
-          preference.agentId !== run.agentId
+          (run.agentId !== null && preference.agentId !== run.agentId)
         ) {
           return resourceUnavailable(
             "Automatic suggestion curation is disabled or no longer available. Continue without changing suggestions.",

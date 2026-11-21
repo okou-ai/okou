@@ -217,14 +217,14 @@ export const ensureCanonicalSlackChatThreadRoute$ = command(
     // A dependent CTE must consume RETURNING: it cannot see this newly
     // inserted thread in the statement's base-table snapshot.
     const insertedThread = sql`${integrationChatThreadInsertFromRouteSql(thread, insertedRoute)}
-        RETURNING ${chatThreads.agentId}`;
+        RETURNING ${chatThreads.id}`;
     const [route] = parseRawRows(
       insertedSlackRouteSchema,
       await db.execute(
         integrationThreadCreatedEventSql(args.orgId, thread, {
           cte: sql`inserted_slack_route AS (${routeInsert.getSQL()}), inserted_slack_thread AS (${insertedThread})`,
           gate: exists(sql`(SELECT 1 FROM inserted_slack_thread)`),
-          agentId: sql`(SELECT agent_id FROM inserted_slack_thread)`,
+
           result: db.select().from(insertedRoute).getSQL(),
         }),
       ),

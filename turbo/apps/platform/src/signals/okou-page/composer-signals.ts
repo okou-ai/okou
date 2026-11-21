@@ -265,7 +265,7 @@ export interface ComposerSignals {
   readonly create: ComposerCreateSignals;
   readonly addMenu: ComposerUiSignalGroups["addMenu"];
   readonly taskChips: ComposerTaskChipsSignals;
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly threadId?: string;
   /** Present on a new chat's page composer, which can start it in a Project. */
   readonly project?: ComposerProjectSignals;
@@ -306,7 +306,7 @@ export interface ComposerSignals {
 }
 
 interface CreateComposerSignalsOptions {
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly draft: {
     readonly signals: DraftSignals;
     readonly load$: ComposerDraftSignals["load$"];
@@ -560,8 +560,8 @@ export function createComposerSignals(
 ): ComposerSignals {
   const eventSignals = createComposerChatEventSignals(options.eventSignals);
   const draft = options.draft.signals;
-  const agentId$ = computed((): string => {
-    return options.agentId;
+  const agentId$ = computed((): string | null => {
+    return options.agentId ?? null;
   });
   const ui = createComposerUiSignals();
   const workflowComposer = createWorkflowComposerSignals(

@@ -266,10 +266,10 @@ export const ensureTelegramChatThreadRoute$ = command(
         cte: sql`inserted_telegram_route AS (${insert.getSQL()}),
           inserted_telegram_thread AS (
             ${integrationChatThreadInsertFromRouteSql(thread, insertedRoute)}
-            RETURNING ${chatThreads.agentId}
+            RETURNING ${chatThreads.id}
           )`,
         gate: sql`EXISTS (SELECT 1 FROM inserted_telegram_thread)`,
-        agentId: sql`(SELECT agent_id FROM inserted_telegram_thread)`,
+
         result: sql`SELECT id, chat_id AS "chatId", chat_thread_id AS "chatThreadId"
           FROM inserted_telegram_route`,
       });
@@ -341,15 +341,14 @@ export const createTelegramChatThread$ = command(
     const insert = db
       .insert(chatThreads)
       .values(thread)
-      .returning({ agentId: chatThreads.agentId });
+      .returning({ id: chatThreads.id });
     // Use RETURNING: another CTE cannot read this inserted base row in the
     // statement snapshot. Creation, sequence reservation and publication commit
-    // together, with the event's agent identity coming from the inserted row.
+    // together.
     await db.execute(
       integrationThreadCreatedEventSql(args.orgId, thread, {
         cte: sql`inserted_thread AS (${insert.getSQL()})`,
         gate: sql`EXISTS (SELECT 1 FROM inserted_thread)`,
-        agentId: sql`(SELECT agent_id FROM inserted_thread)`,
       }),
     );
     signal.throwIfAborted();

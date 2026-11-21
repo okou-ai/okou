@@ -55,7 +55,6 @@ function officialObservationFromTarget(
     automation.ownerUserId !== scope.userId ||
     workflow.orgId !== scope.orgId ||
     workflow.ownerUserId !== scope.userId ||
-    workflow.agentId !== scope.agentId ||
     workflow.visibility !== "private" ||
     workflow.officialInstallationState !== "installed" ||
     automationContext.workflowName !== workflow.name

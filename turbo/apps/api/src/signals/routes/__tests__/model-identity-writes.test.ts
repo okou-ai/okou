@@ -50,7 +50,7 @@ describe("model identity new writes", () => {
   );
 
   it("resolves an omitted creation model from the member's personal preference", async () => {
-    const { actor, agentId } = await actorWithAgent();
+    const { actor } = await actorWithAgent();
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-sonnet-5-5",
     });
@@ -60,7 +60,7 @@ describe("model identity new writes", () => {
     const created = await accept(
       client.create({
         headers: { authorization: "Bearer clerk-session" },
-        body: { agentId },
+        body: {},
       }),
       [201],
     );

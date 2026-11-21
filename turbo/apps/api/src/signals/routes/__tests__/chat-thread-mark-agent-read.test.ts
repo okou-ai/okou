@@ -249,7 +249,7 @@ describe("bulk Agent read-cursor notifications stay bounded", () => {
       chat.readThreadMetadata(fixture.actor, threadId),
     ).resolves.toMatchObject({ muted: true });
     expect(publishedReadCursorPayloads()).toStrictEqual([
-      { threadId, agentId: fixture.agentId, lastReadAt: marked.lastReadAt },
+      { threadId, agentId: undefined, lastReadAt: marked.lastReadAt },
     ]);
     await chat.requestSetThreadMuted(fixture.actor, threadId, false, [204]);
     await expect(visibleUnreadThreadIds(fixture)).resolves.toStrictEqual(
@@ -257,7 +257,7 @@ describe("bulk Agent read-cursor notifications stay bounded", () => {
     );
   });
 
-  it("leaves another Agent's unread threads untouched", async () => {
+  it("leaves another member's unread threads untouched", async () => {
     const fixture = await createUnreadAgentThreads(1);
     const other = await createUnreadAgentThreads(1);
     await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
@@ -286,10 +286,7 @@ describe("bulk Agent read-cursor notifications stay bounded", () => {
     await expect(visibleUnreadThreadIds(fixture)).resolves.toStrictEqual(
       new Set(fixture.threadIds),
     );
-    const pending = await chat.listThreadUnreads(
-      fixture.actor,
-      fixture.agentId,
-    );
+    const pending = await chat.listThreadUnreads(fixture.actor);
     const expectedCursors = new Map(
       pending.map(({ threadId, unreadAt }) => {
         return [threadId, unreadAt] as const;
@@ -303,10 +300,7 @@ describe("bulk Agent read-cursor notifications stay bounded", () => {
       const second = secondRead.get(threadId);
       expect(Date.parse(second ?? "")).toBeGreaterThan(Date.parse(first ?? ""));
     }
-    const unreads = await chat.listThreadUnreads(
-      fixture.actor,
-      fixture.agentId,
-    );
+    const unreads = await chat.listThreadUnreads(fixture.actor);
     expect(unreads).toStrictEqual([]);
   });
 });

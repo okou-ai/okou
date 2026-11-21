@@ -288,7 +288,6 @@ function generateToken(): string {
 
 function actionUrl(args: {
   readonly requestToken: string;
-  readonly agentId: string;
   readonly threadId: string;
   readonly callbackPrompt: string;
 }): string {
@@ -296,7 +295,6 @@ function actionUrl(args: {
     `/browser/actions/${encodeURIComponent(args.requestToken)}`,
     env("APP_URL"),
   );
-  url.searchParams.set("agentId", args.agentId);
   url.searchParams.set("threadId", args.threadId);
   url.searchParams.set("callbackPrompt", args.callbackPrompt);
   return url.toString();
@@ -319,7 +317,6 @@ function publicRequest(
     requestToken,
     state: row.status,
     completedAt: row.completedAt?.toISOString() ?? null,
-    agentId: row.agentId,
     threadId: row.chatThreadId,
     callbackIds: payload.callbackIds,
   };
@@ -446,7 +443,6 @@ const loadExactBrowserUserActionRequest$ = command(
           eq(browserUserActionRequests.orgId, row.orgId),
           eq(browserUserActionRequests.userId, row.userId),
           eq(browserUserActionRequests.chatThreadId, row.chatThreadId),
-          eq(browserUserActionRequests.agentId, row.agentId),
         ),
       )
       .limit(1);
@@ -1065,7 +1061,7 @@ function browserUserActionCreationPlan(args: {
 }) {
   const query = new QueryBuilder();
   const runQuery = query
-    .select({ agentId: chatThreads.agentId })
+    .select({ id: chatThreads.id })
     .from(agentRuns)
     .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
     .where(
@@ -1076,7 +1072,7 @@ function browserUserActionCreationPlan(args: {
         eq(agentRuns.chatThreadId, args.chatThreadId),
         inArray(agentRuns.status, ["pending", "running"]),
         eq(chatThreads.userId, args.userId),
-        isNotNull(chatThreads.agentId),
+        eq(chatThreads.orgId, args.orgId),
         eq(chatThreads.cloudBrowserEnabled, true),
       ),
     )
@@ -1134,7 +1130,6 @@ function browserUserActionRequestProjection(
     readonly requestToken: string;
     readonly payload: BrowserUserActionPayload;
   },
-  agentId: SQLWrapper,
   providerSessionId: SQLWrapper,
 ) {
   const { args, prepared, requestToken, payload } = input;
@@ -1147,7 +1142,9 @@ function browserUserActionRequestProjection(
     userId: sql`${sql.param(args.userId, t.userId)}`
       .mapWith(t.userId)
       .as("user_id"),
-    agentId: sql`${agentId}`.mapWith(t.agentId).as("agent_id"),
+    agentId: sql`NULL::uuid`
+      .mapWith(nullableDriverValueDecoder(t.agentId))
+      .as("agent_id"),
     chatThreadId: sql`${sql.param(prepared.chatThreadId, t.chatThreadId)}::uuid`
       .mapWith(t.chatThreadId)
       .as("chat_thread_id"),
@@ -1230,14 +1227,9 @@ const persistBrowserUserAction = command(
     );
     const source = new QueryBuilder()
       .select(
-        browserUserActionRequestProjection(
-          input,
-          plan.run.agentId,
-          leased.providerSessionId,
-        ),
+        browserUserActionRequestProjection(input, leased.providerSessionId),
       )
-      .from(leased)
-      .innerJoin(plan.run, sql`TRUE`);
+      .from(leased);
     const [created] = await db
       .with(plan.run, plan.liveClock, plan.browser, plan.leaseClock, leased)
       .insert(browserUserActionRequests)
@@ -1302,7 +1294,6 @@ export const createBrowserUserAction$ = command(
       value: {
         actionUrl: actionUrl({
           requestToken,
-          agentId: created.agentId,
           threadId: created.chatThreadId,
           callbackPrompt: args.input.callbackPrompt,
         }),

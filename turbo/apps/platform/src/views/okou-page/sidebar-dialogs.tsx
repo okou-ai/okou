@@ -255,11 +255,7 @@ function SpotlightThreadCommandItem({
       onClick={onSelect}
       className={SPOTLIGHT_ROW_CLASS}
     >
-      <AgentAvatarImg
-        name={thread.agentId}
-        alt=""
-        className={SPOTLIGHT_AVATAR_CLASS}
-      />
+      <AgentAvatarImg name="Okou" alt="" className={SPOTLIGHT_AVATAR_CLASS} />
       <span className="min-w-0 flex-1 truncate text-left text-sm text-foreground">
         {thread.title}
       </span>

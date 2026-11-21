@@ -65,7 +65,6 @@ internal fun newRecovery(data: FailureRecoveryData, reset: Boolean): ComposerRec
     return ComposerRecovery(
         selected,
         SendRequestVariant1(
-            agentId = selected.agentId,
             threadId = selected.threadId,
             prompt = "continue",
             clientEventId = UUID.randomUUID().toString(),

@@ -4,7 +4,6 @@ import {
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
-import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { connectors } from "@okouai/db/schema/connector";
@@ -43,10 +42,7 @@ export function chatConnectorExecutionReadPlan(
       selectedConnectionId: chatThreadConnectorSelections.connectorId,
     })
     .from(chatThreads)
-    .innerJoin(
-      agents,
-      and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, owner.orgId)),
-    )
+
     .leftJoin(
       agentRuns,
       owner.kind === "run"
@@ -55,7 +51,6 @@ export function chatConnectorExecutionReadPlan(
             eq(agentRuns.chatThreadId, chatThreads.id),
             eq(agentRuns.orgId, owner.orgId),
             eq(agentRuns.userId, owner.userId),
-            eq(agentRuns.agentId, chatThreads.agentId),
             eq(agentRuns.status, "running"),
           )
         : sql`false`,
@@ -96,6 +91,7 @@ export function chatConnectorExecutionReadPlan(
     .where(
       and(
         eq(chatThreads.userId, owner.userId),
+        eq(chatThreads.orgId, owner.orgId),
         owner.kind === "run"
           ? eq(agentRuns.id, owner.runId)
           : eq(chatThreads.id, owner.chatThreadId),

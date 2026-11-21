@@ -16,7 +16,6 @@ extension ThreadListStore {
 
   func threads(agentID: String?, archived: Bool, onlyUnread: Bool = false) -> [ChatThread] {
     threads.filter {
-      guard $0.agentID == agentID else { return false }
       if onlyUnread {
         // PWA's unread list includes archived chats and retains active-indicator precedence.
         return !$0.isMuted && $0.indicator == .unread

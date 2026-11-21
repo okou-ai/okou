@@ -177,17 +177,20 @@ function predecessorHomeEvidenceConditions(args: {
   readonly completedAfter: Date;
 }) {
   const hostLocation = predecessorHostCondition(args);
+  const currentPredecessorProcess = and(
+    eq(predecessorRunnerState.runnerId, predecessorRun.runnerId),
+    eq(
+      predecessorRunnerState.heartbeatGeneration,
+      predecessorRun.runnerHeartbeatGeneration,
+    ),
+    eq(predecessorRunnerState.runnerGroup, args.runnerGroup),
+    gt(predecessorRunnerState.lastSeenAt, args.freshAfter),
+    gt(predecessorRunnerState.heartbeatGeneration, 0),
+    eq(predecessorRunnerState.runnerHostname, predecessorRun.runnerHostname),
+  );
   const activeProducer =
     and(
-      eq(predecessorRunnerState.runnerId, predecessorRun.runnerId),
-      eq(
-        predecessorRunnerState.heartbeatGeneration,
-        predecessorRun.runnerHeartbeatGeneration,
-      ),
-      eq(predecessorRunnerState.runnerGroup, args.runnerGroup),
-      gt(predecessorRunnerState.lastSeenAt, args.freshAfter),
-      gt(predecessorRunnerState.heartbeatGeneration, 0),
-      eq(predecessorRunnerState.runnerHostname, predecessorRun.runnerHostname),
+      currentPredecessorProcess,
       activeProducerCondition({
         inventory: predecessorRunnerState.activeReuseProducers,
         reuseKey: args.reuseKey,
@@ -198,6 +201,11 @@ function predecessorHomeEvidenceConditions(args: {
   return {
     hostLocation,
     activeProducer,
+    // Draining also reclaims parked sandboxes after their producers leave ActiveRuns.
+    draining: and(
+      currentPredecessorProcess,
+      eq(predecessorRunnerState.mode, "draining"),
+    ),
     expectedPublication:
       and(
         hostLocation,
@@ -219,6 +227,7 @@ interface RunnerReuseCandidate {
     typeof predecessorHomeEvidenceKindSchema
   > | null;
   readonly predecessorRunnerHasActiveProducer: boolean;
+  readonly predecessorRunnerDraining: boolean;
   readonly candidateRunnerHasActiveProducer: boolean;
   readonly hasReusableSandbox: boolean;
   readonly hasHomeCache: boolean;
@@ -342,6 +351,10 @@ function runnerReuseCandidatePlan(args: {
       ),
       predecessorRunnerHasActiveProducer:
         sql`coalesce(${predecessorHome.activeProducer}, false)`.mapWith(
+          pgBooleanDecoder,
+        ),
+      predecessorRunnerDraining:
+        sql`coalesce(${predecessorHome.draining}, false)`.mapWith(
           pgBooleanDecoder,
         ),
       candidateRunnerHasActiveProducer: sql`${producerCondition}`.mapWith(
@@ -660,7 +673,9 @@ function predecessorHomePreferenceResult(
             predecessorWaitUntil,
           ).toISOString(),
         }
-      : { evidence };
+      : evidence === "location" && candidate.predecessorRunnerDraining
+        ? { evidence, homeWaitUntil: routingExpiresAt.toISOString() }
+        : { evidence };
   return {
     kind: "preference",
     runnerIdentity: candidate.runnerIdentity,

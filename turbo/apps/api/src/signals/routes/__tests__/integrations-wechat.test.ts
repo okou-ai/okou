@@ -2609,7 +2609,7 @@ describe("WeChat system notices", () => {
 });
 
 describe("WeChat input failure isolation", () => {
-  it("reports a missing default agent once and advances to the next batch", async () => {
+  it("retains the inbound batch for retry when member dispatch is unavailable", async () => {
     const owner = await fixture();
     const connectionId = await connectOwner(owner);
     const receive = await gatewayReceiver(connectionId);
@@ -2637,14 +2637,14 @@ describe("WeChat input failure isolation", () => {
         return HttpResponse.json({ ret: 0 });
       }),
     );
-    await receive();
-    await receive();
-    expect(polls).toBe(2);
-    expect(
-      sends.filter((text) => {
-        return text.includes("workspace's agent is unavailable");
-      }),
-    ).toHaveLength(1);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const result = await receive();
+      expect(result.body).toMatchObject({ retryAfterMs: expect.any(Number) });
+    }
+    expect(polls).toBe(1);
+    expect(sends).toStrictEqual([
+      "Oops, something went wrong. Please try again later.",
+    ]);
   });
 
   it.each([false, true])(

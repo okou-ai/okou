@@ -35,7 +35,6 @@
   int composer_send;
   int composer_sync_loading;
   int composer_sync_saving;
-  int composer_target_loading;
   int composer_unconfirmed;
   int controls_stop;
   int controls_unknown;
@@ -678,7 +677,6 @@
   public static kotlin.Lazy lazy(kotlin.jvm.functions.Function0);
 }
 -keep,allowobfuscation @interface kotlin.Metadata {
-  public int[] bv();
   public java.lang.String[] d1();
   public java.lang.String[] d2();
   public int k();
@@ -721,6 +719,8 @@
 }
 -keep,allowobfuscation class kotlin.collections.ArraysKt___ArraysKt {
   public static java.lang.String joinToString$default(java.lang.Object[], java.lang.CharSequence, java.lang.CharSequence, java.lang.CharSequence, int, java.lang.CharSequence, kotlin.jvm.functions.Function1, int, java.lang.Object);
+  public static java.util.List take(byte[], int);
+  public static java.util.List toList(java.lang.Object[]);
 }
 -keep,allowobfuscation class kotlin.collections.CollectionsKt {
 }
@@ -732,6 +732,7 @@
 -keep,allowobfuscation class kotlin.collections.CollectionsKt__CollectionsKt {
   public static java.util.List emptyList();
   public static java.util.List listOf(java.lang.Object[]);
+  public static java.util.List listOfNotNull(java.lang.Object[]);
   public static java.util.List mutableListOf(java.lang.Object[]);
   public static void throwCountOverflow();
   public static void throwIndexOverflow();
@@ -740,19 +741,29 @@
   public static int collectionSizeOrDefault(java.lang.Iterable, int);
   public static java.util.List flatten(java.lang.Iterable);
 }
+-keep,allowobfuscation class kotlin.collections.CollectionsKt__MutableCollectionsKt {
+  public static boolean addAll(java.util.Collection, java.lang.Iterable);
+}
 -keep,allowobfuscation class kotlin.collections.CollectionsKt___CollectionsKt {
   public static java.lang.Object firstOrNull(java.util.List);
   public static java.lang.Object getOrNull(java.util.List, int);
   public static java.lang.String joinToString$default(java.lang.Iterable, java.lang.CharSequence, java.lang.CharSequence, java.lang.CharSequence, int, java.lang.CharSequence, kotlin.jvm.functions.Function1, int, java.lang.Object);
   public static java.lang.Object last(java.util.List);
   public static java.lang.Object lastOrNull(java.util.List);
+  public static java.util.List minus(java.lang.Iterable, java.lang.Object);
   public static java.util.List plus(java.util.Collection, java.lang.Object);
   public static java.lang.Object single(java.lang.Iterable);
   public static java.lang.Object single(java.util.List);
   public static java.lang.Object singleOrNull(java.lang.Iterable);
   public static java.lang.Object singleOrNull(java.util.List);
+  public static java.util.List sortedWith(java.lang.Iterable, java.util.Comparator);
+  public static int[] toIntArray(java.util.Collection);
   public static java.util.List toList(java.lang.Iterable);
   public static java.util.List toMutableList(java.util.Collection);
+  public static java.util.Set toSet(java.lang.Iterable);
+}
+-keep,allowobfuscation class kotlin.collections.IntIterator {
+  public int nextInt();
 }
 -keep,allowobfuscation class kotlin.collections.MapsKt {
 }
@@ -773,6 +784,14 @@
 }
 -keep,allowobfuscation class kotlin.collections.SetsKt__SetsKt {
   public static java.util.Set setOf(java.lang.Object[]);
+}
+-keep,allowobfuscation class kotlin.comparisons.ComparisonsKt {
+}
+-keep,allowobfuscation class kotlin.comparisons.ComparisonsKt__ComparisonsKt {
+  public static int compareValues(java.lang.Comparable, java.lang.Comparable);
+}
+-keep,allowobfuscation class kotlin.concurrent.ThreadsKt {
+  public static java.lang.Thread thread$default(boolean, boolean, java.lang.ClassLoader, java.lang.String, int, kotlin.jvm.functions.Function0, int, java.lang.Object);
 }
 -keep,allowobfuscation interface kotlin.coroutines.Continuation {
   public kotlin.coroutines.CoroutineContext getContext();
@@ -839,6 +858,9 @@
 -keep,allowobfuscation class kotlin.internal.ProgressionUtilKt {
   public static int getProgressionLastElement(int, int, int);
 }
+-keep,allowobfuscation class kotlin.io.ByteStreamsKt {
+  public static long copyTo$default(java.io.InputStream, java.io.OutputStream, int, int, java.lang.Object);
+}
 -keep,allowobfuscation class kotlin.io.CloseableKt {
   public static void closeFinally(java.io.Closeable, java.lang.Throwable);
 }
@@ -851,7 +873,15 @@
 }
 -keep,allowobfuscation class kotlin.io.FilesKt__UtilsKt {
   public static boolean deleteRecursively(java.io.File);
+  public static java.lang.String getNameWithoutExtension(java.io.File);
   public static java.io.File resolve(java.io.File, java.lang.String);
+}
+-keep,allowobfuscation class kotlin.io.TextStreamsKt {
+  public static kotlin.sequences.Sequence lineSequence(java.io.BufferedReader);
+  public static java.lang.String readText(java.io.Reader);
+}
+-keep,allowobfuscation class kotlin.jdk7.AutoCloseableKt {
+  public static void closeFinally(java.lang.AutoCloseable, java.lang.Throwable);
 }
 -keep,allowobfuscation @interface kotlin.jvm.JvmField {
 }
@@ -892,9 +922,7 @@
   public static void checkNotNull(java.lang.Object, java.lang.String);
   public static void checkNotNullExpressionValue(java.lang.Object, java.lang.String);
   public static void checkNotNullParameter(java.lang.Object, java.lang.String);
-  public static void checkParameterIsNotNull(java.lang.Object, java.lang.String);
   public static void reifiedOperationMarker(int, java.lang.String);
-  public static void throwNpe();
 }
 -keep,allowobfuscation class kotlin.jvm.internal.Lambda {
   public <init>(int);
@@ -931,6 +959,13 @@
 -keep,allowobfuscation @interface kotlin.jvm.internal.SourceDebugExtension {
   public java.lang.String[] value();
 }
+-keep,allowobfuscation class kotlin.jvm.internal.SpreadBuilder {
+  public <init>(int);
+  public void add(java.lang.Object);
+  public void addSpread(java.lang.Object);
+  public int size();
+  public java.lang.Object[] toArray(java.lang.Object[]);
+}
 -keep,allowobfuscation class kotlin.jvm.internal.StringCompanionObject {
   kotlin.jvm.internal.StringCompanionObject INSTANCE;
 }
@@ -945,6 +980,7 @@
 }
 -keep,allowobfuscation class kotlin.ranges.RangesKt___RangesKt {
   public static int coerceAtLeast(int, int);
+  public static int coerceIn(int, int, int);
   public static kotlin.ranges.IntProgression step(kotlin.ranges.IntProgression, int);
   public static kotlin.ranges.IntRange until(int, int);
 }
@@ -977,7 +1013,11 @@
 -keep,allowobfuscation interface kotlin.text.MatchGroupCollection {
   public kotlin.text.MatchGroup get(int);
 }
+-keep,allowobfuscation class kotlin.text.MatchResult$Destructured {
+  public kotlin.text.MatchResult getMatch();
+}
 -keep,allowobfuscation interface kotlin.text.MatchResult {
+  public kotlin.text.MatchResult$Destructured getDestructured();
   public java.util.List getGroupValues();
   public kotlin.text.MatchGroupCollection getGroups();
 }
@@ -996,14 +1036,21 @@
   public static boolean endsWith$default(java.lang.String, java.lang.String, boolean, int, java.lang.Object);
   public static boolean equals(java.lang.String, java.lang.String, boolean);
   public static java.lang.String repeat(java.lang.CharSequence, int);
+  public static java.lang.String replace$default(java.lang.String, java.lang.String, java.lang.String, boolean, int, java.lang.Object);
   public static boolean startsWith$default(java.lang.String, java.lang.String, boolean, int, java.lang.Object);
 }
 -keep,allowobfuscation class kotlin.text.StringsKt__StringsKt {
   public static boolean contains$default(java.lang.CharSequence, char, boolean, int, java.lang.Object);
   public static boolean contains$default(java.lang.CharSequence, java.lang.CharSequence, boolean, int, java.lang.Object);
+  public static boolean contains(java.lang.CharSequence, java.lang.CharSequence, boolean);
   public static int indexOf$default(java.lang.CharSequence, char, int, boolean, int, java.lang.Object);
+  public static boolean isBlank(java.lang.CharSequence);
+  public static java.util.List lines(java.lang.CharSequence);
   public static java.lang.String removePrefix(java.lang.String, java.lang.CharSequence);
   public static java.util.List split$default(java.lang.CharSequence, char[], boolean, int, int, java.lang.Object);
+  public static java.util.List split$default(java.lang.CharSequence, java.lang.String[], boolean, int, int, java.lang.Object);
+  public static java.lang.String substringAfter$default(java.lang.String, java.lang.String, java.lang.String, int, java.lang.Object);
+  public static java.lang.Boolean toBooleanStrictOrNull(java.lang.String);
   public static java.lang.CharSequence trim(java.lang.CharSequence);
 }
 -keep,allowobfuscation class kotlin.text.StringsKt___StringsKt {
@@ -1012,12 +1059,15 @@
 -keep,allowobfuscation class kotlin.time.Duration$Companion {
 }
 -keep,allowobfuscation class kotlin.time.Duration {
+  public static java.lang.String toString-impl(long);
   kotlin.time.Duration$Companion Companion;
 }
 -keep,allowobfuscation class kotlin.time.DurationKt {
   public static long toDuration(int, kotlin.time.DurationUnit);
+  public static long toDuration(long, kotlin.time.DurationUnit);
 }
 -keep enum kotlin.time.DurationUnit {
+  kotlin.time.DurationUnit MILLISECONDS;
   kotlin.time.DurationUnit SECONDS;
 }
 -keep,allowobfuscation class kotlinx.coroutines.BuildersKt {
@@ -1341,9 +1391,10 @@
 }
 -keep,allowobfuscation class okhttp3.internal.platform.Platform {
   public void afterHandshake(javax.net.ssl.SSLSocket);
-  public void configureTlsExtensions(javax.net.ssl.SSLSocket, java.lang.String, java.util.List);
+  public void configureTlsExtensions(javax.net.ssl.SSLSocket, java.lang.String, java.util.List, okio.ByteString);
   public java.util.List getHandshakeServerNames(javax.net.ssl.SSLSocket);
   public java.lang.String getSelectedProtocol(javax.net.ssl.SSLSocket);
+  public javax.net.ServerSocketFactory getServerSocketFactory();
   public javax.net.ssl.SSLContext newSSLContext();
   public javax.net.ssl.X509TrustManager platformTrustManager();
   okhttp3.internal.platform.Platform$Companion Companion;
@@ -1384,7 +1435,6 @@
   public okio.Buffer writeUtf8(java.lang.String);
 }
 -keep,allowobfuscation interface okio.BufferedSink {
-  public okio.BufferedSink emit();
   public okio.BufferedSink emitCompleteSegments();
   public void flush();
   public okio.Buffer getBuffer();
@@ -1409,7 +1459,7 @@
   public static okio.ByteString of$default(okio.ByteString$Companion, byte[], int, int, int, java.lang.Object);
 }
 -keep,allowobfuscation class okio.ByteString {
-  public java.lang.String base64();
+  public static java.lang.String base64$default(okio.ByteString, boolean, int, java.lang.Object);
   public int hashCode();
   public int size();
   public byte[] toByteArray();
@@ -1451,5 +1501,7 @@
 -keep,allowobfuscation @interface org.jetbrains.annotations.NotNull {
 }
 -keep,allowobfuscation @interface org.jetbrains.annotations.Nullable {
+}
+-keep,allowobfuscation @interface org.jspecify.annotations.NonNull {
 }
 -keeppackagenames androidx.concurrent.futures

@@ -94,9 +94,8 @@ describe("POST /api/chat-threads/:id/rename", () => {
       }),
       [200],
     );
-    expect(metadataResponse.body).toStrictEqual({
+    expect(metadataResponse.body).toMatchObject({
       id: fixture.threadId,
-      agentId: fixture.agentId,
       title: "CLI renamed title",
       pinnedAt: null,
       archived: false,

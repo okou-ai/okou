@@ -358,7 +358,6 @@ describe("CHAT-02: shared user message queue", () => {
     await requestSendEventWithBearer(
       okouTokenFromExecution(rootExecution.execution),
       {
-        agentId,
         threadId: sourceThread.id,
         clientEventId: sourceEventId,
         prompt: "last allowed delegation",
@@ -416,7 +415,6 @@ describe("CHAT-02: shared user message queue", () => {
       kind: "agent",
       runId: source.runId,
       threadId: source.threadId,
-      agentId,
       titleSnapshot: "New thread",
       href: `/chats/${source.threadId}#run-${source.runId}`,
     });
@@ -486,7 +484,7 @@ describe("CHAT-02: shared user message queue", () => {
   }, 90_000);
 
   it("persists agent-run provenance for messages sent across chat threads", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, defaultAgentId: agentId } = await entitledChatActor();
 
     const firstTargetThread = await chat.createThread(actor, { agentId });
     const secondTargetThread = await chat.createThread(actor, { agentId });
@@ -503,7 +501,6 @@ describe("CHAT-02: shared user message queue", () => {
     const firstSend = await requestSendEventWithBearer(
       sourceToken,
       {
-        agentId,
         clientEventId: firstEventId,
         threadId: firstTargetThread.id,
         prompt: "first delegated prompt",
@@ -526,7 +523,7 @@ describe("CHAT-02: shared user message queue", () => {
     expect(firstTargetSystemPrompt).toContain(
       `SOURCE_THREAD_ID: ${source.threadId}`,
     );
-    expect(firstTargetSystemPrompt).toContain(`SOURCE_AGENT_ID: ${agentId}`);
+    expect(firstTargetSystemPrompt).not.toContain("SOURCE_AGENT_ID:");
     expect(firstTargetSystemPrompt).toContain(
       "SOURCE_THREAD_TITLE: New thread",
     );
@@ -565,7 +562,6 @@ describe("CHAT-02: shared user message queue", () => {
             kind: "agent",
             runId: source.runId,
             threadId: source.threadId,
-            agentId,
             titleSnapshot: "New thread",
             href: `/chats/${source.threadId}#run-${source.runId}`,
           },
@@ -589,7 +585,6 @@ describe("CHAT-02: shared user message queue", () => {
     const secondSend = await requestSendEventWithBearer(
       sourceToken,
       {
-        agentId,
         clientEventId: secondEventId,
         threadId: secondTargetThread.id,
         prompt: "second delegated prompt",
@@ -619,7 +614,6 @@ describe("CHAT-02: shared user message queue", () => {
       kind: "agent",
       runId: source.runId,
       threadId: source.threadId,
-      agentId,
       titleSnapshot: "Delegation source",
       href: `/chats/${source.threadId}#run-${source.runId}`,
     });
@@ -630,7 +624,6 @@ describe("CHAT-02: shared user message queue", () => {
     const nowSend = await requestSendEventWithBearer(
       sourceToken,
       {
-        agentId,
         clientEventId: nowEventId,
         threadId: nowTargetThread.id,
         prompt: "delegated prompt from a placeholder thread title",
@@ -659,7 +652,6 @@ describe("CHAT-02: shared user message queue", () => {
       kind: "agent",
       runId: source.runId,
       threadId: source.threadId,
-      agentId,
       titleSnapshot: "New thread",
       href: `/chats/${source.threadId}#run-${source.runId}`,
     });
@@ -668,7 +660,6 @@ describe("CHAT-02: shared user message queue", () => {
     const forged = await requestSendEventWithBearer(
       sourceToken,
       {
-        agentId,
         clientEventId: forgedEventId,
         threadId: forgedTargetThread.id,
         prompt: "forged provenance",
@@ -762,7 +753,6 @@ describe("CHAT-02: shared user message queue", () => {
     const rotatedQueued = await requestSendEventWithBearer(
       sourceToken,
       {
-        agentId,
         clientEventId: rotatedEventId,
         threadId: rotatedAnchor.threadId,
         prompt: "agent prompt after the Web session rotates",
@@ -829,7 +819,6 @@ describe("CHAT-02: shared user message queue", () => {
     const incompleteQueued = await requestSendEventWithBearer(
       sourceToken,
       {
-        agentId,
         clientEventId: incompleteEventId,
         threadId: incomplete.threadId,
         prompt: "agent prompt after an incomplete Web round",
@@ -895,7 +884,6 @@ describe("CHAT-02: shared user message queue", () => {
     const delegated = await requestSendEventWithBearer(
       okouTokenFromExecution(rootExecution.execution),
       {
-        agentId,
         clientEventId: delegatedEventId,
         threadId: target.id,
         prompt: "last allowed delegation",
@@ -920,7 +908,6 @@ describe("CHAT-02: shared user message queue", () => {
     const blocked = await requestSendEventWithBearer(
       okouTokenFromExecution(delegatedExecution.execution),
       {
-        agentId,
         clientEventId: blockedEventId,
         threadId: blockedTarget.id,
         prompt: "delegation beyond the limit",

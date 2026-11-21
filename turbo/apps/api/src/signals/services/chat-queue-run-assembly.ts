@@ -16,8 +16,6 @@ export interface ChatQueueHeadContext {
   readonly orgId: string;
   readonly contextType: string | null;
   readonly contextId: string | null;
-  /** The thread's owner and agent. */
   readonly userId: string;
-  readonly agentId: string;
   readonly apiStartTime: number;
 }

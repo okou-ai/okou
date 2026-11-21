@@ -384,7 +384,7 @@ export function createRunsApi(context: TestContext) {
   async function createThreadRun(
     actor: ApiTestUser,
     body: {
-      readonly agentId: string;
+      readonly agentId?: string;
       readonly prompt: string;
       /**
        * An explicit send model (null is Auto); omitted, the thread or member
@@ -398,15 +398,27 @@ export function createRunsApi(context: TestContext) {
     },
   ) {
     const chat = createChatFilesBddApi(context);
+    let threadId = body.threadId;
+    if (threadId === undefined && body.agentId !== undefined) {
+      const { defaultAgentId } =
+        await createBddApi(context).readOnboardingStatus(actor);
+      if (body.agentId !== defaultAgentId) {
+        // Exercise legacy clients that create the thread before sending.
+        const thread = await chat.createThread(actor, {
+          agentId: body.agentId,
+          model: body.model,
+        });
+        threadId = thread.id;
+      }
+    }
     const clientEventId = randomUUID();
     const sent = await chat.requestSendEvent(
       actor,
       {
-        agentId: body.agentId,
         prompt: body.prompt,
         clientEventId,
         ...(body.model === undefined ? {} : { model: body.model }),
-        ...(body.threadId === undefined ? {} : { threadId: body.threadId }),
+        ...(threadId === undefined ? {} : { threadId }),
         ...(body.captureNetworkBodies === undefined
           ? {}
           : { captureNetworkBodies: body.captureNetworkBodies }),

@@ -41,9 +41,8 @@ describe("Runner first-start Thread binding", () => {
   it("preserves native context when cancellation wins during execution preparation", async () => {
     const { owned, first } = await initializedPredecessor();
     await owned.run(async () => {
-      await createBddApi(context).updateAgentInstructions(
+      await createBddApi(context).updatePersonalInstructions(
         owned.actor,
-        owned.agentId,
         `Continuation ${randomUUID()}`,
       );
       const signing = holdDownloadSigning(context);

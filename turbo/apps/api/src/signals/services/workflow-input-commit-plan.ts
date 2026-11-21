@@ -130,11 +130,11 @@ function modelReplacementCtes(statement: SQL, scope: ModelEventScope) {
     )`,
     sql`workflow_model_events AS (
       INSERT INTO ${chatThreadEvents} (
-        id, user_id, org_id, seq_id, chat_thread_id, kind, agent_id,
+        id, user_id, org_id, seq_id, chat_thread_id, kind,
         selected_model, service_tier, cloud_browser_enabled, created_at
       ) SELECT event.id, ${replacement.userId}, ${replacement.orgId},
         reserved.last_seq_id - ${count} + event.ordinal + 1,
-        ${replacement.chatThreadId}::uuid, event.kind, ${replacement.agentId}::uuid,
+        ${replacement.chatThreadId}::uuid, event.kind,
         event.selected_model, event.service_tier, false, ${updatedAt.toISOString()}::timestamp
       FROM workflow_model_reserved AS reserved
       CROSS JOIN (VALUES ${sql.join(rows, sql`, `)})

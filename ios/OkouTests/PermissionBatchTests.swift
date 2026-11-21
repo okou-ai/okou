@@ -237,7 +237,7 @@ final class PermissionBatchTests: XCTestCase {
     await card.confirm()
     fixture.state.withLock {
       $0.grants.removeAll { $0.permission == "mail.send" }
-      $0.threadAgentID = UUID().uuidString
+      $0.metadataThreadID = UUID().uuidString
     }
     await card.refresh()
     XCTAssertFalse(card.allAllowed)

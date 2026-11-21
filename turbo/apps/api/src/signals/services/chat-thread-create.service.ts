@@ -20,7 +20,7 @@ import {
 interface NewChatThreadArgs {
   readonly orgId: string;
   readonly userId: string;
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly id?: string;
   readonly title?: string | null;
   readonly projectId?: string | null;
@@ -49,7 +49,6 @@ type CreatedThread = Pick<
   | "cloudBrowserEnabled"
   | "createdAt"
 > & {
-  readonly agentId: string;
   readonly projectId?: string | null;
 };
 
@@ -118,7 +117,6 @@ function createdThreadEventArgs(args: {
     userId: thread.userId,
     orgId: args.orgId,
     chatThreadId: thread.id,
-    agentId: thread.agentId,
     eventId: args.eventId,
     title: thread.title,
     projectId: thread.projectId,
@@ -142,15 +140,13 @@ export function chatThreadCreatedEventPlan(
 
 /** Validate the stored preferences before the creation owner may commit. */
 export function createdChatThreadFromRow(
-  row: Omit<CreatedThread, "agentId" | "hidden"> & {
+  row: Omit<CreatedThread, "hidden"> & {
     readonly hidden?: boolean;
   },
-  agentId: string,
 ): CreatedThread {
   return {
     ...row,
     hidden: row.hidden ?? false,
     modelSettings: modelSettingsSchema.parse(row.modelSettings),
-    agentId,
   };
 }

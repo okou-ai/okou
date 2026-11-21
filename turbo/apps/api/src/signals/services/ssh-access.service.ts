@@ -1,6 +1,5 @@
 import { sshHostSchema } from "@okouai/api-contracts/contracts/ssh-access";
 import { remoteHostIdentitySchema } from "@okouai/api-contracts/contracts/remote-host-identity";
-import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   sshConnectionNeedsRebind,
@@ -17,7 +16,6 @@ import {
   zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { writeDb$ } from "../external/db";
-import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { sshCreationTimestamp } from "./remote-connection-creation-timestamp.utils";
 import {
   runThreadExists,
@@ -55,14 +53,6 @@ const loadRunSshHostRows$ = command(
       })
       .from(agentRuns)
 
-      .innerJoin(
-        agents,
-        and(
-          eq(agents.id, agentRuns.agentId),
-          eq(agents.orgId, agentRuns.orgId),
-          visibleJoinedAgentCondition(owner.userId),
-        ),
-      )
       .leftJoin(
         sshConnections,
         and(

@@ -904,6 +904,7 @@ describe("okou whoami command", () => {
 
   describe("local mode (no OKOU_AGENT_ID)", () => {
     beforeEach(() => {
+      vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", undefined);
       vi.stubEnv("OKOU_AGENT_ID", "");
     });
 

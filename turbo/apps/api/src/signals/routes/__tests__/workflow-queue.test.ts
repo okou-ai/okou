@@ -334,12 +334,11 @@ async function expectAutomationRunPrompt(
   return prompt;
 }
 
-async function startOrgConcurrencyBlocker(scenario: Scenario): Promise<string> {
+async function startOrgConcurrencyBlocker(): Promise<string> {
   const response = await accept(
     chatEventsClient().send({
       headers: authHeaders(),
       body: {
-        agentId: scenario.agentId,
         prompt: "hold org concurrency open",
         model: "claude-fable-5-1",
         hasTextContent: true,
@@ -730,7 +729,7 @@ describe("workflow queue", () => {
         await postWorkflowWebhook(automation, "first"),
         automation.threadId,
       );
-      const blockerRunId = await startOrgConcurrencyBlocker(scenario);
+      const blockerRunId = await startOrgConcurrencyBlocker();
       expectAccepted(
         await postWorkflowWebhook(automation, "queued behind first"),
       );
@@ -1319,7 +1318,6 @@ describe("workflow queue", () => {
       chatEventsClient().send({
         headers: authHeaders(),
         body: {
-          agentId: scenario.agentId,
           threadId: automation.threadId,
           prompt: "user interjection",
           hasTextContent: true,
@@ -1397,7 +1395,6 @@ describe("workflow queue", () => {
       chatEventsClient().send({
         headers: authHeaders(),
         body: {
-          agentId: scenario.agentId,
           threadId: automation.threadId,
           revokesEventId: target.id,
           clientEventId,
@@ -1495,7 +1492,6 @@ describe("workflow queue", () => {
       chatEventsClient().send({
         headers: authHeaders(),
         body: {
-          agentId: scenario.agentId,
           threadId,
           prompt: "queued user message before manual Run now",
           userMessage: {

@@ -208,23 +208,25 @@ async function buildBundledSkillFixture(connectorSlug: string) {
   ];
   const prepared = await prepareContentBundle(files);
   const archiveSize = prepared.archive.length;
+  const descriptor = {
+    kind: "bundled",
+    versionId,
+    size: files.reduce((total, file) => {
+      return total + file.content.length;
+    }, 0),
+    archiveSize,
+    fileCount: files.length,
+  };
   return {
     ...prepared.descriptor,
     archive: prepared.archive,
     files,
-    storageName,
     versionId,
-    archiveSize,
-    descriptor: {
-      kind: "bundled",
+    descriptor,
+    legacyDescriptor: {
+      ...descriptor,
       storageName,
-      versionId,
       storageVersionPrefix: `__system__/volume/${storageName}/${versionId}`,
-      size: files.reduce((total, file) => {
-        return total + file.content.length;
-      }, 0),
-      archiveSize,
-      fileCount: files.length,
     },
   };
 }
@@ -468,7 +470,7 @@ describe("connector catalog valid lifecycle", () => {
     const release = buildRelease({
       version: "2026-11-06.single-character-skill",
       connectorSlug: "x",
-      skill: skill.descriptor,
+      skill: skill.legacyDescriptor,
     });
     const objects = new Map(catalogObjects([release], release));
     objects.set(
@@ -1027,7 +1029,7 @@ describe("connector catalog valid lifecycle", () => {
     });
   });
 
-  it("reuses a prepared Skill bundle in a later catalog release", async () => {
+  it("reuses the published Skill bundle when a compact catalog replaces a legacy descriptor", async () => {
     const app = await setupApp({
       context,
       routes: cronConnectorCatalogRoutes,
@@ -1038,7 +1040,7 @@ describe("connector catalog valid lifecycle", () => {
     const release = buildRelease({
       version: "2026-07-15.bundled-skill",
       connectorSlug: "agora",
-      skill: skill.descriptor,
+      skill: skill.legacyDescriptor,
     });
     const receiptFor = (digest: string) => {
       return Buffer.from(

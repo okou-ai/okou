@@ -364,7 +364,7 @@ test("rejects a member copy if its default target changes during publication", a
   ).toStrictEqual([]);
 });
 
-test("preserves distinct Workflow permissions for default and retained Run credentials", async () => {
+test("applies the same member Workflow permissions when a send includes a legacy Agent ID", async () => {
   const owned = await publicChatActor(context, { tier: "team" });
   const runs = createRunsApi(context);
   await owned.run(async () => {
@@ -451,7 +451,7 @@ test("preserves distinct Workflow permissions for default and retained Run crede
       await runs.requestCancelRun(member, queued.runId, [200]);
       const retained = await runs.createThreadRun(member, {
         agentId: other.agentId,
-        prompt: "Keep legacy Workflow scope",
+        prompt: "Reuse member Workflow scope",
         model: "auto",
       });
       const retainedExecution = await runs.executionInput(retained.runId);
@@ -464,7 +464,7 @@ test("preserves distinct Workflow permissions for default and retained Run crede
           params: { workflowId: source.body.id },
           body: { toAgentId: defaultAgentId },
         }),
-        [403],
+        [409],
       );
     });
   });

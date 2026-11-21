@@ -75,7 +75,7 @@ describe("chat relationships", () => {
     await accept(
       threads.create({
         headers: { authorization: `Bearer ${token}` },
-        body: { agentId, clientThreadId: humanThread.id },
+        body: { clientThreadId: humanThread.id },
       }),
       [201],
     );
@@ -145,7 +145,6 @@ describe("chat relationships", () => {
     await requestSendEventWithBearer(
       okouTokenFromExecution(peerExecution.execution),
       {
-        agentId,
         threadId: source.threadId,
         clientEventId: replyId,
         prompt: "Here is the investigation",
@@ -207,7 +206,6 @@ describe("chat relationships", () => {
     await requestSendEventWithBearer(
       token,
       {
-        agentId,
         threadId: peer.id,
         clientEventId: recalledId,
         prompt: "Withdraw this request",
@@ -238,7 +236,7 @@ describe("chat relationships", () => {
     ).toMatchObject({ targetRunId: null });
     await requestSendEventWithBearer(
       token,
-      { agentId, threadId: source.threadId, prompt: "Self follow-up" },
+      { threadId: source.threadId, prompt: "Self follow-up" },
       [201],
     );
     await chat.requestSendEvent(
@@ -314,7 +312,6 @@ describe("chat relationships", () => {
         await requestSendEventWithBearer(
           token,
           {
-            agentId,
             threadId: peer.id,
             clientEventId,
             model: "claude-fable-5-1",

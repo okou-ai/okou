@@ -1,4 +1,15 @@
-"""Shared foreground heartbeat receipt for synthetic native report evidence."""
+"""Shared progress receipts for synthetic native report evidence."""
+
+
+def joined_observer(started_ns, completed_ns):
+    return {
+        "started_ns": started_ns,
+        "completed_ns": completed_ns,
+        "available_bytes": 32 * 1024**3,
+        "age_ns": 2,
+        "read_duration_ns": 1,
+        "joined": True,
+    }
 
 
 def foreground_heartbeat(runner_id, sequence, received_ns, completed_ns, allocated):

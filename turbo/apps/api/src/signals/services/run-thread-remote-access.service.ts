@@ -18,7 +18,7 @@ export function runThreadExists() {
         and(
           eq(chatThreads.id, agentRuns.chatThreadId),
           eq(chatThreads.userId, agentRuns.userId),
-          eq(chatThreads.agentId, agentRuns.agentId),
+          eq(chatThreads.orgId, agentRuns.orgId),
         ),
       ),
   );
@@ -46,7 +46,7 @@ export function runThreadSshAccess(
         and(
           eq(chatThreads.id, agentRuns.chatThreadId),
           eq(chatThreads.userId, agentRuns.userId),
-          eq(chatThreads.agentId, agentRuns.agentId),
+          eq(chatThreads.orgId, agentRuns.orgId),
           sql`coalesce(${chatThreadSshAccessOverrides.enabled}, ${host.defaultEnabledForChats}) = true`,
         ),
       ),
@@ -70,7 +70,7 @@ export function runThreadVncAccess() {
         and(
           eq(chatThreads.id, agentRuns.chatThreadId),
           eq(chatThreads.userId, agentRuns.userId),
-          eq(chatThreads.agentId, agentRuns.agentId),
+          eq(chatThreads.orgId, agentRuns.orgId),
           sql`coalesce(${chatThreadVncAccessOverrides.enabled}, ${vncConnections.defaultEnabledForChats}) = true`,
         ),
       ),

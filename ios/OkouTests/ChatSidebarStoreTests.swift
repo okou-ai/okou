@@ -20,7 +20,7 @@ final class ChatSidebarStoreTests: XCTestCase {
     XCTAssertEqual(recent.filter, .recent)
     XCTAssertTrue(recent.isInbox)
     // Pins lead the chats outside Projects; the others follow by activity.
-    XCTAssertEqual(recent.chats.rows.map(\.id), [1, 5, 3].map(SidebarProjectionFixture.id))
+    XCTAssertEqual(recent.chats.rows.map(\.id), [1, 6, 5, 3].map(SidebarProjectionFixture.id))
     let pinned = try XCTUnwrap(recent.chats.rows.first)
     XCTAssertTrue(pinned.isPinned)
     XCTAssertEqual(pinned.title, "Active pinned")
@@ -73,13 +73,13 @@ final class ChatSidebarStoreTests: XCTestCase {
     workspace.sidebar.select(.recent)
     workspace.selectChat(SidebarProjectionFixture.id(6))
     let otherAgent = try snapshot(workspace)
-    XCTAssertEqual(otherAgent.chats.rows.map(\.id), [SidebarProjectionFixture.id(6)])
+    XCTAssertEqual(otherAgent.chats.rows.map(\.id), recent.chats.rows.map(\.id))
     XCTAssertEqual(
       otherAgent.projects.first?.section.rows.map(\.id), [2, 8].map(SidebarProjectionFixture.id))
     workspace.startNewChat()
     workspace.newChatDraft = "Keep this unrelated input"
     XCTAssertEqual(
-      try snapshot(workspace).chats.rows.map(\.id), [1, 5, 3].map(SidebarProjectionFixture.id))
+      try snapshot(workspace).chats.rows.map(\.id), [1, 6, 5, 3].map(SidebarProjectionFixture.id))
     XCTAssertEqual(workspace.newChatDraft, "Keep this unrelated input")
   }
 
@@ -134,7 +134,7 @@ final class ChatSidebarStoreTests: XCTestCase {
     XCTAssertEqual(try snapshot(replacement).filter, .recent)
     XCTAssertEqual(
       try snapshot(replacement).chats.rows.filter(\.isPinned).map(\.id),
-      [SidebarProjectionFixture.id(1)])
+      [1, 2].map(SidebarProjectionFixture.id))
   }
 
   private func snapshot(_ workspace: WorkspaceStore) throws -> ChatSidebarPresentation {

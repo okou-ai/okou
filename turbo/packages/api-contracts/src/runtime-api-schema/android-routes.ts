@@ -5,7 +5,7 @@ import type { RuntimeApiRouteBinding } from "./routes";
 
 const installedReaderBindings = [
   ...kotlinRouteBindings,
-  // Shipped Android readers still consume this route. Track retirement in #49547.
+  // Keep the route in the inventory while installed Android clients still call it.
   {
     name: "featureSwitches",
     route: featureSwitchesContract.get,

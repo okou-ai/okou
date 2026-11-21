@@ -2,8 +2,6 @@ import { formatIntegrationChatMessage$ } from "./integration-run-errors.service"
 import { integrationModelRecoveryForDelivery$ } from "./integration-model-recovery.service";
 import { command } from "ccstate";
 import { and, countDistinct, eq, isNull, or } from "drizzle-orm";
-import { agents } from "@okouai/db/schema/agent";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
@@ -205,7 +203,6 @@ const readDiscordResponsePresentation$ = command(
     { get },
     args: {
       readonly orgId: string;
-      readonly agentId: string;
       readonly runId: string | null;
       readonly channelId: string;
       readonly discordUserId: string;
@@ -227,34 +224,17 @@ const readDiscordResponsePresentation$ = command(
     }
     const replyToMention =
       mentionerCount.count > 1 ? `<@${args.discordUserId}>` : undefined;
-    const agentLabel = await (async () => {
-      const [org] = await db
-        .select({ defaultAgentId: orgMetadata.defaultAgentId })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, args.orgId))
-        .limit(1);
-      signal.throwIfAborted();
-      if (args.agentId === org?.defaultAgentId) {
-        return undefined;
-      }
-      const [agent] = await db
-        .select({ displayName: agents.displayName, name: agents.name })
-        .from(agents)
-        .where(eq(agents.id, args.agentId))
-        .limit(1);
-      signal.throwIfAborted();
-      return agent?.displayName ?? agent?.name;
-    })();
+
     signal.throwIfAborted();
     // Admission notices keep their existing sender-attribution wording.
     if (args.runId === null) {
       return integrationAdmissionFailurePresentation({
-        agentLabel,
+        agentLabel: undefined,
         replyToMention,
       });
     }
     return integrationAgentResponsePresentation({
-      agentLabel,
+      agentLabel: undefined,
       replyToMention,
     });
   },
@@ -280,17 +260,15 @@ export const sendDiscordChatReply$ = command(
             error: canonicalChatEventError(),
             runFailureId: canonicalChatEventRunFailureId(),
             runId: chatEvents.runId,
-            agentId: agents.id,
           })
           .from(chatEvents)
           .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
-          .innerJoin(agents, eq(agents.id, chatThreads.agentId))
           .where(
             and(
               eq(chatEvents.id, request.chatEventId),
               eq(chatEvents.chatThreadId, request.chatThreadId),
               eq(chatThreads.userId, request.userId),
-              eq(agents.orgId, request.orgId),
+              eq(chatThreads.orgId, request.orgId),
               chatEventTypeIn([
                 "output.message",
                 "output.error",
@@ -323,7 +301,6 @@ export const sendDiscordChatReply$ = command(
           readDiscordResponsePresentation$,
           {
             orgId: request.orgId,
-            agentId: event.agentId,
             runId: event.runId,
             channelId: request.target.channelId,
             discordUserId: binding.discordUserId,

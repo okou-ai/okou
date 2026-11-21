@@ -184,8 +184,7 @@ function memberNeedsOnboarding(
     const [usage] = await db
       .select({ threadId: chatThreads.id })
       .from(chatThreads)
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-      .where(and(eq(chatThreads.userId, userId), eq(agents.orgId, orgId)))
+      .where(and(eq(chatThreads.userId, userId), eq(chatThreads.orgId, orgId)))
       .limit(1);
     return usage === undefined;
   });

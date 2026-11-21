@@ -228,7 +228,7 @@ function nativeThreadPublication() {
     where: and(
       eq(chatThreads.id, sql`changed.chat_thread_id`),
       eq(chatThreads.userId, sql`changed.user_id`),
-      eq(chatThreads.agentId, sql`changed.agent_id`),
+      eq(chatThreads.orgId, sql`changed.org_id`),
       sql`EXISTS (SELECT 1 FROM completion_native_owner AS owner WHERE owner.run_id = changed.id)`,
     ),
     returning: returned({ id: chatThreads.id }),
@@ -316,7 +316,7 @@ export function completionPublicationPlan(input: CompletionPublicationInput) {
       qb.$with("completion_native_owner", {})
         .as(sql`SELECT owner.run_id FROM ${activeAgentRuns} AS owner JOIN completion_decision AS d ON owner.run_id = d.id
         AND owner.chat_thread_id = d.chat_thread_id AND owner.user_id = d.user_id AND owner.org_id = d.org_id
-        WHERE d.decision = 'ready' AND d.status <> 'timeout' AND d.chat_thread_id IS NOT NULL AND d.agent_id IS NOT NULL
+        WHERE d.decision = 'ready' AND d.status <> 'timeout' AND d.chat_thread_id IS NOT NULL
           AND ${output !== undefined} AND NOT COALESCE(d.exact_retry,false) FOR UPDATE OF owner`),
       qb
         .$with("completion_changed_run", {})

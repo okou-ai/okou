@@ -5,7 +5,6 @@ import type {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { and, asc, eq } from "drizzle-orm";
 
@@ -60,20 +59,18 @@ export function connectorSelectionsForChatThread(
     const args = get(scope$);
     const db = get(db$);
     const [thread] = await db
-      .select({ agentId: agents.id })
+      .select({ id: chatThreads.id })
       .from(chatThreads)
-      .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
-      )
+
       .where(
         and(
           eq(chatThreads.id, args.chatThreadId),
           eq(chatThreads.userId, args.userId),
+          eq(chatThreads.orgId, args.orgId),
         ),
       )
       .limit(1);
-    return thread?.agentId ? { agentId: thread.agentId } : undefined;
+    return thread;
   });
   const selections$ = computed(async (get) => {
     const args = get(scope$);

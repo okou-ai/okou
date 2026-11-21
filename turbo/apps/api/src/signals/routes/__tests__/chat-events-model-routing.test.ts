@@ -163,7 +163,7 @@ describe("CHAT-02: model-first routing", () => {
     expect(appendSystemPrompt).toContain(CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET);
     let previousSectionIndex = -1;
     for (const section of [
-      "# Agent Identity",
+      "# Identity",
       "# Execution Time Limit",
       "# Agent Tools",
       "# Current User Info",

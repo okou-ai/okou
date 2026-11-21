@@ -2,7 +2,6 @@ import type { RelatedChat } from "@okouai/api-contracts/contracts/chat-relations
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatRelations } from "@okouai/db/schema/chat-relation";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
@@ -42,10 +41,6 @@ const relatedChats$ = command(
         queuedThreadId: queuedChatThreads.chatThreadId,
       })
       .from(chatThreads)
-      .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, owner.orgId)),
-      )
       .leftJoin(
         activeAgentRuns,
         and(
@@ -60,7 +55,11 @@ const relatedChats$ = command(
         eq(queuedChatThreads.chatThreadId, chatThreads.id),
       )
       .where(
-        and(eq(chatThreads.userId, owner.userId), inArray(chatThreads.id, ids)),
+        and(
+          eq(chatThreads.userId, owner.userId),
+          eq(chatThreads.orgId, owner.orgId),
+          inArray(chatThreads.id, ids),
+        ),
       );
     signal.throwIfAborted();
     return new Map(

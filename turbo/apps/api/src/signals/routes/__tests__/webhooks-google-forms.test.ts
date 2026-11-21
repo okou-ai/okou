@@ -360,11 +360,8 @@ async function setupGoogleFormsAutomation() {
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
-  const agent = await workflows.createAgent(actor, {
-    displayName: "Google Forms automation agent",
-  });
+
   const workflowId = await workflows.createWorkflow(actor, {
-    agentId: agent.agentId,
     name: "google-forms-response-workflow",
   });
   mocks.clerk.session(actor.userId, actor.orgId, "org:member");
@@ -987,7 +984,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       respondentEmail: "respondent@example.test",
       previouslyDelivered: false,
     });
-    expect(execution.appendSystemPrompt).toContain("# Agent Identity");
+    expect(execution.appendSystemPrompt).toContain("# Identity");
     const retry = await postWebhook(push);
     expect(retry).toStrictEqual({
       status: 200,
@@ -1206,11 +1203,8 @@ describe("Google Forms Pub/Sub webhook", () => {
       if (!actor.orgId) {
         throw new Error("Expected an org-scoped workflow actor");
       }
-      const agent = await workflows.createAgent(actor, {
-        displayName: `Google Forms ${suffix} agent`,
-      });
+
       const workflowId = await workflows.createWorkflow(actor, {
-        agentId: agent.agentId,
         name: `google-forms-${suffix}-workflow`,
       });
       mocks.clerk.session(actor.userId, actor.orgId, "org:member");
@@ -1313,15 +1307,11 @@ describe("Google Forms Pub/Sub webhook", () => {
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped workflow actor");
     }
-    const agent = await workflows.createAgent(actor, {
-      displayName: "Google Forms multi-account agent",
-    });
+
     const firstWorkflowId = await workflows.createWorkflow(actor, {
-      agentId: agent.agentId,
       name: "google-forms-first-account-workflow",
     });
     const secondWorkflowId = await workflows.createWorkflow(actor, {
-      agentId: agent.agentId,
       name: "google-forms-second-account-workflow",
     });
     mocks.clerk.session(actor.userId, actor.orgId, "org:member");
@@ -1433,7 +1423,7 @@ describe("Google Forms Pub/Sub webhook", () => {
     }
     return {
       actor,
-      agentId: agent.agentId,
+
       first: { automationId: first.body.id, chatThreadId: firstChatThreadId },
       second: {
         automationId: second.body.id,

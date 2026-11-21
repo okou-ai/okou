@@ -49,7 +49,6 @@ function wire(schema: ZodType, value: unknown): unknown {
 
 export function kotlinCommandFixtureJson(): string {
   const normal = {
-    agentId,
     prompt: text,
     clientEventId: eventId,
     chatThreadSortEventId: sortId,
@@ -161,13 +160,11 @@ export function kotlinCommandFixtureJson(): string {
           },
         }),
         revoke: wire(chatEventsContract.send.body, {
-          agentId,
           threadId,
           revokesEventId: eventId,
           clientEventId: lifecycleId,
         }),
         interrupt: wire(chatEventsContract.send.body, {
-          agentId,
           threadId,
           interruptsRunId: runId,
           clientEventId: lifecycleId,

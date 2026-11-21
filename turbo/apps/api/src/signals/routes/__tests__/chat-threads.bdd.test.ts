@@ -519,7 +519,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         expect.objectContaining({
           kind: "created",
           chatThreadId: run.threadId,
-          agentId,
         }),
       );
       createRouteMocks(context).clerk.session(
@@ -541,7 +540,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     });
   });
 
-  it("rejects thread creation for unknown, cross-org, and org-less callers", async () => {
+  it("requires a signed-in organization member and ignores legacy Agent IDs on creation", async () => {
     const unauthenticated = await chat.requestCreateThread(
       null,
       { agentId: randomUUID(), title: "no session" },
@@ -557,27 +556,15 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     });
 
     const actor = bdd.user();
-    const missing = await chat.requestCreateThread(
-      actor,
-      { agentId: randomUUID(), title: "missing compose" },
-      [404],
-    );
-    expectApiError(missing.body);
-    expect(missing.body.error).toStrictEqual({
-      message: "Agent not found",
-      code: "NOT_FOUND",
-    });
+    for (const agentId of [randomUUID(), foreignAgent.agentId]) {
+      const created = await chat.requestCreateThread(
+        actor,
+        { agentId, title: "Member chat" },
+        [201],
+      );
+      expect(created.status).toBe(201);
+    }
 
-    const crossOrg = await chat.requestCreateThread(
-      actor,
-      { agentId: foreignAgent.agentId, title: "hijacked" },
-      [404],
-    );
-    expectApiError(crossOrg.body);
-    expect(crossOrg.body.error.message).toBe("Agent not found");
-
-    // Thread creation now resolves the model route up front, so callers must
-    // have an active organization before body-level compose lookup runs.
     const orgless = bdd.user({ orgId: null });
     const noOrg = await chat.requestCreateThread(
       orgless,
@@ -587,12 +574,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     expectApiError(noOrg.body);
     expect(noOrg.body.error.code).toBe("UNAUTHORIZED");
 
-    // The foreign agent's event stream is unaffected by the rejected creates.
-    expect(
-      (await allThreadEvents(outsider)).some((event) => {
-        return event.agentId === foreignAgent.agentId;
-      }),
-    ).toBeFalsy();
+    await expect(allThreadEvents(outsider)).resolves.toStrictEqual([]);
   });
 
   it("returns chat thread snapshot and lifecycle events with cursor expiry", async () => {
@@ -650,7 +632,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
           id: createEventId,
           kind: "created",
           chatThreadId: thread.id,
-          agentId: agent.agentId,
           title: "Initial event title",
           createdAt: expect.any(String),
         }),
@@ -658,7 +639,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
           id: renameEventId,
           kind: "renamed",
           chatThreadId: thread.id,
-          agentId: agent.agentId,
           title: "Renamed event title",
           createdAt: expect.any(String),
         }),
@@ -666,7 +646,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
           id: modelSelectionEventId,
           kind: "model_selection_updated",
           chatThreadId: thread.id,
-          agentId: agent.agentId,
           title: null,
           selectedModel: "claude-sonnet-5-5",
           createdAt: expect.any(String),
@@ -674,7 +653,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         expect.objectContaining({
           kind: "service_tier_updated",
           chatThreadId: thread.id,
-          agentId: agent.agentId,
           serviceTier: null,
           createdAt: expect.any(String),
         }),
@@ -780,7 +758,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     await expectExpiredThreadEventCursor(actor, firstEvent.seqId + 1);
   });
 
-  it("removes all deleted Agent threads from the sidebar event stream", async () => {
+  it("preserves member threads and their sidebar events when a legacy Agent is deleted", async () => {
     const actor = bdd.user();
     await api.ensurePersonalSubscriptionModel(actor);
     const removedAgent = await bdd.createAgent(actor, {
@@ -815,28 +793,25 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     await authOrg.deleteAgent(actor, removedAgent.agentId);
     // The App renders its list from the snapshot plus this external event API.
     const tail = await threadEventPage(actor, before.latestSeqId);
-    expect(tail.events).toHaveLength(2);
+    expect(tail.events).toStrictEqual([]);
     expect(tail.hasMore).toBeFalsy();
     expect(
-      tail.events.map((event) => {
-        return { kind: event.kind, chatThreadId: event.chatThreadId };
-      }),
+      new Set(
+        before.chatThreads.map((thread) => {
+          return thread.id;
+        }),
+      ),
     ).toStrictEqual(
-      expect.arrayContaining(
-        removedThreads.map((thread) => {
-          return { kind: "deleted", chatThreadId: thread.id };
+      new Set(
+        [...removedThreads, keptThread].map((thread) => {
+          return thread.id;
         }),
       ),
     );
-    expect(
-      replayChatThreadEvents(before.chatThreads, tail.events).map((thread) => {
-        return thread.id;
-      }),
-    ).toStrictEqual([keptThread.id]);
     for (const thread of removedThreads) {
       expect(
-        (await chat.requestReadThread(actor, thread.id, [404])).status,
-      ).toBe(404);
+        (await chat.requestReadThread(actor, thread.id, [200])).status,
+      ).toBe(200);
     }
   });
 
@@ -963,16 +938,14 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
 
   it("creates a thread without a model as Auto when the member has no preference", async () => {
     const actor = bdd.user();
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Auto default thread agent",
-    });
+    await bdd.createAgent(actor, { displayName: "Auto default thread agent" });
     const eventId = randomUUID();
     const created = await accept(
       setupApp({ context, routes: chatThreadCreateRoutes })(
         chatThreadsContract,
       ).create({
         headers: authHeaders(actor),
-        body: { agentId: agent.agentId, eventId },
+        body: { eventId },
       }),
       [201],
     );
@@ -1313,7 +1286,7 @@ describe("CHAT-01 chat thread read state", () => {
         );
       });
     });
-    await expect(chat.listUnreadAgents(owner)).resolves.toStrictEqual([agentA]);
+    await expect(chat.listUnreadAgents(owner)).resolves.toStrictEqual([]);
     await expect(chat.listUnreadChatThreadIds(owner)).resolves.toStrictEqual([
       activeRun.threadId,
     ]);
@@ -1327,7 +1300,6 @@ describe("CHAT-01 chat thread read state", () => {
       "chatThreadReadCursorUpdated",
       {
         threadId: activeRun.threadId,
-        agentId: agentA,
         lastReadAt: firstRead.lastReadAt,
       },
     );
@@ -1350,13 +1322,13 @@ describe("CHAT-01 chat thread read state", () => {
     });
 
     const unreadAgents = await chat.listUnreadAgents(owner);
-    expect(new Set(unreadAgents)).toStrictEqual(new Set([agentA, agentB]));
+    expect(unreadAgents).toStrictEqual([]);
     expect(new Set(await chat.listUnreadChatThreadIds(owner))).toStrictEqual(
       new Set([runA.threadId, runB.threadId]),
     );
 
     await chat.markThreadRead(owner, runA.threadId);
-    await expect(chat.listUnreadAgents(owner)).resolves.toStrictEqual([agentB]);
+    await expect(chat.listUnreadAgents(owner)).resolves.toStrictEqual([]);
     await expect(chat.listUnreadChatThreadIds(owner)).resolves.toStrictEqual([
       runB.threadId,
     ]);
@@ -1382,18 +1354,14 @@ describe("CHAT-01 chat thread read state", () => {
     await expect(chat.listUnreadChatThreadIds(actor)).resolves.toStrictEqual([
       other.threadId,
     ]);
-    await expect(chat.listUnreadAgents(actor)).resolves.toStrictEqual([
-      agentId,
-    ]);
+    await expect(chat.listUnreadAgents(actor)).resolves.toStrictEqual([]);
     await chat.markThreadRead(actor, other.threadId);
     await expect(chat.listUnreadAgents(actor)).resolves.toStrictEqual([]);
     await chat.requestSetThreadMuted(actor, muted.threadId, false, [204]);
     await expect(chat.listUnreadChatThreadIds(actor)).resolves.toStrictEqual([
       muted.threadId,
     ]);
-    await expect(chat.listUnreadAgents(actor)).resolves.toStrictEqual([
-      agentId,
-    ]);
+    await expect(chat.listUnreadAgents(actor)).resolves.toStrictEqual([]);
   });
 
   it("lists active thread ids without hiding the agent's unread state", async () => {
@@ -1454,7 +1422,7 @@ describe("CHAT-01 chat thread read state", () => {
       new Set([runningRun.threadId, queuedRun.threadId]),
     );
     await expect(chat.listIndicators(owner)).resolves.toStrictEqual({
-      agents: { [ownerAgent]: "unread" },
+      agents: {},
       threads: {
         [completedRun.threadId]: "unread",
         [runningRun.threadId]: "active",
@@ -1479,7 +1447,7 @@ describe("CHAT-01 chat thread read state", () => {
       new Set([queuedRun.threadId]),
     );
     await expect(chat.listIndicators(owner)).resolves.toStrictEqual({
-      agents: { [ownerAgent]: "unread" },
+      agents: {},
       threads: {
         [completedRun.threadId]: "unread",
         [runningRun.threadId]: "unread",
@@ -1519,7 +1487,7 @@ describe("CHAT-01 chat thread read state", () => {
 
       mockNow(currentTime);
       await expect(chat.listIndicators(actor)).resolves.toStrictEqual({
-        agents: { [agentId]: "unread" },
+        agents: {},
         threads: {
           [recentRun.threadId]: "unread",
           [activeRun.threadId]: "active",
@@ -1555,10 +1523,7 @@ describe("CHAT-01 chat thread read state", () => {
 
       mockNow(firstCompletedAt + 60_000);
       const indicators = await chat.listIndicators(actor);
-      expect(indicators.agents).toStrictEqual({
-        [agentA]: "unread",
-        [agentB]: "unread",
-      });
+      expect(indicators.agents).toStrictEqual({});
       if (!indicators.unreadAt) {
         throw new Error("Expected unread timestamps from the current API");
       }
@@ -1573,7 +1538,7 @@ describe("CHAT-01 chat thread read state", () => {
     });
   }, 240_000);
 
-  it("marks all unread chat threads for one agent", async () => {
+  it("marks all unread chat threads for the current member", async () => {
     const { actor: owner, agentId: agentA } =
       await entitledChatActor("Mark-read agent A");
     const agentB = (
@@ -1596,15 +1561,8 @@ describe("CHAT-01 chat thread read state", () => {
       prompt: "mark all read B",
     });
 
-    expect(
-      new Set(
-        (await chat.listThreadUnreads(owner, agentA)).map((unread) => {
-          return unread.threadId;
-        }),
-      ),
-    ).toStrictEqual(new Set([firstRunA.threadId, secondRunA.threadId]));
-    expect(new Set(await chat.listUnreadAgents(owner))).toStrictEqual(
-      new Set([agentA, agentB]),
+    expect(new Set(await chat.listUnreadChatThreadIds(owner))).toStrictEqual(
+      new Set([firstRunA.threadId, secondRunA.threadId, runB.threadId]),
     );
 
     context.mocks.ably.publish.mockClear();
@@ -1620,6 +1578,7 @@ describe("CHAT-01 chat thread read state", () => {
         threadIds: expect.arrayContaining([
           firstRunA.threadId,
           secondRunA.threadId,
+          runB.threadId,
         ]),
       },
     );
@@ -1627,15 +1586,9 @@ describe("CHAT-01 chat thread read state", () => {
     await chat.markAgentThreadsRead(owner, agentA);
     expect(context.mocks.ably.publish).not.toHaveBeenCalled();
 
-    await expect(chat.listThreadUnreads(owner, agentA)).resolves.toStrictEqual(
+    await expect(chat.listUnreadChatThreadIds(owner)).resolves.toStrictEqual(
       [],
     );
-    await expect(chat.listThreadUnreads(owner, agentB)).resolves.toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ threadId: runB.threadId }),
-      ]),
-    );
-    await expect(chat.listUnreadAgents(owner)).resolves.toStrictEqual([agentB]);
   }, 120_000);
 
   it("tails thread event rows after a sequence cursor", async () => {

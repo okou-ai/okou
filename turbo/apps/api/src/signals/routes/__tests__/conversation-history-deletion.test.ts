@@ -44,12 +44,14 @@ async function completedRun(actor: ApiTestUser, agentId?: string) {
   return { ...run, agentId: targetAgentId, headers, completion };
 }
 
-test("deletes a native-only completed Run with its Agent", async () => {
+test("retains the member’s completed Run after legacy Agent deletion", async () => {
   const actor = bdd.user();
   const run = await completedRun(actor);
   await bdd.requestDeleteAgent(actor, run.agentId, [204]);
-  const deleted = await runs.requestReadRun(actor, run.runId, [404]);
-  expect(deleted.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+  await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
+    runId: run.runId,
+    status: "completed",
+  });
   await bdd.requestDeleteAgent(actor, run.agentId, [404]);
 });
 

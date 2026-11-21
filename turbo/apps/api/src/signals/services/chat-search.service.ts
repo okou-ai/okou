@@ -5,7 +5,6 @@ import {
   type ChatSearchResult,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { projects } from "@okouai/db/schema/project";
-import { agents } from "@okouai/db/schema/agent";
 import { chatEventSearchMessages } from "@okouai/db/schema/chat-event-search";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -15,7 +14,6 @@ import {
   chatSearchMatchRanges,
 } from "../../lib/chat-search-bigram";
 import { db$, type ReadonlyDb } from "../external/db";
-import { visibleJoinedAgentCondition } from "./agent-data.service";
 
 type ChatSearchMessageRow = {
   readonly chatThreadId: string;
@@ -127,8 +125,6 @@ async function findChatSearchMatches(
       createdAt: chatEventSearchMessages.createdAt,
       text: chatEventSearchMessages.text,
       existingChatThreadId: chatThreads.id,
-      threadAgentId: chatThreads.agentId,
-      agentName: agents.name,
       projectId: projects.id,
       projectName: projects.name,
     })
@@ -141,14 +137,6 @@ async function findChatSearchMatches(
       ),
     )
     .leftJoin(chatThreads, eq(chatThreads.id, newest.chatThreadId))
-    .leftJoin(
-      agents,
-      and(
-        eq(agents.id, chatThreads.agentId),
-        eq(agents.orgId, args.orgId),
-        visibleJoinedAgentCondition(args.userId),
-      ),
-    )
     .leftJoin(
       projects,
       and(
@@ -168,9 +156,6 @@ async function findChatSearchMatches(
   return matches.flatMap((candidate): ChatSearchMatchRow[] => {
     if (
       candidate.existingChatThreadId === null ||
-      (args.projectMetadata &&
-        candidate.threadAgentId !== null &&
-        candidate.agentName === null) ||
       (args.projectId !== undefined && candidate.projectId !== args.projectId)
     ) {
       return [];
@@ -183,7 +168,7 @@ async function findChatSearchMatches(
         role: candidate.role,
         createdAt: candidate.createdAt,
         text: candidate.text,
-        agentName: candidate.agentName ?? "Okou",
+        agentName: "Okou",
         projectId: candidate.projectId,
         projectName: candidate.projectName,
       },

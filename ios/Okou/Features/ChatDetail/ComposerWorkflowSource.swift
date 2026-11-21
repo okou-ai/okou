@@ -21,7 +21,7 @@ final class ComposerWorkflowSource {
     self.didFail = didFail
   }
 
-  func load(agentID: String) async throws -> [ComposerWorkflow] {
+  func load(agentID: String?) async throws -> [ComposerWorkflow] {
     guard !isClosed else { throw CancellationError() }
     do {
       let workflows = try await client.composerWorkflows(agentID: agentID)
@@ -41,7 +41,7 @@ final class ComposerWorkflowSource {
     }
   }
 
-  func prepareUse(in text: String, document: ChatDraftDocument?, agentID: String) async throws
+  func prepareUse(in text: String, document: ChatDraftDocument?, agentID: String?) async throws
     -> [String]
   {
     let text = document.map { visibleText($0.parts) } ?? text

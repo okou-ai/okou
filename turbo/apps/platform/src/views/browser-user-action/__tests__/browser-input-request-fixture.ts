@@ -11,15 +11,13 @@ export type Field = BrowserUserActionResponse["fields"][number];
 type Values = BrowserUserActionApplyRequest["values"];
 type State = BrowserUserActionResponse["state"];
 export const threadId = "86500000-0000-4000-8000-000000000001";
-const agentId = "86500000-0000-4000-8000-000000000002";
 const requestToken = "vm0_browser_user_action_" + "c".repeat(43);
 export const callbackPrompt = "Continue the invoice review";
 export const siteOrigin = "https://invoices.example";
 
-export function browserInputPath(agent: string) {
+export function browserInputPath() {
   const query = new URLSearchParams({
     threadId,
-    agentId: agent,
     callbackPrompt,
   });
   return "/browser/actions/" + requestToken + "?" + query.toString();
@@ -43,7 +41,6 @@ export function installBrowserRequest(
     fields,
     requestToken,
     threadId,
-    agentId,
     siteOrigin,
     callbackIds: { success: ids(), cancellation: ids() },
     ...initial,
@@ -100,7 +97,7 @@ export function installBrowserRequest(
     announce();
     return respond(201, { threadId });
   });
-  const path = browserInputPath(record.agentId);
+  const path = browserInputPath();
   async function open(
     sharedWorkerTestTransport: "direct" | "message-port" = "direct",
   ) {

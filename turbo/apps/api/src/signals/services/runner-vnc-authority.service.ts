@@ -1,6 +1,5 @@
 import { command } from "ccstate";
 import type { RunnerVncResolveRequest } from "@okouai/api-contracts/contracts/runner-vnc";
-import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   sshConnectionNeedsRebind,
@@ -8,7 +7,7 @@ import {
 } from "@okouai/db/runtime/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
-import { and, eq, or, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   nullableDriverValueDecoder,
@@ -121,17 +120,6 @@ export const currentRunnerVncAuthority$ = command(
       .select(currentVncSelection)
       .from(agentRuns)
 
-      .innerJoin(
-        agents,
-        and(
-          eq(agents.id, agentRuns.agentId),
-          eq(agents.orgId, agentRuns.orgId),
-          or(
-            eq(agents.visibility, "public"),
-            eq(agents.owner, agentRuns.userId),
-          ),
-        ),
-      )
       .innerJoin(
         vncConnections,
         and(

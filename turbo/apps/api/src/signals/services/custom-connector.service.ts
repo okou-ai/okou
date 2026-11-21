@@ -134,6 +134,7 @@ import {
   prepareCustomConnectorSkillBundle$,
   type PreparedCustomConnectorSkill,
 } from "./custom-connector-skill-bundle.service";
+import { customConnectorSkillBundleValues } from "./custom-connector-skill-bundle-columns";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-connector-permissions";
 
@@ -259,7 +260,6 @@ interface CustomConnectorSharedRow<
   readonly oauthConfig: OAuthConfig | null;
   readonly enabled: boolean;
   readonly skillMarkdown: string | null;
-  readonly skillStorageVersionId: string | null;
   readonly storageVersion: number;
   readonly createdBy: string;
   readonly createdAt: Date;
@@ -291,12 +291,7 @@ export type CustomConnectorRow<
 > = CustomConnectorHttpRow<OAuthConfig> | CustomConnectorMcpRow<OAuthConfig>;
 
 type CustomConnectorDefinitionMetadata =
-  | "enabled"
-  | "skillMarkdown"
-  | "skillStorageVersionId"
-  | "createdBy"
-  | "createdAt"
-  | "updatedAt";
+  "enabled" | "skillMarkdown" | "createdBy" | "createdAt" | "updatedAt";
 
 export type CustomConnectorConnectionDefinitionRow = Omit<
   CustomConnectorDefinitionRow,
@@ -547,7 +542,6 @@ export function normaliseCustomConnectorRow<
     ...normaliseCustomConnectorConnectionDefinition(row, oauthConfig),
     enabled: row.enabled,
     skillMarkdown: row.skillMarkdown,
-    skillStorageVersionId: row.skillStorageVersionId,
     createdBy: row.createdBy,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -1882,6 +1876,7 @@ export function customConnectorCreateSource(
   >,
 ) {
   const protocol = protocolColumns(args.definition);
+  const skill = customConnectorSkillBundleValues(args.preparedSkill);
   return {
     id: sql`${sql.param(args.connectorId, orgCustomConnectors.id)}`
       .mapWith(orgCustomConnectors.id)
@@ -1934,15 +1929,15 @@ export function customConnectorCreateSource(
         .mapWith(orgCustomConnectors.skillMarkdown)
         .as("skill_markdown"),
     skillStorageVersionId:
-      sql`${sql.param(args.preparedSkill?.sourceVersionId ?? null, orgCustomConnectors.skillStorageVersionId)}`
+      sql`${sql.param(skill.skillStorageVersionId, orgCustomConnectors.skillStorageVersionId)}`
         .mapWith(orgCustomConnectors.skillStorageVersionId)
         .as("skill_storage_version_id"),
     skillContentBundle:
-      sql`${sql.param(args.preparedSkill?.contentBundle ?? null, orgCustomConnectorSkillBundles.skillContentBundle)}`
+      sql`${sql.param(skill.skillContentBundle, orgCustomConnectorSkillBundles.skillContentBundle)}`
         .mapWith(zodDriverValueDecoder(contentBundleSchema.nullable()))
         .as("skill_content_bundle"),
     skillContentBundleSourceVersionId:
-      sql`${sql.param(args.preparedSkill?.sourceVersionId ?? null, orgCustomConnectorSkillBundles.skillContentBundleSourceVersionId)}`
+      sql`${sql.param(skill.skillContentBundleSourceVersionId, orgCustomConnectorSkillBundles.skillContentBundleSourceVersionId)}`
         .mapWith(nullableDriverValueDecoder(pgTextDecoder))
         .as("skill_content_bundle_source_version_id"),
     storageVersion:
@@ -2371,10 +2366,7 @@ function customConnectorDefinitionUpdateValues(
     queryInjections: [...args.definition.queryInjections],
     authMode: args.definition.authMode,
     skillMarkdown: args.definition.skillMarkdown,
-    skillStorageVersionId: args.preparedSkill?.sourceVersionId ?? null,
-    skillContentBundle: args.preparedSkill?.contentBundle ?? null,
-    skillContentBundleSourceVersionId:
-      args.preparedSkill?.sourceVersionId ?? null,
+    ...customConnectorSkillBundleValues(args.preparedSkill),
     storageVersion: args.storageVersion,
     updatedAt: at,
   };

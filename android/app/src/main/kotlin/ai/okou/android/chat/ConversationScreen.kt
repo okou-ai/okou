@@ -114,11 +114,7 @@ fun ConversationRoute(
                                 Text(
                                     list.agents
                                         .firstOrNull { it.agentId == thread.agentId }
-                                        ?.displayName
-                                        ?: stringResource(
-                                            R.string.chat_agent_identity,
-                                            thread.agentId,
-                                        )
+                                        ?.displayName ?: stringResource(R.string.app_name)
                                 )
                                 thread.selectedModel?.let { Text(it) }
                             }

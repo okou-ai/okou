@@ -95,7 +95,8 @@ describe("okou connector search command", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
-    vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
+    vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", undefined);
+    vi.stubEnv("OKOU_AGENT_ID", undefined);
     searchCommand.setOptionValue("limit", undefined);
     searchCommand.setOptionValue("callbackPrompt", undefined);
     searchCommand.setOptionValue("json", false);
@@ -207,6 +208,7 @@ describe("okou connector search command", () => {
 
     it("reports the exact reconnect-required Run account", async () => {
       const target = { kind: "builtin", connectorSlug: "github" } as const;
+      vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
       vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
       writeRunConnectorAccountContext(contextPath, [
         { ...target, connectionId: RUN_CONNECTION_ID },
@@ -267,6 +269,7 @@ describe("okou connector search command", () => {
       "context-unavailable",
       "metadata-unavailable",
     ] as const)("preserves the %s run state in JSON", async (state) => {
+      vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
       vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
       if (state === "not-admitted") {
         writeRunConnectorAccountContext(contextPath, []);
@@ -307,6 +310,7 @@ describe("okou connector search command", () => {
     });
 
     it("preserves the callback URL and task inside the JSON action", async () => {
+      vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
       vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
       vi.stubEnv("OKOU_CHAT_THREAD_ID", THREAD_UUID);
       writeRunConnectorAccountContext(contextPath, []);
@@ -591,6 +595,7 @@ describe("okou connector search command", () => {
               ? ({ kind, connectorSlug: "openai" } as const)
               : ({ kind, customConnectorId: custom.id } as const);
           const slug = kind === "builtin" ? "openai" : custom.slug;
+          vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
           vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
           writeRunConnectorAccountContext(contextPath, [
             { ...target, connectionId: RUN_CONNECTION_ID },
@@ -672,6 +677,7 @@ describe("okou connector search command", () => {
 
   describe("run account column", () => {
     it("renders the exact reconnect-required run account independently of saved-account directory membership", async () => {
+      vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
       vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
       writeRunConnectorAccountContext(contextPath, [
         {
@@ -723,6 +729,7 @@ describe("okou connector search command", () => {
 
     it("matches a custom run account by custom connector ID", async () => {
       const definition = customConnector({});
+      vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
       vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
       writeRunConnectorAccountContext(contextPath, [
         {
@@ -760,6 +767,7 @@ describe("okou connector search command", () => {
     });
 
     it("returns every supported run match and distinguishes availability", async () => {
+      vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
       vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
       writeRunConnectorAccountContext(contextPath, [
         {
@@ -806,6 +814,7 @@ describe("okou connector search command", () => {
     });
 
     it("retains a deleted exact ID and fails closed for missing legacy context", async () => {
+      vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
       vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
       writeRunConnectorAccountContext(contextPath, [
         {
@@ -847,6 +856,7 @@ describe("okou connector search command", () => {
 
   describe("connection guidance", () => {
     beforeEach(() => {
+      vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
       vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
       vi.stubEnv("OKOU_CHAT_THREAD_ID", THREAD_UUID);
       writeRunConnectorAccountContext(contextPath, []);

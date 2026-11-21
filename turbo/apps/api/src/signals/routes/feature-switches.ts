@@ -26,19 +26,13 @@ function featureSwitchResponseBody(params: {
   readonly userId: string;
   readonly switches: Record<string, boolean>;
 }) {
-  const effectiveSwitches = getAllFeatureStates({
-    orgId: params.orgId,
-    userId: params.userId,
-    overrides: params.switches,
-  });
   return {
     switches: params.switches,
-    effectiveSwitches: {
-      ...effectiveSwitches,
-      // Keep these names until supported Android and CLI releases no longer read them (#49547).
-      singleAgent: true,
-      projects: true,
-    },
+    effectiveSwitches: getAllFeatureStates({
+      orgId: params.orgId,
+      userId: params.userId,
+      overrides: params.switches,
+    }),
   };
 }
 

@@ -152,6 +152,12 @@ fn persisted_entries_keep_their_identity_and_external_writer_lock() {
                 .unwrap(),
             )
             .unwrap();
+            File::open(&entry)
+                .unwrap()
+                .set_modified(std::time::UNIX_EPOCH)
+                .unwrap();
+            let modified = || fs::metadata(&entry).unwrap().modified().unwrap();
+            let stale_mtime = modified();
             let writer = lock::try_acquire_or_busy_blocking(&lock_path).unwrap();
             assert!(matches!(writer, TryLock::Acquired(_)));
             let cancel = CancellationToken::new();
@@ -160,6 +166,7 @@ fn persisted_entries_keep_their_identity_and_external_writer_lock() {
             } else {
                 assert!(read(&home, &name, &version, &cancel).unwrap().is_none());
             }
+            assert_eq!(modified(), stale_mtime);
             drop(writer);
             if rejected {
                 assert!(is_rejected(&home, &name, &version, &cancel).unwrap());
@@ -170,6 +177,7 @@ fn persisted_entries_keep_their_identity_and_external_writer_lock() {
                     files()
                 );
             }
+            assert!(modified() > stale_mtime);
         }
     }
 }
