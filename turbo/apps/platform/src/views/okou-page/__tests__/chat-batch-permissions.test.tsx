@@ -203,9 +203,10 @@ test("Review full scopes grouped by connector and apply the selected duration to
   await readyChat();
   const card = await screen.findByTestId("permission-batch-action-card");
   const dialog = await openPermissions(card);
-  expect(
-    within(dialog).getByRole("link", { name: "View permission details" }),
-  ).toHaveAttribute("href", originalUrl);
+  const detailsLink = queryAllByRoleFast("link", dialog).find((link) => {
+    return link.textContent === "View permission details";
+  });
+  expect(detailsLink).toHaveAttribute("href", originalUrl);
   await waitFor(() => {
     expect(getButton("Allow all 4 permissions", dialog)).toBeEnabled();
   });
