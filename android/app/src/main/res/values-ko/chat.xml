@@ -26,7 +26,6 @@
     <string name="chat_project_empty">이 프로젝트에 채팅이 없습니다.</string>
     <string name="chat_empty">이 보기에 채팅이 없습니다.</string>
     <string name="chat_untitled">제목 없는 채팅</string>
-    <string name="chat_agent_identity">Okou · %1$s</string>
     <string name="chat_pinned">고정됨</string>
     <string name="chat_active">활성</string>
     <string name="chat_actions">채팅 작업</string>
