@@ -651,10 +651,9 @@ export function createChatFilesBddApi(context: TestContext) {
         threadsClient().indicators({ headers: authenticate(context, actor) }),
         [200],
       );
-      return Object.entries(body.unreadAt).map(([threadId, unreadAt]) => ({
-        threadId,
-        unreadAt,
-      }));
+      return Object.entries(body.unreadAt).map(([threadId, unreadAt]) => {
+        return { threadId, unreadAt };
+      });
     },
 
     async listActiveChatThreadIds(

@@ -88,19 +88,14 @@ describe("Captured personal Instructions in direct Runs", () => {
     });
   });
 
-  it("clears the native instruction input and preserves the explicit non-default legacy path", async () => {
+  it("uses cleared member Instructions even when a legacy client supplies a named Agent", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const s3 = installWorkflowVolumeS3Fixture(context);
-      const { defaultAgentId } = await bdd.readOnboardingStatus(owned.actor);
-      if (!defaultAgentId) {
-        throw new Error("Expected default executor");
-      }
 
       await save(owned.actor, "old managed file");
       await save(owned.actor, "");
       const queued = await api.createThreadRun(owned.actor, {
-        agentId: defaultAgentId,
         prompt: "clear personal file",
         model: "auto",
       });
@@ -122,14 +117,18 @@ describe("Captured personal Instructions in direct Runs", () => {
         model: "auto",
       });
       const nonDefault = await owned.runExecution(retained.runId);
-      await accept(
+      const saved = await accept(
         client().get({
           headers: {
             authorization: `Bearer ${nonDefault.execution.platformEnvironment.OKOU_TOKEN!}`,
           },
         }),
-        [403],
+        [200],
       );
+      expect(saved.body).toMatchObject({
+        userId: owned.actor.userId,
+        content: "",
+      });
       expect(
         readExecutionContentBundle(
           s3.objects,
@@ -137,7 +136,7 @@ describe("Captured personal Instructions in direct Runs", () => {
         )
           .get("instructions.md")
           ?.toString(),
-      ).toBe("retained non-default");
+      ).toBe("");
     });
   });
   it("uses the default until the first save and isolates two members on the same default executor", async () => {
