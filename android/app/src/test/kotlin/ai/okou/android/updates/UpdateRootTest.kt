@@ -102,17 +102,17 @@ class UpdateRootTest {
         compose.onNodeWithText("Download update").performSemanticsAction(SemanticsActions.OnClick)
         compose.waitUntil(10_000) { app.fixture.progress != null }
         app.fixture.progress!!(617)
-        compose.onNodeWithText("Updating · 50%").assertExists()
+        compose.onNodeWithText("Downloading · 50%").assertExists()
         compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.OnClick)
         assertTrue(app.updates.state.value.transfer is UpdateTransfer.Downloading)
         app.updates.requireUpdate(RequiredUpdate("99.0.0"))
         compose.waitUntil(10_000) { app.updates.state.value.required }
         compose.onNodeWithText("Update Okou to continue").assertExists()
-        compose.onNodeWithText("Updating · 50%").assertExists()
+        compose.onNodeWithText("Downloading · 50%").assertExists()
         compose.onNodeWithText("Welcome to Okou").assertDoesNotExist()
         compose.activityRule.scenario.recreate()
         compose.onNodeWithText("Update Okou to continue").assertExists()
-        compose.onNodeWithText("Updating · 50%").assertExists()
+        compose.onNodeWithText("Downloading · 50%").assertExists()
         compose.onNodeWithText("Sign out").assertDoesNotExist()
     }
 

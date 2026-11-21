@@ -134,7 +134,7 @@
     <string name="updates_permission">Android memerlukan izin untuk menginstal pembaruan ini. Izinkan Okou sebagai sumber pemasangan di Setelan, lalu kembali untuk menginstal.</string>
     <string name="updates_required">Perbarui Okou untuk melanjutkan</string>
     <string name="updates_required_description">Versi ini sudah tidak didukung. Perbarui aplikasi untuk melanjutkan pekerjaan.</string>
-    <string name="updates_downloading">Memperbarui · %1$s</string>
+    <string name="updates_downloading">Mengunduh · %1$s</string>
     <string name="updates_new_version">Versi baru tersedia</string>
     <string name="updates_package_size">Paket: %1$s</string>
     <string name="updates_check_in_progress">Memeriksa…</string>

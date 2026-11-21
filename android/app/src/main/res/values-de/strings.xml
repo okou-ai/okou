@@ -134,7 +134,7 @@
     <string name="updates_permission">Android benötigt deine Erlaubnis zur Installation. Erlaube Okou in den Einstellungen als Installationsquelle und kehre dann zurück.</string>
     <string name="updates_required">Okou aktualisieren</string>
     <string name="updates_required_description">Diese Version wird nicht mehr unterstützt. Aktualisiere die App, um weiterzuarbeiten.</string>
-    <string name="updates_downloading">Update läuft · %1$s</string>
+    <string name="updates_downloading">Download läuft · %1$s</string>
     <string name="updates_new_version">Neue Version verfügbar</string>
     <string name="updates_package_size">Paket: %1$s</string>
     <string name="updates_check_in_progress">Wird geprüft…</string>

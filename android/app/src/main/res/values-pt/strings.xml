@@ -134,7 +134,7 @@
     <string name="updates_permission">O Android precisa da sua permissão para instalar esta atualização. Permita que o Okou instale aplicativos nas Configurações e volte para instalar.</string>
     <string name="updates_required">Atualize o Okou para continuar</string>
     <string name="updates_required_description">Esta versão não é mais compatível. Atualize o app para continuar trabalhando.</string>
-    <string name="updates_downloading">Atualizando · %1$s</string>
+    <string name="updates_downloading">Baixando · %1$s</string>
     <string name="updates_new_version">Nova versão disponível</string>
     <string name="updates_package_size">Pacote: %1$s</string>
     <string name="updates_check_in_progress">Verificando…</string>

@@ -134,7 +134,7 @@
     <string name="updates_permission">इस अपडेट को इंस्टॉल करने के लिए Android को आपकी अनुमति चाहिए। सेटिंग में Okou को ऐप इंस्टॉल करने की अनुमति दें, फिर वापस आएँ।</string>
     <string name="updates_required">जारी रखने के लिए Okou अपडेट करें</string>
     <string name="updates_required_description">यह वर्शन अब समर्थित नहीं है। काम जारी रखने के लिए अपडेट करें।</string>
-    <string name="updates_downloading">अपडेट हो रहा है · %1$s</string>
+    <string name="updates_downloading">डाउनलोड हो रहा है · %1$s</string>
     <string name="updates_new_version">नया वर्शन उपलब्ध है</string>
     <string name="updates_package_size">पैकेज: %1$s</string>
     <string name="updates_check_in_progress">जाँच जारी है…</string>

@@ -134,7 +134,7 @@
     <string name="updates_permission">Android richiede il permesso per installare questo aggiornamento. Consenti a Okou di installare app nelle Impostazioni, poi torna qui.</string>
     <string name="updates_required">Aggiorna Okou per continuare</string>
     <string name="updates_required_description">Questa versione non è più supportata. Aggiorna per continuare a lavorare.</string>
-    <string name="updates_downloading">Aggiornamento · %1$s</string>
+    <string name="updates_downloading">Download in corso · %1$s</string>
     <string name="updates_new_version">Nuova versione disponibile</string>
     <string name="updates_package_size">Pacchetto: %1$s</string>
     <string name="updates_check_in_progress">Verifica in corso…</string>

@@ -134,7 +134,7 @@
     <string name="updates_permission">請在 Android 設定中允許 Okou 安裝應用程式。授權後回到這裡，繼續安裝已下載的更新。</string>
     <string name="updates_required">更新後繼續使用 Okou</string>
     <string name="updates_required_description">目前版本已不受支援。請更新至新版本以繼續工作。</string>
-    <string name="updates_downloading">更新中 · %1$s</string>
+    <string name="updates_downloading">下載中 %1$s</string>
     <string name="updates_new_version">有新版本</string>
     <string name="updates_package_size">安裝套件 %1$s</string>
     <string name="updates_check_in_progress">檢查中</string>
