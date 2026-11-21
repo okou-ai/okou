@@ -4,7 +4,7 @@ import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import {
   onboardingCompleteContract,
   onboardingDraftContract,
-  onboardingStatusContract,
+  memberOnboardingContract,
 } from "@okouai/api-contracts/contracts/onboarding";
 import type { OnboardingDraftPayload } from "@okouai/api-contracts/validators/onboarding";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
@@ -32,7 +32,7 @@ function authHeaders() {
 
 function onboardingStatusClient() {
   return setupApp({ context, routes: onboardingStatusRoutes })(
-    onboardingStatusContract,
+    memberOnboardingContract,
   );
 }
 
@@ -203,7 +203,7 @@ describe("Onboarding draft", () => {
   });
 });
 
-describe("GET /api/onboarding/status", () => {
+describe("GET /api/onboarding/member-status", () => {
   it("returns 401 when the request is unauthenticated", async () => {
     const response = await accept(
       onboardingStatusClient().getStatus({ headers: {} }),
@@ -226,9 +226,6 @@ describe("member source-first onboarding", () => {
       onboardingComplete: false,
       isAdmin: false,
       hasOrg: true,
-      hasDefaultAgent: false,
-      defaultAgentId: null,
-      defaultAgentMetadata: null,
     });
   });
 
@@ -483,9 +480,7 @@ describe("POST /api/onboarding/complete", () => {
       onboardingComplete: false,
       isAdmin: true,
       hasOrg: true,
-      hasDefaultAgent: true,
     });
-    expect(before.body.defaultAgentId).toBeTruthy();
 
     const completed = await accept(
       onboardingCompleteClient().complete({
@@ -508,8 +503,6 @@ describe("POST /api/onboarding/complete", () => {
       onboardingComplete: true,
       isAdmin: true,
       hasOrg: true,
-      hasDefaultAgent: true,
-      defaultAgentId: before.body.defaultAgentId,
     });
     const policies = await accept(
       runModelsClient().list({ headers: authHeaders() }),

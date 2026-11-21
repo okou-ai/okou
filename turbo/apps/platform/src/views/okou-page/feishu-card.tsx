@@ -1508,7 +1508,9 @@ function FeishuBotList({
         </div>
         {!isAdmin && (
           <div className="mt-1 text-sm text-muted-foreground">
-            {t(($) => $.connectors.providerSettings[platform].emptyMember)}
+            {t(($) => {
+              return $.connectors.providerSettings[platform].emptyMember;
+            })}
           </div>
         )}
       </div>

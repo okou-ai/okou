@@ -277,26 +277,28 @@ const initializeUserPreferencesInner$ = command(
 export const userPreferencesRoutes: readonly RouteEntry[] = [
   memberPreferencesContract,
   userPreferencesContract,
-].flatMap((contract) => [
-  {
-    route: contract.initialize,
-    handler: authRoute(
-      { requireOrganization: true, missingOrganizationStatus: 401 },
-      initializeUserPreferencesInner$,
-    ),
-  },
-  {
-    route: contract.get,
-    handler: authRoute(
-      { requireOrganization: true, missingOrganizationStatus: 401 },
-      getUserPreferencesInner$,
-    ),
-  },
-  {
-    route: contract.update,
-    handler: authRoute(
-      { requireOrganization: true, missingOrganizationStatus: 401 },
-      updateUserPreferencesInner$,
-    ),
-  },
-]);
+].flatMap((contract) => {
+  return [
+    {
+      route: contract.initialize,
+      handler: authRoute(
+        { requireOrganization: true, missingOrganizationStatus: 401 },
+        initializeUserPreferencesInner$,
+      ),
+    },
+    {
+      route: contract.get,
+      handler: authRoute(
+        { requireOrganization: true, missingOrganizationStatus: 401 },
+        getUserPreferencesInner$,
+      ),
+    },
+    {
+      route: contract.update,
+      handler: authRoute(
+        { requireOrganization: true, missingOrganizationStatus: 401 },
+        updateUserPreferencesInner$,
+      ),
+    },
+  ];
+});

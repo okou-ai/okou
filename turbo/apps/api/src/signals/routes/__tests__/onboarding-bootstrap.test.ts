@@ -10,7 +10,7 @@ import {
 } from "@okouai/api-contracts/contracts/billing";
 import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
-import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import { memberPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { SEED_INSTRUCTIONS } from "@okouai/core/seed-instructions";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -113,7 +113,7 @@ describe("default Agent bootstrap", () => {
   it("preserves saved member preferences during lazy bootstrap", async () => {
     authenticateAdmin();
     const preferences = setupApp({ context, routes: userPreferencesRoutes })(
-      userPreferencesContract,
+      memberPreferencesContract,
     );
     const saved = {
       timezone: "Asia/Shanghai",

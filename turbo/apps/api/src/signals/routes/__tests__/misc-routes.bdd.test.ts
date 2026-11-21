@@ -67,7 +67,6 @@ describe("MISC-02: preferences, push subscription, user export, and empty logs",
     expect(updatedPreferences.body).toMatchObject({
       timezone: "UTC",
       locale: "en-US",
-      pinnedAgentIds: [],
       sendMode: "cmd-enter",
       cloudBrowserEnabledByDefault: false,
       theme: "dark",
