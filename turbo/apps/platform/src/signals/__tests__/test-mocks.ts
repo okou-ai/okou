@@ -1526,7 +1526,7 @@ export interface BrowserWebSocketPeer {
 
 interface BrowserWebSocketOptions {
   readonly autoOpen?: boolean;
-  readonly onConnecting?: (url: string) => void;
+  readonly onConnecting?: (url: string, socket: { open(): void }) => void;
 }
 
 function mockBrowserWebSocket(
@@ -1553,7 +1553,7 @@ function mockBrowserWebSocket(
       connectionCount += 1;
       this.id = connectionCount;
       sockets.add(this);
-      options.onConnecting?.(url);
+      options.onConnecting?.(url, this);
       if (options.autoOpen !== false) {
         queueMicrotask(() => {
           this.open();

@@ -41,7 +41,7 @@ export function mockBrowserCdp(
   cdpUrl: string,
   options: {
     readonly autoOpen?: boolean;
-    readonly onConnecting?: (url: string) => void;
+    readonly onConnecting?: (url: string, socket: { open(): void }) => void;
     readonly streaming?: boolean;
     readonly targets?: readonly BrowserTarget[];
     readonly unavailableTargets?: readonly string[];

@@ -225,3 +225,51 @@ test("browser-pointer-recovery-007 a neutral hover cannot replace the held key's
     );
   });
 });
+
+test("browser-pointer-recovery-008 the rejected hover remains attributed to the drawing page after a later hover loses its session", async () => {
+  const diagnostic = context.mocks.sentry();
+  const { cdp, image, original } = await openStudio();
+  const rejected = cdp.holdNext("Input.dispatchMouseEvent");
+  cdp.failNext("Input.dispatchMouseEvent", "Drawing cursor refused", -32_017);
+  move(image, 275);
+  await rejected.received;
+  await act(() => {
+    return rejected.release();
+  });
+  const pending = cdp.holdNext("Input.dispatchMouseEvent");
+  move(image, 590);
+  await pending.received;
+  expect(cdp.input).toContainEqual({
+    method: "Input.dispatchMouseEvent",
+    sessionId: original,
+    params: expect.objectContaining({
+      type: "mouseMoved",
+      button: "none",
+      buttons: 0,
+      modifiers: 0,
+      x: 590,
+    }),
+  });
+  const beforeDetach = diagnostic.reports.length;
+  cdp.event("Target.detachedFromTarget", { sessionId: original });
+  await screen.findByText("Browser view unavailable");
+  await act(() => {
+    return pending.release();
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await waitFor(() => {
+    expect(diagnostic.reports.slice(beforeDetach)).toContainEqual(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          request: { method: "Input.dispatchMouseEvent", code: -32_017 },
+        }),
+        context: expect.objectContaining({
+          tags: expect.objectContaining({ browser_event: "recovery-stopped" }),
+        }),
+      }),
+    );
+  });
+  click(screen.getByLabelText("Project notes", { selector: '[role="tab"]' }));
+  await expectStreamingAt(notes);
+  await writeNote(cdp, "Cursor rejected on board");
+});

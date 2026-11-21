@@ -3,6 +3,8 @@
 Baseline [b0a10287edf4](https://github.com/okou-ai/okou/tree/b0a10287edf4242383c28e39c6f7675053febb32).
 Source [browser-connection-diagnostics.test.tsx](browser-connection-diagnostics.test.tsx).
 
+Batch 38 accepted 01, 02, 03 and 05.03. Selected ID 06 remains pending.
+
 ## browser-connection-diagnostics-01
 
 Original test `A bridge bootstrap failure keeps safe CDP facts in its semantic startup report`.
