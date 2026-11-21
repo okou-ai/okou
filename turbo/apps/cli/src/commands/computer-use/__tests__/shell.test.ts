@@ -49,7 +49,7 @@ describe("computer-use shell", () => {
         "base64url",
       );
       const payload = Buffer.from(
-        JSON.stringify({ scope: "okou", capabilities: ["agent:read"] }),
+        JSON.stringify({ scope: "okou", capabilities: [] }),
       ).toString("base64url");
       vi.stubEnv("OKOU_TOKEN", `vm0_sandbox_${header}.${payload}.signature`);
 
@@ -392,9 +392,7 @@ describe("computer-use shell", () => {
 });
 
 it("adds the standard callback parameters to Shell access links only when requested", async () => {
-  const agentId = "10000000-0000-4000-8000-000000000001";
   const threadId = "20000000-0000-4000-8000-000000000001";
-  vi.stubEnv("OKOU_AGENT_ID", agentId);
   vi.stubEnv("OKOU_CHAT_THREAD_ID", threadId);
   server.use(
     http.post(`${base}/shell/authorizations`, () => {

@@ -251,7 +251,7 @@ describe("okou whoami command", () => {
         runId: "run-abc",
         orgId: "org-xyz",
         scope: "okou",
-        capabilities: ["agent:read", "agent:write"],
+        capabilities: ["instructions:read", "instructions:write"],
         iat: 1000,
         exp: 2000,
       });
@@ -260,11 +260,6 @@ describe("okou whoami command", () => {
       await runWhoami();
 
       const output = getAllOutput();
-      expect(
-        output.some((line) => {
-          return line.includes("Agent ID:");
-        }),
-      ).toBe(false);
       expect(
         output.some((line) => {
           return line.includes("agent-123");
@@ -297,7 +292,7 @@ describe("okou whoami command", () => {
       ).toBe(true);
       expect(
         output.some((line) => {
-          return line.includes("agent:read");
+          return line.includes("instructions:read");
         }),
       ).toBe(true);
     });
@@ -310,7 +305,7 @@ describe("okou whoami command", () => {
           runId: "run-abc",
           orgId: "org-xyz",
           scope: "okou",
-          capabilities: ["agent:read"],
+          capabilities: ["instructions:read"],
           iat: 1000,
           exp: 2000,
         }),
@@ -340,7 +335,7 @@ describe("okou whoami command", () => {
           runId: "run-abc",
           orgId: "org-xyz",
           scope: "okou",
-          capabilities: ["agent:read"],
+          capabilities: ["instructions:read"],
           iat: 1000,
           exp: 2000,
         }),
@@ -379,11 +374,6 @@ describe("okou whoami command", () => {
       await runWhoami();
 
       const output = getAllOutput();
-      expect(
-        output.some((line) => {
-          return line.includes("Agent ID:");
-        }),
-      ).toBe(false);
       expect(
         output.some((line) => {
           return line.includes("agent-no-token");
@@ -430,7 +420,7 @@ describe("okou whoami command", () => {
         runId: "run-abc",
         orgId: "org-xyz",
         scope: "okou",
-        capabilities: ["agent:read", "connector:read"],
+        capabilities: ["instructions:read", "connector:read"],
         iat: 1000,
         exp: 2000,
       });
@@ -482,7 +472,7 @@ describe("okou whoami command", () => {
         runId: "run-abc",
         orgId: "org-xyz",
         scope: "okou",
-        capabilities: ["agent:read", "connector:read"],
+        capabilities: ["instructions:read", "connector:read"],
         iat: 1000,
         exp: 2000,
       });
@@ -545,7 +535,7 @@ describe("okou whoami command", () => {
           runId: "run-abc",
           orgId: "org-xyz",
           scope: "okou",
-          capabilities: ["agent:read", "connector:read"],
+          capabilities: ["instructions:read", "connector:read"],
           iat: 1000,
           exp: 2000,
         }),
@@ -598,7 +588,7 @@ describe("okou whoami command", () => {
         runId: "run-abc",
         orgId: "org-xyz",
         scope: "okou",
-        capabilities: ["agent:read"],
+        capabilities: ["instructions:read"],
         iat: 1000,
         exp: 2000,
       });
@@ -628,11 +618,6 @@ describe("okou whoami command", () => {
       const output = getAllOutput();
       expect(
         output.some((line) => {
-          return line.includes("Agent ID:");
-        }),
-      ).toBe(false);
-      expect(
-        output.some((line) => {
           return line.includes("run-abc");
         }),
       ).toBe(true);
@@ -649,7 +634,7 @@ describe("okou whoami command", () => {
         runId: "run-abc",
         orgId: "org-xyz",
         scope: "okou",
-        capabilities: ["agent:read", "connector:read"],
+        capabilities: ["instructions:read", "connector:read"],
         iat: 1000,
         exp: 2000,
       });
@@ -659,11 +644,6 @@ describe("okou whoami command", () => {
       await runWhoami();
 
       const output = getAllOutput();
-      expect(
-        output.some((line) => {
-          return line.includes("Agent ID:");
-        }),
-      ).toBe(false);
       expect(
         output.some((line) => {
           return line.includes("Connectors:");
@@ -679,7 +659,7 @@ describe("okou whoami command", () => {
           runId: "run-abc",
           orgId: "org-xyz",
           scope: "okou",
-          capabilities: ["agent:read", "connector:read"],
+          capabilities: ["instructions:read", "connector:read"],
           iat: 1000,
           exp: 2000,
         }),
@@ -718,7 +698,7 @@ describe("okou whoami command", () => {
           runId: "run-abc",
           orgId: "org-xyz",
           scope: "okou",
-          capabilities: ["agent:read", "connector:read"],
+          capabilities: ["instructions:read", "connector:read"],
           iat: 1000,
           exp: 2000,
         }),
@@ -750,7 +730,7 @@ describe("okou whoami command", () => {
           runId: "run-abc",
           orgId: "org-xyz",
           scope: "okou",
-          capabilities: ["agent:read", "connector:read"],
+          capabilities: ["instructions:read", "connector:read"],
           iat: 1000,
           exp: 2000,
         }),
@@ -773,7 +753,7 @@ describe("okou whoami command", () => {
           runId: "run-abc",
           orgId: "org-xyz",
           scope: "okou",
-          capabilities: ["agent:read", "connector:read"],
+          capabilities: ["instructions:read", "connector:read"],
           iat: 1000,
           exp: 2000,
         }),
@@ -793,7 +773,7 @@ describe("okou whoami command", () => {
         runId: "run-abc",
         orgId: "org-xyz",
         scope: "okou",
-        capabilities: ["agent:read", "connector:read"],
+        capabilities: ["instructions:read", "connector:read"],
         iat: 1000,
         exp: 2000,
       });
@@ -843,7 +823,7 @@ describe("okou whoami command", () => {
         runId: "run-abc",
         orgId: "org-xyz",
         scope: "okou",
-        capabilities: ["agent:read", "connector:read"],
+        capabilities: ["instructions:read", "connector:read"],
         iat: 1000,
         exp: 2000,
       });
@@ -963,7 +943,6 @@ describe("okou whoami command", () => {
           userId: "user-1",
           runId: "run-1",
           capabilities: [],
-          singleAgent: true,
           exp: Math.floor(Date.now() / 1000) + 3600,
         }),
       );

@@ -186,7 +186,7 @@ function apiInputRequestError(
     return new BrowserInputRequestError(
       code,
       error.message,
-      "Create the request during an active chat agent run.",
+      "Create the request during an active Chat Run.",
     );
   }
   if (code === "BAD_REQUEST") {
@@ -510,7 +510,7 @@ const inputRequestCommand = new Command()
   )
   .option(
     "--callback-prompt <text>",
-    "Required message that starts the next agent round after values are applied",
+    "Required message that starts the next round after values are applied",
   )
   .option(
     "--field <json>",

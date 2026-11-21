@@ -86,7 +86,6 @@ describe("current-member connector status", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
-    vi.stubEnv("OKOU_AGENT_ID", undefined);
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", undefined);
     for (const command of [statusCommand, ...customConnectorCommand.commands]) {
       command.setOptionValue("json", false);

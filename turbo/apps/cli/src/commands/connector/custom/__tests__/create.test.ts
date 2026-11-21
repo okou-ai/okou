@@ -431,7 +431,7 @@ describe("okou connector custom create", () => {
     expect(createBody).toStrictEqual(definition);
   });
 
-  it("rejects an agent run without custom connector write access", async () => {
+  it("rejects a Run without custom connector write access", async () => {
     const definitionPath = writeDefinition(manualDefinition());
     const mockConsoleError = vi
       .spyOn(console, "error")
@@ -451,7 +451,7 @@ describe("okou connector custom create", () => {
       ]);
 
       expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
-        "Custom connector creation is not enabled for this agent run",
+        "Custom connector creation is not enabled for this Run",
       );
       expect(mockExit).toHaveBeenCalledWith(1);
     } finally {
