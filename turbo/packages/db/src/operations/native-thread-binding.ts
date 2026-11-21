@@ -6,16 +6,13 @@ import { activeAgentRuns } from "../schema/active-agent-run";
 
 /** Publish only while this Run still owns the Thread's active slot. */
 export function nativeThreadBindingSql(args: {
-  readonly run: Pick<
-    typeof agentRuns.$inferSelect,
-    "id" | "agentId" | "chatThreadId"
-  >;
+  readonly run: Pick<typeof agentRuns.$inferSelect, "id" | "chatThreadId">;
   readonly owner: { readonly userId: string; readonly orgId: string };
   readonly framework: string;
   readonly sessionId: string;
 }) {
   const { run, owner, framework, sessionId } = args;
-  if (!run.chatThreadId || !run.agentId) {
+  if (!run.chatThreadId) {
     return;
   }
   const dialect = new PgDialect();
@@ -52,10 +49,9 @@ export function nativeThreadBindingSql(args: {
       exists(sql`(SELECT 1 FROM native_session_owner)`),
       eq(chatThreads.id, run.chatThreadId),
       eq(chatThreads.userId, owner.userId),
-      eq(chatThreads.agentId, run.agentId),
+      eq(chatThreads.orgId, owner.orgId),
       eq(agentRuns.id, run.id),
       eq(agentRuns.chatThreadId, chatThreads.id),
-      eq(agentRuns.agentId, chatThreads.agentId),
       eq(agentRuns.userId, owner.userId),
       eq(agentRuns.orgId, owner.orgId),
       eq(agentRuns.framework, framework),

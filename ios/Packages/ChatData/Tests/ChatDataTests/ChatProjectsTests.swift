@@ -121,6 +121,6 @@ final class ChatProjectsTests: XCTestCase {
     let data = try XCTUnwrap(bodies.withLock { $0.first })
     let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     XCTAssertEqual(body["projectId"] as? String, Self.project)
-    XCTAssertEqual(body["agentId"] as? String, Self.agent)
+    XCTAssertNil(body["agentId"])
   }
 }

@@ -1,15 +1,18 @@
+import { db$ } from "../external/db";
 import { command } from "ccstate";
 import { chatThreadSnapshotProjectionSchema } from "@okouai/api-contracts/contracts/chat-threads";
 import { modelSettingsSchema } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { and, desc, eq, lt, sql, type SQLWrapper } from "drizzle-orm";
-import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
+import {
+  legacyThreadAgentId,
+  chatThreadOrganizationPredicate,
+} from "./chat-thread-organization.service";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import type { infer as zInfer } from "zod";
 import {
   nullableDriverValueDecoder,
   pgTextDecoder,
 } from "../../lib/db-structured-result";
-import { db$ } from "../external/db";
 
 /** Larger pages reduce round trips when rebuilding a scope's full sidebar. */
 const PROJECTION_SCAN_PAGE_SIZE = 1000;
@@ -39,8 +42,8 @@ export const loadChatThreadSnapshotProjection$ = command(
       const page = await db
         .select({
           id: chatThreads.id,
+          agentId: legacyThreadAgentId(chatThreads.agentId, chatThreads.orgId),
           projectId: chatThreads.projectId,
-          agentId: chatThreads.agentId,
           title: chatThreads.title,
           lastMessageAt: chatThreads.lastMessageAt,
           sortAt: jsonTimestamp(chatThreads.lastMessageAt),
@@ -77,14 +80,11 @@ export const loadChatThreadSnapshotProjection$ = command(
         )
         .limit(PROJECTION_SCAN_PAGE_SIZE);
       for (const thread of page) {
-        if (thread.agentId === null) {
-          continue;
-        }
         threads.push(
           chatThreadSnapshotProjectionSchema.parse({
             id: thread.id,
+            ...(thread.agentId ? { agentId: thread.agentId } : {}),
             projectId: thread.projectId,
-            agentId: thread.agentId,
             title: thread.title,
             sortAt: thread.sortAt,
             createdAt: thread.createdAt,

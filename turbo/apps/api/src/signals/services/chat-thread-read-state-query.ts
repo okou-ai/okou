@@ -74,14 +74,14 @@ export function createChatThreadReadPreparation(args: {
 
   return computed(async (get) => {
     const thread = await get(thread$);
-    if (!thread?.agentId) {
+    if (!thread) {
       return null;
     }
     const watermark = await get(watermark$);
     return {
       threadId: args.threadId,
       userId: args.userId,
-      agentId: thread.agentId,
+      ...(thread.agentId ? { agentId: thread.agentId } : {}),
       orgId: args.orgId,
       lastReadAt: thread.lastReadAt,
       watermark,
@@ -114,7 +114,7 @@ export function createAgentThreadReadPreparation(args: {
       .where(
         and(
           eq(chatThreads.userId, args.userId),
-          eq(chatThreads.agentId, args.agentId),
+          eq(chatThreads.orgId, args.orgId),
           eq(chatThreads.muted, false),
           gte(
             chatThreads.lastMessageAt,

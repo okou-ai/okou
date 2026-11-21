@@ -1,9 +1,9 @@
-import { agents } from "@okouai/db/schema/agent";
+import { db$ } from "../external/db";
+import { loadSelectedChatMessageRows$ } from "./shared-thread.service";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 
-import { db$ } from "../external/db";
 import { VERTEX_TEXT_MODEL } from "../external/vertex-models";
 import {
   generateVertexTextWithUsage,
@@ -11,7 +11,6 @@ import {
 } from "../external/vertex-text";
 import { generateAuxiliary } from "./auxiliary-generation.service";
 import { projectUserMessageForPublicShare } from "./chat-user-message.service";
-import { loadSelectedChatMessageRows$ } from "./shared-thread.service";
 
 const CONTEXT_CHAR_CAP = 12_000;
 const FILENAME_CHAR_CAP = 48;
@@ -61,12 +60,11 @@ export const generateChatThreadPdfFilename$ = command(
     const [thread] = await get(db$)
       .select({ id: chatThreads.id })
       .from(chatThreads)
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .where(
         and(
           eq(chatThreads.id, args.threadId),
           eq(chatThreads.userId, args.userId),
-          eq(agents.orgId, args.orgId),
+          eq(chatThreads.orgId, args.orgId),
         ),
       )
       .limit(1);

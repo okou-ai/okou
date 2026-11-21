@@ -452,7 +452,7 @@ describe("POST /api/webhooks/notion", () => {
     readonly workflowId: string;
     readonly entities: NotionEntities;
   }> {
-    const { actor } = await wf.setupWorkflowOrg();
+    const { defaultAgentId: agentId, actor } = await wf.setupWorkflowOrg();
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped workflow actor");
     }
@@ -460,11 +460,8 @@ describe("POST /api/webhooks/notion", () => {
     await runsApi.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
-    const agent = await wf.createAgent(actor, {
-      displayName: "Notion Webhook Agent",
-    });
     const workflowId = await wf.createWorkflow(actor, {
-      agentId: agent.agentId,
+      agentId,
       name: WORKFLOW_NAME,
     });
     const fixture = { orgId: actor.orgId, userId: actor.userId };
@@ -473,7 +470,7 @@ describe("POST /api/webhooks/notion", () => {
     return {
       fixture,
       actor,
-      agentId: agent.agentId,
+      agentId,
       workflowId,
       entities: newNotionEntities(),
     };

@@ -57,17 +57,11 @@ internal fun ChatListGroup.pinnedTailIndex(): Int {
 internal fun ChatListGroup.pinNeighbor(index: Int, step: Int): ConfirmedChat? =
     threads.getOrNull(index + step)?.takeIf { it.pinnedAt != null }
 
-private fun ChatListUiState.defaultAgentId() = agents.firstOrNull { it.isDefaultAgent }?.agentId
-
-private fun ConfirmedChat.isOutside(defaultAgentId: String?, knownProjects: Set<String>) =
-    agentId == defaultAgentId && projectId !in knownProjects
-
 /** Hidden and archived pins retain their canonical place within the group. */
 internal fun ChatListGroup.rankScope(state: ChatListUiState): List<ConfirmedChat> {
     if (project != null) return state.threads.filter { it.projectId == project.id }
     val known = state.projects.mapTo(hashSetOf()) { it.id }
-    val default = state.defaultAgentId()
-    return state.threads.filter { it.isOutside(default, known) }
+    return state.threads.filter { it.projectId !in known }
 }
 
 internal data class ChatListSection(
@@ -101,7 +95,7 @@ internal fun chatListSections(
     }
 }
 
-/** Known Projects span agents; the inbox outside them uses the actual default agent. */
+/** Known Projects group member threads; other threads share the workspace inbox. */
 fun chatListGroups(
     state: ChatListUiState,
     filter: ChatListFilter = state.filter,
@@ -124,7 +118,6 @@ fun chatListGroups(
             if (rows.isEmpty() && filter != ChatListFilter.Inbox) null
             else ChatListGroup(project, rows)
         }
-    val default = state.defaultAgentId()
-    val outside = visible.filter { it.isOutside(default, known) && matches(it) }
+    val outside = visible.filter { it.projectId !in known && matches(it) }
     return groups + ChatListGroup(null, outside)
 }

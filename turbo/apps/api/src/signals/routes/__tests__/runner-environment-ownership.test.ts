@@ -53,7 +53,7 @@ describe("runner environment ownership", () => {
     // environment, never as Agent environment entries.
     expect(execution.platformEnvironment).toMatchObject({
       OKOU_TOKEN: expect.any(String),
-      OKOU_AGENT_ID: agent.agentId,
+      OKOU_CHAT_THREAD_ID: run.threadId,
     });
     expect(execution.secretValues).toContain(
       execution.platformEnvironment.OKOU_TOKEN,

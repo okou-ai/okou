@@ -1,7 +1,3 @@
-import { command, computed, state, type Computed } from "ccstate";
-import type { EventDrivenChatThread } from "@okouai/core/chat-thread-event-replay";
-import { comparePinnedThreads } from "@okouai/core/chat-thread-pin-order";
-import { agentById, currentAgentId$, defaultAgentId$ } from "./agent.ts";
 import { pathParams$ } from "./route.ts";
 import { activeRoute$ } from "./active-route.ts";
 import { chatThreadIndicatorsFromWorker$ } from "./shared-database.ts";
@@ -12,6 +8,12 @@ import {
   chatThreadMetaMap$,
   eventDrivenChatThreads$,
 } from "./chat-page/chat-thread-event-sourcing.ts";
+import { projects$ } from "./projects/projects.ts";
+import { expandedProjectIds$ } from "./projects/project-expansion.ts";
+import { command, computed, state, type Computed } from "ccstate";
+import type { EventDrivenChatThread } from "@okouai/core/chat-thread-event-replay";
+import { comparePinnedThreads } from "@okouai/core/chat-thread-pin-order";
+import { agentById, currentAgentId$, defaultAgentId$ } from "./agent.ts";
 import {
   buildChatThreadListRows,
   buildChatThreadNavigationList,
@@ -19,8 +21,6 @@ import {
   type ChatThreadListRow,
   type ChatThreadNavigationList,
 } from "./chat-page/chat-thread-list-rows.ts";
-import { projects$ } from "./projects/projects.ts";
-import { expandedProjectIds$ } from "./projects/project-expansion.ts";
 
 const internalChatAgentId$ = state<string | null>(null);
 
@@ -236,17 +236,13 @@ function createChatThreadListView({
 }
 
 function createChatThreadListSignals(
-  agentId: string | null,
   filter: ChatThreadListFilter,
 ): ChatThreadListSignals {
   const allThreads$ = computed((get): Promise<EventDrivenChatThread[]> => {
-    if (!agentId) {
-      return Promise.resolve([]);
-    }
     return Promise.resolve(
       sortChatThreads(
         get(eventDrivenChatThreads$).filter((thread) => {
-          return thread.agentId === agentId && thread.projectId === null;
+          return thread.projectId === null;
         }),
       ),
     );
@@ -300,20 +296,15 @@ function createChatThreadListSignals(
   });
 }
 
-// Resolve the agent and filter once for the list projection.
-// Thread events can update the returned signals without replacing this Promise.
-const currentChatThreadListSignals$ = computed(
-  async (get): Promise<ChatThreadListSignals> => {
-    const onlyArchived = get(chatThreadOnlyArchived$);
+// Thread events update the current list projection.
+const currentChatThreadListSignals$ = computed((get): ChatThreadListSignals => {
+  const onlyArchived = get(chatThreadOnlyArchived$);
 
-    const agentId = get(currentChatAgentScope$) ?? (await get(defaultAgentId$));
-
-    return createChatThreadListSignals(agentId, {
-      onlyArchived,
-      onlyMuted: get(chatThreadOnlyMuted$),
-    });
-  },
-);
+  return createChatThreadListSignals({
+    onlyArchived,
+    onlyMuted: get(chatThreadOnlyMuted$),
+  });
+});
 
 // The unread list hides Projects without unread chats and offers every chat
 // instead of explaining what it leaves out.
@@ -329,19 +320,16 @@ const noProjectIds$ = computed((): Promise<ReadonlySet<string>> => {
 // never hides an unread message.
 export const unreadChatThreadListSignals$ = computed(
   async (get): Promise<ChatThreadListSignals> => {
-    const agentId = await get(currentChatAgentId$);
     const indicators = await get(chatThreadIndicatorsFromWorker$);
 
     const unread = get(eventDrivenChatThreads$).filter((thread) => {
       return indicators.threads[thread.id] === "unread";
     });
-    const threads = agentId
-      ? sortChatThreads(
-          unread.filter((thread) => {
-            return thread.agentId === agentId && thread.projectId === null;
-          }),
-        )
-      : [];
+    const threads = sortChatThreads(
+      unread.filter((thread) => {
+        return thread.projectId === null;
+      }),
+    );
     const projectThreads = sortChatThreads(
       unread.filter((thread) => {
         return thread.projectId !== null;
@@ -374,7 +362,7 @@ export const currentChatThreadList$ = computed(
     if (get(chatThreadOnlyUnread$)) {
       return await get(unreadChatThreadListSignals$);
     }
-    return await get(currentChatThreadListSignals$);
+    return get(currentChatThreadListSignals$);
   },
 );
 

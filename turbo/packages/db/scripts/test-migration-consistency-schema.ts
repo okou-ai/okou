@@ -510,7 +510,7 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
     const event = await client.query<{ id: string; seqId: string }>(
       `
         INSERT INTO "chat_thread_events" (
-          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "agent_id", "title", "selected_model"
+          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "event_executor_id", "title", "selected_model"
         )
         VALUES (
           'append-only-test-user', 'append-only-test-org', 1,
@@ -548,7 +548,7 @@ async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
     const nextEvent = await client.query<{ id: string; seqId: string }>(
       `
         INSERT INTO "chat_thread_events" (
-          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "agent_id", "title"
+          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "event_executor_id", "title"
         )
         VALUES (
           'append-only-test-user', 'append-only-test-org', 2,
@@ -1405,7 +1405,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "91c7e4000e63fc2b8c901635c53304bd",
+    bodyHash: "25db80210453a692dd82a9d70e1dffe3",
   },
   {
     schemaName: "public",
@@ -1459,7 +1459,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "68de3d84dc168dfbaad2a71d2e5789b3",
+    bodyHash: "ce4cdadf93bef2a2e177ebcfdf0e069f",
   },
   {
     schemaName: "public",

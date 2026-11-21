@@ -2,13 +2,11 @@ import { formatIntegrationChatMessage$ } from "./integration-run-errors.service"
 import { integrationModelRecoveryForDelivery$ } from "./integration-model-recovery.service";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { command } from "ccstate";
 import { and, countDistinct, eq, inArray, isNotNull } from "drizzle-orm";
@@ -35,7 +33,7 @@ import {
   feishuChatCallbackPayloadSchema,
   type FeishuDeliveryTarget,
 } from "./feishu-chat-callback-payload";
-import { resolveIntegrationAgentResponsePresentation$ } from "./integration-agent-response-presentation.service";
+import { integrationAgentResponsePresentation } from "./integration-agent-response-presentation.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import {
   canonicalChatEventContent,
@@ -113,11 +111,16 @@ const loadFeishuChatDeliveryContext$ = command(
         orgId: agentRuns.orgId,
         userId: agentRuns.userId,
         chatThreadId: agentRuns.chatThreadId,
-        agentId: agents.id,
       })
       .from(agentRuns)
-      .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+      .innerJoin(
+        chatThreads,
+        and(
+          eq(chatThreads.id, agentRuns.chatThreadId),
+          eq(chatThreads.userId, agentRuns.userId),
+          eq(chatThreads.orgId, agentRuns.orgId),
+        ),
+      )
       .where(
         and(
           eq(agentRuns.id, args.callback.runId),
@@ -160,7 +163,6 @@ const loadFeishuChatDeliveryContext$ = command(
     const [binding] = await db
       .select({
         feishuOpenId: feishuOrgConnections.feishuOpenId,
-        defaultAgentId: orgMetadata.defaultAgentId,
       })
       .from(feishuChatThreadRoutes)
       .innerJoin(
@@ -170,10 +172,6 @@ const loadFeishuChatDeliveryContext$ = command(
       .innerJoin(
         feishuOrgInstallations,
         eq(feishuOrgInstallations.id, feishuOrgConnections.installationId),
-      )
-      .leftJoin(
-        orgMetadata,
-        eq(orgMetadata.orgId, feishuOrgInstallations.orgId),
       )
       .where(
         and(
@@ -419,17 +417,14 @@ const buildFeishuChatReplyMessage$ = command(
       readonly content: string;
       readonly error: string | null;
       readonly runId: string;
-      readonly agentId: string;
-      readonly defaultAgentId?: string;
       readonly replyToMention?: string;
     },
     signal: AbortSignal,
   ) => {
-    const presentation = await set(
-      resolveIntegrationAgentResponsePresentation$,
-      args,
-      signal,
-    );
+    const presentation = integrationAgentResponsePresentation({
+      agentLabel: undefined,
+      replyToMention: args.replyToMention,
+    });
     const content = await set(formatIntegrationChatMessage$, args, signal);
     const recovery = await set(
       integrationModelRecoveryForDelivery$,
@@ -480,7 +475,6 @@ const deliverClaimedFeishuChatCallback$ = command(
         content: messageContent,
         error: messageError,
         runFailureId,
-        defaultAgentId: binding.defaultAgentId ?? undefined,
         replyToMention:
           payload.replyInThread && mentionerCount > 1
             ? `<at id=${binding.feishuOpenId}></at>`

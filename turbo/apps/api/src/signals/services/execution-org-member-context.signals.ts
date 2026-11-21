@@ -1,5 +1,5 @@
 import { computed } from "ccstate";
-import { sql, type SQL } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { array, object, unknown as zUnknown } from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
@@ -39,7 +39,7 @@ const memberRowsDecoder = zodDriverValueDecoder(
  */
 export function createExecutionOrgMemberContext(
   owner: ExecutionMemberIdentity,
-  attached?: SQL,
+  includeOrg: boolean,
 ) {
   const sources = memberModelSourcesAggregate(owner.orgId, owner.userId);
   const snapshot$ = computed(async (get) => {
@@ -47,9 +47,9 @@ export function createExecutionOrgMemberContext(
     const memberQuery = executionMemberQuery(owner, sources, at);
     const memberRows = sql`(SELECT COALESCE(jsonb_agg(member_snapshot), '[]'::jsonb)
       FROM (${memberQuery}) AS member_snapshot)`;
-    const orgRow = attached
+    const orgRow = includeOrg
       ? sql`(SELECT to_jsonb(org_snapshot)
-          FROM (${executionOrgQuery(owner.orgId, at, attached)}) AS org_snapshot)`
+          FROM (${executionOrgQuery(owner.orgId, at)}) AS org_snapshot)`
       : sql`NULL`;
     const [row] = await get(db$)
       .select({

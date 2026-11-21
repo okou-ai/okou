@@ -13,7 +13,7 @@ import uuid
 import observer_loss_report as loss
 import report
 import report_test
-from progress_report_fixture import foreground_heartbeat
+from progress_report_fixture import foreground_heartbeat, joined_observer
 
 
 class ObserverLossReportTests(unittest.TestCase):
@@ -61,9 +61,7 @@ class ObserverLossReportTests(unittest.TestCase):
                     "receiver_pending_ns": at(5), "observer_joined_ns": at(6),
                     "tracker_shutdown_pending": True, "accounting_shutdown_pending": True, "coverage": covered},
                 {"pool_held_ns": at(8), "status_held_ns": at(9), "heartbeat_pending_ns": at(10),
-                    "heartbeat_polled_pending": True, "observer": {"started_ns": at(10)+1,
-                        "completed_ns": at(11), "available_bytes": 32*gib, "age_ns": 2,
-                        "read_duration_ns": 1, "joined": True}, "coverage": covered},
+                    "heartbeat_polled_pending": True, "observer": joined_observer(at(10)+1, at(11)), "coverage": covered},
                 {"pool_released_ns": at(13), "status_held_ns": at(9),
                     "heartbeat": foreground_heartbeat(runner, 1, at(14), at(15), (2, 4096)),
                     "tracker_shutdown_pending": True, "accounting_shutdown_pending": True, "coverage": covered},

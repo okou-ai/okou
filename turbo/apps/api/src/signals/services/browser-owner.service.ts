@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 import { browserOwnerProfiles } from "@okouai/db/schema/browser-owner";
 import { browserChatSessions } from "@okouai/db/schema/browser-chat-session";
 import { command } from "ccstate";
@@ -98,18 +97,7 @@ function browserAuthorityThread(owner: BrowserPublicAuthority) {
     eq(chatThreads.id, owner.chatThreadId),
     eq(chatThreads.userId, owner.userId),
     eq(chatThreads.cloudBrowserEnabled, true),
-    exists(
-      new QueryBuilder()
-        .select({ id: agents.id })
-        .from(agents)
-        .where(
-          and(
-            eq(agents.id, chatThreads.agentId),
-            eq(agents.orgId, owner.orgId),
-            or(eq(agents.visibility, "public"), eq(agents.owner, owner.userId)),
-          ),
-        ),
-    ),
+    eq(chatThreads.orgId, owner.orgId),
     owner.runId
       ? exists(
           new QueryBuilder()
@@ -121,7 +109,6 @@ function browserAuthorityThread(owner: BrowserPublicAuthority) {
                 eq(agentRuns.orgId, owner.orgId),
                 eq(agentRuns.userId, owner.userId),
                 eq(agentRuns.chatThreadId, chatThreads.id),
-                eq(agentRuns.agentId, chatThreads.agentId),
                 isNotNull(agentRuns.triggerSource),
                 or(
                   eq(agentRuns.status, "pending"),

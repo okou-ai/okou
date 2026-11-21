@@ -247,7 +247,7 @@ private fun unsupportedCodexModel(text: String): Boolean {
 @Serializable
 data class RecoverySelection(
     val threadId: String,
-    val agentId: String,
+    val agentId: String?,
     val failureId: String,
     val model: String?,
     val priority: Boolean,

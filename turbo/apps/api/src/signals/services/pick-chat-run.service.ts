@@ -53,7 +53,6 @@ export interface OrgPickCursor {
 interface LeasedThreadClaim extends ThreadClaim {
   readonly queuedAt: Date;
   readonly userId: string;
-  readonly agentId: string;
   readonly context?: AgentRunContextSignals;
   readonly requestInput?: EnqueuedChatInputFacts;
 }
@@ -135,8 +134,7 @@ function captureThreadClaim(
     ...(context === undefined ? {} : { context }),
     ...(requestInput?.orgId === receipt.orgId &&
     requestInput.chatThreadId === receipt.chatThreadId &&
-    requestInput.userId === receipt.userId &&
-    requestInput.agentId === receipt.agentId
+    requestInput.userId === receipt.userId
       ? { requestInput }
       : {}),
   });
@@ -167,7 +165,6 @@ function createPickObjects() {
             claim.context,
             claim.userId,
             claim.orgId,
-            claim.agentId,
           );
           return Promise.resolve(createCapturedClaimObjects(claim, context));
         });
@@ -280,6 +277,7 @@ function createPickObjects() {
           .where(
             and(
               eq(chatThreads.id, queuedChatThreads.chatThreadId),
+              eq(chatThreads.orgId, orgId),
               eq(queuedChatThreads.orgId, orgId),
               eq(queuedChatThreads.chatThreadId, threadId),
               or(
@@ -298,12 +296,8 @@ function createPickObjects() {
             chatThreadId: queuedChatThreads.chatThreadId,
             queuedAt: queuedChatThreads.queuedAt,
             userId: chatThreads.userId,
-            agentId: chatThreads.agentId,
           })
       )[0];
-      if (row?.agentId === null) {
-        throw new Error("A queued thread claim requires an Agent identity");
-      }
       const claim: LeasedThreadClaim | null = row
         ? captureThreadClaim(
             {
@@ -312,7 +306,6 @@ function createPickObjects() {
               claimId,
               queuedAt: row.queuedAt,
               userId: row.userId,
-              agentId: row.agentId,
             },
             input,
           )

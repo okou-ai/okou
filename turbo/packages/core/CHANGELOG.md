@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.858.1](https://github.com/okou-ai/okou/compare/core-v8.858.0...core-v8.858.1) (2026-11-21)
+
+
+### Documentation
+
+* link workflow copy adapters to their retirement issue ([#49675](https://github.com/okou-ai/okou/issues/49675)) ([4806b77](https://github.com/okou-ai/okou/commit/4806b774b21d728224cf8995d5d333e7da9dd7c4))
+
+
+### Refactoring
+
+* **api:** retire legacy storage bindings from connector execution ([#49653](https://github.com/okou-ai/okou/issues/49653)) ([4238087](https://github.com/okou-ai/okou/commit/4238087d01c671077d6b6a021455ff73db1444c4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.96.1
+
 ## [8.858.0](https://github.com/okou-ai/okou/compare/core-v8.857.6...core-v8.858.0) (2026-11-20)
 
 

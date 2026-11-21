@@ -1,7 +1,6 @@
 import type { ChatEventUsagePayload } from "@okouai/api-contracts/contracts/chat-threads";
 import { CHAT_THREAD_USAGE_RUN_LIMIT } from "@okouai/api-contracts/validators/chat-threads";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { usageEvent } from "@okouai/db/runtime/usage-event";
 import { command } from "ccstate";
@@ -70,11 +69,8 @@ function settledRunUsageQuery(args: RunUsageScope) {
       and(
         eq(chatThreads.id, billingRunAttribution.threadId),
         eq(chatThreads.userId, usage.userId),
+        eq(chatThreads.orgId, usage.orgId),
       ),
-    )
-    .innerJoin(
-      agents,
-      and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, usage.orgId)),
     )
     .where(
       and(
@@ -88,7 +84,9 @@ function settledRunUsageQuery(args: RunUsageScope) {
         args.threadId === undefined
           ? undefined
           : eq(chatThreads.id, args.threadId),
-        args.orgId === undefined ? undefined : eq(agents.orgId, args.orgId),
+        args.orgId === undefined
+          ? undefined
+          : eq(chatThreads.orgId, args.orgId),
         args.userId === undefined
           ? undefined
           : eq(chatThreads.userId, args.userId),
@@ -231,11 +229,10 @@ export const readChatThreadUsage$ = command(
     const [thread] = await db
       .select({ id: chatThreads.id })
       .from(chatThreads)
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .where(
         and(
           eq(chatThreads.id, args.threadId),
-          eq(agents.orgId, args.orgId),
+          eq(chatThreads.orgId, args.orgId),
           eq(chatThreads.userId, args.userId),
         ),
       )

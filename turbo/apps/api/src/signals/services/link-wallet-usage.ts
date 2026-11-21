@@ -25,7 +25,6 @@ function recordUsage(fields: Readonly<Record<string, string | boolean>>): void {
 interface WalletUsageOwner {
   readonly orgId: string;
   readonly userId: string;
-  readonly agentId: string;
 }
 
 export function recordWalletConnectionUsage(
@@ -70,7 +69,6 @@ export function recordWalletSpendUsage(
     eventId: `${spend.id}:${event}:${status}`,
     userId: spend.userId,
     orgId: spend.orgId,
-    agentId: spend.agentId,
     authorizationId: spend.authorizationId,
     spendId: spend.id,
     intentId: spend.intentId,

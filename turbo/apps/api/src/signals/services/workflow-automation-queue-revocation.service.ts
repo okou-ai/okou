@@ -2,7 +2,6 @@ import {
   publishChatThreadMessageCreated$,
   type ChatEventPublicationScope,
 } from "./chat-event-publication.service";
-import { agents } from "@okouai/db/schema/agent";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import {
   chatEvents,
@@ -46,10 +45,9 @@ export const revokeDeletedWorkflowAutomationInputs$ = command(
         eq(chatAutomationContext.id, chatEvents.contextId),
       )
       .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .where(
         and(
-          eq(agents.orgId, args.orgId),
+          eq(chatThreads.orgId, args.orgId),
           eq(chatEvents.contextType, "automation"),
           eq(chatEvents.eventType, "input.automation"),
           chatEventRunlessInputPredicate(

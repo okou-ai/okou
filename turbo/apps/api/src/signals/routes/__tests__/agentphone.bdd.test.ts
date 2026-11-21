@@ -946,7 +946,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       agentId: AGENTPHONE_BDD_AGENT_ID,
       toNumber: groupId,
       body: expect.stringMatching(
-        /^The group update is ready\n\nSent via .+ · Triggered by Linghan Hu$/u,
+        /^The group update is ready\n\nTriggered by Linghan Hu$/u,
       ),
     });
     for (const member of [actor, other]) {
@@ -6016,9 +6016,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         toNumber: groupId ?? phone,
       });
       const mediaSend = lastSend(sends);
-      expect(mediaSend.body).toBe(
-        "see attached\n\nSent via BDD agentphone upload agent · Triggered by BDD Runner",
-      );
+      expect(mediaSend.body).toBe("see attached\n\nTriggered by BDD Runner");
       expect(completed.body.url).toBe(init.body.fileUrl);
       expect(mediaSend.toNumber).toBe(groupId ?? phone);
       if (!mediaSend.mediaUrl) {

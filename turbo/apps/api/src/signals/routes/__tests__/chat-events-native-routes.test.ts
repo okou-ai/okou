@@ -33,7 +33,6 @@ describe("personal native subscription activation", () => {
     async (source) => {
       const {
         actor,
-        agentId,
         run: own,
         ownsFeatureSwitches,
         runExecution,
@@ -44,7 +43,6 @@ describe("personal native subscription activation", () => {
       await own(async () => {
         const workflows = createWorkflowsBddApi(context);
         const workflowId = await workflows.createWorkflow(actor, {
-          agentId,
           name: `personal-source-${source}`,
         });
         const created = await accept(

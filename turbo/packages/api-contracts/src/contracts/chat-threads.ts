@@ -394,7 +394,7 @@ const chatThreadDetailSchema = object({
 
 const chatThreadMetadataSchema = object({
   id: string(),
-  agentId: uuid(),
+  agentId: uuid().optional(),
   title: string().nullable(),
   selectedModel: string().nullable(),
   modelSettings: modelSettingsSchema,
@@ -411,8 +411,8 @@ const chatThreadMetadataSchema = object({
 export type ComposerDraft = zInfer<typeof composerDraftSchema>;
 
 const chatThreadCreateBodySchema = object({
+  agentId: string().min(1).optional(),
   projectId: uuid().optional(),
-  agentId: string().min(1),
   clientThreadId: uuid().optional(),
   eventId: chatThreadEventIdSchema.optional(),
   initialRemoteAccessOverrides: array(initialRemoteAccessOverrideSchema)

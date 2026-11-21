@@ -273,7 +273,7 @@ final class WorkspaceChatActions {
       id, agentID: thread.agentID, eventID: UUID().uuidString.lowercased())
   }
 
-  private func deleteThread(_ id: String, agentID: String, eventID: String) async -> Bool {
+  private func deleteThread(_ id: String, agentID: String?, eventID: String) async -> Bool {
     guard let workspace else { return false }
     guard !closed, !needsUpgrade else { return false }
     // Earlier feedback for this chat (Undo archive) has nothing left to act on.

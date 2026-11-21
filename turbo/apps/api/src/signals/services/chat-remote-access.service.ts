@@ -4,7 +4,6 @@ import type {
   ThreadRemoteHostAccess,
   InitialRemoteAccessOverride,
 } from "@okouai/api-contracts/contracts/chat-remote-access";
-import { agents } from "@okouai/db/schema/agent";
 import { chatThreadSshAccessOverrides } from "@okouai/db/schema/chat-thread-ssh-access-override";
 import { chatThreadVncAccessOverrides } from "@okouai/db/schema/chat-thread-vnc-access-override";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -174,14 +173,12 @@ const ownedThreadExists$ = command(
     const [thread] = await db
       .select({ id: chatThreads.id })
       .from(chatThreads)
-      .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, owner.orgId)),
-      )
+
       .where(
         and(
           eq(chatThreads.id, owner.chatThreadId),
           eq(chatThreads.userId, owner.userId),
+          eq(chatThreads.orgId, owner.orgId),
         ),
       )
       .limit(1);

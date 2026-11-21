@@ -433,7 +433,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     XCTAssertEqual(
       store.list.threads(
         agentID: agent, archived: false, onlyUnread: store.sidebar.filter == .unread
-      ).map(\.id), [SearchUnreadFixture.id(5)])
+      ).map(\.id), [5, 2].map(SearchUnreadFixture.id))
     XCTAssertEqual(
       store.list.threads.first { $0.id == SearchUnreadFixture.id(1) }?.indicator, .active)
     XCTAssertTrue(store.list.threads.first { $0.id == SearchUnreadFixture.id(3) }?.isMuted == true)
@@ -442,7 +442,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     XCTAssertTrue(
       store.list.threads(
         agentID: agent, archived: false, onlyUnread: store.sidebar.filter == .unread
-      ).isEmpty)
+      ).map(\.id) == [SearchUnreadFixture.id(2)])
     XCTAssertTrue(store.list.threads.first { $0.id == SearchUnreadFixture.id(2) }?.isUnread == true)
     XCTAssertEqual(
       store.list.threads.first { $0.id == SearchUnreadFixture.id(1) }?.indicator, .active)

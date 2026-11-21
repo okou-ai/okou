@@ -3,7 +3,6 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 import { slackChatIngress } from "@okouai/db/schema/slack-chat-ingress";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
@@ -66,7 +65,7 @@ const loadCanonicalSlackThreadStatusBinding$ = command(
     const [binding] = await db
       .select({
         encryptedBotToken: slackOrgInstallations.encryptedBotToken,
-        orgId: agents.orgId,
+        orgId: chatThreads.orgId,
         installationOrgId: slackOrgInstallations.orgId,
         userId: slackChatThreadRoutes.userId,
         workspaceId: slackOrgInstallations.slackWorkspaceId,
@@ -87,7 +86,6 @@ const loadCanonicalSlackThreadStatusBinding$ = command(
         chatThreads,
         eq(chatThreads.id, slackChatThreadRoutes.chatThreadId),
       )
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .where(
         and(
           eq(slackChatThreadRoutes.chatThreadId, target.chatThreadId),

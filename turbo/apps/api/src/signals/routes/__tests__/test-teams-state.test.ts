@@ -176,7 +176,7 @@ describe("Teams message launch context", () => {
         expect.objectContaining({
           status: "running",
           triggerSource: "teams",
-          agentId: owned.defaultAgentId,
+          agentId: null,
           prompt: "hello from teams diagnostics",
         }),
       );
@@ -194,7 +194,7 @@ describe("Teams message launch context", () => {
       expect(detail.body).toMatchObject({
         status: "running",
         triggerSource: "teams",
-        agentId: owned.defaultAgentId,
+        agentId: null,
         prompt: "hello from teams diagnostics",
       });
       const execution = await createRunsApi(context).executionInput(
@@ -220,9 +220,7 @@ describe("Teams message launch context", () => {
         throw new Error("Expected public Teams thread events");
       }
       const thread = threads.body.events.find((event) => {
-        return (
-          event.kind === "created" && event.agentId === owned.defaultAgentId
-        );
+        return event.kind === "created";
       });
       if (!thread) {
         throw new Error(

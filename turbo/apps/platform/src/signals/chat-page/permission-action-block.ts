@@ -91,6 +91,7 @@ export function parsePermissionActionUrl(
   if (
     !context ||
     !path.agentId ||
+    !context.agentId ||
     !chatActionIdMatches(path.agentId, context.agentId) ||
     !connectorSlug ||
     !permission ||

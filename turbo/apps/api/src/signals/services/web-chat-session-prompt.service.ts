@@ -91,7 +91,7 @@ function buildAgentRunSourceContext(
     "",
     `- SOURCE_RUN_ID: ${source.runId}`,
     `- SOURCE_THREAD_ID: ${source.threadId}`,
-    `- SOURCE_AGENT_ID: ${source.agentId}`,
+    ...(source.agentId ? [`- SOURCE_AGENT_ID: ${source.agentId}`] : []),
     `- SOURCE_THREAD_TITLE: ${source.titleSnapshot}`,
     "",
     carriedContextDescription,

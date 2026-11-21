@@ -76,7 +76,7 @@ struct ChatListFilterMenu: UIViewRepresentable {
         !list.markingAgentRead && list.updatingThreads.isEmpty
         && (list.unreadAgentIDs.contains(agentID)
           || list.threads.contains {
-            $0.agentID == agentID && !$0.isMuted && $0.indicator == .unread
+            !$0.isMuted && $0.indicator == .unread
           })
       groups.append(
         UIMenu(

@@ -63,8 +63,7 @@ test("prepares queued inputs from current membership while preserving an already
   const send = setupApp({ context, routes: chatEventsRoutes })(
     chatEventsContract,
   );
-  const body: ChatEventSendBody = {
-    agentId,
+  const body: Extract<ChatEventSendBody, { prompt: string }> = {
     threadId: first.threadId,
     clientEventId: inputId,
     prompt: "Review research",

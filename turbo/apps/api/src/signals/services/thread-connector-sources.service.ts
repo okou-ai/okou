@@ -1,4 +1,3 @@
-import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatThreadConnectorAccessOverrides } from "@okouai/db/schema/chat-thread-connector-access";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
@@ -17,7 +16,6 @@ import {
 interface ThreadConnectorIdentity {
   readonly userId: string;
   readonly orgId: string;
-  readonly agentId: string;
   readonly chatThreadId: string;
 }
 
@@ -80,18 +78,11 @@ export function createThreadConnectorSources(
         ),
       })
       .from(chatThreads)
-      .innerJoin(
-        agents,
-        and(
-          eq(agents.id, chatThreads.agentId),
-          eq(agents.orgId, identity.orgId),
-        ),
-      )
       .where(
         and(
           eq(chatThreads.id, identity.chatThreadId),
           eq(chatThreads.userId, identity.userId),
-          eq(chatThreads.agentId, identity.agentId),
+          eq(chatThreads.orgId, identity.orgId),
         ),
       )
       .limit(1);

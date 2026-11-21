@@ -1,7 +1,8 @@
 import { formatIntegrationChatMessage$ } from "./integration-run-errors.service";
+import { db$, writeDb$ } from "../external/db";
 import {
-  integrationModelRecoveryForDelivery$,
   MODEL_RECOVERY_ACTION,
+  integrationModelRecoveryForDelivery$,
 } from "./integration-model-recovery.service";
 import {
   featureSwitchContextFromRows,
@@ -12,12 +13,10 @@ import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
 import { slackChatIngress } from "@okouai/db/schema/slack-chat-ingress";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
-import { agents } from "@okouai/db/schema/agent";
 import {
   and,
   countDistinct,
@@ -30,7 +29,6 @@ import {
 import { buildAgentResponseMessage } from "../../lib/slack-blocks";
 import { logger } from "../../lib/log";
 import { command } from "ccstate";
-import { db$, writeDb$ } from "../external/db";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import {
   canonicalChatEventContent,
@@ -130,11 +128,16 @@ const loadSlackChatDeliveryContext$ = command(
         orgId: agentRuns.orgId,
         userId: agentRuns.userId,
         chatThreadId: agentRuns.chatThreadId,
-        agentId: agents.id,
       })
       .from(agentRuns)
-      .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+      .innerJoin(
+        chatThreads,
+        and(
+          eq(chatThreads.id, agentRuns.chatThreadId),
+          eq(chatThreads.orgId, agentRuns.orgId),
+          eq(chatThreads.userId, agentRuns.userId),
+        ),
+      )
       .where(
         and(
           eq(agentRuns.id, args.callback.runId),
@@ -261,36 +264,18 @@ const countCanonicalSlackMentioners$ = command(
 );
 
 const readSlackResponsePresentation$ = command(
-  async (
-    { get },
+  (
+    _store,
     args: {
       readonly orgId: string;
       readonly runId: string;
-      readonly agentId: string;
       readonly replyToMention?: string;
     },
     signal: AbortSignal,
   ) => {
-    const db = get(db$);
-    const agentLabel = await (async () => {
-      const [org] = await db
-        .select({ defaultAgentId: orgMetadata.defaultAgentId })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, args.orgId))
-        .limit(1);
-      if (args.agentId === org?.defaultAgentId) {
-        return undefined;
-      }
-      const [agent] = await db
-        .select({ displayName: agents.displayName, name: agents.name })
-        .from(agents)
-        .where(eq(agents.id, args.agentId))
-        .limit(1);
-      return agent?.displayName ?? agent?.name;
-    })();
     signal.throwIfAborted();
     return integrationAgentResponsePresentation({
-      agentLabel,
+      agentLabel: undefined,
       replyToMention: args.replyToMention,
     });
   },
@@ -400,7 +385,6 @@ const deliverClaimedSlackChatCallback$ = command(
         {
           orgId: run.orgId,
           runId: args.callback.runId,
-          agentId: run.agentId,
           replyToMention:
             mentionerCount > 1 ? `<@${binding.slackUserId}>` : undefined,
         },
@@ -513,18 +497,11 @@ export const dispatchSlackChatDeliveryOnce$ = command(
 );
 
 function admissionFooter(
-  args: { readonly agentId: string },
-  org: { readonly defaultAgentId: string | null } | undefined,
-  agent:
-    { readonly displayName: string | null; readonly name: string } | undefined,
   binding: { readonly slackUserId: string },
   mentionerCount: number,
 ): string | undefined {
   const parts: string[] = [];
-  const agentLabel = agent?.displayName ?? agent?.name;
-  if (agentLabel && args.agentId !== org?.defaultAgentId) {
-    parts.push(`Sent via ${agentLabel}`);
-  }
+
   if (mentionerCount > 1) {
     parts.push(`Reply to <@${binding.slackUserId}>`);
   }
@@ -538,7 +515,6 @@ export const deliverSlackChatAdmissionFailure$ = command(
       readonly chatThreadId: string;
       readonly userId: string;
       readonly orgId: string;
-      readonly agentId: string;
       readonly channelId: string;
       readonly threadTs: string;
       readonly routeThreadTs?: string;
@@ -601,44 +577,31 @@ export const deliverSlackChatAdmissionFailure$ = command(
       return;
     }
 
-    const [mentionerCount, featureSwitchContextRows1, orgRows, agentRows] =
-      await Promise.all([
-        set(countCanonicalSlackMentioners$, {
-          workspaceId: binding.workspaceId,
-          channelId: args.channelId,
-          threadTs: args.routeThreadTs ?? args.threadTs,
-        }),
-        db
-          .select({
-            userId: userFeatureSwitches.userId,
-            switches: userFeatureSwitches.switches,
-          })
-          .from(userFeatureSwitches)
-          .where(
-            userFeatureSwitchRowCondition(
-              binding.installationOrgId ?? args.orgId,
-              args.userId,
-            ),
+    const [mentionerCount, featureSwitchContextRows1] = await Promise.all([
+      set(countCanonicalSlackMentioners$, {
+        workspaceId: binding.workspaceId,
+        channelId: args.channelId,
+        threadTs: args.routeThreadTs ?? args.threadTs,
+      }),
+      db
+        .select({
+          userId: userFeatureSwitches.userId,
+          switches: userFeatureSwitches.switches,
+        })
+        .from(userFeatureSwitches)
+        .where(
+          userFeatureSwitchRowCondition(
+            binding.installationOrgId ?? args.orgId,
+            args.userId,
           ),
-        db
-          .select({ defaultAgentId: orgMetadata.defaultAgentId })
-          .from(orgMetadata)
-          .where(eq(orgMetadata.orgId, args.orgId))
-          .limit(1),
-        db
-          .select({ displayName: agents.displayName, name: agents.name })
-          .from(agents)
-          .where(eq(agents.id, args.agentId))
-          .limit(1),
-      ]);
+        ),
+    ]);
     signal.throwIfAborted();
     const featureContext = featureSwitchContextFromRows(
       binding.installationOrgId ?? args.orgId,
       args.userId,
       featureSwitchContextRows1,
     );
-    const org = orgRows[0];
-    const agent = agentRows[0];
 
     const botToken = await decryptPersistentSecretValue(
       binding.encryptedBotToken,
@@ -655,7 +618,7 @@ export const deliverSlackChatAdmissionFailure$ = command(
       channelId: args.channelId,
       content: event.content,
       threadTs: args.threadTs,
-      footerText: admissionFooter(args, org, agent, binding, mentionerCount),
+      footerText: admissionFooter(binding, mentionerCount),
       modelRecoveryEventId: recovery?.eventId,
     });
   },

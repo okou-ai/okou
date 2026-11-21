@@ -1,20 +1,23 @@
+import { organizationAuthContext$ } from "../auth/auth-context";
+import { setResHeader$ } from "../context/hono";
+import { db$ } from "../external/db";
+import {
+  setChatConnectorCurrent$,
+  setChatConnectorAccessOverride$,
+} from "../services/chat-connector-access.service";
 import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/run-connector-accounts";
 import { connectorAccountTargetKey } from "@okouai/api-contracts/contracts/connector-accounts";
 
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { agents } from "@okouai/db/schema/agent";
 import { connectorPermissionGrants } from "@okouai/db/schema/connector-permission-grant";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import { and, eq } from "drizzle-orm";
 import { command, computed } from "ccstate";
 
 import { badRequestMessage, notFound } from "../../lib/error";
-import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { setResHeader$ } from "../context/hono";
-import { db$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { activeMemberConnectorPermissionCondition } from "../services/member-connector-selection";
 import type { RouteEntry } from "../route-entry";
@@ -23,10 +26,6 @@ import {
   chatConnectorExecutionReadPlan,
   chatConnectorExecutionFromRows,
 } from "../services/chat-connector-execution";
-import {
-  setChatConnectorCurrent$,
-  setChatConnectorAccessOverride$,
-} from "../services/chat-connector-access.service";
 import { publishChatThreadDetailChangedSafely } from "../external/realtime";
 
 const identity$ = computed((get) => {
@@ -49,13 +48,9 @@ const run$ = computed(async (get) => {
       chatThreads,
       and(
         eq(chatThreads.id, agentRuns.chatThreadId),
-        eq(chatThreads.agentId, agentRuns.agentId),
+        eq(chatThreads.orgId, agentRuns.orgId),
         eq(chatThreads.userId, auth.userId),
       ),
-    )
-    .innerJoin(
-      agents,
-      and(eq(agents.id, agentRuns.agentId), eq(agents.orgId, auth.orgId)),
     )
     .where(
       and(

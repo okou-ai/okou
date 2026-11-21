@@ -15,7 +15,7 @@ import report
 import report_test
 import speculative_fault_report as fault
 import status_failure_report_test as failure_test
-from progress_report_fixture import foreground_heartbeat
+from progress_report_fixture import foreground_heartbeat, joined_observer
 
 
 class SpeculativeFaultReportTests(unittest.TestCase):
@@ -67,8 +67,7 @@ class SpeculativeFaultReportTests(unittest.TestCase):
                  "pool_empty":True, "allocated":[2,4096,1]},
                 {"original_exit_confirmed":True, "receiver_polled_pending":True, "coverage":coverage},
                 {"pool_held_ns":at(46), "status_held_ns":at(47), "heartbeat_pending_ns":at(48),
-                 "heartbeat_polled_pending":True, "observer":{"started_ns":at(49), "completed_ns":at(50),
-                    "available_bytes":32*1024**3, "age_ns":2, "read_duration_ns":1, "joined":True},
+                 "heartbeat_polled_pending":True, "observer":joined_observer(at(49), at(50)),
                  "coverage":coverage},
                 {"pool_released_ns":at(56), "status_held_ns":at(47),
                  "heartbeat":foreground_heartbeat(runner, 1, at(57), at(58), (2, 4096)),

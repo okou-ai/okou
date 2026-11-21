@@ -34,16 +34,12 @@ async function prepareRunCreation(...actors: readonly ApiTestUser[]) {
 
 describe("DELETE /api/agents/:id lifecycle cleanup", () => {
   it.each(["pending", "running"] as const)(
-    "blocks Agent deletion while its Run is %s",
+    "deletes a legacy Agent and preserves the member Run while it is %s",
     async (status) => {
       const actor = bdd.user();
       await prepareRunCreation(actor);
       const target = await createAgent(actor, "Active Session Target");
-      await bdd.updateAgentInstructions(
-        actor,
-        target.agentId,
-        `Active ${randomUUID()}`,
-      );
+      await bdd.updatePersonalInstructions(actor, `Active ${randomUUID()}`);
       const signing =
         status === "pending" ? holdDownloadSigning(context) : null;
       const chat = createChatFilesBddApi(context);
@@ -52,13 +48,13 @@ describe("DELETE /api/agents/:id lifecycle cleanup", () => {
         actor,
         {
           agentId: target.agentId,
-          prompt: "block target deletion",
+          prompt: "continue through legacy Agent deletion",
           clientEventId,
         },
         [201],
       );
       if (sent.status !== 201) {
-        throw new Error("Expected the deletion-blocking input");
+        throw new Error("Expected the member-owned input");
       }
       if (signing) {
         await signing.entered;
@@ -71,33 +67,17 @@ describe("DELETE /api/agents/:id lifecycle cleanup", () => {
         return event.revokesEventId === clientEventId;
       })?.runId;
       if (!runId) {
-        throw new Error("Expected the admitted deletion-blocking Run");
+        throw new Error("Expected the admitted member-owned Run");
       }
       const targetRun = { runId };
       const input =
         status === "running" ? await api.executionInput(runId) : null;
-      const response = await bdd.requestDeleteAgent(
-        actor,
-        target.agentId,
-        [409],
-      );
-
-      expect(response.body).toStrictEqual({
-        error: {
-          message: "Cannot delete agent: agent is currently running",
-          code: "CONFLICT",
-        },
-      });
+      await bdd.requestDeleteAgent(actor, target.agentId, [204]);
       const targetRunRead = await api.readRun(actor, targetRun.runId);
       expect(targetRunRead).toMatchObject({
         runId: targetRun.runId,
         status,
       });
-      await expect(bdd.readAgent(actor, target.agentId)).resolves.toMatchObject(
-        {
-          agentId: target.agentId,
-        },
-      );
       await api.requestCancelRun(actor, targetRun.runId, [200]);
       if (input) {
         await createWebhookCallbackApi(context).requestAgentComplete(

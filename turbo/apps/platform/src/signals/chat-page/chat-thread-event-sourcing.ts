@@ -1,3 +1,9 @@
+import { activeRoute$ } from "../active-route.ts";
+import { apiClient$ } from "../api-client.ts";
+import { updateDocumentTitle$ } from "../document-title.ts";
+import { rootSignal$ } from "../root-signal.ts";
+import { pathParams$ } from "../route.ts";
+import { queryChatThreadEventSharedDatabase$ } from "../shared-database.ts";
 import { command, computed, state, type Command } from "ccstate";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/client/chat-threads";
 import type {
@@ -10,14 +16,9 @@ import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { accept } from "../../lib/accept.ts";
 import { nowDate } from "../../lib/time.ts";
 import {
-  captureChatThreadMetadataShortcut$,
   type ChatThreadMetadataShortcutOutcome,
+  captureChatThreadMetadataShortcut$,
 } from "../../lib/posthog.ts";
-import { activeRoute$ } from "../active-route.ts";
-import { apiClient$ } from "../api-client.ts";
-import { updateDocumentTitle$ } from "../document-title.ts";
-import { rootSignal$ } from "../root-signal.ts";
-import { pathParams$ } from "../route.ts";
 import {
   resetSignal,
   createDeferredPromise,
@@ -29,7 +30,6 @@ import type {
   ChatThreadEventDataKey,
   ChatThreadEventQueryResult,
 } from "../../shared-database/data-key.ts";
-import { queryChatThreadEventSharedDatabase$ } from "../shared-database.ts";
 import type {
   ChatThreadEventView,
   OptimisticChatThreadEvent,
@@ -56,7 +56,7 @@ interface ChatThreadEventState {
 
 export interface ThreadMeta {
   readonly id: string;
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly title: string | null;
   readonly pinnedAt: string | null;
   readonly archived: boolean;
@@ -716,7 +716,7 @@ export const touchOptimisticChatThreadSort$ = command(
     args: {
       readonly id: string;
       readonly threadId: string;
-      readonly agentId: string;
+      readonly agentId?: string;
       readonly createdAt: string;
     },
   ) => {

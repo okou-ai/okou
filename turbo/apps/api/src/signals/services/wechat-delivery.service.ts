@@ -19,7 +19,6 @@ import {
 } from "@okouai/db/schema/wechat";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { agents } from "@okouai/db/schema/agent";
 import { writeDb$ } from "../external/db";
 import {
   canonicalChatEventContent,
@@ -31,10 +30,6 @@ import {
   wechatDeliveryTargetSchema,
   type WechatDeliveryTarget,
 } from "./wechat-chat-callback-payload";
-import {
-  resolveIntegrationAdmissionFailurePresentation$,
-  resolveIntegrationAgentResponsePresentation$,
-} from "./integration-agent-response-presentation.service";
 interface WechatReplyRequest {
   readonly chatEventId: string;
   readonly chatThreadId: string;
@@ -51,7 +46,6 @@ const formatWechatReply$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly agentId: string;
       readonly runId: string | null;
       readonly chatEventId: string;
       readonly runFailureId?: string | null;
@@ -60,22 +54,7 @@ const formatWechatReply$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const presentation =
-      args.runId === null
-        ? await set(
-            resolveIntegrationAdmissionFailurePresentation$,
-            args,
-            signal,
-          )
-        : await set(
-            resolveIntegrationAgentResponsePresentation$,
-            { ...args, runId: args.runId },
-            signal,
-          );
-    const message = await set(formatIntegrationChatMessage$, args, signal);
-    return presentation.footerText
-      ? `${message}\n\n${presentation.footerText}`
-      : message;
+    return await set(formatIntegrationChatMessage$, args, signal);
   },
 );
 
@@ -96,7 +75,6 @@ export const sendWechatChatReply$ = command(
     const db = set(writeDb$);
     const [reply] = await db
       .select({
-        agentId: agents.id,
         content: canonicalChatEventContent(),
         error: canonicalChatEventError(),
         runFailureId: canonicalChatEventRunFailureId(),
@@ -114,7 +92,6 @@ export const sendWechatChatReply$ = command(
         chatThreads,
         eq(chatThreads.id, wechatChatThreadRoutes.chatThreadId),
       )
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .innerJoin(
         chatEvents,
         and(
@@ -146,7 +123,7 @@ export const sendWechatChatReply$ = command(
           eq(wechatConnections.userId, args.userId),
           eq(wechatConnections.status, "active"),
           eq(chatThreads.userId, args.userId),
-          eq(agents.orgId, args.orgId),
+          eq(chatThreads.orgId, args.orgId),
           eq(chatWechatContext.id, args.target.contextId),
         ),
       )

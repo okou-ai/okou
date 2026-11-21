@@ -616,19 +616,14 @@ describe("okou workflow automations", () => {
     };
   }
 
-  /**
-   * Creates a second agent + workflow through the public routes, optionally
-   * owned by another org member, then restores the scenario owner's session.
-   */
-  async function createAgentWithWorkflow(
+  async function createMemberWorkflow(
     scenario: AutomationScenario,
     options: {
-      readonly agentDisplayName?: string;
       readonly workflowName?: string;
       readonly visibility?: "public" | "private";
       readonly userId?: string;
     } = {},
-  ): Promise<{ agentId: string; workflowId: string }> {
+  ): Promise<{ workflowId: string }> {
     const owner = options.userId
       ? wf.user({
           userId: options.userId,
@@ -636,12 +631,12 @@ describe("okou workflow automations", () => {
           orgRole: "org:member",
         })
       : scenario.actor;
-    const agent = await wf.createAgent(owner, {
-      displayName: options.agentDisplayName ?? "Second Automation Agent",
-      visibility: options.visibility,
-    });
+    const { defaultAgentId } = await bdd.readOnboardingStatus(owner);
+    if (!defaultAgentId) {
+      throw new Error("Expected the member workflow namespace");
+    }
     const workflowId = await wf.createWorkflow(owner, {
-      agentId: agent.agentId,
+      agentId: defaultAgentId,
       name: options.workflowName ?? WORKFLOW_NAME,
       visibility: options.visibility,
     });
@@ -650,7 +645,7 @@ describe("okou workflow automations", () => {
       scenario.fixture.orgId,
       "org:member",
     );
-    return { agentId: agent.agentId, workflowId };
+    return { workflowId };
   }
 
   async function connectGmail(
@@ -1061,12 +1056,10 @@ describe("okou workflow automations", () => {
 
   it("rejects creation on a workflow the caller cannot see", async () => {
     const scenario = await setupFixture();
-    // A private workflow under another user's private agent is invisible to
-    // this member, so automation creation is rejected as not-found.
+    // A private workflow belongs to its creating member.
     const otherUserId = `user_${randomUUID()}`;
-    const hidden = await createAgentWithWorkflow(scenario, {
+    const hidden = await createMemberWorkflow(scenario, {
       userId: otherUserId,
-      agentDisplayName: "Private Agent",
       workflowName: "hidden-workflow",
       visibility: "private",
     });
@@ -1373,7 +1366,10 @@ describe("okou workflow automations", () => {
 
   it("uses configured webhook URLs for agent run tokens", async () => {
     mockEnv("OKOU_WEB_URL", "https://api.okou.ai");
-    const owned = await publicChatActor(context, { tier: "team" });
+    const owned = await publicChatActor(context, {
+      tier: "team",
+      useDefaultAgent: true,
+    });
     const { actor, agentId } = owned;
     await owned.run(async () => {
       await runs.updateUserModelPreference(actor, "claude-fable-5-1");
@@ -1772,7 +1768,7 @@ describe("okou workflow automations", () => {
 
   it("shares one Google Forms watch until the last same-user consumer is disabled", async () => {
     const scenario = await setupFixture();
-    const second = await createAgentWithWorkflow(scenario, {
+    const second = await createMemberWorkflow(scenario, {
       workflowName: `second-${WORKFLOW_NAME}`,
     });
     await connectGoogleForms(scenario);
@@ -1935,7 +1931,7 @@ describe("okou workflow automations", () => {
 
   it("attempts to stop every Google Forms watch on disconnect", async () => {
     const scenario = await setupFixture();
-    const second = await createAgentWithWorkflow(scenario, {
+    const second = await createMemberWorkflow(scenario, {
       workflowName: `second-${WORKFLOW_NAME}`,
     });
     await connectGoogleForms(scenario);
@@ -3624,7 +3620,7 @@ describe("okou workflow automations", () => {
     });
   });
 
-  it("reconciles Gmail watches after workflow and agent cascade deletion", async () => {
+  it("preserves Gmail watches after deleting a workflow or a legacy agent", async () => {
     const workflowScenario = await setupFixture();
     await connectGmail(
       workflowScenario,
@@ -3654,7 +3650,10 @@ describe("okou workflow automations", () => {
     expect(stop.calls).toBe(0);
 
     const ownerScenario = await setupFixture();
-    const target = await createAgentWithWorkflow(ownerScenario);
+    const legacyAgent = await wf.createAgent(ownerScenario.actor);
+    const target = await createMemberWorkflow(ownerScenario, {
+      workflowName: "second-mailbox-watch",
+    });
     const agentScenario = { ...ownerScenario, ...target };
     await connectGmail(
       agentScenario,
@@ -3672,7 +3671,7 @@ describe("okou workflow automations", () => {
       }),
       [201],
     );
-    await bdd.deleteAgent(agentScenario.actor, agentScenario.agentId);
+    await bdd.deleteAgent(agentScenario.actor, legacyAgent.agentId);
     expect(watch.calls).toBe(2);
     expect(stop.calls).toBe(0);
   });
@@ -4439,7 +4438,7 @@ describe("okou workflow automations", () => {
   });
 
   it("repairs a lazy destination after public thread deletion without reusing its identity", async () => {
-    const owned = await publicChatActor(context);
+    const owned = await publicChatActor(context, { useDefaultAgent: true });
     await owned.run(async () => {
       const workflowId = await wf.createWorkflow(owned.actor, {
         agentId: owned.agentId,

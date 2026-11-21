@@ -1,3 +1,5 @@
+import { organizationAuthContext$ } from "../auth/auth-context";
+import { db$, writeDb$ } from "../external/db";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { WalletChangedPayload } from "@okouai/api-contracts/contracts/realtime";
 
@@ -34,8 +36,6 @@ import { array, object, string, uuid, type infer as zInfer } from "zod";
 
 import { now, nowDate } from "../../lib/time";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import { organizationAuthContext$ } from "../auth/auth-context";
-import { db$, writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import { onRejection } from "../utils";
 import { isLinkApprovalConfigured } from "./link-approval-config.service";
@@ -86,7 +86,6 @@ export interface WalletOwner {
   readonly agentId?: string | null;
 }
 interface WalletRunOwner extends WalletOwner {
-  readonly agentId: string;
   readonly runId?: string;
   readonly chatThreadId?: string | null;
 }
@@ -100,14 +99,13 @@ function connectionOwner(owner: WalletOwner) {
   return and(
     eq(linkWalletConnections.orgId, owner.orgId),
     eq(linkWalletConnections.userId, owner.userId),
-    isNull(linkWalletConnections.agentId),
+    isNull(linkWalletConnections.retiredAt),
   );
 }
 function spendOwner(owner: WalletRunOwner) {
   return and(
     eq(linkWalletSpends.orgId, owner.orgId),
     eq(linkWalletSpends.userId, owner.userId),
-    eq(linkWalletSpends.agentId, owner.agentId),
   );
 }
 
@@ -124,7 +122,6 @@ export const walletRunOwner$ = computed(
     const db = get(db$);
     const [run] = await db
       .select({
-        agentId: agentRuns.agentId,
         triggerSource: agentRuns.triggerSource,
         chatThreadId: agentRuns.chatThreadId,
         status: agentRuns.status,
@@ -139,11 +136,7 @@ export const walletRunOwner$ = computed(
         ),
       )
       .limit(1);
-    if (
-      !run?.agentId ||
-      run.triggerSource !== "web" ||
-      run.status !== "running"
-    ) {
+    if (!run || run.triggerSource !== "web" || run.status !== "running") {
       throw new LinkWalletError(
         403,
         "WALLET_INTERACTIVE_RUN_REQUIRED",
@@ -153,7 +146,6 @@ export const walletRunOwner$ = computed(
     return {
       orgId: auth.orgId,
       userId: auth.userId,
-      agentId: run.agentId,
       runId: auth.runId,
       chatThreadId: run.chatThreadId,
     };
@@ -582,9 +574,9 @@ const publishWalletOAuth$ = command(
         RETURNING org_id, user_id, id
       )
       INSERT INTO ${linkWalletConnections}
-        (org_id, user_id, agent_id, authorization_id, encrypted_credentials, oauth_requested_scopes)
-      SELECT org_id, user_id, NULL, id, ${encryptedCredentials}, ${attempt.oauthRequestedScopes} FROM authorized
-      ON CONFLICT (org_id, user_id) WHERE agent_id IS NULL DO UPDATE
+        (org_id, user_id, authorization_id, encrypted_credentials, oauth_requested_scopes)
+      SELECT org_id, user_id, id, ${encryptedCredentials}, ${attempt.oauthRequestedScopes} FROM authorized
+      ON CONFLICT (org_id, user_id) WHERE retired_at IS NULL DO UPDATE
       SET authorization_id = EXCLUDED.authorization_id,
           encrypted_credentials = EXCLUDED.encrypted_credentials, revoked_at = NULL,
           oauth_requested_scopes = EXCLUDED.oauth_requested_scopes,
@@ -1010,11 +1002,12 @@ function validateSpendIntent(
   existing: Spend | undefined,
   input: WalletCreateSpend,
   owner: WalletRunOwner,
-  authorizationId: string,
+  connection: Pick<Connection, "id" | "authorizationId">,
 ): asserts existing is Spend {
   if (
     !existing ||
-    existing.authorizationId !== authorizationId ||
+    existing.connectionId !== connection.id ||
+    existing.authorizationId !== connection.authorizationId ||
     existing.amount !== input.amount ||
     existing.currency !== input.currency ||
     existing.merchantName !== input.merchantName ||
@@ -1048,7 +1041,6 @@ export const createWalletSpend$ = command(
       .values({
         orgId: owner.orgId,
         userId: owner.userId,
-        agentId: owner.agentId,
         ...input,
         approvalThreadId: autoContinue ? owner.chatThreadId : null,
         approvalRunId: autoContinue ? owner.runId : null,
@@ -1060,7 +1052,6 @@ export const createWalletSpend$ = command(
         target: [
           linkWalletSpends.orgId,
           linkWalletSpends.userId,
-          linkWalletSpends.agentId,
           linkWalletSpends.intentId,
         ],
       })
@@ -1082,12 +1073,7 @@ export const createWalletSpend$ = command(
           )
           .limit(1);
     signal.throwIfAborted();
-    validateSpendIntent(
-      existing,
-      input,
-      owner,
-      access.connection.authorizationId,
-    );
+    validateSpendIntent(existing, input, owner, access.connection);
     if (existing.providerSpendId) {
       const spend = await set(
         readProviderSpend$,
@@ -1171,7 +1157,10 @@ const walletSpendAccess$ = command(
     }
     const access = await set(walletAccess$, owner, "payments", signal);
     signal.throwIfAborted();
-    if (row.authorizationId !== access.connection.authorizationId) {
+    if (
+      row.connectionId !== access.connection.id ||
+      row.authorizationId !== access.connection.authorizationId
+    ) {
       throw new LinkWalletError(
         409,
         "WALLET_AUTHORIZATION_CHANGED",
@@ -1550,6 +1539,7 @@ export const listWalletSpends$ = command(
         createdAt: row.createdAt.toISOString(),
         statusSource: "recorded" as const,
         canRefresh:
+          row.connectionId === access.connection.id &&
           row.authorizationId === access.connection.authorizationId &&
           walletAuthorization(access.credentials).capabilities.payments,
       };

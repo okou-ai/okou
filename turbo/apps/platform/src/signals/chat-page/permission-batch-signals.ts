@@ -1,3 +1,6 @@
+import { apiClient$ } from "../api-client.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
+import { runChatActionCallback$ } from "./action-callback.ts";
 import { command, computed, state } from "ccstate";
 
 import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/validators/user-permission-grants";
@@ -5,8 +8,6 @@ import { chatThreadMetadataContract } from "@okouai/api-contracts/client/chat-th
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
 import { agentById } from "../agent.ts";
-import { apiClient$ } from "../api-client.ts";
-import { featureSwitches$ } from "../external/feature-switch.ts";
 import { firewallPermissionMetadataByConnector } from "../firewall-permission-metadata.ts";
 import {
   findPermissionInMetadata,
@@ -19,7 +20,6 @@ import type {
   PlatformUserPermissionGrant,
 } from "../connector-domain.ts";
 import { DEFAULT_USER_PERMISSION_GRANT_EXPIRES_IN } from "../permission-allow/permission-grant-expiration.ts";
-import { runChatActionCallback$ } from "./action-callback.ts";
 import { createCardSignalsRegistry } from "./card-signal-map.ts";
 import { chatActionIdMatches } from "./chat-action-context.ts";
 import {
@@ -52,10 +52,8 @@ function createBatchResources(descriptor: PermissionBatchActionDescriptor) {
       client.get({ params: { id: descriptor.threadId } }),
       [200],
     );
-    if (!chatActionIdMatches(result.body.agentId, descriptor.agentId)) {
-      throw new Error(
-        "Permission callback thread does not belong to this agent",
-      );
+    if (!chatActionIdMatches(result.body.id, descriptor.threadId)) {
+      throw new Error("Permission callback thread does not match");
     }
   });
   const metadata$ = computed(

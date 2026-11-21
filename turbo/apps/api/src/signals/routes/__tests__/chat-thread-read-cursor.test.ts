@@ -149,7 +149,6 @@ describe("chat thread read cursor", () => {
       "chatThreadReadCursorUpdated",
       {
         threadId: fixture.threadId,
-        agentId: fixture.agentId,
         lastReadAt: first.lastReadAt,
       },
     );
@@ -184,7 +183,7 @@ describe("chat thread read cursor", () => {
         "chatThreadReadCursorUpdated",
         {
           threadId: fixture.threadId,
-          agentId: fixture.agentId,
+          agentId: undefined,
           lastReadAt: stored,
         },
       ],

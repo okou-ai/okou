@@ -420,7 +420,7 @@ function workflowCreationAdmissionPlan(args: PreparedWorkflowCreation) {
             ? eq(chatThreads.id, body.chatThreadId)
             : sql`false`,
           eq(chatThreads.userId, member.userId),
-          eq(chatThreads.agentId, body.agentId),
+          eq(chatThreads.orgId, args.orgId),
         ),
       )
       .limit(1)
@@ -1631,7 +1631,6 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     prompt,
     userMessage: createUserMessageDocument({ text: prompt }),
     hasTextContent: true,
-    agentId: agent.id,
     threadId: chatThreadId,
   };
   timing.recordElapsed(

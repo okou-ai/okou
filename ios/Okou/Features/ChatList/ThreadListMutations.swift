@@ -83,7 +83,7 @@ final class ThreadListMutations {
       pinOrder =
         pinned
         ? try ChatThreadReplay.firstPinOrder(
-          threads.filter { $0.agentID == current.agentID && $0.id != current.id }) : nil
+          threads.filter { $0.projectId == current.projectId && $0.id != current.id }) : nil
     } catch {
       show(error)
       return
@@ -137,7 +137,7 @@ final class ThreadListMutations {
     else { return }
     let ranked = threads.filter { thread in
       if let projectID { return thread.projectId == projectID }
-      return thread.agentID == current.agentID
+      return thread.projectId == nil
     }
     let updates: [ChatThreadReplay.PinOrderUpdate]
     do {
@@ -261,7 +261,7 @@ final class ThreadListMutations {
   /// settles it, even when the request fails; a retry resends the same event.
   @discardableResult
   func delete(
-    _ id: String, agentID: String, eventID: String,
+    _ id: String, agentID: String?, eventID: String,
     onFailure: (@MainActor (String) -> Void)? = nil
   ) async -> Bool {
     let pending = optimisticChanges.contains { $0.id == eventID }

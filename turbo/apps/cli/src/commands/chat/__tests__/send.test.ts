@@ -66,8 +66,8 @@ describe("okou chat send command", () => {
         expect(request.headers.get("authorization")).toBe("Bearer test-token");
         const body = (await request.json()) as Record<string, unknown>;
         sentEventId = String(body.clientEventId);
+        expect(body).not.toHaveProperty("agentId");
         expect(body).toMatchObject({
-          agentId: AGENT_ID,
           threadId: THREAD_ID,
           prompt: "Continue the analysis",
           hasTextContent: true,
@@ -200,8 +200,8 @@ describe("okou chat send command", () => {
       }),
       http.post(SEND_URL, async ({ request }) => {
         const body = (await request.json()) as Record<string, unknown>;
+        expect(body).not.toHaveProperty("agentId");
         expect(body).toMatchObject({
-          agentId: AGENT_ID,
           threadId: THREAD_ID,
           prompt: "Review this deck",
           hasTextContent: true,

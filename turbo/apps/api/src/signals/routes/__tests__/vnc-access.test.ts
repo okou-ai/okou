@@ -758,10 +758,15 @@ describe("live chat VNC Run inventory", () => {
     ).toStrictEqual([creator.connectionId]);
     await visibility(creator.agentId, "private");
     api.authenticate(consumer);
-    await accept(
+    const ownedHosts = await accept(
       inventory().list({ headers: executionApi.agentHeaders(runtime) }),
-      [404],
+      [200],
     );
+    expect(
+      ownedHosts.body.hosts.map((item) => {
+        return item.id;
+      }),
+    ).toStrictEqual([host.body.id]);
   });
 
   it("does not accept another organization or Run owner from a valid token", async () => {

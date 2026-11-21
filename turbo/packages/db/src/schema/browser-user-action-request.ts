@@ -17,7 +17,6 @@ export const browserUserActionRequests = pgTable(
     requestTokenHash: text("request_token_hash").primaryKey(),
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
-    agentId: uuid("agent_id").notNull(),
     chatThreadId: uuid("chat_thread_id")
       .notNull()
       .references(

@@ -7,13 +7,12 @@ interface AgentRunVariable {
 }
 
 export function buildAgentRunVariables(args: {
-  readonly agentId: string;
   readonly variables: readonly AgentRunVariable[];
 }): Record<string, string> {
   const orgVars: Record<string, string> = {};
   const userVars: Record<string, string> = {};
   for (const row of args.variables) {
-    if (row.name.startsWith("ZERO_")) {
+    if (row.name.startsWith("ZERO_") || row.name === "OKOU_AGENT_ID") {
       continue;
     }
     if (row.userId === ORG_SENTINEL_USER_ID) {
@@ -23,5 +22,5 @@ export function buildAgentRunVariables(args: {
     }
   }
 
-  return { ...orgVars, ...userVars, OKOU_AGENT_ID: args.agentId };
+  return { ...orgVars, ...userVars };
 }

@@ -26,7 +26,6 @@ import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { chatThreadSshAccessOverrides } from "@okouai/db/schema/chat-thread-ssh-access-override";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agents } from "@okouai/db/schema/agent";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { connectorPermissionGrants } from "@okouai/db/schema/connector-permission-grant";
@@ -126,7 +125,6 @@ const readHostAuthorizationContext$ = command(
     const [context] = await get(db$)
       .select({
         row: requests,
-        agentId: chatThreads.agentId,
         displayName: hosts.displayName,
         host: hosts.host,
         port: hosts.port,
@@ -172,11 +170,8 @@ const readHostAuthorizationContext$ = command(
         and(
           eq(chatThreads.id, requests.chatThreadId),
           eq(chatThreads.userId, owner.userId),
+          eq(chatThreads.orgId, owner.orgId),
         ),
-      )
-      .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, owner.orgId)),
       )
       .innerJoin(hosts, ownedHost(owner, protocol))
       .leftJoin(
@@ -278,7 +273,7 @@ export const readHostAuthorization$ = command(
       id,
       signal,
     );
-    if (!context?.agentId) {
+    if (!context) {
       return null;
     }
     const { row } = context;
@@ -343,7 +338,6 @@ export const readHostAuthorization$ = command(
       protocol,
       authorization,
       row,
-      agentId: context.agentId,
       permissionsAllowed: permissions?.allowed === true,
       dependenciesAllowed: context.dependenciesAllowed,
     };
@@ -403,11 +397,8 @@ export const createHostAuthorization$ = command(
         and(
           eq(chatThreads.id, agentRuns.chatThreadId),
           eq(chatThreads.userId, args.userId),
+          eq(chatThreads.orgId, args.orgId),
         ),
-      )
-      .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
       )
       .innerJoin(
         hosts,
@@ -477,13 +468,12 @@ export const decideHostAuthorization$ = command(
       q
         .select({ id: chatThreads.id })
         .from(chatThreads)
-        .innerJoin(agents, eq(agents.id, chatThreads.agentId))
         .innerJoin(hosts, ownedHost(owner, protocol))
         .where(
           and(
             eq(chatThreads.id, row.chatThreadId),
             eq(chatThreads.userId, owner.userId),
-            eq(agents.orgId, owner.orgId),
+            eq(chatThreads.orgId, owner.orgId),
             eq(hosts.generation, row.generation),
             available,
             action === "approve" ? dependenciesAllowed : undefined,

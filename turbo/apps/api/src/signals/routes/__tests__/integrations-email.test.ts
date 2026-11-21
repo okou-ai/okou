@@ -1661,11 +1661,9 @@ describe("Email integration", () => {
           if (!input) {
             throw new Error("Expected a queued Email input");
           }
-          const { agentId } = await files.readThreadMetadata(actor, thread.id);
           await files.requestSendEvent(
             actor,
             {
-              agentId,
               threadId: thread.id,
               revokesEventId: input.id,
               clientEventId: recallId,

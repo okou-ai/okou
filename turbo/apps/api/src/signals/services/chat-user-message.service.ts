@@ -73,7 +73,7 @@ type UserMessageNonContentPart = Extract<
 export interface ChatAgentRunSourceAnnotation {
   readonly runId: string;
   readonly threadId: string;
-  readonly agentId: string;
+  readonly agentId?: string;
   readonly titleSnapshot: string;
 }
 
@@ -201,7 +201,6 @@ export function withAgentRunSourceAnnotation(
         kind: "agent",
         runId: source.runId,
         threadId: source.threadId,
-        agentId: source.agentId,
         titleSnapshot: source.titleSnapshot,
         href: chatAgentRunSourceHref(source),
       },

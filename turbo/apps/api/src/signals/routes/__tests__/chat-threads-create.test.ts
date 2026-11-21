@@ -187,7 +187,6 @@ describe("POST /api/chat-threads", () => {
       });
       const headers = { authorization: `Bearer ${token}` };
       const body = {
-        agentId: fixture.agentId,
         clientThreadId: randomUUID(),
         model: WORKSPACE_DEFAULT_MODEL,
       } as const;
@@ -269,7 +268,6 @@ describe("POST /api/chat-threads", () => {
     const vncHostId = vncHost.body.id;
     const threadId = randomUUID();
     const body = {
-      agentId: fixture.agentId,
       clientThreadId: threadId,
       model: WORKSPACE_DEFAULT_MODEL,
       initialRemoteAccessOverrides: [
@@ -378,7 +376,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
           clientThreadId: threadId,
           model: WORKSPACE_DEFAULT_MODEL,
           initialRemoteAccessOverrides: [
@@ -426,7 +423,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
           model: WORKSPACE_DEFAULT_MODEL,
         },
       }),
@@ -436,7 +432,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
           model: WORKSPACE_DEFAULT_MODEL,
         },
       }),
@@ -532,7 +527,6 @@ describe("POST /api/chat-threads", () => {
         headers: { authorization: `Bearer ${token}` },
         body: {
           clientThreadId: selectedThread.body.id,
-          agentId: fixture.agentId,
           model: WORKSPACE_DEFAULT_MODEL,
         },
       }),
@@ -548,10 +542,6 @@ describe("POST /api/chat-threads", () => {
     const actor = bdd.user();
 
     bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Selection authorization changes",
-      visibility: "private",
-    });
     const builtin = await connectorApi.connectManualGrant(
       actor,
       "openai",
@@ -588,7 +578,7 @@ describe("POST /api/chat-threads", () => {
     const created = await accept(
       threadsClient().create({
         headers,
-        body: { agentId: agent.agentId, model: null },
+        body: { model: null },
       }),
       [201],
     );
@@ -679,7 +669,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
           model: WORKSPACE_DEFAULT_MODEL,
         },
       }),
@@ -888,7 +877,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
           model: WORKSPACE_DEFAULT_MODEL,
         },
       }),
@@ -1006,7 +994,6 @@ describe("POST /api/chat-threads", () => {
         threadsClient().create({
           headers: { authorization: `Bearer ${token}` },
           body: {
-            agentId: fixture.agentId,
             model: WORKSPACE_DEFAULT_MODEL,
           },
         }),
@@ -1112,7 +1099,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
           model: WORKSPACE_DEFAULT_MODEL,
         },
       }),
@@ -1140,7 +1126,7 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
+          agentId: randomUUID(),
           title: "Deep dive on P2",
           model: OTHER_WORKSPACE_MODEL,
         },
@@ -1162,9 +1148,10 @@ describe("POST /api/chat-threads", () => {
       }),
       [200],
     );
+    const { defaultAgentId } = await bdd.readOnboardingStatus(fixture.actor);
     expect(metadataResponse.body).toStrictEqual({
+      agentId: defaultAgentId,
       id: response.body.id,
-      agentId: fixture.agentId,
       title: "Deep dive on P2",
       pinnedAt: null,
       archived: false,
@@ -1188,7 +1175,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: "Bearer clerk-session" },
         body: {
-          agentId: fixture.agentId,
           title: "Caller using another model",
           model: OTHER_WORKSPACE_MODEL,
         },
@@ -1213,7 +1199,7 @@ describe("POST /api/chat-threads", () => {
     const response = await accept(
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
-        body: { agentId: fixture.agentId, title: "Inherited model" },
+        body: { title: "Inherited model" },
       }),
       [201],
     );
@@ -1257,7 +1243,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${sourceToken}` },
         body: {
-          agentId: fixture.agentId,
           title: "Priority source",
           model: PRIORITY_MODEL,
           serviceTier: "priority",
@@ -1288,7 +1273,7 @@ describe("POST /api/chat-threads", () => {
     const inherited = await accept(
       threadsClient().create({
         headers: { authorization: `Bearer ${inheritedToken}` },
-        body: { agentId: fixture.agentId, title: "Inherited priority" },
+        body: { title: "Inherited priority" },
       }),
       [201],
     );
@@ -1309,7 +1294,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${inheritedToken}` },
         body: {
-          agentId: fixture.agentId,
           title: "Explicit standard",
           serviceTier: null,
         },
@@ -1333,7 +1317,7 @@ describe("POST /api/chat-threads", () => {
     const response = await accept(
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
-        body: { agentId: fixture.agentId, title: "No model anywhere" },
+        body: { title: "No model anywhere" },
       }),
       [201],
     );
@@ -1357,7 +1341,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
           clientThreadId,
           eventId,
           title: "Duplicate delivery",
@@ -1373,7 +1356,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
           clientThreadId,
           eventId,
           title: "Duplicate delivery",
@@ -1401,7 +1383,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
           clientThreadId,
           title: "Title from the request",
           model: OTHER_WORKSPACE_MODEL,
@@ -1422,7 +1403,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
           clientThreadId,
           title: "Title from the request",
           model: OTHER_WORKSPACE_MODEL,
@@ -1462,7 +1442,6 @@ describe("POST /api/chat-threads", () => {
         threadsClient().create({
           headers: { authorization: `Bearer ${token}` },
           body: {
-            agentId: fixture.agentId,
             clientThreadId,
             eventId,
             title: "Raced delivery",
@@ -1475,7 +1454,6 @@ describe("POST /api/chat-threads", () => {
         threadsClient().create({
           headers: { authorization: `Bearer ${token}` },
           body: {
-            agentId: fixture.agentId,
             clientThreadId,
             eventId,
             title: "Raced delivery",
@@ -1504,7 +1482,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${ownerToken}` },
         body: {
-          agentId: owner.agentId,
           clientThreadId,
           title: "Owner thread",
           model: WORKSPACE_DEFAULT_MODEL,
@@ -1522,7 +1499,6 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${otherToken}` },
         body: {
-          agentId: other.agentId,
           clientThreadId,
           title: "Colliding thread",
           model: WORKSPACE_DEFAULT_MODEL,
@@ -1542,12 +1518,11 @@ describe("POST /api/chat-threads", () => {
       [200],
     );
     expect(metadataResponse.body).toMatchObject({
-      agentId: owner.agentId,
       title: "Owner thread",
     });
   });
 
-  it("answers a client thread id held by another agent like a missing thread", async () => {
+  it("returns the existing member thread when a create is retried", async () => {
     const fixture = await seedAgent();
     const token = await executionToken({
       userId: fixture.userId,
@@ -1558,35 +1533,26 @@ describe("POST /api/chat-threads", () => {
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: fixture.agentId,
           clientThreadId,
-          title: "First agent thread",
+          title: "First title",
           model: WORKSPACE_DEFAULT_MODEL,
         },
       }),
       [201],
     );
 
-    bdd.acceptAgentStorageWrites();
-    const otherAgent = await bdd.createAgent(fixture.actor, {
-      displayName: "Second chat thread agent",
-      visibility: "private",
-    });
     const collision = await accept(
       threadsClient().create({
         headers: { authorization: `Bearer ${token}` },
         body: {
-          agentId: otherAgent.agentId,
           clientThreadId,
-          title: "Colliding agent thread",
+          title: "Updated title",
           model: WORKSPACE_DEFAULT_MODEL,
         },
       }),
-      [404],
+      [201],
     );
-    expect(collision.body).toStrictEqual({
-      error: { code: "NOT_FOUND", message: "Chat thread not found" },
-    });
+    expect(collision.body.id).toBe(clientThreadId);
 
     const metadataResponse = await accept(
       metadataClient().get({
@@ -1596,8 +1562,7 @@ describe("POST /api/chat-threads", () => {
       [200],
     );
     expect(metadataResponse.body).toMatchObject({
-      agentId: fixture.agentId,
-      title: "First agent thread",
+      title: "First title",
     });
   });
 });

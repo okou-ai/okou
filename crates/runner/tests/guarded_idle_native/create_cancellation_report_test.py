@@ -15,7 +15,7 @@ import snapshot_report_fixture
 import report
 import report_test
 import snapshot_report as startup
-from progress_report_fixture import foreground_heartbeat
+from progress_report_fixture import foreground_heartbeat, joined_observer
 
 
 class CreateCancellationTests(unittest.TestCase):
@@ -51,7 +51,7 @@ class CreateCancellationTests(unittest.TestCase):
                  "foreground_acquired_ns":clock(540),"first_pending":True,"first_dropped":True,"second_pending":True,
                  "release_byte_withheld":True,"allocated":[4,8192,2],"accounting":copy.deepcopy(held),
                  "heartbeat":foreground_heartbeat(str(uuid.uuid4()), 1, clock(550), clock(560), (4, 8192)),
-                 "observer":{"started_ns":clock(570),"completed_ns":clock(580),"available_bytes":32*1024**3,"age_ns":2,"read_duration_ns":1,"joined":True}},
+                 "observer":joined_observer(clock(570), clock(580))},
                 {"completion":{"workspace":str(pathlib.PurePosixPath(path).parent),"workspace_absent":True,
                     "cleanup_ns":clock(650),"allocated":[4,8192,2],"accounting":copy.deepcopy(held)},
                  "release_ns":clock(610),"joined_ns":clock(690),"transaction_joined":True,"cancelled":True,

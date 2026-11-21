@@ -146,6 +146,7 @@ describe("custom connector URL diagnostics", () => {
 
   function stubCurrentMemberDiagnostic(): void {
     vi.stubEnv("OKOU_AGENT_ID", "");
+    vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", undefined);
     stubDiagnostic({
       ...resolvedCustom({
         kind: "unknown-endpoint",

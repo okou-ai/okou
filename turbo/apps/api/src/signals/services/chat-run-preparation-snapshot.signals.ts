@@ -173,7 +173,7 @@ export function createChatRunPreparationSnapshot(
         and(
           eq(chatThreads.id, head.chatThreadId),
           eq(chatThreads.userId, bootstrap.userId),
-          eq(chatThreads.agentId, bootstrap.agentId),
+          eq(chatThreads.orgId, bootstrap.orgId),
         ),
       );
     if (!row) {

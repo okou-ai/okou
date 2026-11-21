@@ -30,7 +30,7 @@ public final class PermissionBatchHTTPFixture: Sendable {
 
   public struct State: Sendable {
     public var enabled = true
-    public var threadAgentID = PermissionBatchHTTPFixture.agentID
+    public var metadataThreadID = PermissionBatchHTTPFixture.threadID
     public var grants: [Grant] = []
     public var metadataStatus: [String: Int] = [:]
     public var grantReadStatus = 200
@@ -102,7 +102,7 @@ public final class PermissionBatchHTTPFixture: Sendable {
         }
         if path == threadPath + "/metadata" {
           return Self.response([
-            "id": Self.threadID, "agentId": value.threadAgentID,
+            "id": value.metadataThreadID, "agentId": Self.agentID,
             "computerUseHostId": NSNull(), "cloudBrowserEnabled": false
           ])
         }

@@ -190,7 +190,12 @@ export function parseConnectorActionUrl(
   const connectorSlug = match?.[1]?.toLowerCase();
   const action = match?.[2];
   const agentId = url.searchParams.get("agentId");
-  if (!context || !agentId || !chatActionIdMatches(agentId, context.agentId)) {
+  if (
+    !context ||
+    !agentId ||
+    !context.agentId ||
+    !chatActionIdMatches(agentId, context.agentId)
+  ) {
     return { status: "invalid", originalUrl: value };
   }
 

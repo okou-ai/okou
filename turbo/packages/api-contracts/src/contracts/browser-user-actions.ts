@@ -376,7 +376,6 @@ const responseBaseSchema = object({
   requestToken: string().min(1),
   state: browserUserActionStateSchema,
   completedAt: iso.datetime().nullable(),
-  agentId: uuid(),
   threadId: uuid(),
   callbackIds: callbackIdsSchema,
   callbackDelivered: boolean().optional(),

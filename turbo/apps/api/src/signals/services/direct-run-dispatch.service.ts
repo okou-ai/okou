@@ -160,7 +160,8 @@ function createDispatchOffer(
   };
   if (
     preference.tier !== "predecessorHome" ||
-    preference.home.evidence !== "expected"
+    !("homeWaitUntil" in preference.home) ||
+    preference.home.homeWaitUntil === undefined
   ) {
     return ordinaryOffer;
   }

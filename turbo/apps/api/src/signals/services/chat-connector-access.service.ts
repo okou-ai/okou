@@ -1,6 +1,5 @@
 import { command, computed, type Computed } from "ccstate";
 import type { ChatConnectorAccess } from "@okouai/api-contracts/contracts/chat-connector-access";
-import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { connectors } from "@okouai/db/schema/connector";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
@@ -62,7 +61,7 @@ export function chatConnectorAccess(
     const [thread] = await db
       .select({ id: chatThreads.id })
       .from(chatThreads)
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+
       .where(connectorAccessThreadOwner(owner))
       .limit(1);
     if (!thread) {
@@ -185,7 +184,7 @@ export const setChatConnectorAccessOverride$ = command(
     const [owned] = await db
       .select({ id: connectors.id })
       .from(chatThreads)
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+
       .innerJoin(connectors, connectorAccessAccountOwner(owner))
       .where(
         and(connectorAccessThreadOwner(owner), eq(connectors.id, connectionId)),

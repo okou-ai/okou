@@ -212,7 +212,7 @@ test.each([
   });
 });
 
-test("an unconfirmed optimistic pin move cannot undo an agent reassignment", async () => {
+test("a member pin move survives a legacy agent reassignment", async () => {
   context.mocks.api(chatThreadPinOrderContract.reorder, ({ respond }) => {
     return respond(204);
   });
@@ -238,7 +238,7 @@ test("an unconfirmed optimistic pin move cannot undo an agent reassignment", asy
   }
   const newAgentId = "c7000000-0000-4000-a000-000000000002";
   // The canonical stream has not echoed the optimistic move's event ID.
-  // Its old agent must not put this thread back in the old agent's sidebar.
+  // The thread stays in the member sidebar while its pin acknowledgement is pending.
   stream.setEvents([
     chatListEvent(caseId, 2, "sort_touched", movedThread.id, {
       agentId: newAgentId,
@@ -249,6 +249,7 @@ test("an unconfirmed optimistic pin move cannot undo an agent reassignment", asy
   await waitFor(() => {
     expect(sidebarThreadTitles()).toStrictEqual([
       "First pin",
+      "Last pin",
       "Second pin",
       "Regular thread",
     ]);

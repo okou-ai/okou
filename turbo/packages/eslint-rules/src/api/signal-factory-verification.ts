@@ -208,8 +208,8 @@ export function createComputedFactoryVerifier(importerPath: string) {
       return undefined;
     }
     const declaration = owner.interfaces.get(imported.name);
-    const fields = ["userId", "orgId", "agentId"];
-    // The API's existing cross-graph bootstrap contract owns these three plain
+    const fields = ["userId", "orgId"];
+    // The API's existing cross-graph bootstrap contract owns these two plain
     // strings. This exception does not authorize signal getters or other types.
     return declaration &&
       fields.every((name) => {

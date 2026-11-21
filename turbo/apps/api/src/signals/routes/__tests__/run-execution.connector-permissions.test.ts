@@ -370,9 +370,8 @@ describe("Execution connector permissions", () => {
           return hydrated.run;
         });
       } else if (expiry === "expired-during-bundle-signing") {
-        await createBddApi(context).updateAgentInstructions(
+        await createBddApi(context).updatePersonalInstructions(
           actor,
-          agentId,
           `Instructions for a fresh bundle: ${randomUUID()}`,
         );
         mockNow(expiresAt - 1);

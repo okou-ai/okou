@@ -100,9 +100,8 @@ test("fails a Run with no serving process and releases its concurrency slot", as
 test("persists preparation failure and releases admission before another Run", async () => {
   const f = await launchFixture();
   await f.api.registerDirectRunner(f.group);
-  await createBddApi(context).updateAgentInstructions(
+  await createBddApi(context).updatePersonalInstructions(
     f.actor,
-    f.agentId,
     `# Direct preparation ${randomUUID()}`,
   );
   context.mocks.s3.getSignedUrl.mockRejectedValue(

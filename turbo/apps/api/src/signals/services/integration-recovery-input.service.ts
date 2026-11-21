@@ -14,7 +14,6 @@ import {
 } from "drizzle-orm";
 import { alias, QueryBuilder, type PgTable } from "drizzle-orm/pg-core";
 import { v5 as uuidv5 } from "uuid";
-import { agents } from "@okouai/db/schema/agent";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -134,12 +133,11 @@ export function integrationRecoverySource(args: IntegrationRecoveryIdentity) {
       })
       .from(chatEvents)
       .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
       .where(
         and(
           eq(chatEvents.id, args.eventId),
           eq(chatThreads.userId, args.userId),
-          eq(agents.orgId, args.orgId),
+          eq(chatThreads.orgId, args.orgId),
           eq(chatThreads.archived, false),
           inArray(chatEvents.eventType, ["run.failed", "output.error"]),
           unchangedFailedIntegrationConversation(),

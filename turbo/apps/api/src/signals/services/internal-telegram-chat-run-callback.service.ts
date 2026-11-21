@@ -1,8 +1,9 @@
 import { formatIntegrationChatMessage$ } from "./integration-run-errors.service";
 import { integrationModelRecoveryForDelivery$ } from "./integration-model-recovery.service";
+import { db$, writeDb$ } from "../external/db";
+import { storeTelegramBotMessage$ } from "./telegram-callback-persistence.service";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { telegramChatThreadRoutes } from "@okouai/db/schema/telegram-chat-thread-route";
@@ -12,7 +13,6 @@ import { delay } from "signal-timers";
 import { logger } from "../../lib/log";
 import { buildTelegramResponse, splitMessage } from "../../lib/telegram-format";
 import { command } from "ccstate";
-import { db$, writeDb$ } from "../external/db";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import {
   deleteMessage,
@@ -32,8 +32,8 @@ import {
   type TelegramDeliveryTarget,
 } from "./telegram-chat-callback-payload";
 import {
-  persistTelegramReplyChainRoute$,
   type TelegramOwnerLink,
+  persistTelegramReplyChainRoute$,
 } from "./telegram-chat-ingress.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import {
@@ -41,7 +41,6 @@ import {
   canonicalChatEventError,
   canonicalChatEventRunFailureId,
 } from "./canonical-chat-event-read.service";
-import { storeTelegramBotMessage$ } from "./telegram-callback-persistence.service";
 
 const L = logger("InternalCallbacksTelegramChat");
 const TELEGRAM_COMPLETION_CHUNK_THROTTLE_MS = 1100;
@@ -55,7 +54,6 @@ interface TelegramChatRunContext {
   readonly userId: string;
   readonly orgId: string;
   readonly chatThreadId: string;
-  readonly agentId: string;
 }
 
 interface TelegramOwnerBinding {
@@ -129,11 +127,16 @@ const loadTelegramChatDeliveryContext$ = command(
         userId: agentRuns.userId,
         orgId: agentRuns.orgId,
         chatThreadId: agentRuns.chatThreadId,
-        agentId: agents.id,
       })
       .from(agentRuns)
-      .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+      .innerJoin(
+        chatThreads,
+        and(
+          eq(chatThreads.id, agentRuns.chatThreadId),
+          eq(chatThreads.orgId, agentRuns.orgId),
+          eq(chatThreads.userId, agentRuns.userId),
+        ),
+      )
       .where(
         and(
           eq(agentRuns.id, args.callback.runId),
@@ -149,7 +152,6 @@ const loadTelegramChatDeliveryContext$ = command(
       userId: run.userId,
       orgId: run.orgId,
       chatThreadId: run.chatThreadId,
-      agentId: run.agentId,
     };
 
     const [event] = await db

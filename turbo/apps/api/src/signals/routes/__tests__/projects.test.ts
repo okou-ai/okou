@@ -80,13 +80,16 @@ async function agent(actor: ApiTestUser) {
     visibility: "private",
   });
 }
-async function thread(actor: ApiTestUser, agentId: string, projectId?: string) {
+async function thread(
+  actor: ApiTestUser,
+  _agentId: string,
+  projectId?: string,
+) {
   return (
     await accept(
       threads().create({
         headers: headers(actor),
         body: {
-          agentId,
           clientThreadId: randomUUID(),
           eventId: randomUUID(),
           projectId,
@@ -452,7 +455,7 @@ describe("private cross-Agent Projects", () => {
           return t.agentId;
         })
         .sort(),
-    ).toStrictEqual([a.agentId, b.agentId].sort());
+    ).toStrictEqual([undefined, undefined]);
     expect(
       members.find((t) => {
         return t.id === first.id;

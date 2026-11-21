@@ -17,7 +17,6 @@ import { resolveCustomConnectorNetworkAdmission$ } from "./custom-connector-netw
 import { CustomConnectorNetworkError } from "./custom-connector-network-error";
 
 interface NetworkRunAuthority {
-  readonly agentId: string | null;
   readonly status: string;
   readonly definitionUpdatedAt: Date;
 }
@@ -100,11 +99,9 @@ function validateNetworkRequestScope(args: {
 
 function activeNetworkRun(
   run: NetworkRunAuthority | undefined,
-): run is NetworkRunAuthority & { readonly agentId: string } {
+): run is NetworkRunAuthority {
   return (
-    run !== undefined &&
-    run.agentId !== null &&
-    (run.status === "running" || run.status === "pending")
+    run !== undefined && (run.status === "running" || run.status === "pending")
   );
 }
 
@@ -114,7 +111,6 @@ function networkAdmissionRunReadQuery(args: {
 }) {
   return new QueryBuilder()
     .select({
-      agentId: agentRuns.agentId,
       status: agentRuns.status,
       definitionUpdatedAt: orgCustomConnectors.updatedAt,
     })
@@ -219,7 +215,6 @@ export const admitCustomConnectorNetworkRequest$ = command(
     signal.throwIfAborted();
     if (
       !activeNetworkRun(current) ||
-      current.agentId !== run.agentId ||
       current.definitionUpdatedAt.getTime() !==
         run.definitionUpdatedAt.getTime()
     ) {

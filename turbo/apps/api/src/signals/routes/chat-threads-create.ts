@@ -1,10 +1,14 @@
+import { personalProjectAccess$ } from "./projects";
+import { organizationAuthContext$ } from "../auth/auth-context";
+import { clerk$ } from "../external/clerk";
+import { db$ } from "../external/db";
+import { loadNewChatThreadDefaults$ } from "../services/chat-thread-defaults.service";
 import {
   androidChatUltrafastTransforms,
   iosChatUltrafastTransforms,
 } from "@okouai/api-contracts/client-transforms/chat-ultrafast";
 import { settle } from "../utils";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
-import { personalProjectAccess$ } from "./projects";
 import { projectById } from "../services/project.service";
 import { command, computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
@@ -16,9 +20,6 @@ import {
   MODEL_FIRST_SELECTION_PROVIDER_ID,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { InitialRemoteAccessOverride } from "@okouai/api-contracts/contracts/chat-remote-access";
-import { organizationAuthContext$ } from "../auth/auth-context";
-import { clerk$ } from "../external/clerk";
-import { db$ } from "../external/db";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 
@@ -29,25 +30,23 @@ import {
   resourceUnavailable,
 } from "../../lib/error";
 import {
-  createChatThread$,
   type CreatedChatThread,
   type ExistingChatThread,
+  createChatThread$,
 } from "../services/chat-thread.service";
-import { agentExistsInOrg$ } from "../services/agent-deletion.service";
 import {
   autoSelectionPin,
+  validateCodexServiceTier,
   resolveDefaultModelFirstPin$,
   resolveModelSelectionPin$,
-  validateCodexServiceTier,
 } from "../services/model-selection.service";
 import { chatThreadServiceTierFromCodex } from "../services/chat-thread-event.service";
 import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
-import { loadNewChatThreadDefaults$ } from "../services/chat-thread-defaults.service";
 import { resolveChatReasoningEffort } from "../services/chat-reasoning-effort.service";
 import { chatThreadOrganizationPredicate } from "../services/chat-thread-organization.service";
 import {
-  modelCatalog$,
   type ModelCatalog,
+  modelCatalog$,
 } from "../services/model-catalog.service";
 import type { RouteEntry } from "../route-entry";
 const createBody$ = bodyResultOf(chatThreadsContract.create);
@@ -73,7 +72,6 @@ const committedClientThread$ = computed(async (get) => {
       and(
         eq(chatThreads.id, body.data.clientThreadId),
         eq(chatThreads.userId, auth.userId),
-        eq(chatThreads.agentId, body.data.agentId),
         chatThreadOrganizationPredicate(auth.orgId),
       ),
     )
@@ -228,16 +226,6 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return remoteAccessError;
   }
 
-  const exists = await set(
-    agentExistsInOrg$,
-    { orgId: auth.orgId, agentId: body.data.agentId },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (!exists) {
-    return notFound("Agent not found");
-  }
-
   const catalog = await get(modelCatalog$);
   signal.throwIfAborted();
   const { selectedModel, codexServiceTier } = await set(
@@ -301,7 +289,6 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       ...(auth.tokenType === "agent" ? { sourceRunId: auth.runId } : {}),
       userId: auth.userId,
       orgId: auth.orgId,
-      agentId: body.data.agentId,
       title: body.data.title,
       projectId: body.data.projectId,
       clientThreadId: body.data.clientThreadId,

@@ -266,7 +266,6 @@ const admitChatRunFinishedAutomation$ = command(
           agentRunSource: {
             runId: event.runId,
             threadId: event.chatThreadId,
-            agentId: event.sourceAgentId,
             titleSnapshot: agentRunSourceTitleSnapshot(event.sourceThreadTitle),
           },
           triggerSource: "automation-event",

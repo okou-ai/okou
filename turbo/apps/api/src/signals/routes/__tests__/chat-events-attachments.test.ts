@@ -309,8 +309,9 @@ describe("CHAT-02: generation templates and attachments", () => {
       ],
     };
 
+    const thread = await chat.createThread(actor, { agentId });
     const sent = await sendChatRun(actor, {
-      agentId,
+      threadId: thread.id,
       prompt: "legacy fallback",
       userMessage,
     });
@@ -318,13 +319,13 @@ describe("CHAT-02: generation templates and attachments", () => {
     const run = await api.executionInput(sent.runId);
     expect(run.appendSystemPrompt).toContain(
       [
-        "# Referenced Agents and Threads",
+        "# Referenced conversations",
         "",
         "The current message links:",
-        `- Agent "Research Scout": AGENT_ID=${referencedAgentId}`,
+        `- Retained configuration reference "Research Scout": ${referencedAgentId}. This reference does not select an executor or authorize shared configuration changes.`,
         `- Chat thread "Q3 \\"launch\\" plan": CHAT_THREAD_ID=${referencedThreadId}`,
         "",
-        "Work sent to another agent or thread with `okou chat send` runs on its own and does not report back to this run. If you need its result, consider a `chat-run-finished` automation on that thread instead of polling. Automations of a workflow created from this chat run here when the watched run finishes.",
+        "Work sent to another chat with `okou chat send` runs independently and does not report back here. Use an authorized chat-run-finished Workflow automation when completion notifications are needed.",
       ].join("\n"),
     );
 
@@ -362,9 +363,7 @@ describe("CHAT-02: generation templates and attachments", () => {
 
     const run = await api.executionInput(sent.runId);
     expect(run.prompt).toBe(prompt);
-    expect(run.appendSystemPrompt).not.toContain(
-      "# Referenced Agents and Threads",
-    );
+    expect(run.appendSystemPrompt).not.toContain("# Referenced conversations");
 
     const messages = await waitForThreadMessages(
       actor,
@@ -388,7 +387,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 90_000);
 
   it("projects forwarded passages from the authoritative source title", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, defaultAgentId: agentId } = await entitledChatActor();
 
     const source = await sendChatRun(actor, {
       agentId,
@@ -447,7 +446,6 @@ describe("CHAT-02: generation templates and attachments", () => {
       kind: "agent",
       runId: source.runId,
       threadId: source.threadId,
-      agentId,
       titleSnapshot: "Source launch plan",
       href: `/chats/${source.threadId}#run-${source.runId}`,
     });
@@ -1672,11 +1670,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 60_000);
 
   it("rejects unknown generation template selections", async () => {
-    const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Invalid template agent",
-    });
+    const { actor } = await entitledChatActor();
     const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
     if (!template) {
       throw new Error("Expected a registered presentation runbook item");
@@ -1733,7 +1727,6 @@ describe("CHAT-02: generation templates and attachments", () => {
       const rejected = await chat.requestSendEvent(
         actor,
         {
-          agentId: agent.agentId,
           prompt: "make something from a bad template",
           userMessage: userMessageWithTemplate(
             "make something from a bad template",
