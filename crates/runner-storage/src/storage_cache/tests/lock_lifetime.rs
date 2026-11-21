@@ -53,7 +53,7 @@ fn queue_second_blocking_operation(
     runtime: &Runtime,
     mut work: Pin<&mut impl Future>,
 ) -> (BlockingWorkerRelease, JoinHandle<()>) {
-    // Retire the initial probe or stat without polling its observer.
+    // Retire the initial lock probe without polling its observer.
     let (first_gate, first_worker) = occupy_blocking_worker(runtime, WAIT);
     poll_pending(runtime, work.as_mut());
     drop(first_gate);
@@ -84,7 +84,8 @@ fn cancelled_cached_read_retains_flock_until_physical_retirement() {
         reader,
         &mut metrics,
     ));
-    let (gate, worker) = queue_second_blocking_operation(&runtime, read.as_mut());
+    let (gate, worker) = occupy_blocking_worker(&runtime, WAIT);
+    poll_pending(&runtime, read.as_mut());
     drop(read);
 
     assert!(

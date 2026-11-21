@@ -53,4 +53,8 @@
     <string name="chat_title_field">Chattitel</string>
     <string name="chat_rename_confirm">Umbenennen</string>
     <string name="chat_rename_cancel">Abbrechen</string>
+    <string name="chat_delete">Chat löschen</string>
+    <string name="chat_delete_title">Chat löschen?</string>
+    <string name="chat_delete_description">Dadurch wird dieser Chat dauerhaft gelöscht. Jede derzeit in diesem Chat ausgeführte Aufgabe wird sofort gestoppt. Alle verknüpften Automatisierungen werden pausiert. Diese Aktion kann nicht rückgängig gemacht werden.</string>
+    <string name="chat_delete_confirm">Löschen</string>
 </resources>

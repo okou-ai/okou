@@ -1061,7 +1061,67 @@ class ChatListRootTest {
     }
 
     @Test
-    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    @Config(qualifiers = "en-rUS-w1000dp-h800dp")
+    fun deletingTheSelectedChatRequiresConfirmationAndReturnsToTheListWhilePending() {
+        val app = compose.activity.application as ChatListApplication
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val requests = AtomicInteger()
+        val events = app.fixture.rowEventTail()
+        app.fixture.commandResponse = { request ->
+            if (
+                request.method != "DELETE" ||
+                    request.requestUrl?.encodedPath != "/api/chat-threads/$CHAT_PERSONAL"
+            )
+                null
+            else {
+                requests.incrementAndGet()
+                started.countDown()
+                release.await()
+                events.add(24L to request.rowEvent(24, CHAT_PERSONAL, "deleted"))
+                MockResponse().setResponseCode(204)
+            }
+        }
+        try {
+            app.responseGate.countDown()
+            awaitListAndNames()
+            val rowTag = "chat_$CHAT_PERSONAL"
+            val row = compose.onNodeWithTag(rowTag)
+            compose.onNodeWithTag("chat_list").performScrollToNode(hasTestTag(rowTag))
+            row.performClick()
+            compose.onNodeWithTag("conversation").assertExists()
+            fun openConfirmation() {
+                row.performTouchInput { longClick() }
+                compose.onNodeWithText("Delete chat").performClick()
+                compose.onNodeWithText("Delete chat?").assertIsDisplayed()
+            }
+            openConfirmation()
+            compose.onNodeWithText("Cancel").performClick()
+            row.assertIsDisplayed().assertIsSelected()
+            assertEquals(0, requests.get())
+
+            openConfirmation()
+            compose.onNodeWithText("Delete").performClick()
+            compose.waitUntil(10_000) { started.count == 0L }
+            row.assertDoesNotExist()
+            compose.onNodeWithTag("conversation").assertDoesNotExist()
+            compose.onNodeWithTag("workspace_new_chat").assertExists()
+            compose.onNodeWithText("Undo").assertDoesNotExist()
+            release.countDown()
+            compose.waitUntil(10_000) {
+                currentList()?.let { list ->
+                    CHAT_PERSONAL !in list.pendingRowActions &&
+                        list.threads.none { it.id == CHAT_PERSONAL }
+                } == true
+            }
+            row.assertDoesNotExist()
+            assertEquals(1, requests.get())
+        } finally {
+            release.countDown()
+        }
+    }
+
+    @Test
     fun aRejectedArchiveSwipeRestoresTheRowAfterReadingAndCanBeRetried() {
         val app = compose.activity.application as ChatListApplication
         val requests = AtomicInteger()
