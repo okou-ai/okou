@@ -25,6 +25,12 @@ import { settle } from "../utils";
 
 const status$ = command(async ({ get }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
+  if (!marketingRewardCampaignConfigured()) {
+    return createErrorResponse(
+      "NOT_FOUND",
+      "Get started rewards are not configured",
+    );
+  }
   const result = await settle(
     readMarketingRewardStatus(
       {
