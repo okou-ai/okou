@@ -402,7 +402,6 @@ describe("thin MCP Web adapters", () => {
       "/api/chat/events",
       "POST",
       {
-        agentId: f.agentId,
         threadId: sent.threadId,
         revokesEventId: randomUUID(),
       },
@@ -413,7 +412,6 @@ describe("thin MCP Web adapters", () => {
       "/api/chat/events",
       "POST",
       {
-        agentId: f.agentId,
         threadId: sent.threadId,
         prompt: "not authorized to send",
         userMessage: {
@@ -608,7 +606,6 @@ describe("thin MCP Web adapters", () => {
     await withMockNowForTest(now(), async () => {
       const f = await fixture();
       const input = {
-        agentId: f.agentId,
         prompt: "Figma logo\n请展示最终方案",
       };
       const result = await send(f, input.prompt);
@@ -975,7 +972,7 @@ describe("thin MCP Web adapters", () => {
 
   it("preserves Web validation errors rather than inventing MCP error codes", async () => {
     const f = await fixture();
-    const args = { agentId: f.agentId, prompt: "" };
+    const args = { prompt: "" };
     const result = await mcp.call(f.token(), "send_chat_message", {
       prompt: args.prompt,
     });

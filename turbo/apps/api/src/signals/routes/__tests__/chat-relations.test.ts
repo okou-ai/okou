@@ -54,14 +54,13 @@ async function sourceFixture() {
 
 describe("chat relationships", () => {
   it("returns all created chats once without inferring human-created children", async () => {
-    const { actor, agentId, source, receivedExecution, token } =
-      await sourceFixture();
+    const { actor, source, receivedExecution, token } = await sourceFixture();
     const createdIds: string[] = [];
     for (let index = 0; index < 51; index++) {
       const clientThreadId = randomUUID();
       const request = {
         headers: { authorization: `Bearer ${token}` },
-        body: { agentId, clientThreadId, title: `Child ${index}` },
+        body: { clientThreadId, title: `Child ${index}` },
       };
       const [created, replayed] = await Promise.all([
         accept(threads.create(request), [201]),
@@ -111,7 +110,6 @@ describe("chat relationships", () => {
   it("records both directions between existing chats and attributes only consumed messages", async () => {
     const {
       actor,
-      agentId,
       source,
       receivedExecution,
       token,
@@ -121,7 +119,6 @@ describe("chat relationships", () => {
     const peer = await chat.createThread(actor, {});
     const eventId = randomUUID();
     const send = {
-      agentId,
       threadId: peer.id,
       clientEventId: eventId,
       model: "claude-fable-5-1",
@@ -395,14 +392,12 @@ describe("chat relationships", () => {
   it("records implicit creation and enforces user and organization boundaries", async () => {
     const {
       actor,
-      agentId,
       source,
       receivedExecution,
       token,
       requestSendEventWithBearer,
     } = await sourceFixture();
     const send = {
-      agentId,
       clientThreadId: randomUUID(),
       clientEventId: randomUUID(),
       prompt: "Start a delegated chat",

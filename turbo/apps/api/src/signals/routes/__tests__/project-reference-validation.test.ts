@@ -168,7 +168,6 @@ describe("project reference admission through chat send", () => {
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        agentId: randomUUID(),
         prompt: "Malformed project",
         hasTextContent: true,
         userMessage: { version: 1, parts: [mention("not-a-uuid")] },
