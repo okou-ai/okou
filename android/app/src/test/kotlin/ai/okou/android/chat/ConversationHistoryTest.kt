@@ -286,6 +286,14 @@ class ConversationHistoryTest {
         assertFalse(matching.checkpoint.replaced)
         assertEquals(100L, matching.confirmedAt)
 
+        val otherEvent = row(id = "different-event")
+        val sameSequence =
+            incoming.copy(
+                rows = listOf(otherEvent),
+                cursor = HistoryCursor(otherEvent.id, otherEvent.seqId),
+            )
+        assertEquals(matching, lease.loadHistoryAfterSync(sameSequence))
+
         val addition = row(id = "another-event", seq = 38)
         val newer =
             incoming.copy(
