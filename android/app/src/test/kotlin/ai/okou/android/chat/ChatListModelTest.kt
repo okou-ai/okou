@@ -3499,6 +3499,7 @@ class ChatListModelTest {
                             seqId = 1,
                             projectId = CHAT_PROJECT,
                             kind = ProjectEventsEventsItemKind.DELETED,
+                            name = project.name,
                             createdAt = CHAT_DATE,
                         )
                     ),
