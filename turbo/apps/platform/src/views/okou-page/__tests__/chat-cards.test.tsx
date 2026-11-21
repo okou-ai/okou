@@ -28,6 +28,9 @@ const PERMISSION_URL = `https://app.okou.ai/agents/${AGENT_ID}/permissions?conne
 const EXACT_CONNECTION_ID = "f0000000-0000-4000-a000-000000000911";
 const DEFAULT_CONNECTION_ID = "f0000000-0000-4000-a000-000000000912";
 
+const MEMBER_PERMISSION_URL =
+  "https://app.okou.ai/connectors/permissions?orgId=org_default&userId=test-user-123&connectorSlug=slack&permission=files:read";
+
 function exactReconnectUrl(connectionId = EXACT_CONNECTION_ID): URL {
   const url = new URL(
     `https://app.okou.ai/connectors/github/reconnect/${connectionId}`,
@@ -236,6 +239,18 @@ function expectNodeBefore(before: Node, after: Node): void {
     before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
 }
+
+test("A member permission link is enhanced only for its callback Chat", async () => {
+  const other = new URL(MEMBER_PERMISSION_URL);
+  other.searchParams.set("threadId", "d0000000-0000-4000-8000-000000000099");
+  other.searchParams.set("callbackPrompt", "Continue the task");
+  await setupChat(
+    `[Review permissions](${MEMBER_PERMISSION_URL}) and [Continue elsewhere](${other}).`,
+  );
+  await screen.findByTestId("permission-action-card");
+  expect(screen.getAllByTestId("permission-action-card")).toHaveLength(1);
+  expect(screen.getAllByTestId("unavailable-action-card")).toHaveLength(1);
+});
 
 test("A connector link becomes an action without losing surrounding prose", async () => {
   await setupChat(

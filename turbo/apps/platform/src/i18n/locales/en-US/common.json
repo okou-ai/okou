@@ -990,11 +990,9 @@
         "twentyFourHours": "24 hours"
       },
       "errors": {
-        "agentNotFound": "Agent not found",
         "loadAgent": "Failed to load agent",
         "loadGrants": "Failed to load permission grants",
         "loadMetadata": "Failed to load permission metadata",
-        "missingAgentId": "Missing agent ID in URL parameters",
         "missingPermission": "Missing permission in URL parameters",
         "unknownAction": "Unknown permission action: {{action}}",
         "unknownConnector": "Unknown connector: {{connector}}",
@@ -1047,7 +1045,6 @@
       "pending_one": "{{count}} permission to allow",
       "pending_other": "{{count}} permissions to allow",
       "review": "Review permissions",
-      "sharedScopeNote": "Applies to this connector across all your chats and agents.",
       "title": "Allow the following permissions"
     }
   },

@@ -54,7 +54,7 @@ export function PermissionBatchContent({
 }
 
 function useBatchResources(signals: PermissionBatchSignals) {
-  const agent = useLoadable(signals.agent$);
+  const target = useLoadable(signals.target$);
   const user = useLastLoadable(user$);
   const grants = useLastLoadable(signals.grants$);
   const metadata = useLastLoadable(signals.metadata$);
@@ -73,16 +73,16 @@ function useBatchResources(signals: PermissionBatchSignals) {
     confirmState.state === "hasData" &&
     confirmState.data === true;
   return {
-    agent: agent.state === "hasData" ? agent.data : null,
+    target: target.state === "hasData" ? target.data : null,
     user: user.state === "hasData" ? user.data : null,
     grants: grants.state === "hasData" ? grants.data : [],
     metadata: metadata.state === "hasData" ? metadata.data : [],
     ready:
-      agent.state === "hasData" &&
+      target.state === "hasData" &&
       grants.state === "hasData" &&
       metadata.state === "hasData",
     loadFailed:
-      agent.state === "hasError" ||
+      target.state === "hasError" ||
       currentGrants.state === "hasError" ||
       currentMetadata.state === "hasError",
     continued,
@@ -175,7 +175,7 @@ function BatchHeader({
   standalone,
 }: BatchViewProps & { standalone: boolean }) {
   const { t } = useTranslation();
-  const { allowed, continued, agent, user, descriptor } = batch;
+  const { allowed, continued, target, user } = batch;
   return (
     <>
       {allowed ? (
@@ -199,7 +199,7 @@ function BatchHeader({
         </div>
       ) : (
         <>
-          {standalone && agent !== null && (
+          {standalone && target !== null && (
             <>
               <p className="text-center text-lg font-medium leading-7 text-foreground">
                 {t(
@@ -217,18 +217,18 @@ function BatchHeader({
                         : t(($) => {
                             return $.authorization.permission.userFallback;
                           }),
-                    targetName: agent.displayName ?? descriptor.agentId,
+                    targetName: target.displayName,
                   },
                 )}
               </p>
               <div className="flex w-full items-center gap-2 rounded-lg border border-border bg-muted/30 py-3 pl-2 pr-8">
                 <AvatarFromUrl
-                  avatarUrl={agent.avatarUrl ?? null}
+                  avatarUrl={target.avatarUrl ?? null}
                   alt=""
                   className="h-10 w-10 shrink-0 rounded-full object-cover object-top"
                 />
                 <span className="text-sm font-medium text-foreground">
-                  {agent.displayName ?? descriptor.agentId}
+                  {target.displayName}
                 </span>
               </div>
             </>

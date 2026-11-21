@@ -990,11 +990,9 @@
         "twentyFourHours": "24 Stunden"
       },
       "errors": {
-        "agentNotFound": "Agent nicht gefunden",
         "loadAgent": "Der Agent konnte nicht geladen werden",
         "loadGrants": "Berechtigungserteilungen konnten nicht geladen werden",
         "loadMetadata": "Berechtigungsmetadaten konnten nicht geladen werden",
-        "missingAgentId": "Fehlende Agent-ID in den URL-Parametern",
         "missingPermission": "Fehlende Berechtigung in URL-Parametern",
         "unknownAction": "Unbekannte Berechtigungsaktion: {{action}}",
         "unknownConnector": "Unbekannter Integration: {{connector}}",
@@ -1047,7 +1045,6 @@
       "pending_one": "{{count}} Berechtigung ausstehend",
       "pending_other": "{{count}} Berechtigungen ausstehend",
       "review": "Berechtigungen prüfen",
-      "sharedScopeNote": "Die Berechtigungen für diesen Connector gelten für alle deine Chats und Agenten.",
       "title": "Folgende Berechtigungen erlauben"
     }
   },

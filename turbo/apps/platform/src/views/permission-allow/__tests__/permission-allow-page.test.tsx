@@ -39,6 +39,7 @@ const NOW_MS = 1_893_456_000_000;
 
 interface PermissionPageOptions {
   readonly userName: string;
+  readonly member?: { orgId: string; userId: string };
   readonly agentName: string;
   readonly connectorSlug?: string;
   readonly connectorLabel?: string;
@@ -47,6 +48,7 @@ interface PermissionPageOptions {
   readonly action?: string;
   readonly expiresIn?: "1h" | "24h" | "7d" | "always";
   readonly connectorParam?: "connectorSlug" | "ref";
+  readonly legacyPath?: string;
   readonly grants?:
     | readonly ConnectorPermissionFixture[]
     | (() => readonly ConnectorPermissionFixture[]);
@@ -225,9 +227,16 @@ function setupPermissionPage(options: PermissionPageOptions): Promise<void> {
     params.set("callbackPrompt", options.callback.prompt);
   }
 
+  if (options.member) {
+    params.set("orgId", options.member.orgId);
+    params.set("userId", options.member.userId);
+  }
+  const path = options.member
+    ? "/connectors/permissions"
+    : (options.legacyPath ?? `/agents/${AGENT_ID}/permissions`);
   return setupPage({
     context,
-    path: `/agents/${AGENT_ID}/permissions?${params.toString()}`,
+    path: `${path}?${params}`,
     auth: {
       user: {
         id: "test-user-123",
@@ -495,48 +504,108 @@ test("An already denied permission does not ask for denial again", async () => {
   ).toBeUndefined();
 });
 
-test("An older permission link can still deny connector access safely", async () => {
-  let applied: ApplyConnectorPermissions | null = null;
+test("A member can approve a standalone link without a Chat", async () => {
   context.mocks.api(connectorPermissionsContract.apply, ({ body, respond }) => {
-    applied = body;
+    expect(body.grants).toStrictEqual([
+      { permission: "branches:create", action: "allow", expiresIn: "1h" },
+    ]);
     return respond(
       200,
       connectorPermissionsResponse(body.target, [
-        permissionGrant({ action: "deny", expiresAt: null }),
+        permissionGrant({
+          connectorSlug: "neon",
+          permission: "branches:create",
+          expiresAt: "2099-01-01T00:00:00.000Z",
+        }),
       ]),
     );
   });
   await setupPermissionPage({
-    userName: "Morgan",
-    agentName: "Ops Bot",
-    connectorParam: "ref",
-    action: "deny",
-    grants: [permissionGrant({ expiresAt: null })],
+    userName: "Dana",
+    agentName: "Unused",
+    member: { orgId: "org_default", userId: "test-user-123" },
+    connectorSlug: "neon",
+    connectorLabel: "Neon",
+    permission: "branches:create",
   });
-
-  await expect(
-    screen.findByText(
-      "Hey Morgan, you're updating your permissions for Ops Bot.",
-    ),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByText("Slack")).toBeInTheDocument();
-  expect(
-    screen.getByText("Access workspace analytics data"),
-  ).toBeInTheDocument();
-  expect(screen.queryByText("Duration")).not.toBeInTheDocument();
-
+  await screen.findByText(
+    "Hey Dana, you're updating your permissions for Default Org.",
+  );
   click(buttonByText("Confirm"));
-
   await expect(
-    screen.findByText("Permissions denied"),
+    screen.findByText("Permissions updated"),
   ).resolves.toBeInTheDocument();
-  expect(screen.queryByText(/Expires in/u)).not.toBeInTheDocument();
-  expect(applied).toStrictEqual({
-    target: { kind: "builtin", connectorSlug: "slack" },
-    mode: "patch",
-    grants: [{ permission: "admin.analytics:read", action: "deny" }],
-  });
 });
+
+test.each([
+  { orgId: "other-org", userId: "test-user-123" },
+  { orgId: "org_default", userId: "other-user" },
+])(
+  "A standalone permission request cannot be confirmed in a different member scope: %o",
+  async (member) => {
+    await setupPermissionPage({
+      userName: "Dana",
+      agentName: "Unused",
+      member,
+    });
+    await screen.findByText("This permission link is invalid or unavailable.");
+    expect(
+      queryAllByRoleFast("button").some((button) => {
+        return button.textContent?.trim() === "Confirm";
+      }),
+    ).toBeFalsy();
+  },
+);
+
+test.each([`/agents/${AGENT_ID}/permissions`, `/firewall-allow/${AGENT_ID}`])(
+  "An older permission link at %s can still deny connector access safely",
+  async (legacyPath) => {
+    let applied: ApplyConnectorPermissions | null = null;
+    context.mocks.api(
+      connectorPermissionsContract.apply,
+      ({ body, respond }) => {
+        applied = body;
+        return respond(
+          200,
+          connectorPermissionsResponse(body.target, [
+            permissionGrant({ action: "deny", expiresAt: null }),
+          ]),
+        );
+      },
+    );
+    await setupPermissionPage({
+      userName: "Morgan",
+      agentName: "Ops Bot",
+      connectorParam: "ref",
+      legacyPath,
+      action: "deny",
+      grants: [permissionGrant({ expiresAt: null })],
+    });
+
+    await expect(
+      screen.findByText(
+        "Hey Morgan, you're updating your permissions for Ops Bot.",
+      ),
+    ).resolves.toBeInTheDocument();
+    expect(screen.getByText("Slack")).toBeInTheDocument();
+    expect(
+      screen.getByText("Access workspace analytics data"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Duration")).not.toBeInTheDocument();
+
+    click(buttonByText("Confirm"));
+
+    await expect(
+      screen.findByText("Permissions denied"),
+    ).resolves.toBeInTheDocument();
+    expect(screen.queryByText(/Expires in/u)).not.toBeInTheDocument();
+    expect(applied).toStrictEqual({
+      target: { kind: "builtin", connectorSlug: "slack" },
+      mode: "patch",
+      grants: [{ permission: "admin.analytics:read", action: "deny" }],
+    });
+  },
+);
 
 test.each(["not-a-date", new Date(NOW_MS).toISOString()])(
   "An expired or invalid allow grant (%s) requires fresh confirmation",

@@ -989,11 +989,9 @@
         "twentyFourHours": "24時間"
       },
       "errors": {
-        "agentNotFound": "エージェントが見つかりません",
         "loadAgent": "エージェントの読み込みに失敗しました",
         "loadGrants": "権限付与のロードに失敗しました",
         "loadMetadata": "権限メタデータのロードに失敗しました",
-        "missingAgentId": "URLパラメータにエージェントIDがありません",
         "missingPermission": "URLパラメータに権限がありません",
         "unknownAction": "不明な権限アクション: {{action}}",
         "unknownConnector": "不明なコネクタ: {{connector}}",
@@ -1043,7 +1041,6 @@
       "notNow": "今はしない",
       "pending_other": "{{count}} 件の権限を許可",
       "review": "権限を確認",
-      "sharedScopeNote": "このコネクタの権限は、すべてのチャットとエージェントに適用されます。",
       "title": "以下の権限を許可"
     }
   },

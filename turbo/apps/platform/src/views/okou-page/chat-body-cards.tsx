@@ -1342,14 +1342,14 @@ function PermissionActionCardForTarget({
 }: {
   signals: PermissionSignals;
 }) {
-  const agentLoadable = useLastLoadable(signals.agent$);
+  const targetLoadable = useLoadable(signals.target$);
   const lastUserGrants = useLastLoadable(signals.grants$);
   const currentUserGrants = useLoadable(signals.grants$);
   const userGrantsLoadable =
     currentUserGrants.state === "hasError" ? currentUserGrants : lastUserGrants;
   const hasTarget =
-    agentLoadable.state === "hasData" && Boolean(agentLoadable.data);
-  const targetLoadableState = agentLoadable.state;
+    targetLoadable.state === "hasData" && Boolean(targetLoadable.data);
+  const targetLoadableState = targetLoadable.state;
   const pageSignal = useGet(pageSignal$);
   const expirationAvailable = signals.action === "allow";
   const durationScope = `${signals.href}\u0000${signals.expiresIn ?? ""}`;
@@ -1422,7 +1422,7 @@ function PermissionActionCardForTarget({
         detach(
           applyGrant(
             {
-              agentId: signals.agentId,
+              owner: signals.owner,
               connectorSlug: signals.connectorSlug,
               permission:
                 actionState.focusedPermission?.name ?? signals.permission,
