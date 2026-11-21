@@ -210,26 +210,33 @@ internal fun OkouApp(
     if (showChatList && chats != null) ChatUndoFeedback(chats, list, snackbar)
     list.failedRowAction
         ?.takeIf { list.rowUndo == null }
-        ?.let { action ->
+        ?.let { failure ->
+            val action = failure.action
             val message =
                 stringResource(
-                    if (action.updatesChat) R.string.chat_row_action_failed
-                    else R.string.chat_read_action_failed
+                    when {
+                        failure.rejected -> R.string.chat_row_action_rejected
+                        action.updatesChat -> R.string.chat_row_action_failed
+                        else -> R.string.chat_read_action_failed
+                    }
                 )
-            val refreshLabel = stringResource(R.string.chat_refresh)
-            LaunchedEffect(chats, action, message, showChatList) {
+            val refreshLabel = if (failure.rejected) null else stringResource(R.string.chat_refresh)
+            LaunchedEffect(chats, failure, message, showChatList) {
                 if (
                     showChatList &&
                         snackbar.showSnackbar(
                             message,
                             actionLabel = refreshLabel,
-                            duration = SnackbarDuration.Indefinite,
+                            withDismissAction = !failure.rejected,
+                            duration =
+                                if (failure.rejected) SnackbarDuration.Short
+                                else SnackbarDuration.Indefinite,
                         ) == SnackbarResult.ActionPerformed
                 ) {
                     if (action.updatesChat) chats?.reloadAfterRowActionFailure()
                     else chats?.refreshIndicators()
                 }
-                chats?.dismissRowActionFailure(action)
+                chats?.dismissRowActionFailure(failure)
             }
         }
     list.markAllReadResult

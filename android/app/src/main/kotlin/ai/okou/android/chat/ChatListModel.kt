@@ -116,6 +116,29 @@ enum class ChatRowAction(
     MovePinDown(updatesIndicators = false, changesPinOrder = true),
 }
 
+class ChatRowActionFailure
+internal constructor(
+    val action: ChatRowAction,
+    internal val rejected: Boolean = false,
+    internal val edits: List<ChatRowEdit> = emptyList(),
+)
+
+private fun Exception.rejectsRowEdit(action: ChatRowAction): Boolean =
+    when (this) {
+        is ApiFailure.Unauthenticated -> true
+        is ApiFailure.Http ->
+            when (status) {
+                // Validation, authorization and unsuccessful target lookup precede the write.
+                400,
+                401,
+                403,
+                404 -> true
+                402 -> action == ChatRowAction.Delete
+                else -> false
+            }
+        else -> false
+    }
+
 internal enum class ChatUndoPhase {
     Offered,
     Checking,
@@ -158,7 +181,7 @@ data class ChatListUiState(
     val indicatorsPhase: ChatReadPhase = ChatReadPhase.Idle,
     val filter: ChatListFilter = ChatListFilter.Inbox,
     val pendingRowActions: Map<String, ChatRowAction> = emptyMap(),
-    val failedRowAction: ChatRowAction? = null,
+    val failedRowAction: ChatRowActionFailure? = null,
     val rowUndo: ChatRowUndo? = null,
     val markingAllRead: Boolean = false,
     val markAllReadResult: ChatMarkAllReadResult? = null,
@@ -215,27 +238,29 @@ internal fun ChatListUiState.rowActions(
     group: ChatListGroup? = null,
     index: Int = -1,
 ): List<ChatRowAction> = buildList {
-    val canUpdateChat = listPhase != ChatReadPhase.Failed
-    // A refresh retains the last synchronized rank scope while it fetches the next one.
-    if (
-        group != null &&
-            source == ChatListSource.Network &&
-            canUpdateChat &&
-            projectsSource != null &&
-            pendingRowActions.values.none { it.changesPinOrder }
-    ) {
+    if (source != null && pendingRowActions.values.none { it.changesPinOrder }) {
         val pinned = thread.pinnedAt != null
-        add(if (pinned) ChatRowAction.Unpin else ChatRowAction.Pin)
-        if (pinned && filter == ChatListFilter.Inbox) {
-            if (group.pinNeighbor(index, -1) != null) add(ChatRowAction.MovePinUp)
-            if (group.pinNeighbor(index, 1) != null) add(ChatRowAction.MovePinDown)
+        if (pinned) add(ChatRowAction.Unpin)
+        // A refresh retains the last synchronized rank scope while it fetches the next one.
+        if (
+            group != null &&
+                source == ChatListSource.Network &&
+                listPhase != ChatReadPhase.Failed &&
+                listReadFailure == null &&
+                projectsSource != null
+        ) {
+            if (!pinned) add(ChatRowAction.Pin)
+            else if (filter == ChatListFilter.Inbox) {
+                if (group.pinNeighbor(index, -1) != null) add(ChatRowAction.MovePinUp)
+                if (group.pinNeighbor(index, 1) != null) add(ChatRowAction.MovePinDown)
+            }
         }
     }
     val canUpdateUnread = indicators != null || (cachedUnread != null && !offline)
     if (canUpdateUnread && indicatorsPhase != ChatReadPhase.Failed && thread.muted != true) {
         add(if (isUnread(thread.id)) ChatRowAction.MarkRead else ChatRowAction.MarkUnread)
     }
-    if (canUpdateChat) {
+    if (source != null) {
         add(ChatRowAction.Rename)
         add(if (thread.muted == true) ChatRowAction.Unmute else ChatRowAction.Mute)
         add(if (thread.archived) ChatRowAction.Unarchive else ChatRowAction.Archive)
@@ -322,6 +347,7 @@ class ChatListModel(
 
     private class ListConfirmation(
         val edits: List<ChatRowEdit>,
+        val missingDeleteTarget: String?,
         val done: CompletableDeferred<Unit>,
     )
 
@@ -340,6 +366,7 @@ class ChatListModel(
     )
 
     private var pendingListRead: ListReadBatch? = null
+    private val rowDiscardsAfterRead = mutableSetOf<String>()
     private val acceptedChatsToVerify = mutableSetOf<String>()
     private val verifyingAcceptedChats = mutableSetOf<String>()
     internal var onAcceptedChatMissing: ((String) -> Unit)? = null
@@ -614,7 +641,8 @@ class ChatListModel(
                                 if (earlier == null) state.readIntents - threadId
                                 else state.readIntents + (threadId to earlier),
                             failedRowAction =
-                                if (reportFailure) intent.action else state.failedRowAction,
+                                if (reportFailure) ChatRowActionFailure(intent.action)
+                                else state.failedRowAction,
                         )
                     return null
                 }
@@ -792,7 +820,10 @@ class ChatListModel(
                         }
                     } catch (_: IllegalArgumentException) {
                         requireCurrent()
-                        mutable.value = mutable.value.copy(failedRowAction = action)
+                        mutable.value =
+                            mutable.value.copy(
+                                failedRowAction = ChatRowActionFailure(action, rejected = true)
+                            )
                         return@launch
                     }
                 val edits =
@@ -806,7 +837,8 @@ class ChatListModel(
                         else -> emptyList()
                     }
                 var confirmation: ReadConfirmation? = null
-                var writeRejected = false
+                var submittedEdits = 0
+                var targetMissing = false
                 try {
                     acknowledgement?.join()
                     requireCurrent()
@@ -836,73 +868,31 @@ class ChatListModel(
                         projection.addEdits(edits)
                         publishRows()
                     }
-                    when (action) {
-                        ChatRowAction.MarkRead,
-                        ChatRowAction.MarkUnread ->
-                            confirmation =
-                                writeReadIntent(
-                                    threadId,
-                                    checkNotNull(intent),
-                                    reportFailure = undoRequest == null,
-                                )
-                        ChatRowAction.Mute,
-                        ChatRowAction.Unmute -> {
-                            // Acknowledge replies that arrived while this chat was muted.
-                            if (action == ChatRowAction.Unmute) markReadWithReceipt(threadId)
-                            service.setMuted(
-                                threadId,
-                                action == ChatRowAction.Mute,
-                                edits.single().eventId,
-                            )
-                        }
-                        ChatRowAction.Archive,
-                        ChatRowAction.Unarchive ->
-                            service.setArchived(
-                                threadId,
-                                action == ChatRowAction.Archive,
-                                edits.single().eventId,
-                            )
-                        ChatRowAction.Rename ->
-                            service.renameThread(
-                                threadId,
-                                checkNotNull(title),
-                                edits.single().eventId,
-                            )
-                        ChatRowAction.Delete ->
-                            service.deleteThread(threadId, edits.single().eventId)
-                        ChatRowAction.Pin,
-                        ChatRowAction.Unpin ->
-                            service.setPinned(
-                                threadId,
-                                edits.single().value,
-                                edits.single().eventId,
-                            )
-                        ChatRowAction.MovePinUp,
-                        ChatRowAction.MovePinDown -> {
-                            // The tied suffix keeps its order even if the command stops partway.
-                            for (edit in edits.asReversed()) {
-                                requireCurrent()
-                                service.reorderPinnedThread(
-                                    edit.threadId,
-                                    checkNotNull(edit.value),
-                                    edit.eventId,
-                                )
-                            }
+                    if (intent != null) {
+                        confirmation =
+                            writeReadIntent(threadId, intent, reportFailure = undoRequest == null)
+                    } else {
+                        // Acknowledge replies that arrived while this chat was muted.
+                        if (action == ChatRowAction.Unmute) markReadWithReceipt(threadId)
+                        // Submit the tied suffix first so it keeps its order on partial failure.
+                        for (edit in edits.asReversed()) {
+                            requireCurrent()
+                            submittedEdits++
+                            writeRowEdit(edit)
                         }
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
                     requireCurrent()
+                    targetMissing = error is ApiFailure.Http && error.status == 404
                     // The target may have disappeared while the workspace is still authorized.
-                    if (error !is ApiFailure.Http || error.status != 404) onFailure(error)
-                    writeRejected =
-                        error is ApiFailure.Http &&
-                            (archiveAction && error.status in setOf(400, 401, 403, 404) ||
-                                action == ChatRowAction.Delete &&
-                                    error.status in setOf(400, 401, 404))
-                    if (!action.updatesChat && undoRequest == null && current()) {
-                        mutable.value = mutable.value.copy(failedRowAction = action)
+                    if (!targetMissing) onFailure(error)
+                    requireCurrent()
+                    if (submittedEdits > 0 && error.rejectsRowEdit(action)) submittedEdits--
+                    if (intent != null && undoRequest == null) {
+                        mutable.value =
+                            mutable.value.copy(failedRowAction = ChatRowActionFailure(action))
                     }
                 } finally {
                     if (write != null) {
@@ -916,16 +906,26 @@ class ChatListModel(
                     }
                 }
                 requireCurrent()
+                val rolledBack = projection.discardEdits(edits.dropLast(submittedEdits))
+                val missingDeleteTarget =
+                    threadId.takeIf {
+                        rolledBack && targetMissing && action == ChatRowAction.Delete
+                    }
+                if (rolledBack) {
+                    val state = mutable.value
+                    publishRows(
+                        if (missingDeleteTarget != null || undoRequest != null) state
+                        else
+                            state.copy(
+                                failedRowAction = ChatRowActionFailure(action, rejected = true)
+                            )
+                    )
+                    if (targetMissing && missingDeleteTarget == null) refreshList()
+                }
                 val confirmedRead = confirmation?.receiptCoversIntent
                 val settledRead = intent != null && (confirmation == null || confirmedRead == true)
-                val rejectedEdit = writeRejected && projection.hasUnsettledEdits(edits)
-                if (undoRequest != null && (settledRead || rejectedEdit)) {
-                    // A definitive write response settles Undo independently of background reads.
-                    if (rejectedEdit) {
-                        projection.discardEdits(edits)
-                        publishRows()
-                        refreshList()
-                    }
+                if (undoRequest != null && (settledRead || rolledBack)) {
+                    if (rolledBack && !targetMissing) refreshList()
                     completeRowUndo(
                         undoRequest,
                         if (confirmedRead == true) null else ChatUndoPhase.Failed,
@@ -936,17 +936,18 @@ class ChatListModel(
                 if (undoRequest == null && confirmedRead == true)
                     recordConfirmedUndo(threadId, undo)
                 val confirmedEdits = coroutineScope {
-                    if (archiveAction) invalidateIndicators()
+                    if (archiveAction || rolledBack && action.updatesIndicators)
+                        invalidateIndicators()
                     else if (action.updatesIndicators) launch { readIndicatorsAfterWrite() }
                     action.updatesChat &&
                         confirmRowEdits(
                                 action,
-                                edits,
-                                writeRejected,
+                                edits.takeLast(submittedEdits),
+                                missingDeleteTarget,
                                 reportFailure = undoRequest == null,
                             )
                             .also { confirmed ->
-                                if (confirmed && undoRequest == null)
+                                if (confirmed && !rolledBack && undoRequest == null)
                                     recordConfirmedUndo(threadId, undo)
                             }
                 }
@@ -963,7 +964,8 @@ class ChatListModel(
                         readConfirmations[threadId] === confirmation &&
                         mutable.value.readIntents[threadId] === confirmation.intent &&
                         mutable.value.indicatorsPhase == ChatReadPhase.Failed ->
-                        mutable.value = mutable.value.copy(failedRowAction = action)
+                        mutable.value =
+                            mutable.value.copy(failedRowAction = ChatRowActionFailure(action))
                 }
             } finally {
                 if ((intent == null || undoRequest != null) && current()) {
@@ -975,6 +977,27 @@ class ChatListModel(
             }
         }
         return true
+    }
+
+    private suspend fun writeRowEdit(edit: ChatRowEdit) {
+        val (threadId, eventId, action, value) = edit
+        when (action) {
+            ChatRowAction.Mute,
+            ChatRowAction.Unmute ->
+                service.setMuted(threadId, action == ChatRowAction.Mute, eventId)
+            ChatRowAction.Archive,
+            ChatRowAction.Unarchive ->
+                service.setArchived(threadId, action == ChatRowAction.Archive, eventId)
+            ChatRowAction.Rename -> service.renameThread(threadId, checkNotNull(value), eventId)
+            ChatRowAction.Delete -> service.deleteThread(threadId, eventId)
+            ChatRowAction.Pin,
+            ChatRowAction.Unpin -> service.setPinned(threadId, value, eventId)
+            ChatRowAction.MovePinUp,
+            ChatRowAction.MovePinDown ->
+                service.reorderPinnedThread(threadId, checkNotNull(value), eventId)
+            ChatRowAction.MarkRead,
+            ChatRowAction.MarkUnread -> error("Read state is separate")
+        }
     }
 
     private fun publishRows(state: ChatListUiState = mutable.value) {
@@ -1054,8 +1077,8 @@ class ChatListModel(
         requestListRead(projection.retryEvents(), userRequested = true)
     }
 
-    internal fun dismissRowActionFailure(action: ChatRowAction) {
-        if (current() && mutable.value.failedRowAction == action) {
+    internal fun dismissRowActionFailure(failure: ChatRowActionFailure) {
+        if (current() && mutable.value.failedRowAction === failure) {
             mutable.value = mutable.value.copy(failedRowAction = null)
         }
     }
@@ -1259,31 +1282,45 @@ class ChatListModel(
     private suspend fun confirmRowEdits(
         action: ChatRowAction,
         edits: List<ChatRowEdit>,
-        writeRejected: Boolean,
+        missingDeleteTarget: String?,
         reportFailure: Boolean,
     ): Boolean {
         requireCurrent()
-        if (!projection.hasUnsettledEdits(edits)) return true
+        if (!requiresListRead(edits, missingDeleteTarget)) return true
         // A missing response can still leave a committed event on the server.
         val completion = CompletableDeferred<Unit>(currentCoroutineContext()[Job])
         val batch = listReadBatch()
-        batch.confirmations.add(ListConfirmation(edits, completion))
-        if (writeRejected) projection.recordRejectedEdits(edits)
+        batch.confirmations.add(ListConfirmation(edits, missingDeleteTarget, completion))
         listReadRequests.trySend(Unit)
         completion.await()
         requireCurrent()
-        val confirmedEdits = projection.confirmEdits(action, edits, writeRejected)
+        if (missingDeleteTarget != null) {
+            // 404 can also mean another device already removed the row.
+            val deleted = !projection.hasConfirmedThread(missingDeleteTarget)
+            if (!deleted)
+                mutable.value =
+                    mutable.value.copy(
+                        failedRowAction = ChatRowActionFailure(action, rejected = true)
+                    )
+            return deleted
+        }
+        val confirmedEdits = projection.confirmEdits(edits)
         if (!confirmedEdits && reportFailure)
-            mutable.value = mutable.value.copy(failedRowAction = action)
+            mutable.value =
+                mutable.value.copy(failedRowAction = ChatRowActionFailure(action, edits = edits))
         return confirmedEdits
     }
+
+    private fun requiresListRead(edits: List<ChatRowEdit>, missingDeleteTarget: String?): Boolean =
+        projection.hasUnsettledEdits(edits) ||
+            missingDeleteTarget?.let(projection::hasConfirmedThread) == true
 
     private suspend fun readPendingListBatch() {
         val batch = pendingListRead
         pendingListRead = null
         val unconfirmed =
             batch?.confirmations.orEmpty().filter { confirmation ->
-                if (projection.hasUnsettledEdits(confirmation.edits)) true
+                if (requiresListRead(confirmation.edits, confirmation.missingDeleteTarget)) true
                 else {
                     confirmation.done.complete(Unit)
                     false
@@ -1331,11 +1368,15 @@ class ChatListModel(
         requireCurrent()
         if (!hasWriteReadback && (mutable.value.offline || generation != connectivityGeneration))
             return
+        // Keep the exact IDs selected by an explicit refresh until a read succeeds.
+        rowDiscardsAfterRead.addAll(batch.discardOnSuccess)
         val reportingFilterGeneration =
-            filterGeneration.takeIf { !batch.userRequested && filterIsVisible && listInForeground }
-        // A rejected edit stays recoverable if its first read fails. Only a read started after
-        // the rejection can restore that row.
-        val discardOnSuccess = projection.discardAfterRead(batch.discardOnSuccess)
+            filterGeneration.takeIf {
+                (!hasWriteReadback || batch.refresh) &&
+                    !batch.userRequested &&
+                    filterIsVisible &&
+                    listInForeground
+            }
         mutable.value = mutable.value.copy(listPhase = ChatReadPhase.Loading)
         try {
             // A normal catch-up still needs the sort event. Resume or an explicit refresh can
@@ -1345,7 +1386,8 @@ class ChatListModel(
                 if (reconciliation != null) projection.completedOutgoingAttempts() else emptyMap()
             val result = sync.synchronize(confirmed?.checkpoint)
             val retrying = mutable.value.listReadFailure == ChatListReadFailure.Retrying
-            publishList(result, discardOnSuccess, finishedActivity = finishedActivity)
+            publishList(result, rowDiscardsAfterRead, finishedActivity = finishedActivity)
+            rowDiscardsAfterRead.clear()
             if (completedActivityReconciliation === reconciliation)
                 completedActivityReconciliation = null
             if (retrying) refreshFailedListDependencies()
@@ -1355,7 +1397,7 @@ class ChatListModel(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            val retryAfter = if (hasWriteReadback) null else listRetryAfterMillis(error)
+            val retryAfter = listRetryAfterMillis(error)
             fail(error) {
                 it.copy(
                     listPhase = ChatReadPhase.Failed,
@@ -1366,12 +1408,7 @@ class ChatListModel(
                         else ChatListReadFailure.NeedsRetry,
                 )
             }
-            if (
-                !hasWriteReadback &&
-                    current() &&
-                    !mutable.value.offline &&
-                    generation == connectivityGeneration
-            ) {
+            if (current() && !mutable.value.offline && generation == connectivityGeneration) {
                 recordListReadFailure(retryAfter, reportingFilterGeneration)
             }
         }
@@ -1410,7 +1447,10 @@ class ChatListModel(
         if (retryAfter == null) return
         listFailures = (listFailures + 1).coerceAtMost(listRefreshRetryDelays.size)
         val delay = maxOf(listRefreshRetryDelays[listFailures - 1], retryAfter)
-        listRetryAt = now + minOf(delay, Long.MAX_VALUE - now.coerceAtLeast(0L))
+        val nextRetry = now + minOf(delay, Long.MAX_VALUE - now.coerceAtLeast(0L))
+        listRetryAt = maxOf(nextRetry, listRetryAt ?: nextRetry)
+        listRetry?.cancel()
+        listRetry = null
         updateListRetryVisibility()
     }
 
@@ -1472,13 +1512,18 @@ class ChatListModel(
         confirmed = saved
         val projectionChanged =
             projection.reconcile(result, saved.checkpoint, rows, discardOnSuccess, finishedActivity)
+        val previousState = mutable.value
         val state =
-            mutable.value.copy(
+            previousState.copy(
                 confirmedAt = saved.confirmedAt,
                 source = ChatListSource.Network,
                 listPhase = ChatReadPhase.Ready,
                 listReadFailure = null,
                 sustainedRefreshFailure = false,
+                failedRowAction =
+                    previousState.failedRowAction?.takeUnless {
+                        it.edits.isNotEmpty() && !projection.hasUnsettledEdits(it.edits)
+                    },
             )
         resetListReadFailures()
         if (projectionChanged) publishRows(state) else mutable.value = state
@@ -1581,7 +1626,7 @@ class ChatListModel(
                                     !confirmation.receiptCoversIntent &&
                                     !confirmation.observedUnread
                             ) {
-                                failed = confirmation.intent.action
+                                failed = ChatRowActionFailure(confirmation.intent.action)
                             }
                         }
                         readConfirmations.remove(id)
