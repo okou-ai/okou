@@ -1,3 +1,4 @@
+import { array } from "zod";
 import { agentDraftContract } from "../contracts/agent-draft";
 import { agentsByIdContract, agentsMainContract } from "../contracts/agents";
 import { artifactCatalogContract } from "../contracts/artifact-catalog";
@@ -13,6 +14,8 @@ import { chatRemoteAccessContract } from "../contracts/chat-remote-access";
 import { chatThreadActivitySummaryContract } from "../contracts/chat-thread-activity-summary";
 import {
   chatThreadArchiveContract,
+  chatThreadArtifactFileSchema,
+  chatThreadArtifactRunSchema,
   chatThreadArtifactsContract,
   chatThreadByIdContract,
   chatThreadComputerUseHostContract,
@@ -87,6 +90,21 @@ import {
 } from "../contracts/workflows";
 import { iosUpgradeRequiredSchema } from "../contracts/ios-client-compatibility";
 import type { RuntimeApiRouteBinding, RuntimeApiRouteLike } from "./routes";
+
+const chatThreadArtifactsList = chatThreadArtifactsContract.list;
+// The native route returns the file inventory without Drive enrichment.
+const iosChatThreadArtifactFileSchema = chatThreadArtifactFileSchema.omit({
+  googleDriveConnectionId: true,
+  googleDriveSync: true,
+});
+const iosChatThreadArtifactsResponseSchema =
+  chatThreadArtifactsList.responses[200].extend({
+    runs: array(
+      chatThreadArtifactRunSchema.extend({
+        files: array(iosChatThreadArtifactFileSchema),
+      }),
+    ),
+  });
 
 /** iOS API consumption inventory, including dynamic chat actions and connector auth.
  * Add route references when adding calls in ios/Packages/ChatData or the App.
@@ -180,7 +198,13 @@ const iosContracts: readonly {
   },
   {
     id: "ios.chatThreadArtifactsContract.list",
-    route: chatThreadArtifactsContract.list,
+    route: {
+      ...chatThreadArtifactsList,
+      responses: {
+        ...chatThreadArtifactsList.responses,
+        200: iosChatThreadArtifactsResponseSchema,
+      },
+    },
   },
   { id: "ios.chatThreadByIdContract.get", route: chatThreadByIdContract.get },
   {
