@@ -85,6 +85,15 @@ test("settings-dialog-008 measuring a three-thread local snapshot reports its si
     selector: "summary span",
   });
   click(details);
+  const snapshotStore = await within(settings).findByText(
+    "chat_thread_snapshot",
+    {
+      selector: "dt",
+    },
+  );
+  await waitFor(() => {
+    return expect(snapshotStore.nextElementSibling).toHaveTextContent(/^1$/u);
+  });
   const region = await within(settings).findByRole("region", {
     name: "Thread snapshot",
   });
