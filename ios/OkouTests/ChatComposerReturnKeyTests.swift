@@ -65,6 +65,49 @@ final class ChatComposerReturnKeyTests: XCTestCase {
       + mentionInputStatus(input)
   }
 
+  func testQuotedNoteKeepsItsSendKeyAvailabilityWhileItIsTypedAndEmptied() async throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let preferences = ComposerPreferences(storage: ComposerPreferencesStorage(directory: directory))
+    let fixture = AttachmentFlowFixture()
+    let conversation = fixture.conversation()
+    defer { conversation.close() }
+    let message = ChatMessage(
+      id: "assistant-event", role: .assistant, text: "Selected passage", createdAt: Date(),
+      isQueued: false, isError: false)
+    let selection = try XCTUnwrap(
+      ChatFeedbackSelection(
+        message: message, range: NSRange(location: 0, length: message.text.utf16.count)))
+    let quote = try XCTUnwrap(conversation.composer.addFeedback(selection))
+    let host = UIHostingController(
+      rootView: MentionComposerHarness(state: conversation.composer)
+        .environment(\.composerPreferences, preferences))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let input = try XCTUnwrap(
+      mentionInputs(in: host.view).first {
+        $0.accessibilityIdentifier == "feedback-note-\(quote)"
+      })
+    try await focusMentionInput(input)
+    input.insertText("Ask about this passage")
+
+    // The quote keeps Send valid without the note, so the note's text never owns the key.
+    preferences.setReturnKey(.send)
+    try await eventually(message: mentionInputStatus(input)) { input.returnKeyType == .send }
+    XCTAssertFalse(input.enablesReturnKeyAutomatically)
+
+    input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
+    input.deleteBackward()
+    XCTAssertEqual(conversation.composer.editorBlocks.first { $0.id == quote }?.content.text, "")
+    // A later preference round trip observes the emptied note after it was reconciled.
+    preferences.setReturnKey(.newline)
+    try await eventually(message: mentionInputStatus(input)) { input.returnKeyType == .default }
+    preferences.setReturnKey(.send)
+    try await eventually(message: mentionInputStatus(input)) { input.returnKeyType == .send }
+    XCTAssertFalse(input.enablesReturnKeyAutomatically)
+    XCTAssertTrue(input.isFirstResponder)
+  }
+
   func testRepeatedKeyboardSendDoesNotStopTheExistingWorkAfterTheDraftClears() async throws {
     let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }

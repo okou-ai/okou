@@ -931,7 +931,10 @@ feature; the catalog shows each one.
 - iOS can retain a composer's disabled Return key after programmatic text insertion
   or when automatic disabling is turned off, despite `reloadInputViews()`. The
   owning editor may restart its active input session without animation and return
-  focus to the same view. Keep ordinary typing in its native session and defer this refresh until marked-text
+  focus to the same view. Keep ordinary typing in its native session: automatic
+  disabling follows content outside the editor's own text (quotes, ready
+  attachments), so typing or emptying a draft never changes it, and only an empty
+  editor restarts when that content changes. Defer this refresh until marked-text
   composition settles; preserve the document, selection, and undo history rather
   than replacing text or overriding `hasText`.
 - First-party authentication uses native provider, email, code, password, and
