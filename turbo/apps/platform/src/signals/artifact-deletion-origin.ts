@@ -6,6 +6,7 @@ import {
   currentRightThread$,
 } from "./chat-page/chat-thread-pane-state.ts";
 import { closeDeletedThreadArtifact$ } from "./chat-page/thread-sidebar-coordinator.ts";
+import { dismissLightbox$ } from "./okou-page/attachment-chips.ts";
 import { rootSignal$ } from "./root-signal.ts";
 import { detachedNavigateTo$ } from "./route.ts";
 
@@ -51,7 +52,7 @@ const leaveDeletedArtifactSurface$ = command(
       }
       case "preview-dialog": {
         // The preview may belong to a chat that outlives this page.
-        set(closeArtifactCatalogPreview$, get(rootSignal$));
+        set(dismissLightbox$, get(rootSignal$));
         return;
       }
       case "catalog-sidebar": {

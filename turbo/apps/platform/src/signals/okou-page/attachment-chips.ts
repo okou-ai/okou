@@ -59,6 +59,8 @@ export type AttachmentArtifactMetadata = {
 };
 
 interface AttachmentNamedLightboxBase {
+  /** The initiating surface owns dismissal; absent for standalone viewers. */
+  readonly dismiss$?: Command<void, [AbortSignal]>;
   readonly catalogArtifactId?: string;
   readonly contentType?: string | undefined;
   readonly artifactKind?: "hosted-site" | "presentation-html" | undefined;
@@ -109,6 +111,8 @@ export interface AttachmentAnnotationTarget {
 }
 
 type AttachmentImageLightboxInput = AttachmentPreviewSource & {
+  /** The initiating surface owns dismissal; absent for standalone viewers. */
+  readonly dismiss$?: Command<void, [AbortSignal]>;
   readonly catalogArtifactId?: string;
   readonly contentType?: string | undefined;
   readonly artifactKind?: "hosted-site" | "presentation-html" | undefined;
@@ -208,6 +212,15 @@ export const closeLightboxImmediately$ = command(({ set }) => {
   set(disposeLightboxSession$);
 });
 
+/** Releases only the viewer owned by the surface leaving its route. */
+export const closeLightboxImmediatelyForOwner$ = command(
+  ({ get, set }, dismiss$: Command<void, [AbortSignal]>) => {
+    if (get(internalLightboxState$)?.dismiss$ === dismiss$) {
+      set(disposeLightboxSession$);
+    }
+  },
+);
+
 /** Hands the previewed draft image to its composer's annotation editor. */
 export const annotateLightboxImage$ = command(({ get, set }) => {
   const lightbox = get(internalLightboxState$);
@@ -260,8 +273,13 @@ export const toggleLightboxDialogFullscreen$ = command(({ get, set }) => {
 });
 
 export const completeLightboxDialogExit$ = command(
-  ({ get, set }, open: boolean) => {
-    if (!open && !get(internalLightboxDialogVisible$)) {
+  ({ get, set }, current: AttachmentLightboxState, open: boolean) => {
+    // A previous dialog's exit animation must not dispose a newer preview.
+    if (
+      !open &&
+      !get(internalLightboxDialogVisible$) &&
+      get(internalLightboxState$) === current
+    ) {
       set(disposeLightboxSession$);
     }
   },
@@ -275,6 +293,17 @@ export const closeLightboxWithDialogExit$ = command(
     set(internalLightboxDialogVisible$, false);
   },
 );
+
+/** Lets the initiating surface dismiss its viewer without coupling to it. */
+export const dismissLightbox$ = command(({ get, set }, signal: AbortSignal) => {
+  signal.throwIfAborted();
+  const dismiss$ = get(internalLightboxState$)?.dismiss$;
+  if (dismiss$) {
+    set(dismiss$, signal);
+    return;
+  }
+  set(closeLightboxWithDialogExit$, signal);
+});
 
 /**
  * An open artifact sidebar owns every artifact click that could live in it, so
@@ -429,12 +458,15 @@ export const navigateImageLightbox$ = command(
       splitViewAvailable?: boolean;
     },
   ) => {
+    const current = get(internalLightboxState$);
+    const dismiss$ = current?.kind === "image" ? current.dismiss$ : undefined;
     set(attachmentLightboxImageCanvasSignals.reset$);
     const ownerSignal = set(resetLightboxPreviewSignal$, get(rootSignal$));
     set(attachmentDiagramPreview.dispose$);
     const preview = attachmentPreviewSignalsFor(value);
     set(internalLightboxState$, {
       ownerSignal,
+      dismiss$,
       kind: "image",
       ...value,
       preview,
