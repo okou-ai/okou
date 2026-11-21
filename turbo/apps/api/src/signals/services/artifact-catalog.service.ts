@@ -70,7 +70,7 @@ import {
   sharedThreadArtifactAuthorUserId,
   sharedThreadArtifactLogicalKey,
 } from "../../lib/shared-thread-artifact";
-import { db$, writeDb$ } from "../external/db";
+import { db$, writeDb$, type ReadonlyDb } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import { safeUrlParse, settle } from "../utils";
 import {
@@ -1755,6 +1755,53 @@ function avatarDetail(
     : null;
 }
 
+function selectArtifactCatalogEntry(
+  db: ReadonlyDb,
+  args: GetArtifactCatalogEntryArgs,
+) {
+  return db
+    .select({
+      id: artifacts.id,
+      kind: artifacts.kind,
+      logicalKey: artifacts.logicalKey,
+      entityId: artifacts.entityId,
+      projectionFileId: artifacts.projectionFileId,
+      projectionMetadata: runUploadedFiles.metadata,
+      sourceChatThreadId: chatThreads.id,
+      displayKind: artifacts.displayKind,
+      aliasUrl: artifacts.aliasUrl,
+      sourceUrl: artifacts.sourceUrl,
+      videoSourceUrl: artifacts.videoSourceUrl,
+      title: artifacts.title,
+      thumbnail: artifacts.thumbnail,
+      createdAt: artifacts.createdAt,
+      updatedAt: artifacts.updatedAt,
+    })
+    .from(artifacts)
+    .leftJoin(
+      runUploadedFiles,
+      eq(runUploadedFiles.id, artifacts.projectionFileId),
+    )
+    .leftJoin(
+      chatThreads,
+      and(
+        eq(chatThreads.id, artifacts.chatThreadId),
+        eq(chatThreads.orgId, args.orgId),
+        eq(chatThreads.userId, args.userId),
+        eq(chatThreads.hidden, false),
+      ),
+    )
+    .where(
+      and(
+        artifactCatalogIdentityFilter(args),
+        eq(artifacts.orgId, args.orgId),
+        artifactCatalogOwnerFilter(args.userId),
+        isNull(artifacts.deletedAt),
+      ),
+    )
+    .limit(1);
+}
+
 /**
  * Load one artifact together with its kind entity. The caller check runs on the
  * registry row alone, so every kind shares the same permission rule.
@@ -1766,47 +1813,7 @@ export const getArtifactCatalogEntry$ = command(
     signal: AbortSignal,
   ): Promise<ArtifactDetail | null> => {
     const db = get(db$);
-    const [row] = await db
-      .select({
-        id: artifacts.id,
-        kind: artifacts.kind,
-        logicalKey: artifacts.logicalKey,
-        entityId: artifacts.entityId,
-        projectionFileId: artifacts.projectionFileId,
-        projectionMetadata: runUploadedFiles.metadata,
-        sourceChatThreadId: chatThreads.id,
-        displayKind: artifacts.displayKind,
-        aliasUrl: artifacts.aliasUrl,
-        sourceUrl: artifacts.sourceUrl,
-        videoSourceUrl: artifacts.videoSourceUrl,
-        title: artifacts.title,
-        thumbnail: artifacts.thumbnail,
-        createdAt: artifacts.createdAt,
-        updatedAt: artifacts.updatedAt,
-      })
-      .from(artifacts)
-      .leftJoin(
-        runUploadedFiles,
-        eq(runUploadedFiles.id, artifacts.projectionFileId),
-      )
-      .leftJoin(
-        chatThreads,
-        and(
-          eq(chatThreads.id, artifacts.chatThreadId),
-          eq(chatThreads.orgId, args.orgId),
-          eq(chatThreads.userId, args.userId),
-          eq(chatThreads.hidden, false),
-        ),
-      )
-      .where(
-        and(
-          artifactCatalogIdentityFilter(args),
-          eq(artifacts.orgId, args.orgId),
-          artifactCatalogOwnerFilter(args.userId),
-          isNull(artifacts.deletedAt),
-        ),
-      )
-      .limit(1);
+    const [row] = await selectArtifactCatalogEntry(db, args);
     signal.throwIfAborted();
     if (!row) {
       return null;
