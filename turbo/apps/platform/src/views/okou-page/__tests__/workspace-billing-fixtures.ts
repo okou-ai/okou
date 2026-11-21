@@ -1,4 +1,4 @@
-import { mockNow } from "../../../__tests__/time.ts";
+import { mockNow } from "../../../lib/time.ts";
 import {
   billingStatusContract,
   billingUsagePackCatalogContract,
