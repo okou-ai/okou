@@ -153,7 +153,11 @@ def ssh(arguments):
                 line = (json.dumps(frame) + "\n").encode()
             sys.stdout.buffer.write(line)
             sys.stdout.buffer.flush()
-        return process.wait()
+        status = process.wait()
+        if fault and MODE == "lost-launch-without-unit" and status == 1 and once():
+            # The client loses the failed submission reply and must reconcile its intent.
+            return 255
+        return status
     finally:
         if not detached and process.poll() is None:
             os.killpg(process.pid, signal.SIGKILL)
@@ -183,11 +187,8 @@ def systemd_run(arguments):
             "legacy-image-worker",
             command[-1],
         ]
-    if MODE == "absent-launch":
+    if MODE == "lost-launch-without-unit":
         return 1
-    if MODE == "launch-timeout-without-unit":
-        # The submission client hangs before systemd accepts the request.
-        signal.pause()
     with open(os.devnull, "wb") as sink:
         process = subprocess.Popen(
             command,

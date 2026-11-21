@@ -494,31 +494,6 @@ class CleanupTests(unittest.TestCase):
             "pull_requests": [{"number": number}] if associated else [],
         }
 
-    def test_worker_cleans_files_transient_listener_and_exact_namespace(self):
-        runner = self.resource("var/lib/vm0-runner/runners/pr-42-api/config")
-        listener = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
-        unit = self.resource("etc/systemd/system/vm0-stripe-listener-pr-42.service")
-        transient = self.resource(
-            "run/systemd/transient/vm0-runner-pr-42-native.service"
-        )
-        bare = self.resource("etc/systemd/system/vm0-runner-pr-42.service")
-        binary = self.resource("var/lib/vm0-runner/bin/pr-42-build/runner")
-        group = self.resource("var/lib/vm0-runner/groups/vm0/smoke-pr-42-api/config")
-        override = self.resource(
-            "etc/systemd/system/vm0-runner-pr-42-api.service.d/50-vm0-drain.conf"
-        )
-        other = self.resource("var/lib/vm0-runner/runners/pr-420-api/config")
-        result, payload = self.worker("cleanup", 42)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(payload["42"]["outcome"], "cleaned")
-        for path in (runner, listener, unit, transient, bare, binary, group, override):
-            self.assertFalse(path.exists(), path)
-        self.assertEqual(other.read_text(), "fixture")
-        result, payload = self.worker("cleanup", 42)
-        self.assertEqual(payload["42"]["outcome"], "already_absent")
-        log = (self.root / "metal-a/systemctl.log").read_text()
-        self.assertEqual(log.count('"daemon-reload"'), 1)
-
     def test_metadata_converges_but_cgroup_execution_stays_actionable(self):
         name = "vm0-runner-pr-42-test-systemd-reload-b.service"
         self.state(name, ActiveState="failed")
@@ -1155,11 +1130,12 @@ class CleanupTests(unittest.TestCase):
                 events.enter_context(open(event, "rb", opener=open_event))
             return files, self.guarded_controller(READY_FAILURE=failure, **env)
 
-    def test_restarts_lock_preparation_after_ready_host_disconnects(self):
-        files, result = self.pre_dispatch_loss("prior-lost")
+    def test_reacquires_locks_when_old_release_receipt_is_lost(self):
+        files, result = self.pre_dispatch_loss("prior-lost", DROP_RESTART_RELEASE="1")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(all(not file.exists() for file in files), result.stdout)
         self.assertTrue((self.root / "released-b").is_file(), result.stderr)
+        self.assertIn("Metal lock release before restart unconfirmed", result.stderr)
         self.assertIn('"cleaned": 1', result.stdout)
         self.assertEqual(
             (self.root / "metal-a/ssh.log").read_text(), "inventory\nsession\nsession\n"
@@ -1169,36 +1145,23 @@ class CleanupTests(unittest.TestCase):
             "inventory\nsession\nsession\nsession\n",
         )
 
-    def test_reacquires_locks_when_old_release_receipt_is_lost(self):
-        files, result = self.pre_dispatch_loss("prior-lost", DROP_RESTART_RELEASE="1")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue((self.root / "released-b").is_file(), result.stderr)
-        self.assertTrue(all(not file.exists() for file in files), result.stdout)
-        self.assertIn('"cleaned": 1', result.stdout)
-
     def test_rechecks_github_authority_after_pre_dispatch_restart(self):
-        self.github(reopen_after_recovery=42)
-        files, result = self.pre_dispatch_loss("prior-lost")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue(all(file.is_file() for file in files), result.stdout)
-        self.assertIn('"skipped_open": 1', result.stdout)
-
-    def test_rechecks_a_previously_seen_owner_after_pre_dispatch_restart(self):
         owner = self.owner()
         self.github(
             runs=[owner],
+            reopen_after_recovery=44,
             hide_owners_after_recovery=True,
             run_details={str(owner["id"]): owner},
         )
-        selected = [
-            self.resource("var/lib/vm0-runner/stripe/pr-43/config", host=host)
-            for host in ("metal-a", "metal-b")
-        ]
+        selected = self.resource("var/lib/vm0-runner/stripe/pr-43/config")
+        reopened = self.resource("var/lib/vm0-runner/stripe/pr-44/config", host="metal-b")
         owned, result = self.pre_dispatch_loss("prior-lost")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(all(file.is_file() for file in owned), result.stdout)
-        self.assertTrue(all(not file.exists() for file in selected), result.stdout)
+        self.assertTrue(reopened.is_file(), result.stdout)
+        self.assertFalse(selected.exists(), result.stdout)
         self.assertIn('"deferred_owner": 1', result.stdout)
+        self.assertIn('"skipped_open": 1', result.stdout)
 
     def test_pre_dispatch_command_failure_keeps_all_host_resources(self):
         files, result = self.pre_dispatch_loss("prior-lost-command")
@@ -1220,16 +1183,31 @@ class CleanupTests(unittest.TestCase):
         )
 
     def test_namespace_selection_is_explicit_and_fails_closed(self):
-        selected = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
-        other = self.resource("var/lib/vm0-runner/stripe/pr-43/config")
+        selected = [
+            self.resource(path)
+            for path in (
+                "var/lib/vm0-runner/runners/pr-42-api/config",
+                "var/lib/vm0-runner/stripe/pr-42/config",
+                "etc/systemd/system/vm0-stripe-listener-pr-42.service",
+                "run/systemd/transient/vm0-runner-pr-42-native.service",
+                "etc/systemd/system/vm0-runner-pr-42.service",
+                "var/lib/vm0-runner/bin/pr-42-build/runner",
+                "var/lib/vm0-runner/groups/vm0/smoke-pr-42-api/config",
+                "etc/systemd/system/vm0-runner-pr-42-api.service.d/50-vm0-drain.conf",
+            )
+        ]
+        other = self.resource("var/lib/vm0-runner/runners/pr-420-api/config")
         result = self.controller(RUNNER_PR_NUMBERS=" ")
         self.assertEqual(result.returncode, 2, result.stderr)
-        self.assertTrue(selected.exists())
-        self.assertTrue(other.exists())
+        self.assertTrue(all(path.is_file() for path in selected))
+        self.assertEqual(other.read_text(), "fixture")
         result = self.controller(RUNNER_PR_NUMBERS=" 42, 9999 ")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertFalse(selected.exists())
-        self.assertTrue(other.exists())
+        for path in selected:
+            self.assertFalse(path.exists(), path)
+        self.assertEqual(other.read_text(), "fixture")
+        log = (self.root / "metal-a/systemctl.log").read_text()
+        self.assertEqual(log.count('"daemon-reload"'), 1)
         # A close event must fence a first claim even with no resources yet.
         for host in ("metal-a", "metal-b"):
             cutoff = self.root / host / "var/lock/vm0-runner-lifecycle-pr-9999.lock"

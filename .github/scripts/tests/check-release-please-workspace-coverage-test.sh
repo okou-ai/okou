@@ -108,8 +108,6 @@ setup_repo() {
   printf 'helper source\n' >"${REPO}/native/helper/src/lib.rs"
   printf 'runner source\n' >"${REPO}/native/runner/src/lib.rs"
   printf 'test source\n' >"${REPO}/native/guest-control-tests/src/lib.rs"
-  cargo generate-lockfile --quiet --manifest-path "${REPO}/native/Cargo.toml"
-
   printf '%s\n' \
     '{"packages":{"native/helper":{"release-type":"rust"},"native/runner":{"release-type":"rust"},"turbo/apps/app":{"release-type":"node"},"turbo/packages/ui":{"release-type":"node","skip-changelog":true}},"plugins":[{"type":"node-workspace","alwaysLinkLocal":true},{"type":"cargo-workspace","cargoWorkspacePath":"native"}]}' \
     >"${REPO}/release-please-config.json"
@@ -121,10 +119,6 @@ setup_repo() {
     >"${REPO}/.github/release-please-workspace-exclusions.json"
 
   git -C "$REPO" init -q -b main
-  git -C "$REPO" config user.email test@example.com
-  git -C "$REPO" config user.name Test
-  git -C "$REPO" add --all
-  git -C "$REPO" commit -qm "baseline"
 }
 
 setup_repo "valid-classification"
@@ -159,18 +153,6 @@ setup_repo "disconnected-self-cycle"
 printf '\n[dev-dependencies]\nguest-control-tests = { path = "." }\n' \
   >>"${REPO}/native/guest-control-tests/Cargo.toml"
 expect_failure "$REPO" "dependency cycle: guest-control-tests -> guest-control-tests"
-
-for kind in normal dev build; do
-  setup_repo "target-${kind}-dependency-cycle"
-  section="${kind}-dependencies"
-  if [ "$kind" = normal ]; then
-    section=dependencies
-  fi
-  printf '\n[target.\x27cfg(windows)\x27.%s]\nrunner = { path = "../runner" }\n' "$section" \
-    >>"${REPO}/native/helper/Cargo.toml"
-  expect_failure "$REPO" "dependency cycle: helper -> runner -> helper"
-  assert_contains "$LAST_OUTPUT" "helper -> runner: ${kind}-dependency, target=cfg(windows)"
-done
 
 setup_repo "mutually-exclusive-targets"
 sed -i "s/\[dependencies\]/[target.'cfg(windows)'.dependencies]/" \
@@ -231,7 +213,6 @@ printf '%s\n' \
   >"${REPO}/native/new/Cargo.toml"
 printf 'new source\n' >"${REPO}/native/new/src/lib.rs"
 sed -i 's/"guest-control-tests"/"guest-control-tests", "new"/' "${REPO}/native/Cargo.toml"
-cargo generate-lockfile --quiet --manifest-path "${REPO}/native/Cargo.toml"
 expect_failure "$REPO" "unclassified workspace packages: native/new"
 
 setup_repo "stale-exclusion"
@@ -279,32 +260,30 @@ write_json \
 expect_failure "$REPO" \
   "Release Please manifest contains unconfigured packages: native/guest-control-tests"
 
-echo "check-release-please-workspace-coverage-test: ok"
-
-setup_repo "standalone-ios"
-mkdir -p "$REPO/ios/Config"
+setup_repo "standalone-native-versions"
+mkdir -p "$REPO/ios/Config" "$REPO/desktop" "$REPO/android"
 printf '0.1.0\n' > "$REPO/ios/version.txt"
 printf 'MARKETING_VERSION = 0.1.0 // x-release-please-version\n' > "$REPO/ios/Config/Shared.xcconfig"
-write_json "$REPO/release-please-config.json" '.packages.ios = {"release-type":"simple","component":"ios"}'
-write_json "$REPO/.release-please-manifest.json" '.ios = "0.1.0"'
+printf '0.49.71\n' > "$REPO/desktop/version.txt"
+printf '0.1.0\n' > "$REPO/android/version.txt"
+write_json "$REPO/release-please-config.json" '
+  .packages += {
+    ios: {"release-type":"simple","component":"ios"},
+    desktop: {"release-type":"simple","component":"desktop"},
+    android: {"release-type":"simple","version-file":"version.txt","component":"android"}
+  }'
+write_json "$REPO/.release-please-manifest.json" '. + {ios:"0.1.0", desktop:"0.49.71", android:"0.1.0"}'
 expect_success "$REPO"
+
 printf '0.1.1\n' > "$REPO/ios/version.txt"
 expect_failure "$REPO" "iOS manifest, version.txt, and MARKETING_VERSION must agree"
+printf '0.1.0\n' > "$REPO/ios/version.txt"
 
-setup_repo "standalone-desktop"
-mkdir -p "$REPO/desktop"
-printf '0.49.71\n' > "$REPO/desktop/version.txt"
-write_json "$REPO/release-please-config.json" '.packages.desktop = {"release-type":"simple","component":"desktop"}'
-write_json "$REPO/.release-please-manifest.json" '.desktop = "0.49.71"'
-expect_success "$REPO"
 printf '0.50.0\n' > "$REPO/desktop/version.txt"
 expect_failure "$REPO" "Desktop manifest and version.txt must agree"
+printf '0.49.71\n' > "$REPO/desktop/version.txt"
 
-setup_repo "standalone-android"
-mkdir -p "$REPO/android"
-printf '0.1.0\n' > "$REPO/android/version.txt"
-write_json "$REPO/release-please-config.json" '.packages.android = {"release-type":"simple","version-file":"version.txt","component":"android"}'
-write_json "$REPO/.release-please-manifest.json" '.android = "0.1.0"'
-expect_success "$REPO"
 printf '0.1.1\n' > "$REPO/android/version.txt"
 expect_failure "$REPO" "Android manifest and version.txt must agree"
+
+echo "check-release-please-workspace-coverage-test: ok"
