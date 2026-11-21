@@ -360,7 +360,7 @@ class SessionModelTest {
     }
 
     @Test
-    fun fallbackScopesCacheToRefreshedPermissionsWhenObservationLags() {
+    fun refreshedSelectedPermissionsOpenWorkspaceWhileThePickerReadIsHeld() {
         val auth =
             TestAuthentication(
                 testAuthenticationState()
@@ -370,6 +370,8 @@ class SessionModelTest {
                     )
             )
         auth.refreshedMembership = { MembershipAccess("org-a", "org:member", emptyList()) }
+        val memberships = CompletableDeferred<List<WorkspaceMembership>>()
+        auth.membershipsAction = { memberships.await() }
         check(auth) { model, resources ->
             runCurrent()
             assertEquals(SessionStage.Ready, model.uiState.value.stage)
@@ -377,6 +379,9 @@ class SessionModelTest {
                 scopeHash(listOf("org:member", "org:member", "known")),
                 resources.single().identity.authorizationScope,
             )
+            assertEquals(listOf("org-a"), model.uiState.value.memberships.map { it.id })
+            memberships.complete(auth.available)
+            runCurrent()
             assertEquals(auth.available, model.uiState.value.memberships)
         }
     }

@@ -28,6 +28,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -180,6 +181,16 @@ class SessionModel(
             )
         operation =
             viewModelScope.launch {
+                val observedIdentity =
+                    initialIdentity?.let { identity ->
+                        snapshot.membershipAccess
+                            ?.firstOrNull {
+                                it.workspaceId == identity.workspaceId && it.permissions != null
+                            }
+                            ?.let { identity.withAccess(it.role, it) }
+                    }
+                var preparation =
+                    observedIdentity?.let { identity -> async { prepareChatList(identity) } }
                 val appearanceRead =
                     initialIdentity?.let { identity ->
                         launch readCache@{
@@ -191,26 +202,26 @@ class SessionModel(
                         }
                     }
                 val cacheWarm =
-                    initialIdentity?.let {
-                        launch {
-                            try {
-                                chatCache.warmConnection()
-                            } catch (cancelled: CancellationException) {
-                                throw cancelled
-                            } catch (_: Exception) {
-                                // Scoped restore handles storage errors after authorization.
+                    initialIdentity
+                        ?.takeIf { observedIdentity == null }
+                        ?.let {
+                            launch {
+                                try {
+                                    chatCache.warmConnection()
+                                } catch (cancelled: CancellationException) {
+                                    throw cancelled
+                                } catch (_: Exception) {
+                                    // Scoped restore handles storage errors after authorization.
+                                }
                             }
                         }
-                    }
                 try {
                     val refreshedAccess = authentication.refresh(session)
                     requireCurrent(ticket, snapshot)
-                    val access =
-                        snapshot.membershipAccess?.firstOrNull {
-                            it.workspaceId == initialIdentity?.workspaceId
-                        }
                     val fastAccess =
-                        access?.takeIf { it.permissions != null && it == refreshedAccess }
+                        refreshedAccess?.takeIf {
+                            it.workspaceId == initialIdentity?.workspaceId && it.permissions != null
+                        }
                     val memberships =
                         if (fastAccess == null) authentication.memberships(session) else emptyList()
                     requireCurrent(ticket, snapshot)
@@ -225,22 +236,11 @@ class SessionModel(
                             SessionUiState(generation, SessionStage.ChooseWorkspace, memberships)
                         return@launch
                     }
-                    val identity =
-                        initialIdentity.copy(
-                            authorizationScope =
-                                scopeHash(
-                                    listOf(role) +
-                                        refreshedAccess
-                                            ?.let {
-                                                listOf(
-                                                    it.role,
-                                                    if (it.permissions == null) "unknown"
-                                                    else "known",
-                                                ) + it.permissions.orEmpty().sorted()
-                                            }
-                                            .orEmpty()
-                                )
-                        )
+                    val identity = initialIdentity.withAccess(role, refreshedAccess)
+                    if (identity != observedIdentity) {
+                        preparation?.cancel()
+                        preparation = async { prepareChatList(identity) }
+                    }
                     val owner =
                         factory.create(
                             identity,
@@ -330,6 +330,9 @@ class SessionModel(
                             )
                     mutable.value =
                         mutable.value.copy(memberships = knownMemberships, opening = opened)
+                    preparation?.let(chats::restoreStartupCache)
+                    // After handoff, a preferences failure must not cancel chat restoration.
+                    preparation = null
                     chats.refresh()
                     loadRemainingMemberships(ticket, snapshot)
                     finishPreparation(ticket, snapshot, opened)
@@ -351,9 +354,36 @@ class SessionModel(
                 } finally {
                     appearanceRead?.cancel()
                     cacheWarm?.cancel()
+                    preparation?.cancel()
                 }
             }
     }
+
+    private suspend fun prepareChatList(identity: WorkspaceIdentity) =
+        try {
+            chatCache.prepareChatList(identity, dispatcher)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // The authorized cache read owns reporting and recovery.
+            null
+        }
+
+    private fun WorkspaceIdentity.withAccess(role: String, access: MembershipAccess?) =
+        copy(
+            authorizationScope =
+                scopeHash(
+                    listOf(role) +
+                        access
+                            ?.let {
+                                listOf(
+                                    it.role,
+                                    if (it.permissions == null) "unknown" else "known",
+                                ) + it.permissions.orEmpty().sorted()
+                            }
+                            .orEmpty()
+                )
+        )
 
     private fun loadRemainingMemberships(ticket: Long, snapshot: AuthenticationState) {
         if (membershipsComplete || membershipLoad?.isActive == true) return

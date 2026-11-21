@@ -85,6 +85,34 @@ class ChatCacheStoreTest {
         )
 
     @Test
+    fun startupPreparationIsScopedAndDoesNotReplaceTheActiveLease() = runTest {
+        val store = cache(temporary.newFolder())
+        val checkpoint = checkpoint()
+        store
+            .open(identity) { true }
+            .use { lease ->
+                assertNull(store.prepareChatList(identity, Dispatchers.Default))
+                lease.save(checkpoint, 1234, navigation())
+
+                val prepared = checkNotNull(store.prepareChatList(identity, Dispatchers.Default))
+                assertEquals(identity, prepared.identity)
+                assertEquals(checkpoint, prepared.saved.checkpoint)
+                assertEquals(replayChatList(checkpoint), prepared.rows)
+                assertNull(
+                    store.prepareChatList(identity.copy(userId = "other"), Dispatchers.Default)
+                )
+                val rejected = runCatching {
+                    store.prepareChatList(
+                        identity.copy(authorizationScope = "changed"),
+                        Dispatchers.Default,
+                    )
+                }
+                assertTrue(rejected.exceptionOrNull() is IOException)
+                assertEquals(checkpoint, lease.load()?.checkpoint)
+            }
+    }
+
+    @Test
     fun upgradingVersionTwoPreservesChatAndProjectCache() = runTest {
         val root = temporary.newFolder()
         val original = checkpoint()
