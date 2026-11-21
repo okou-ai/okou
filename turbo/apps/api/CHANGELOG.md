@@ -10,6 +10,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.101.0](https://github.com/okou-ai/okou/compare/api-v2.100.9...api-v2.101.0) (2026-11-21)
+
+
+### Features
+
+* **api:** force app.okou.ai clients to upgrade to v0.1162.3 ([#49883](https://github.com/okou-ai/okou/issues/49883)) ([28d20b2](https://github.com/okou-ai/okou/commit/28d20b2ff00e817cb96b938189395c02265f3642))
+
 ## [2.100.9](https://github.com/okou-ai/okou/compare/api-v2.100.8...api-v2.100.9) (2026-11-21)
 
 
