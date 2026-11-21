@@ -13,7 +13,7 @@ setup() {
 }
 
 teardown() {
-    runner_e2e_teardown_test bentoml
+    runner_e2e_teardown_test reap
 }
 
 assert_no_connector_refresh_raw_secrets() {
@@ -23,7 +23,7 @@ assert_no_connector_refresh_raw_secrets() {
     local raw_secret
     for raw_secret in "$@"; do
         if [[ "$surfaces" == *"$raw_secret"* ]]; then
-            fail "raw BentoML credential appeared in a public runner surface"
+            fail "raw Reap credential appeared in a public runner surface"
         fi
     done
 }
@@ -34,21 +34,21 @@ assert_no_connector_refresh_raw_secrets() {
     assert_success
     AGENT_ID="$output"
 
-    local initial_secret="e2e-bentoml-initial-$(_runner_uuid)"
-    local updated_secret="e2e-bentoml-updated-$(_runner_uuid)"
-    local initial_endpoint="https://bentoml.com"
-    local updated_endpoint="https://cloud.bentoml.com"
+    local initial_secret="e2e-reap-initial-$(_runner_uuid)"
+    local updated_secret="e2e-reap-updated-$(_runner_uuid)"
+    local initial_endpoint="https://sandbox.api.reap.global/v1"
+    local updated_endpoint="https://prod.api.reap.global/v1"
     local initial_endpoint_digest updated_endpoint_digest
     initial_endpoint_digest=$(printf '%s' "$initial_endpoint" | sha256sum | cut -d' ' -f1)
     updated_endpoint_digest=$(printf '%s' "$updated_endpoint" | sha256sum | cut -d' ' -f1)
 
     local values public_surfaces=''
     values=$(jq -nc \
-        --arg apiToken "$initial_secret" \
-        --arg endpoint "$initial_endpoint" \
-        '{apiToken: $apiToken, endpoint: $endpoint}')
+        --arg apiKey "$initial_secret" \
+        --arg apiBaseUrl "$initial_endpoint" \
+        '{apiKey: $apiKey, apiBaseUrl: $apiBaseUrl}')
     run runner_e2e_connect_manual_connector \
-        bentoml \
+        reap \
         api-token \
         "$values"
     echo "$output"
@@ -61,16 +61,16 @@ assert_no_connector_refresh_raw_secrets() {
     local probe_template
     probe_template=$(cat <<'EOF'
 set -euo pipefail
-printf 'BENTOML_API_KEY=%s\n' "$BENTO_CLOUD_API_KEY"
-printf 'BENTOML_ENDPOINT_SHA256='
-printf '%s' "$BENTO_CLOUD_API_ENDPOINT" | sha256sum | cut -d' ' -f1
+printf 'REAP_API_KEY=%s\n' "$REAP_API_KEY"
+printf 'REAP_ENDPOINT_SHA256='
+printf '%s' "$REAP_API_BASE_URL" | sha256sum | cut -d' ' -f1
 # Raw DNS has dedicated runner coverage. Keep this connector-refresh probe on
 # IPv4 so an unavailable AAAA response cannot block an otherwise valid request.
 # Leave room for connection setup around the proxy's 10-second auth deadline.
 if curl --ipv4 --silent --show-error --max-time 15 \
     --write-out '__OUTPUT_PREFIX__CURL http_code=%{http_code} namelookup=%{time_namelookup} connect=%{time_connect} appconnect=%{time_appconnect} starttransfer=%{time_starttransfer} total=%{time_total}\n' \
     --output /dev/null \
-    "${BENTO_CLOUD_API_ENDPOINT}/"; then
+    "${REAP_API_BASE_URL}/users?limit=1"; then
     printf '__OUTPUT_PREFIX__SENT\n'
 else
     curl_status=$?
@@ -80,7 +80,7 @@ fi
 EOF
 )
 
-    local first_output_prefix="BENTOML_INITIAL_REQUEST_${TEST_ID}_"
+    local first_output_prefix="REAP_INITIAL_REQUEST_${TEST_ID}_"
     local first_prompt="${probe_template//__OUTPUT_PREFIX__/$first_output_prefix}"
     run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" "$first_prompt"
     echo "$output"
@@ -122,9 +122,9 @@ EOF
         public_surfaces+="$first_context_diagnostics"$'\n'
         run runner_e2e_wait_for_firewall_log \
             "$first_run_id" \
-            bentoml \
-            bentoml.com \
-            '["BENTO_CLOUD_API_KEY"]'
+            reap \
+            sandbox.api.reap.global \
+            '["REAP_API_KEY"]'
         local first_network_diagnostics="$output"
         public_surfaces+="$first_network_diagnostics"$'\n'
         assert_no_connector_refresh_raw_secrets \
@@ -137,22 +137,22 @@ EOF
     fi
     assert_output --partial "${first_output_prefix}SENT"
     assert_output --partial \
-        "BENTOML_API_KEY=cur7hCoffeeSafeLocalCoffeeSafeLocalCoffeeSafe"
-    assert_output --partial "BENTOML_ENDPOINT_SHA256=${initial_endpoint_digest}"
-    refute_output --partial "BENTOML_ENDPOINT_SHA256=${updated_endpoint_digest}"
+        "REAP_API_KEY=CoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocal"
+    assert_output --partial "REAP_ENDPOINT_SHA256=${initial_endpoint_digest}"
+    refute_output --partial "REAP_ENDPOINT_SHA256=${updated_endpoint_digest}"
 
     run runner_e2e_wait_for_firewall_log \
         "$first_run_id" \
-        bentoml \
-        bentoml.com \
-        '["BENTO_CLOUD_API_KEY"]'
+        reap \
+        sandbox.api.reap.global \
+        '["REAP_API_KEY"]'
     echo "$output"
     assert_success
     local first_network_logs="$output"
     public_surfaces+="$first_network_logs"$'\n'
-    run jq -e --arg unexpectedHost cloud.bentoml.com '
+    run jq -e --arg unexpectedHost prod.api.reap.global '
         all(.[];
-            .firewall_name != "bentoml" or
+            .firewall_name != "reap" or
             .host != $unexpectedHost
         )
     ' <<<"$first_network_logs"
@@ -160,11 +160,11 @@ EOF
     assert_success
 
     values=$(jq -nc \
-        --arg apiToken "$updated_secret" \
-        --arg endpoint "$updated_endpoint" \
-        '{apiToken: $apiToken, endpoint: $endpoint}')
+        --arg apiKey "$updated_secret" \
+        --arg apiBaseUrl "$updated_endpoint" \
+        '{apiKey: $apiKey, apiBaseUrl: $apiBaseUrl}')
     run runner_e2e_connect_manual_connector \
-        bentoml \
+        reap \
         api-token \
         "$values" \
         "$CONNECTOR_ACCOUNT_ID"
@@ -172,7 +172,7 @@ EOF
     assert_success
     public_surfaces+="$output"$'\n'
 
-    local updated_output_prefix="BENTOML_UPDATED_REQUEST_${TEST_ID}_"
+    local updated_output_prefix="REAP_UPDATED_REQUEST_${TEST_ID}_"
     local updated_prompt="${probe_template//__OUTPUT_PREFIX__/$updated_output_prefix}"
     run runner_e2e_continue_chat_run \
         "$AGENT_ID" \
@@ -218,9 +218,9 @@ EOF
         public_surfaces+="$updated_context_diagnostics"$'\n'
         run runner_e2e_wait_for_firewall_log \
             "$RUN_ID" \
-            bentoml \
-            cloud.bentoml.com \
-            '["BENTO_CLOUD_API_KEY"]'
+            reap \
+            prod.api.reap.global \
+            '["REAP_API_KEY"]'
         local updated_network_diagnostics="$output"
         public_surfaces+="$updated_network_diagnostics"$'\n'
         assert_no_connector_refresh_raw_secrets \
@@ -233,22 +233,22 @@ EOF
     fi
     assert_output --partial "${updated_output_prefix}SENT"
     assert_output --partial \
-        "BENTOML_API_KEY=cur7hCoffeeSafeLocalCoffeeSafeLocalCoffeeSafe"
-    assert_output --partial "BENTOML_ENDPOINT_SHA256=${updated_endpoint_digest}"
-    refute_output --partial "BENTOML_ENDPOINT_SHA256=${initial_endpoint_digest}"
+        "REAP_API_KEY=CoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocal"
+    assert_output --partial "REAP_ENDPOINT_SHA256=${updated_endpoint_digest}"
+    refute_output --partial "REAP_ENDPOINT_SHA256=${initial_endpoint_digest}"
 
     run runner_e2e_wait_for_firewall_log \
         "$RUN_ID" \
-        bentoml \
-        cloud.bentoml.com \
-        '["BENTO_CLOUD_API_KEY"]'
+        reap \
+        prod.api.reap.global \
+        '["REAP_API_KEY"]'
     echo "$output"
     assert_success
     local updated_network_logs="$output"
     public_surfaces+="$updated_network_logs"$'\n'
-    run jq -e --arg unexpectedHost bentoml.com '
+    run jq -e --arg unexpectedHost sandbox.api.reap.global '
         all(.[];
-            .firewall_name != "bentoml" or
+            .firewall_name != "reap" or
             .host != $unexpectedHost
         )
     ' <<<"$updated_network_logs"
