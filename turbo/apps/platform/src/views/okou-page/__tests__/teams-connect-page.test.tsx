@@ -1,7 +1,12 @@
+import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import { expect, test } from "vitest";
-import { screen } from "@testing-library/react";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { screen, waitFor } from "@testing-library/react";
+import {
+  testContext,
+  createTestRuntime,
+} from "../../../signals/__tests__/test-helpers.ts";
+import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import {
   findAction,
   mockTeams,
@@ -87,4 +92,150 @@ test("teams-connect-page-009 a visibility return reconciles the pending installa
   visibility.changeTo("visible");
   await screen.findByText("Connected to Microsoft Teams");
   expect(location.pathname).toBe(settings);
+});
+
+test("teams-connect-page-010 installation during subscription attachment reaches the Teams launch page", async () => {
+  const subscription = context.mocks.ably.deferSubscribeOnChannel(
+    "user:test-user-123",
+    "teams:changed",
+  );
+  mockTeams(context, { pendingInstallation: true });
+  await startPage({
+    context,
+    path: settings,
+    sharedWorkerTestTransport: "message-port",
+  });
+  await subscription.started;
+  await screen.findByText("Install in Teams to finish");
+  mockTeams(context, {
+    isInstalled: true,
+    isConnected: true,
+    linkedAccounts: [account],
+  });
+  subscription.attach();
+  await screen.findByText("Connected to Microsoft Teams");
+  const launch = await findAction("link", "Open Teams");
+  expect(launch).toHaveAttribute("href", "https://teams.microsoft.com/");
+  expect(launch).toHaveAttribute("target", "_blank");
+});
+
+test("teams-connect-page-011 a scoped reinstall and the Teams home link retain their different destinations", async () => {
+  const installation = "https://teams.microsoft.com/l/app/contract-upgrade";
+  mockTeams(context, {
+    isInstalled: true,
+    isConnected: true,
+    linkedAccounts: [account],
+    permissionMismatch: true,
+    reinstallUrl: installation,
+  });
+  const params = new URLSearchParams({
+    tenantId: account.tenantId,
+    teamsUserId: account.teamsUserId,
+    serviceUrl: "https://elsewhere.example.test/bot",
+  });
+  await setupPage({ context, path: settings + "?" + params.toString() });
+  await screen.findByText("Connected to Microsoft Teams");
+  await expect(
+    findAction("link", "Reinstall in Teams"),
+  ).resolves.toHaveAttribute("href", installation);
+  await expect(findAction("link", "Open Teams")).resolves.toHaveAttribute(
+    "href",
+    "https://teams.microsoft.com/",
+  );
+});
+
+test("teams-connect-page-012 returning to Works during refresh discards the late Teams status", async () => {
+  mockTeams(context);
+  const visibility = context.mocks.browser.visibilityState("visible");
+  await setupPage({ context, path: settings });
+  const back = await findAction("link", "Back to settings");
+  const pending = createDeferredPromise<AbortSignal>(context.signal);
+  const release = createDeferredPromise<void>(context.signal);
+  const replied = createDeferredPromise<void>(context.signal);
+  context.mocks.api(
+    teamsConnectContract.getStatus,
+    async ({ request, respond }) => {
+      if (!pending.settled()) {
+        pending.resolve(request.signal);
+        await release.promise;
+        replied.resolve();
+      }
+      return respond(200, {
+        isInstalled: true,
+        pendingInstallation: false,
+        isConnected: true,
+        isAdmin: true,
+        linkedAccounts: [account],
+      });
+    },
+  );
+  visibility.changeTo("hidden");
+  visibility.changeTo("visible");
+  const signal = await pending.promise;
+  click(back);
+  await screen.findByText("Discord");
+  expect(window.location.pathname).toBe("/works");
+  release.resolve();
+  await replied.promise;
+  expect(signal.aborted).toBeTruthy();
+  expect(screen.getByText("Discord")).toBeInTheDocument();
+  expect(screen.queryByText("Connected to Microsoft Teams")).toBeNull();
+});
+
+test("teams-connect-page-013 signing in preserves the full incoming Teams conversation", async () => {
+  const fields = new URLSearchParams({
+    orgId: "org_guest",
+    tenantId: "west",
+    teamsUserId: "kelly",
+    teamsAadObjectId: "aad-kelly",
+    teamId: "support",
+    conversationId: "case/44",
+    activityId: "reply 6",
+    channelId: "escalations",
+    threadId: "thread:alpha",
+    serviceUrl: "https://gateway.example.test/conversation",
+    error: "account missing",
+  });
+  const path = settings + "?" + fields.toString();
+  const incoming = createTestRuntime(context);
+  await startPage({ context: incoming, path, auth: null });
+  await waitFor(() => {
+    return expect(window.location.pathname).toBe("/sign-in");
+  });
+  const destination = new URL(window.location.href);
+  const returnTo = new URL(destination.searchParams.get("redirect_url") ?? "");
+  expect(returnTo.pathname + returnTo.search).toBe(path);
+  await startPage({
+    context,
+    host: destination.host,
+    path: destination.pathname + destination.search,
+    auth: null,
+  });
+  const form = await screen.findByTestId("clerk-sign-in");
+  const target = new URL(
+    form.dataset.clerkForceRedirectUrl ?? "",
+    window.location.origin,
+  );
+  expect(target.pathname).toBe(settings);
+  expect(target.origin + target.pathname + target.search).toBe(returnTo.href);
+});
+
+test("teams-connect-page-017 a linked member can open Teams without a bot installation in the named workspace", async () => {
+  mockTeams(context, {
+    isConnected: true,
+    isInstalled: false,
+    teamId: null,
+    linkedAccounts: [account],
+  });
+  await setupPage({
+    context,
+    path:
+      settings +
+      "?orgId=org_external&tenantId=" +
+      account.tenantId +
+      "&teamsUserId=" +
+      account.teamsUserId,
+  });
+  await screen.findByText("Your Teams account is connected.");
+  expect(screen.getByText("Connected to Microsoft Teams")).toBeInTheDocument();
 });
