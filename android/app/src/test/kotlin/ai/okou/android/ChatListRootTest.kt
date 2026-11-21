@@ -116,7 +116,7 @@ class ChatListRootTest {
         val entries =
             listOf("Workflows", "Connectors", "Artifacts").map {
                 compose
-                    .onNodeWithText(it)
+                    .onNodeWithContentDescription(it)
                     .assertIsDisplayed()
                     .assertIsNotEnabled()
                     .assertHasNoClickAction()

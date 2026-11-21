@@ -214,7 +214,9 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithText(CACHED_CHAT).assertDoesNotExist()
         compose.onNodeWithContentDescription("Search workspace").assertDoesNotExist()
         val toolEntries =
-            listOf("Workflows", "Connectors", "Artifacts").map { compose.onNodeWithText(it) }
+            listOf("Workflows", "Connectors", "Artifacts").map {
+                compose.onNodeWithContentDescription(it)
+            }
         toolEntries.forEach { it.assertDoesNotExist() }
         val searchEntry = compose.onNodeWithTag("workspace_search_entry")
         val startupBounds = searchEntry.getUnclippedBoundsInRoot()
