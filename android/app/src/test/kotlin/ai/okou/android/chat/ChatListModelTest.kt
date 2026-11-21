@@ -2169,6 +2169,7 @@ class ChatListModelTest {
                     seqId = 1,
                     projectId = CHAT_PROJECT,
                     kind = ProjectEventsEventsItemKind.DELETED,
+                    name = null,
                     createdAt = CHAT_DATE,
                 )
             model.refreshMetadata()
