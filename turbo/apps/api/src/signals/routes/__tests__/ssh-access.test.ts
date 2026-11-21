@@ -501,9 +501,11 @@ describe("live chat SSH Run inventory", () => {
       inventory().list({ headers: user.token() }),
       [200],
     );
-    expect(ownedHosts.body.hosts.map((item) => item.id)).toStrictEqual([
-      host.body.id,
-    ]);
+    expect(
+      ownedHosts.body.hosts.map((item) => {
+        return item.id;
+      }),
+    ).toStrictEqual([host.body.id]);
     expect((await accept(runner.resolve(request), [200])).body.outcome).toBe(
       "resolved",
     );

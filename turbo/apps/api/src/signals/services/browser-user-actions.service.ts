@@ -1142,6 +1142,9 @@ function browserUserActionRequestProjection(
     userId: sql`${sql.param(args.userId, t.userId)}`
       .mapWith(t.userId)
       .as("user_id"),
+    agentId: sql`NULL::uuid`
+      .mapWith(nullableDriverValueDecoder(t.agentId))
+      .as("agent_id"),
     chatThreadId: sql`${sql.param(prepared.chatThreadId, t.chatThreadId)}::uuid`
       .mapWith(t.chatThreadId)
       .as("chat_thread_id"),

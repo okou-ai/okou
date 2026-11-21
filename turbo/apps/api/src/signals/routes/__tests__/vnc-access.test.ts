@@ -762,9 +762,11 @@ describe("live chat VNC Run inventory", () => {
       inventory().list({ headers: executionApi.agentHeaders(runtime) }),
       [200],
     );
-    expect(ownedHosts.body.hosts.map((item) => item.id)).toStrictEqual([
-      host.body.id,
-    ]);
+    expect(
+      ownedHosts.body.hosts.map((item) => {
+        return item.id;
+      }),
+    ).toStrictEqual([host.body.id]);
   });
 
   it("does not accept another organization or Run owner from a valid token", async () => {

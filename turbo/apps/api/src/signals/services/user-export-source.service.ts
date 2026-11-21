@@ -278,7 +278,7 @@ const collectThread$ = command(
         userId: chatThreads.userId,
         title: chatThreads.title,
         agentId: chatThreads.agentId,
-        orgId: agents.orgId,
+        orgId: chatThreads.orgId,
         sourceScheduleRunId: chatThreads.sourceScheduleRunId,
         createdAt: chatThreads.createdAt,
         updatedAt: chatThreads.updatedAt,
@@ -293,7 +293,6 @@ const collectThread$ = command(
         codexServiceTier: chatThreads.codexServiceTier,
       })
       .from(chatThreads)
-      .leftJoin(agents, eq(agents.id, chatThreads.agentId))
       .where(
         and(
           eq(chatThreads.userId, args.userId),

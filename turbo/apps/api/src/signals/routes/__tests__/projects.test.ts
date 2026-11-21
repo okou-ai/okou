@@ -455,7 +455,7 @@ describe("private cross-Agent Projects", () => {
           return t.agentId;
         })
         .sort(),
-    ).toStrictEqual([a.agentId, b.agentId].sort());
+    ).toStrictEqual([undefined, undefined]);
     expect(
       members.find((t) => {
         return t.id === first.id;

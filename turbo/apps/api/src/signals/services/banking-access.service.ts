@@ -216,7 +216,9 @@ export const authorizeBankingAccess$ = command(
       });
     }
 
-    const scoped = grants.filter((row) => row.operationScopes.includes(action));
+    const scoped = grants.filter((row) => {
+      return row.operationScopes.includes(action);
+    });
     if (scoped.length === 0) {
       return await set(denyBankingAccess$, auth, action, providerAccountId, {
         connectionId: connection.connectionId,
@@ -226,7 +228,9 @@ export const authorizeBankingAccess$ = command(
     }
 
     const eligible = isUnattendedTriggerSource(run.triggerSource)
-      ? scoped.filter((row) => row.allowAutomationRuns)
+      ? scoped.filter((row) => {
+          return row.allowAutomationRuns;
+        })
       : scoped;
     if (eligible.length === 0) {
       // Historical audit rows persist the former "SCHEDULE_NOT_ALLOWED" code;
@@ -243,7 +247,11 @@ export const authorizeBankingAccess$ = command(
     const grant = {
       ...connection,
       accountProviderIds: [
-        ...new Set(eligible.flatMap((row) => row.accountProviderIds)),
+        ...new Set(
+          eligible.flatMap((row) => {
+            return row.accountProviderIds;
+          }),
+        ),
       ],
     };
     if (

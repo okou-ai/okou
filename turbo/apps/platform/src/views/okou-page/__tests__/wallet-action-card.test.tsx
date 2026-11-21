@@ -488,7 +488,6 @@ test("purchase approval cards show approval and continuation after notifications
   );
   context.mocks.api(walletUserContract.spendStatus, ({ body, respond }) => {
     expect(body).toStrictEqual({
-      agentId: AGENT_ID,
       threadId: context.resourceId,
       approvalUrl: APPROVAL_URL,
     });

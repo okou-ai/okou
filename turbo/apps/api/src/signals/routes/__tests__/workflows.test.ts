@@ -1564,10 +1564,12 @@ describe("workflows", () => {
       visibility: "public",
       instruction,
     });
-    const sources = [0, 1].map(() => ({
-      workflowId: source.body.id,
-      instruction,
-    }));
+    const sources = [0, 1].map(() => {
+      return {
+        workflowId: source.body.id,
+        instruction,
+      };
+    });
     const copies = await Promise.all(
       sources.map(async (source) => {
         const response = await accept(
@@ -1608,9 +1610,9 @@ describe("workflows", () => {
       }),
       [200],
     );
-    const privateCopies = targetWorkflows.body.filter(
-      (item) => item.visibility === "private",
-    );
+    const privateCopies = targetWorkflows.body.filter((item) => {
+      return item.visibility === "private";
+    });
     expect(privateCopies).toHaveLength(1);
     expect(privateCopies[0]).toMatchObject({
       id: winner.response.body.id,

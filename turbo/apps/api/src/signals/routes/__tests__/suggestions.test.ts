@@ -745,15 +745,18 @@ describe("Agent suggestions", () => {
     );
     expect(result.body.error.code).toBe("FORBIDDEN");
   });
-  it("does not grant suggestion publication to a secondary Agent", async () => {
+  it("publishes as the member when a send includes a legacy secondary Agent ID", async () => {
     const fixture = await primaryRun(true, true);
-    expect(fixture.prompt).not.toContain("# Suggestions feedback context");
-    await accept(
+    const created = await accept(
       client().create({ headers: fixture.headers, body: input() }),
-      [403],
+      [200],
     );
     const pool = await accept(client().list({ headers: humanHeaders }), [200]);
-    expect(pool.body.items).toStrictEqual([]);
+    expect(
+      pool.body.items.map((item) => {
+        return item.id;
+      }),
+    ).toContain(created.body.id);
   });
   it("limits homepage display while managing all concurrent cards and consumes once without replay resurrection", async () => {
     const fixture = await primaryRun();

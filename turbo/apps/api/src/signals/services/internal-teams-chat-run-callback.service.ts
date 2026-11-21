@@ -582,8 +582,8 @@ const resolveTeamsAdmissionFailurePresentation$ = command(
           eq(teamsChatThreadRoutes.threadId, threadId),
         ),
       );
-    const mentionerCount = row?.count ?? 0;
     signal.throwIfAborted();
+    const mentionerCount = row?.count ?? 0;
 
     const footerParts: string[] = [];
 

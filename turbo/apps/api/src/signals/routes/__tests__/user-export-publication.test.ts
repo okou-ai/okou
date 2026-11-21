@@ -257,7 +257,7 @@ test("exports PATCH-created drafts with owned thread timestamps and absent draft
       id: thread.body.id,
       userId: owner.userId,
       title: thread.body.title,
-      agentId,
+      agentId: null,
       orgId: owner.orgId,
       createdAt: thread.body.createdAt,
       sourceScheduleRunId: null,

@@ -500,7 +500,9 @@ final class ComposerWorkflowResourceTests: XCTestCase {
 @MainActor
 extension XCTestCase {
 
-  fileprivate func workflowFixture(failSend: Bool = false, memberScope: Bool = false) -> AttachmentFlowFixture {
+  fileprivate func workflowFixture(failSend: Bool = false, memberScope: Bool = false)
+    -> AttachmentFlowFixture
+  {
     AttachmentFlowFixture(
       failSend: failSend,
       workflows: { request in

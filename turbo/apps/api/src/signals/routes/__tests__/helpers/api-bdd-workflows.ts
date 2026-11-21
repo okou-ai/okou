@@ -200,7 +200,7 @@ export function createWorkflowsBddApi(context: TestContext) {
     async createWorkflow(
       actor: ApiTestUser,
       options: {
-        readonly agentId: string;
+        readonly agentId?: string;
         readonly name: string;
         readonly displayName?: string;
         readonly chatThreadId?: string;
@@ -210,8 +210,12 @@ export function createWorkflowsBddApi(context: TestContext) {
       },
     ): Promise<string> {
       const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+      const agentId = options.agentId ?? defaultAgentId;
+      if (!agentId) {
+        throw new Error("Expected a member workflow namespace");
+      }
       const headers =
-        options.agentId === defaultAgentId
+        agentId === defaultAgentId
           ? authenticate(actor)
           : await retainedHeaders(actor);
       const client = setupApp({ context, routes: workflowsRoutes })(
@@ -221,7 +225,7 @@ export function createWorkflowsBddApi(context: TestContext) {
         client.create({
           headers,
           body: {
-            agentId: options.agentId,
+            agentId,
             name: options.name,
             ...(options.displayName === undefined
               ? {}

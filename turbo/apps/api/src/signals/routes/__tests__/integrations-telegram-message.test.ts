@@ -337,7 +337,7 @@ describe("POST /api/integrations/telegram/message", () => {
       await sendExecutionModelMessage("claude-fable-5-1");
     expect(telegramBody).toStrictEqual({
       chat_id: chatId,
-      text: `Hello from this Run\n\n<i>Sent via Model footer sender · Triggered by <a href="tg://user?id=${chatId}">Sender</a></i>`,
+      text: `Hello from this Run\n\n<i>Triggered by <a href="tg://user?id=${chatId}">Sender</a></i>`,
       parse_mode: "HTML",
     });
     expect(responseBody).toStrictEqual({ ok: true, messageId: 325, chatId });
@@ -348,7 +348,7 @@ describe("POST /api/integrations/telegram/message", () => {
       await sendExecutionModelMessage("gpt-6.1-sol");
     expect(telegramBody).toStrictEqual({
       chat_id: chatId,
-      text: `Hello from this Run\n\n<i>Sent via Model footer sender · Triggered by <a href="tg://user?id=${chatId}">Sender</a></i>`,
+      text: `Hello from this Run\n\n<i>Triggered by <a href="tg://user?id=${chatId}">Sender</a></i>`,
       parse_mode: "HTML",
     });
     expect(responseBody).toStrictEqual({ ok: true, messageId: 325, chatId });

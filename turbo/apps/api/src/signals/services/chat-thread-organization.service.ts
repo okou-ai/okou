@@ -12,7 +12,7 @@ export function chatThreadOrganizationPredicate(orgId: string): SQL {
 
 /** Read-only presentation field for clients released before member-owned threads. */
 export function legacyThreadAgentId(stored: SQLWrapper, orgId: Column) {
-  return sql<
-    string | null
-  >`coalesce(${stored}, (select ${orgMetadata.defaultAgentId} from ${orgMetadata} where ${orgMetadata.orgId} = ${orgId.table}.${sql.identifier(orgId.name)}))`;
+  return sql`coalesce(${stored}, (select ${orgMetadata.defaultAgentId} from ${orgMetadata} where ${orgMetadata.orgId} = ${orgId.table}.${sql.identifier(orgId.name)}))`.mapWith(
+    orgMetadata.defaultAgentId,
+  );
 }
