@@ -17,7 +17,7 @@ output=$(realpath -m "$2")
   exit 1
 }
 : "${ANDROID_HOME:?Android SDK is required}"
-tools="$ANDROID_HOME/build-tools/35.0.0"
+tools="$ANDROID_HOME/build-tools/37.0.0"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 cd "$root/android"
@@ -28,6 +28,10 @@ test -s "$mapping"
 badging=$("$tools/aapt" dump badging "$unsigned")
 if [[ "$badging" != "package: name='ai.okou.android' versionCode='$version_code' versionName='$version' "* ]]; then
   echo 'Built APK package/version does not match the Android release' >&2
+  exit 1
+fi
+if grep -qx 'application-debuggable' <<< "$badging"; then
+  echo 'Publishing requires a non-debuggable APK' >&2
   exit 1
 fi
 # The intermediate APK name is the same with and without a signing config.

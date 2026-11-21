@@ -1,11 +1,11 @@
-"""Exercise native diagnostics and ABI tooling. Requires the README's JDK/SDK setup."""
+"""Exercise Android test diagnostics and release payload verification."""
 
 import gzip
 import json
 import os
 from pathlib import Path
+import runpy
 import signal
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -17,50 +17,55 @@ SCRIPTS = Path(__file__).resolve().parent
 
 
 class ReleaseDiagnosticsTest(unittest.TestCase):
-    def test_tracing_preserves_shared_calls_and_rejects_missing_target_methods(self):
-        android = SCRIPTS.parent
-        r8 = subprocess.check_output(
-            [str(android / "gradlew"), "--quiet", ":app:printRetraceClasspath", "--no-daemon"],
-            cwd=android, text=True, timeout=120,
-        ).strip()
+    def test_release_smoke_requires_app_owned_auth_surface(self):
+        surface = runpy.run_path(str(SCRIPTS / "release-smoke.py"))["has_public_auth_surface"]
+        self.assertTrue(surface('<hierarchy><node package="ai.okou.android" text="Welcome to Okou"/></hierarchy>'))
+        self.assertTrue(surface('<hierarchy><node package="ai.okou.android" text="Continue to Okou"/></hierarchy>'))
+        self.assertFalse(surface('<hierarchy><node package="ai.okou.android" text="Okou"/></hierarchy>'))
+        self.assertFalse(surface('<hierarchy><node package="com.android.launcher3" text="Welcome to Okou"/></hierarchy>'))
+        self.assertFalse(surface('<hierarchy><node package="ai.okou.android" text=""/></hierarchy>'))
+        self.assertFalse(surface('<hierarchy>'))
+
+    def test_release_smoke_leaves_a_competing_emulator_untouched(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            library, caller = root / "Library.java", root / "Caller.java"
-            library.write_text('package fixture; public class Library { public static void touch() {} }')
-            caller.write_text('package fixture; public class Caller { public static void run() { Library.touch(); } }')
-            provider = root / "Provider.java"
-            provider.write_text('package fixture; public interface Provider { Object token(Object continuation); }')
-            callback = root / "Callback.java"
-            callback.write_text('package fixture; public class Callback implements Provider { public Object token(Object continuation) { return continuation; } }')
-            sam = root / "Sam.java"
-            sam.write_text('package fixture; public interface Sam { String value(String input); }')
-            factory = root / "Factory.java"
-            factory.write_text('package fixture; public class Factory { public static Sam create() { return value -> value; } }')
-            subprocess.run(["javac", "-d", str(root / "classes"),
-                            *map(str, (library, caller, provider, callback, sam, factory))], check=True)
+            scripts = {
+                "cmdline-tools/13114758/bin/avdmanager": "#!/bin/sh\nexit 0\n",
+                "emulator/emulator": "#!/bin/sh\nexec sleep 60\n",
+                "platform-tools/adb": '''#!/usr/bin/env python3
+import os
+from pathlib import Path
+import sys
 
-            def jar(name, *classes):
-                path = root / name
-                with zipfile.ZipFile(path, "w") as output:
-                    for klass in classes:
-                        output.write(root / "classes/fixture" / klass, "fixture/" + klass)
-                return str(path)
+args = sys.argv[1:]
+if args == ['devices']:
+    print('List of devices attached')
+elif args == ['devices', '-l']:
+    print('List of devices attached\\nemulator-5580\\tdevice transport_id:41')
+elif args == ['-t', '41', 'shell', 'getprop ro.boot.qemu.avd_name && getprop sys.boot_completed']:
+    print('other-avd\\n1')
+elif args == ['-s', 'emulator-5580', 'shell', 'getprop', 'sys.boot_completed']:
+    print('1')
+else:
+    with (Path(os.environ['ANDROID_HOME']) / 'unexpected-adb').open('a') as log:
+        print(' '.join(args), file=log)
+    sys.exit(2)
+''',
+            }
+            for filename, script in scripts.items():
+                path = root / filename
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(script)
+                path.chmod(0o755)
 
-            source = jar("source.jar", "Caller.class", "Callback.class", "Factory.class")
-            target = jar("target.jar", "Library.class", "Provider.class", "Sam.class")
-            jdk = Path(os.environ.get("JAVA_HOME") or Path(shutil.which("javac")).resolve().parents[1])
-            command = ["java", "-cp", r8, str(SCRIPTS / "TraceNativeTestReferences.java"),
-                       "--keep-rules", "--allowobfuscation", "--source", source, "--target", target,
-                       "--lib", str(jdk), "--output", str(root / "rules")]
-            result = subprocess.run(command, capture_output=True)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("touch()", (root / "rules").read_text())
-            self.assertIn("java.lang.Object token(java.lang.Object);", (root / "rules").read_text())
-            self.assertIn("java.lang.String value(java.lang.String);", (root / "rules").read_text())
-            library.write_text('package fixture; public class Library {}')
-            subprocess.run(["javac", "-d", str(root / "classes"), str(library)], check=True)
-            jar("target.jar", "Library.class", "Provider.class", "Sam.class")
-            self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
+            result = subprocess.run(
+                [sys.executable, str(SCRIPTS / "release-smoke.py"), str(root / "test.apk"), str(root)],
+                env=dict(os.environ, ANDROID_HOME=str(root)), capture_output=True, text=True, timeout=15,
+            )
+            unexpected = root / "unexpected-adb"
+            self.assertFalse(unexpected.exists(), unexpected.read_text() if unexpected.exists() else "")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("belongs to a different AVD", result.stderr)
 
     def test_native_gate_rejects_incomplete_failed_and_skipped_results(self):
         with tempfile.TemporaryDirectory() as temporary:

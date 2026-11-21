@@ -1,68 +1,32 @@
 #!/usr/bin/env bash
-# Run the existing native suite against Release with a disposable signing key.
-# Requires the README's JDK/SDK setup and KVM on Linux. Extra arguments go to Gradle.
+# Sign the exact publishing payload before exercising it on an isolated emulator.
 set -euo pipefail
 umask 077
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+export ANDROID_HOME=${ANDROID_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/android-sdk}
+cd "$root"
 work=$(mktemp -d)
-native_status=0
-exit_status=0
-trap '
-  exit_status=$?
-  rm -rf "$work"
-  if (( native_status != 0 )); then
-    exit "$native_status"
-  fi
-  exit "$exit_status"
-' EXIT
+trap 'rm -rf "$work"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
 keytool -genkeypair -keystore "$work/test.p12" -storetype PKCS12 \
   -storepass android -keypass android -alias release-test \
-  -keyalg RSA -keysize 2048 -validity 1 \
-  -dname 'CN=Okou Android Release Test' -noprompt
+  -keyalg RSA -keysize 2048 -validity 1 -dname 'CN=Okou Android Release Smoke' -noprompt
 
-cd "$root"
-export ANDROID_HOME=${ANDROID_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/android-sdk}
-mkdir -p "$root/build/reports/release"
+version=$(cat version.txt)
+mkdir -p build/reports/release
 artifacts=$(mktemp -d "$root/build/reports/release/run.XXXXXX")
-echo "Release test artifacts: $artifacts"
-./gradlew :app:generateNativeTestKeepRules --no-daemon "$@"
-if ! cmp app/build/generated/native-test.keep app/src/main/keepRules/native-instrumentation.keep; then
-  echo 'Native ABI changed. Review and copy app/build/generated/native-test.keep to app/src/main/keepRules/native-instrumentation.keep.' >&2
-  exit 1
-fi
-bash ../.github/scripts/artifacts/build-okou-android-apk.sh \
-  "$(cat version.txt)" "$artifacts"
+bash ../.github/scripts/artifacts/build-okou-android-apk.sh "$version" "$artifacts"
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
   printf 'release-directory=%s\n' "$artifacts" >> "$GITHUB_OUTPUT"
 fi
-signing=(
-  -Pandroid.injected.signing.store.file="$work/test.p12"
-  -Pandroid.injected.signing.store.type=PKCS12
-  -Pandroid.injected.signing.store.password=android
-  -Pandroid.injected.signing.key.alias=release-test
-  -Pandroid.injected.signing.key.password=android
-)
-./gradlew :app:assembleRelease :app:assembleReleaseAndroidTest \
-  "${signing[@]}" --no-daemon "$@"
-retain_pair() {
-  local version
-  version=$(cat version.txt)
-  cp app/build/outputs/apk/release/app-release.apk "$artifacts/tested-app.apk"
-  cp app/build/outputs/apk/androidTest/release/app-release-androidTest.apk "$artifacts/native-test.apk"
-  gzip -n -c app/build/outputs/mapping/release/mapping.txt > "$artifacts/tested-app-mapping.txt.gz"
-  gzip -n -c app/build/outputs/mapping/releaseAndroidTest/mapping.txt > "$artifacts/native-test-mapping.txt.gz"
-  python3 scripts/verify-release-pair.py \
-    "$artifacts/okou-android-$version-unsigned.apk" \
-    "$artifacts/okou-android-$version-mapping.txt.gz" \
-    "$artifacts/tested-app.apk" app/build/outputs/mapping/release/mapping.txt \
-    "$artifacts/pair-identity.json"
-}
-retain_pair
-python3 scripts/run-native-tests.py build/reports/instrumentation/logcat -- \
-  ./gradlew :app:pixel2Api35ReleaseAndroidTest "${signing[@]}" --no-daemon "$@" || native_status=$?
-# Recheck and retain the actual post-execution files, including on test timeout.
-retain_pair
-exit "$native_status"
+unsigned="$artifacts/okou-android-$version-unsigned.apk"
+mapping="$artifacts/okou-android-$version-mapping.txt.gz"
+signed="$artifacts/tested-app.apk"
+ANDROID_RELEASE_KEYSTORE_BASE64=$(base64 < "$work/test.p12") \
+  ANDROID_RELEASE_KEYSTORE_PASSWORD=android ANDROID_RELEASE_KEY_ALIAS=release-test \
+  bash ../.github/scripts/artifacts/sign-okou-android-apk.sh "$version" "$unsigned" "$signed"
+python3 scripts/verify-release-pair.py "$unsigned" "$mapping" "$signed" \
+  app/build/outputs/mapping/release/mapping.txt "$artifacts/pair-identity.json"
+python3 scripts/release-smoke.py "$signed" "$artifacts"

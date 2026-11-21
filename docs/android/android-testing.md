@@ -120,7 +120,11 @@ teardown cannot recover them. Retain native reports/logcat and useful revision,
 device/API and failure-image context without turning diagnostics into golden
 tests. Selected device-test failures, cancellations and unexpected skips must
 reach the existing CI gate. Setup, commands and output paths live in the
-[Android README](../../android/README.md#instrumented-android-tests).
+[Android README](../../android/README.md#debug-device-integration-tests).
+
+Release smoke tests install the verified publishing payload and drive its public
+launcher and UI from outside the app process. Keep in-process fixtures and
+app-owned state assertions in Debug device tests or the JVM layer.
 
 For appearance or OS interaction, record source revision, device/emulator,
 Android version/API, density/font scale, theme, locale and actual evidence.
