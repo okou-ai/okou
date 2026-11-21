@@ -614,6 +614,8 @@ internal fun OkouApp(
                                             returnToList()
                                     },
                                     { id, title -> chats?.renameThread(id, title) },
+                                    { id, name -> chats?.renameProject(id, name) },
+                                    { id -> chats?.retryProjectRename(id) },
                                     projectExpansion,
                                     listPositions[list.filter.ordinal],
                                     ::startNewChat,

@@ -56,4 +56,9 @@
     <string name="chat_delete_title">Delete chat?</string>
     <string name="chat_delete_description">This will permanently delete this chat. Any task currently running in this chat will be stopped immediately. Any linked automations will be paused. This action cannot be undone.</string>
     <string name="chat_delete_confirm">Delete</string>
+    <string name="chat_rename_project">Rename Project</string>
+    <string name="chat_project_name">Project name</string>
+    <string name="chat_project_rename_unconfirmed">Could not confirm the Project name.</string>
+    <string name="chat_project_rename_save">Save</string>
+    <string name="chat_project_rename_pending">Renaming Project…</string>
 </resources>

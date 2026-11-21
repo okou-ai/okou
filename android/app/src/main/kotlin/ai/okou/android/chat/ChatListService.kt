@@ -24,6 +24,8 @@ interface ChatListService : ConversationHistoryService {
 
     suspend fun deleteThread(threadId: String, eventId: String)
 
+    suspend fun renameProject(projectId: String, name: String, eventId: String)
+
     suspend fun renameThread(threadId: String, title: String, eventId: String)
 
     suspend fun setPinned(threadId: String, pinOrder: String?, eventId: String)

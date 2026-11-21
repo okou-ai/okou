@@ -19,12 +19,19 @@ function projectReferences(document: UserMessageDocument | null | undefined) {
 export function captureProjectReferences(
   auth: AuthContext,
   document: UserMessageDocument | null | undefined,
+  boundProjectId?: string,
 ) {
+  const references = projectReferences(document);
   // PostgreSQL UUID equality ignores case; normalize only the lookup keys.
   const projectIds = [
     ...new Set(
-      projectReferences(document).map((reference) => {
-        return reference.projectId.toLowerCase();
+      [
+        ...references.map((reference) => {
+          return reference.projectId;
+        }),
+        ...(boundProjectId ? [boundProjectId] : []),
+      ].map((id) => {
+        return id.toLowerCase();
       }),
     ),
   ];
@@ -35,7 +42,9 @@ export function captureProjectReferences(
       }
       if (
         !auth.orgId ||
-        (auth.tokenType === "agent" && auth.singleAgent !== true)
+        (references.length > 0 &&
+          auth.tokenType === "agent" &&
+          auth.singleAgent !== true)
       ) {
         return null;
       }

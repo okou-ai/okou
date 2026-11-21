@@ -253,6 +253,7 @@ export interface BootstrapConnectorAccount extends ConnectorSourceRow {
 interface RunContextRequestInputs {
   readonly inputId: string;
   readonly newThread: boolean;
+  readonly requireVisibleThread?: boolean;
   readonly presentationIds: readonly string[];
   readonly userTemplateIds: readonly string[];
 }
@@ -270,6 +271,7 @@ export function createAgentRunContextSignals(
     scope,
     true,
     requestInputs.newThread ? undefined : scope.chatThreadId,
+    requestInputs.requireVisibleThread,
   );
   return {
     context: createIdentityContext(

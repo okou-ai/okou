@@ -21,6 +21,7 @@ import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.ProjectEvents
 import ai.okou.android.api.generated.ProjectSnapshot
 import ai.okou.android.api.generated.RealtimeTokenRequest
+import ai.okou.android.api.generated.RenameProjectRequest
 import ai.okou.android.api.generated.RenameThreadRequest
 import ai.okou.android.api.generated.ReorderPinnedThreadRequest
 import ai.okou.android.api.generated.SaveAgentDraft
@@ -268,6 +269,12 @@ class ApiClient(
 
     suspend fun deleteThread(threadId: String, eventId: String) {
         executeResponse(204) { api.deleteThread(it, threadId, eventId) }
+    }
+
+    suspend fun renameProject(projectId: String, name: String, eventId: String) {
+        execute {
+            api.renameProject(it, projectId, RenameProjectRequest(eventId = eventId, name = name))
+        }
     }
 
     suspend fun renameThread(threadId: String, title: String, eventId: String) {

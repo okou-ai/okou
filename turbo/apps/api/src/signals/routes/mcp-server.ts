@@ -6,14 +6,8 @@ import { downloadS3Buffer } from "../external/s3";
 import { getChatThreadSnapshot } from "../services/chat-thread-event.service";
 import { isOwnedChatThreadSnapshotObjectKey } from "../services/chat-thread-snapshot-object";
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { mcpChatCommandContract } from "@okouai/api-contracts/contracts/mcp-chat-tools";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
-import { notFound } from "../../lib/error";
-import { db$ } from "../external/db";
-import { projectById } from "../services/project.service";
-import { chatThreadOrganizationPredicate } from "../services/chat-thread-organization.service";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { chatInputStatusContract } from "@okouai/api-contracts/contracts/chat-input-status";
 import {
@@ -74,35 +68,13 @@ const mcpSendChat$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  const auth = get(organizationAuthContext$);
-  const db = get(db$);
   const { threadId, projectId, prompt, model } = body.data;
-  if (projectId && !(await get(projectById(auth, projectId)))) {
-    return notFound("Project not found");
-  }
-  signal.throwIfAborted();
-  if (threadId) {
-    const [thread] = await db
-      .select({ id: chatThreads.id })
-      .from(chatThreads)
-      .where(
-        and(
-          eq(chatThreads.id, threadId),
-          eq(chatThreads.userId, auth.userId),
-          eq(chatThreads.hidden, false),
-          chatThreadOrganizationPredicate(auth.orgId),
-        ),
-      );
-    signal.throwIfAborted();
-    if (!thread) {
-      return notFound("Chat thread not found");
-    }
-  }
   const eventId = randomUUID();
   const response = await set(
     sendValidatedChatEvent$,
     {
       projectId,
+      requireVisibleThread: true,
       data: {
         threadId,
         prompt,

@@ -143,6 +143,8 @@ data class ChatListUiState(
     val projects: List<ConfirmedProject> = emptyList(),
     val projectsPhase: ChatReadPhase = ChatReadPhase.Idle,
     val projectsSource: ChatListSource? = null,
+    val renamingProjectId: String? = null,
+    val unconfirmedProjectRenames: Set<String> = emptySet(),
     val indicators: Indicators? = null,
     val indicatorsPhase: ChatReadPhase = ChatReadPhase.Idle,
     val filter: ChatListFilter = ChatListFilter.Inbox,
@@ -257,6 +259,9 @@ class ChatListModel(
     private var confirmed: CachedChats? = null
     private val projection = ChatListProjection()
     private var confirmedProjects: CachedProjects? = null
+    private var confirmedProjectRows = emptyList<ConfirmedProject>()
+    private var projectRename: ProjectRename? = null
+    private val retryableProjectRenames = mutableMapOf<String, ProjectRename>()
     private var cacheRead = false
     private var restoreJob: Job? = null
     private var projectsRestoreJob: Job? = null
@@ -267,6 +272,8 @@ class ChatListModel(
     private val readConfirmations = mutableMapOf<String, ReadConfirmation>()
     private val writes = Mutex()
     private val projectSync = ProjectSync(service, dispatcher)
+
+    private data class ProjectRename(val id: String, val name: String, val eventId: String)
 
     private class ListReadBatch {
         var refresh = false
@@ -1136,8 +1143,7 @@ class ChatListModel(
         val rows = withContext(dispatcher) { replayProjects(saved.checkpoint) }
         requireCurrent()
         if (mutable.value.projectsSource != ChatListSource.Network)
-            mutable.value =
-                mutable.value.copy(projects = rows, projectsSource = ChatListSource.Cache)
+            publishProjects(rows, mutable.value.copy(projectsSource = ChatListSource.Cache))
     }
 
     private fun listReadBatch(): ListReadBatch =
@@ -1423,6 +1429,99 @@ class ChatListModel(
         refreshProjects()
     }
 
+    internal fun renameProject(id: String, input: String) {
+        val name = input.trim()
+        if (name.length !in 1..120 || confirmedProjectRows.none { it.id == id && it.name != name })
+            return
+        submitProjectRename(ProjectRename(id, name, newProjectOperationId()))
+    }
+
+    private fun newProjectOperationId(): String {
+        val random = UUID.randomUUID()
+        // The Project API uses the UUIDv7 timestamp to bound receipt retries.
+        val timestamp = wallMillis() shl 16
+        val versionAndRandom = 0x7000L or (random.mostSignificantBits and 0x0fffL)
+        return UUID(timestamp or versionAndRandom, random.leastSignificantBits).toString()
+    }
+
+    internal fun retryProjectRename(id: String) {
+        retryableProjectRenames[id]?.let(::submitProjectRename)
+    }
+
+    private fun publishProjects(
+        rows: List<ConfirmedProject>,
+        state: ChatListUiState = mutable.value,
+    ) {
+        confirmedProjectRows = rows
+        val pending = projectRename
+        mutable.value =
+            state.copy(
+                projects =
+                    if (pending == null) rows
+                    else
+                        rows.map { project ->
+                            if (project.id == pending.id) project.copy(name = pending.name)
+                            else project
+                        },
+                renamingProjectId = pending?.id,
+                unconfirmedProjectRenames = retryableProjectRenames.keys.toSet(),
+            )
+    }
+
+    private fun submitProjectRename(rename: ProjectRename) {
+        val state = mutable.value
+        if (
+            !current() ||
+                state.offline ||
+                state.projectsSource != ChatListSource.Network ||
+                projectRename != null ||
+                confirmedProjectRows.none { it.id == rename.id }
+        )
+            return
+        projectRename = rename
+        retryableProjectRenames.remove(rename.id)
+        publishProjects(confirmedProjectRows)
+        viewModelScope.launch {
+            try {
+                try {
+                    service.renameProject(rename.id, rename.name, rename.eventId)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    requireCurrent()
+                    if (error !is ApiFailure.Http || error.status != 404) onFailure(error)
+                }
+                requireCurrent()
+                // Wait out a read that could have started before the write.
+                while (projectsJob?.isCompleted == false) projectsJob?.join()
+                requireCurrent()
+                val previousRead = projectsJob
+                refreshProjects()
+                val readBack = projectsJob
+                readBack?.join()
+                requireCurrent()
+                val confirmedName = confirmedProjectRows.firstOrNull { it.id == rename.id }?.name
+                val observedName =
+                    readBack !== previousRead &&
+                        mutable.value.projectsPhase == ChatReadPhase.Ready &&
+                        confirmedName == rename.name
+                // The stream can deliver the receipt before the write response is lost.
+                val observedReceipt =
+                    confirmedProjects?.checkpoint?.let { checkpoint ->
+                        checkpoint.archive.latestEventId == rename.eventId ||
+                            checkpoint.events.any { it.id == rename.eventId }
+                    } == true
+                if (!observedName && !observedReceipt && confirmedName != null) {
+                    // The server deduplicates retries by this Project event ID.
+                    retryableProjectRenames[rename.id] = rename
+                }
+            } finally {
+                projectRename = null
+                if (current()) publishProjects(confirmedProjectRows)
+            }
+        }
+    }
+
     private fun refreshProjects() {
         if (current() && !mutable.value.offline && projectsJob?.isActive != true) {
             mutable.value = mutable.value.copy(projectsPhase = ChatReadPhase.Loading)
@@ -1450,24 +1549,37 @@ class ChatListModel(
                         val rows = withContext(dispatcher) { replayProjects(saved.checkpoint) }
                         requireCurrent()
                         confirmedProjects = saved
-                        mutable.value =
+                        if (retryableProjectRenames.isNotEmpty()) {
+                            val names = rows.associate { it.id to it.name }
+                            val appliedEvents = saved.checkpoint.events.mapTo(hashSetOf()) { it.id }
+                            saved.checkpoint.archive.latestEventId?.let(appliedEvents::add)
+                            retryableProjectRenames.entries.removeAll { (id, rename) ->
+                                names[id] == null ||
+                                    names[id] == rename.name ||
+                                    rename.eventId in appliedEvents
+                            }
+                        }
+                        publishProjects(
+                            rows,
                             mutable.value.copy(
-                                projects = rows,
                                 projectsPhase = ChatReadPhase.Ready,
                                 projectsSource = ChatListSource.Network,
-                            )
+                            ),
+                        )
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (error: Exception) {
                         // A missing Projects collection does not revoke the workspace session.
                         if (error is ApiFailure.Http && error.status == 404) {
                             if (current()) {
-                                mutable.value =
+                                retryableProjectRenames.clear()
+                                publishProjects(
+                                    emptyList(),
                                     mutable.value.copy(
-                                        projects = emptyList(),
                                         projectsSource = null,
                                         projectsPhase = ChatReadPhase.Failed,
-                                    )
+                                    ),
+                                )
                             }
                         } else fail(error) { it.copy(projectsPhase = ChatReadPhase.Failed) }
                     }

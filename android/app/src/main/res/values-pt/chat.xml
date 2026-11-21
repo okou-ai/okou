@@ -57,4 +57,9 @@
     <string name="chat_delete_title">Excluir conversa?</string>
     <string name="chat_delete_description">Esta conversa será excluída permanentemente. Qualquer tarefa em execução nesta conversa será interrompida imediatamente. Todas as automações vinculadas serão pausadas. Esta ação não pode ser desfeita.</string>
     <string name="chat_delete_confirm">Excluir</string>
+    <string name="chat_rename_project">Renomear projeto</string>
+    <string name="chat_project_name">Nome do projeto</string>
+    <string name="chat_project_rename_unconfirmed">Não foi possível confirmar o nome do projeto.</string>
+    <string name="chat_project_rename_save">Salvar</string>
+    <string name="chat_project_rename_pending">Renomeando projeto…</string>
 </resources>

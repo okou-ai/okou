@@ -247,6 +247,9 @@ class CanonicalWorkspaceSession(
     override suspend fun deleteThread(threadId: String, eventId: String) =
         api.deleteThread(threadId, eventId)
 
+    override suspend fun renameProject(projectId: String, name: String, eventId: String) =
+        api.renameProject(projectId, name, eventId)
+
     override suspend fun renameThread(threadId: String, title: String, eventId: String) =
         api.renameThread(threadId, title, eventId)
 
