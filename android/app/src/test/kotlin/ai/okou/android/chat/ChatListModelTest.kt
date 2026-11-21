@@ -3505,6 +3505,4 @@ class ChatListModelTest {
             )
         }
     }
-
-
 }
