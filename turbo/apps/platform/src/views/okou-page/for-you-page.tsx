@@ -397,7 +397,7 @@ function ForYouHeader() {
   const browse = useSet(browseForYou$);
   const signal = useGet(pageSignal$);
   return (
-    <header className="relative grid h-16 shrink-0 grid-flow-col grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 px-4 sm:h-18 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8 sm:px-8">
+    <header className="relative grid h-14 shrink-0 grid-flow-col grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 px-4 sm:h-15 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8 sm:px-8">
       <div className="min-w-0">
         <h1 className="text-base font-semibold sm:text-lg">
           {t(($) => {
