@@ -114,7 +114,13 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    lint { warningsAsErrors = true }
+    lint {
+        warningsAsErrors = true
+        // Upstream releases can change version suggestions without a source change.
+        informational += "NewerVersionAvailable"
+        informational += "GradleDependency"
+        informational += "AndroidGradlePluginVersion"
+    }
     testOptions {
         unitTests.isIncludeAndroidResources = true
         animationsDisabled = true

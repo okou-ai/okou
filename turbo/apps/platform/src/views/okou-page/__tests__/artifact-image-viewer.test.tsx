@@ -34,7 +34,7 @@ function artifactFile(
     size: 1024,
     url,
     createdAt: "2026-03-10T00:00:01Z",
-    googleDriveSync: { status: "not_synced", accountReady: true },
+    googleDriveSync: { status: "not_synced" },
     ...overrides,
   };
 }

@@ -44,17 +44,19 @@ extension EnvironmentValues {
 }
 
 extension ComposerTextView {
-  func configureReturnKey(_ preference: ComposerReturnKeyPreference, canSend: Bool) {
-    // UIKit owns the empty-editor key state. A ready attachment or another
-    // editor block can still make an empty focused editor a valid Send target.
-    let automaticallyEnables = preference == .send && (hasText || !canSend)
+  func configureReturnKey(_ preference: ComposerReturnKeyPreference, canSendEmpty: Bool) {
+    // UIKit owns the empty-editor key state unless a quote or ready attachment keeps Send
+    // valid without this editor's text. The trait follows that other content, never the
+    // editor's own typing, so emptying a draft keeps its native input session.
+    let automaticallyEnables = preference == .send && !canSendEmpty
     guard
       returnKeyPreference != preference
         || enablesReturnKeyAutomatically != automaticallyEnables
     else { return }
     returnKeyPreference = preference
     returnKeyType = preference == .send ? .send : .default
-    let restartsInputSession = enablesReturnKeyAutomatically && !automaticallyEnables
+    // Only an empty editor can retain the disabled key; a populated one already sends.
+    let restartsInputSession = enablesReturnKeyAutomatically && !automaticallyEnables && !hasText
     enablesReturnKeyAutomatically = automaticallyEnables
     requestReturnKeyReload(restartInputSession: restartsInputSession)
   }

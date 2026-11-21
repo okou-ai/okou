@@ -24,7 +24,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
   var identifier = "message-input"
   var expanded = false
   var returnKeyPreference = ComposerReturnKeyPreference.newline
-  var canSendFromKeyboard = false
+  var canSendEmptyFromKeyboard = false
   var submitFromKeyboard: (@MainActor () -> Void)?
   @Environment(\.isEnabled) private var isEnabled
   @Environment(\.workspaceChatPresentation) private var presentation
@@ -106,7 +106,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
     view.accessibilityLabel = placeholder
     view.accessibilityIdentifier = identifier
     view.isEditable = isEnabled
-    view.configureReturnKey(returnKeyPreference, canSend: canSendFromKeyboard)
+    view.configureReturnKey(returnKeyPreference, canSendEmpty: canSendEmptyFromKeyboard)
     view.submitFromKeyboard = submitFromKeyboard
     view.acceptsImages = acceptsImages && isEnabled
     view.pasteImages = pasteImages

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.32.5](https://github.com/okou-ai/okou/compare/android-v0.32.4...android-v0.32.5) (2026-11-21)
+
+
+### Bug Fixes
+
+* **android:** fail ci on android lint warnings ([#49614](https://github.com/okou-ai/okou/issues/49614)) ([87e6e01](https://github.com/okou-ai/okou/commit/87e6e012a2ffabc0c5d80b152d5aed8ee7512a84))
+* **android:** make dependency version lint advisory ([#49674](https://github.com/okou-ai/okou/issues/49674)) ([2341cc7](https://github.com/okou-ai/okou/commit/2341cc7a27769dede049aec6719e9acd8a8cb92a))
+
+
+### Refactoring
+
+* scope chat run admission to workspace members ([#49637](https://github.com/okou-ai/okou/issues/49637)) ([30c1941](https://github.com/okou-ai/okou/commit/30c1941239202722c767b1190718538a5c0b00d3))
+
 ## [0.32.4](https://github.com/okou-ai/okou/compare/android-v0.32.3...android-v0.32.4) (2026-11-20)
 
 

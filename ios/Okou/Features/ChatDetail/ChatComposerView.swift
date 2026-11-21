@@ -64,6 +64,14 @@ struct ChatComposerView: View {
       && (showsStop || modelSelection?.canSend != false)
   }
   private var canSendFromKeyboard: Bool { hasContent && canPerformPrimaryAction }
+  /// Quotes and files outlive an emptied editor; inline references are its own text.
+  private var hasContentOutsideEditors: Bool {
+    attachments.hasAttachments
+      || draftState?.document.parts.contains { !ComposerAttributedDocument.isInline($0) } == true
+  }
+  private var canSendEmptyFromKeyboard: Bool {
+    hasContentOutsideEditors && canPerformPrimaryAction
+  }
   private var showsEditingLayout: Bool {
     isFocused || draftState?.focusRequest != nil || presentation?.keepsComposerExpanded == true
   }
@@ -185,7 +193,8 @@ struct ChatComposerView: View {
                 showsTrailingParagraph: showsTrailingFeedbackInput,
                 expanded: showsEditingLayout,
                 returnKeyPreference: returnKeyPreference,
-                canSendFromKeyboard: canSendFromKeyboard, submitFromKeyboard: sendFromKeyboard
+                canSendEmptyFromKeyboard: canSendEmptyFromKeyboard,
+                submitFromKeyboard: sendFromKeyboard
               )
               .id(inputID)
               .transition(.identity)
@@ -199,7 +208,8 @@ struct ChatComposerView: View {
                 placeholder: resolvedPlaceholder,
                 expanded: showsEditingLayout,
                 returnKeyPreference: returnKeyPreference,
-                canSendFromKeyboard: canSendFromKeyboard, submitFromKeyboard: sendFromKeyboard
+                canSendEmptyFromKeyboard: canSendEmptyFromKeyboard,
+                submitFromKeyboard: sendFromKeyboard
               )
               .id(inputID)
               .transition(.identity)

@@ -152,7 +152,6 @@ export const bankingManagementStatusBody$ = command(
           and(
             eq(bankingAgentEnablements.orgId, owner.orgId),
             eq(bankingAgentEnablements.userId, owner.userId),
-            eq(bankingAgentEnablements.agentId, agentId),
             eq(bankingAgentEnablements.connectionId, connection.id),
           ),
         )

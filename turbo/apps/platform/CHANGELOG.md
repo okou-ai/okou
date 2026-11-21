@@ -13,6 +13,23 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1161.1](https://github.com/okou-ai/okou/compare/app-v0.1161.0...app-v0.1161.1) (2026-11-21)
+
+
+### Refactoring
+
+* scope chat run admission to workspace members ([#49637](https://github.com/okou-ai/okou/issues/49637)) ([30c1941](https://github.com/okou-ai/okou/commit/30c1941239202722c767b1190718538a5c0b00d3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.96.1
+    * @okouai/connectors bumped to 3.23.2
+    * @okouai/core bumped to 8.858.1
+    * @okouai/ui bumped to 1.21.77
+
 ## [0.1161.0](https://github.com/okou-ai/okou/compare/app-v0.1160.0...app-v0.1161.0) (2026-11-20)
 
 
