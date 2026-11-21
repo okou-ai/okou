@@ -82,8 +82,14 @@ class LaterParkingReportTests(unittest.TestCase):
                  "allocated":[0,0,0],"accounting":zero|{"closed":True}},
             )
             for phase, value, offset in zip(later.PHASES, values, (8,16,21,30,35,40,45)):
-                self.witnesses.append({"version":1,"case":case,"phase":phase,"monotonic_ns":at(offset),
-                    "unix_ns":at(offset)+1000,"sandbox_id":old,"backing_generation":backing,"evidence":copy.deepcopy(value)})
+                self.witnesses.append(report_test.witness_receipt(
+                    case, phase,
+                    monotonic_ns=at(offset),
+                    unix_ns=at(offset)+1000,
+                    sandbox_id=old,
+                    backing_generation=backing,
+                    evidence=copy.deepcopy(value),
+                ))
 
     def event(self, phase, case=None):
         return next(e for e in self.witnesses if e["phase"] == phase and (case is None or e["case"] == case))

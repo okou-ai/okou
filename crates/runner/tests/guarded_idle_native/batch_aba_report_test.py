@@ -88,8 +88,14 @@ class BatchAbaReportTests(unittest.TestCase):
                     "remaining_finalizing_owners":0,"allocated":[0,0,0],"accounting":zero|{"closed":True}},
             )
             for phase, value, offset in zip(aba.PHASES, values, (3,12,17,28,34,44,52,57)):
-                self.witnesses.append({"version":1,"case":case,"phase":phase,"monotonic_ns":at(offset),
-                    "unix_ns":at(offset)+1000,"sandbox_id":old,"backing_generation":backing,"evidence":copy.deepcopy(value)})
+                self.witnesses.append(report_test.witness_receipt(
+                    case, phase,
+                    monotonic_ns=at(offset),
+                    unix_ns=at(offset)+1000,
+                    sandbox_id=old,
+                    backing_generation=backing,
+                    evidence=copy.deepcopy(value),
+                ))
 
     def event(self, phase):
         return next(e for e in self.witnesses if e["phase"] == phase)

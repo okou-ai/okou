@@ -94,8 +94,14 @@ class ReturnedGuestTests(unittest.TestCase):
             ]
             clocks = [clock(ms) for ms in (10,500,600,700,800,850,900)]+[terminal[4]["monotonic_ns"]+1]
             for phase, value, ns in zip(returned.PHASES, values, clocks):
-                self.witnesses.append({"version": 1, "case": case, "phase": phase, "monotonic_ns": ns, "unix_ns": ns+1000,
-                    "sandbox_id": original_id, "backing_generation": original_backing, "evidence": value})
+                self.witnesses.append(report_test.witness_receipt(
+                    case, phase,
+                    monotonic_ns=ns,
+                    unix_ns=ns+1000,
+                    sandbox_id=original_id,
+                    backing_generation=original_backing,
+                    evidence=value,
+                ))
 
     def write(self):
         report_test.write_report_fixture(self.root, self.collector, self.samples,

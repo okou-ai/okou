@@ -12,6 +12,7 @@ import uuid
 import batch_aba_report_test as batch_test
 import batch_repark_report as repark
 import report
+import report_test
 
 
 class BatchReparkReportTests(batch_test.BatchAbaReportTests):
@@ -35,14 +36,18 @@ class BatchReparkReportTests(batch_test.BatchAbaReportTests):
                     "repark_completed_ns":at+40,"payload_sha256":digest,"private_history_verified":True,
                     "ordinary_home_verified":True,"physical_unpark_completed":True,
                     "physical_repark_completed":True,"original_metadata_preserved":True,"original_full_lease_active":True})
-            self.physical.append({"version":1,"case":case,"phase":"original_reparked",
-                "monotonic_ns":begin+150,"unix_ns":blocked["unix_ns"]+150,
-                "sandbox_id":blocked["sandbox_id"],"backing_generation":blocked["backing_generation"],
-                "evidence":{"started_ns":begin+10,"restored_ns":begin+140,"original_history_run_id":history,
+            self.physical.append(report_test.witness_receipt(
+                case, "original_reparked",
+                monotonic_ns=begin+150,
+                unix_ns=blocked["unix_ns"]+150,
+                sandbox_id=blocked["sandbox_id"],
+                backing_generation=blocked["backing_generation"],
+                evidence={"started_ns":begin+10,"restored_ns":begin+140,"original_history_run_id":history,
                     "original_sandbox_id":initial["sandbox_id"],"original_backing_generation":blocked["backing_generation"],
                     "reuse_key":initial["reuse_key"],"cycles":cycles,"revision":3,"same_insertion":False,
                     "restored_original":True,"image_size_bytes":report.NATIVE_HOME_BYTES,"payload_bytes":65536,
-                    "allocated":[2,4096,1],"provider_awaits_outside_pool_status":True}})
+                    "allocated":[2,4096,1],"provider_awaits_outside_pool_status":True},
+            ))
             for event in self.witnesses:
                 if event["case"] == case and event["phase"] in ("pool_wait_progress", "batch_refused"):
                     event["evidence"]["revision"] = 5

@@ -12,7 +12,7 @@ import uuid
 
 import pressure_report
 import report
-from report_test import prepare_snapshot_record, write_report_fixture
+from report_test import prepare_snapshot_record, witness_receipt, write_report_fixture
 
 
 class PressureReportTests(unittest.TestCase):
@@ -74,10 +74,14 @@ class PressureReportTests(unittest.TestCase):
             phases = ("case_started", "scenario_observed", "terminal_started", "backing_exit_confirmed",
                       "required_tail_started", "required_tail_completed", "case_completed")
             for phase, evidence in zip(phases, proofs):
-                self.events.append({"version": 1, "case": case, "phase": phase,
-                                    "monotonic_ns": clock, "unix_ns": clock+1000,
-                                    "sandbox_id": sandbox, "backing_generation": backing,
-                                    "evidence": evidence})
+                self.events.append(witness_receipt(
+                    case, phase,
+                    monotonic_ns=clock,
+                    unix_ns=clock+1000,
+                    sandbox_id=sandbox,
+                    backing_generation=backing,
+                    evidence=evidence,
+                ))
                 self.samples.append({"monotonic_ns": clock+1, "mem_available_bytes": 10*gib,
                                      "sample_age_ns": 2, "read_duration_ns": 1,
                                      "processes": [{"pid": 123, "start_ticks": 456,
@@ -95,10 +99,14 @@ class PressureReportTests(unittest.TestCase):
                 values = [("different_guest_prepared", {"incoming_sandbox_id": str(uuid.uuid4()), "admitted": True}),
                           ("original_join_requested", {"retirements": 1})]
             for offset, (phase, evidence) in enumerate(values):
-                self.witnesses.append({"version": 1, "case": case, "phase": phase,
-                                       "monotonic_ns": clock-15+offset, "unix_ns": clock+1000,
-                                       "sandbox_id": sandbox, "backing_generation": backing,
-                                       "evidence": evidence})
+                self.witnesses.append(witness_receipt(
+                    case, phase,
+                    monotonic_ns=clock-15+offset,
+                    unix_ns=clock+1000,
+                    sandbox_id=sandbox,
+                    backing_generation=backing,
+                    evidence=evidence,
+                ))
             clock += 20
 
     def write(self):
