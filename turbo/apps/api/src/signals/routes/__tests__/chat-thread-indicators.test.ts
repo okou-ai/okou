@@ -349,7 +349,9 @@ describe("GET /api/indicators", () => {
       },
     });
 
-    await expect(chat.markThreadRead(actor, rerun.threadId)).resolves.toEqual({
+    await expect(
+      chat.markThreadRead(actor, rerun.threadId),
+    ).resolves.toStrictEqual({
       lastReadAt: rerun.unreadAt,
     });
     await expect(currentIndicators()).resolves.toStrictEqual(indicators.body);
