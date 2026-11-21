@@ -39,7 +39,7 @@ class CanonicalWorkspaceSessionTest {
         }
         val request = server.takeRequest()
         assertEquals("POST", request.method)
-        assertEquals("/api/user-preferences", request.path)
+        assertEquals("/api/member/preferences", request.path)
         assertEquals("Bearer token", request.getHeader("Authorization"))
         assertEquals("Android", request.getHeader("X-Client-Type"))
         assertEquals("""{"locale":"zh-Hant"}""", request.body.readUtf8())
@@ -50,7 +50,7 @@ class CanonicalWorkspaceSessionTest {
         server.enqueue(MockResponse().setBody(TEST_PREFERENCES))
         owner().use { assertTrue(it.preferences().memoryInitialized) }
         assertEquals(1, server.requestCount)
-        assertEquals("/api/user-preferences", server.takeRequest().path)
+        assertEquals("/api/member/preferences", server.takeRequest().path)
     }
 
     @Test
@@ -80,7 +80,7 @@ class CanonicalWorkspaceSessionTest {
             server.takeRequest()
             val initialize = server.takeRequest()
             assertEquals("POST", initialize.method)
-            assertEquals("/api/user-preferences/initialize", initialize.path)
+            assertEquals("/api/member/preferences/initialize", initialize.path)
             assertEquals(
                 """{"timezone":"Asia/Shanghai","locale":"zh-Hant"}""",
                 initialize.body.readUtf8(),

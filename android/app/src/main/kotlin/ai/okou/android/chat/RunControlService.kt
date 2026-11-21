@@ -18,11 +18,12 @@ enum class RunControlKind {
 }
 
 /** Frozen user intent. Restoration never dispatches it without a new explicit action. */
+@OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+@kotlinx.serialization.json.JsonIgnoreUnknownKeys
 @Serializable
 data class RunControlIntent(
     val id: String,
     val threadId: String,
-    val agentId: String?,
     val kind: RunControlKind,
     val targetId: String,
 ) {

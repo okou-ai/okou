@@ -19,8 +19,12 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.encodeToStream
+import kotlinx.serialization.json.jsonPrimitive
 
 enum class ComposerCommit {
     Committed,
@@ -123,16 +127,38 @@ class ComposerJournalStore(
             return ComposerJournal()
         return file
             .openRead()
-            .use { json.decodeFromStream<ComposerJournal>(it) }
+            .use { stream ->
+                val stored = json.decodeFromStream<JsonObject>(stream)
+                val previous = stored["defaultAgentId"]?.jsonPrimitive?.contentOrNull
+                val journal =
+                    json.decodeFromJsonElement<ComposerJournal>(
+                        JsonObject(stored - "defaultAgentId")
+                    )
+                val old = journal.drafts.filterKeys { it.startsWith("agent:") }
+                if (old.isEmpty()) journal
+                else {
+                    val drafts = (journal.drafts - old.keys).toMutableMap()
+                    val retained = journal.retainedDrafts.toMutableMap()
+                    for ((key, draft) in old) {
+                        if (key == "agent:$previous" && drafts["new:"] == null)
+                            drafts["new:"] = draft
+                        else if (draft.text.isNotEmpty()) {
+                            var candidate = key
+                            while (
+                                candidate in retained && retained[candidate] != draft.text
+                            ) candidate += ":saved"
+                            retained[candidate] = draft.text
+                        }
+                    }
+                    journal.copy(drafts = drafts, retainedDrafts = retained)
+                }
+            }
             .also {
                 if (
                     it.format !in 1..3 ||
                         it.format == 1 &&
                             it.entries.values.any { entry -> entry.recovery != null } ||
-                        it.format < 3 &&
-                            (it.drafts.isNotEmpty() ||
-                                it.retainedDrafts.isNotEmpty() ||
-                                it.defaultAgentId != null)
+                        it.format < 3 && (it.drafts.isNotEmpty() || it.retainedDrafts.isNotEmpty())
                 )
                     throw IOException("Unsupported composer journal format")
             }

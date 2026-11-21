@@ -475,7 +475,6 @@ class RunControlsModelTest {
             RunControlIntent(
                 eventId("retired-reader"),
                 CHAT_PERSONAL,
-                CHAT_AGENT,
                 RunControlKind.Interrupt,
                 HISTORY_RUN,
             )
@@ -621,7 +620,6 @@ class RunControlsModelTest {
             RunControlIntent(
                 eventId("cancelled-before-cleared"),
                 CHAT_PERSONAL,
-                CHAT_AGENT,
                 RunControlKind.Interrupt,
                 HISTORY_RUN,
             )
@@ -892,7 +890,6 @@ class RunControlsModelTest {
             RunControlIntent(
                 eventId("retry-read-failure"),
                 CHAT_PERSONAL,
-                CHAT_AGENT,
                 RunControlKind.Interrupt,
                 HISTORY_RUN,
             )
@@ -958,7 +955,6 @@ class RunControlsModelTest {
                 RunControlIntent(
                     eventId("independent-metadata-failure"),
                     CHAT_PERSONAL,
-                    CHAT_AGENT,
                     RunControlKind.Interrupt,
                     HISTORY_RUN,
                 )
@@ -1009,7 +1005,6 @@ class RunControlsModelTest {
             RunControlIntent(
                 eventId("older-recovery-read"),
                 CHAT_PERSONAL,
-                CHAT_AGENT,
                 RunControlKind.Interrupt,
                 HISTORY_RUN,
             )
@@ -1058,7 +1053,6 @@ class RunControlsModelTest {
             RunControlIntent(
                 eventId("restored-control"),
                 CHAT_PERSONAL,
-                CHAT_AGENT,
                 RunControlKind.Interrupt,
                 HISTORY_RUN,
             )
@@ -1100,7 +1094,6 @@ class RunControlsModelTest {
                 RunControlIntent(
                     eventId("original-control"),
                     CHAT_PERSONAL,
-                    CHAT_AGENT,
                     RunControlKind.Interrupt,
                     HISTORY_RUN,
                 )
@@ -1164,7 +1157,6 @@ class RunControlsModelTest {
             RunControlIntent(
                 eventId("unauthorized-control"),
                 CHAT_PERSONAL,
-                CHAT_AGENT,
                 RunControlKind.Interrupt,
                 HISTORY_RUN,
             )
@@ -1204,7 +1196,6 @@ class RunControlsModelTest {
             RunControlIntent(
                 eventId("unreadable-control"),
                 CHAT_PERSONAL,
-                CHAT_AGENT,
                 RunControlKind.Interrupt,
                 HISTORY_RUN,
             )

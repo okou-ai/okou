@@ -1930,7 +1930,6 @@ class ChatListRootTest {
         compose.waitUntil(10_000) {
             val state = currentList() ?: return@waitUntil false
             state.confirmedAt != null &&
-                state.agentsPhase != ai.okou.android.chat.ChatReadPhase.Loading &&
                 state.projectsPhase != ai.okou.android.chat.ChatReadPhase.Loading &&
                 state.indicatorsPhase != ai.okou.android.chat.ChatReadPhase.Loading
         }

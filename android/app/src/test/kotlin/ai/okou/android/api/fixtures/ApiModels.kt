@@ -337,26 +337,6 @@ data class Indicators(
 )
 
 @Serializable
-enum class AgentsItemVisibility {
-    @SerialName("public") PUBLIC,
-    @SerialName("private") PRIVATE,
-}
-
-@Serializable
-data class AgentsItem(
-    val `agentId`: String,
-    val `isDefaultAgent`: Boolean,
-    val `ownerId`: String,
-    val `description`: String?,
-    val `displayName`: String?,
-    val `sound`: String?,
-    val `avatarUrl`: String?,
-    val `visibility`: AgentsItemVisibility,
-)
-
-typealias Agents = List<AgentsItem>
-
-@Serializable
 data class ProjectsProjectsItem(
     val `id`: String,
     val `name`: String,

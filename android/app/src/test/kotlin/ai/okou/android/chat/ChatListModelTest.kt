@@ -1,6 +1,5 @@
 package ai.okou.android.chat
 
-import ai.okou.android.CHAT_AGENT
 import ai.okou.android.CHAT_DATE
 import ai.okou.android.CHAT_EVENT
 import ai.okou.android.CHAT_IN_PROJECT
@@ -11,9 +10,6 @@ import ai.okou.android.TestChatService
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.TestRealtimeService
 import ai.okou.android.api.ApiFailure
-import ai.okou.android.api.generated.Agents
-import ai.okou.android.api.generated.AgentsItem
-import ai.okou.android.api.generated.AgentsItemVisibility
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ChatSnapshot
@@ -106,20 +102,6 @@ class ChatListModelTest {
         )
 
     private open inner class Service : TestChatService() {
-        var agentRead: suspend () -> Agents = {
-            listOf(
-                AgentsItem(
-                    CHAT_AGENT,
-                    true,
-                    "user-a",
-                    null,
-                    "My Okou",
-                    null,
-                    null,
-                    AgentsItemVisibility.PRIVATE,
-                )
-            )
-        }
         var listRead: suspend () -> ChatEvents = { page() }
         var statusRead: suspend () -> Indicators = {
             Indicators(
@@ -135,8 +117,6 @@ class ChatListModelTest {
             )
 
         override suspend fun chatEvents(since: Long?) = listRead()
-
-        override suspend fun agents() = agentRead()
 
         override suspend fun indicators() = statusRead()
     }
@@ -2283,7 +2263,6 @@ class ChatListModelTest {
             model.refresh()
             runCurrent()
             assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
-            assertEquals(ChatReadPhase.Ready, model.uiState.value.agentsPhase)
             assertEquals(
                 IndicatorsThreadsValue.UNREAD,
                 model.uiState.value.indicators?.threads?.get(CHAT_PERSONAL),
@@ -2402,15 +2381,10 @@ class ChatListModelTest {
         val store = ViewModelStore()
         val gate = CompletableDeferred<ChatEvents>()
         try {
-            cache
-                .open(identity) { true }
-                .use {
-                    it.save(checkpoint, 1234, CachedChatNavigation(agents = Service().agents()))
-                }
+            cache.open(identity) { true }.use { it.save(checkpoint, 1234) }
             val service =
                 Service().apply {
                     listRead = { gate.await() }
-                    agentRead = { throw IOException("offline") }
                     statusRead = { throw IOException("offline") }
                 }
             val model =
@@ -2431,7 +2405,6 @@ class ChatListModelTest {
                 "Personal chat",
                 chatListGroups(model.uiState.value).last().threads.single().title,
             )
-            assertEquals(ChatListSource.Cache, model.uiState.value.agentsSource)
             gate.completeExceptionally(IOException("offline"))
             advanceUntilIdle()
             assertEquals(ChatReadPhase.Failed, model.uiState.value.listPhase)
@@ -2494,7 +2467,6 @@ class ChatListModelTest {
             assertSame(unsaved.threads, model.uiState.value.threads)
             assertEquals(unsaved.confirmedAt, model.uiState.value.confirmedAt)
             assertFalse(model.uiState.value.cacheUnavailable)
-            service.agentRead = { Service().agents().map { it.copy(displayName = "Updated Okou") } }
             model.refreshMetadata()
             advanceUntilIdle()
             store.clear()
@@ -2505,7 +2477,6 @@ class ChatListModelTest {
                     val saved = checkNotNull(it.load())
                     assertEquals(23L, saved.checkpoint.cursor.seqId)
                     assertEquals("Updated", replayChats(saved.checkpoint).single().title)
-                    assertEquals("Updated Okou", saved.navigation.agents?.single()?.displayName)
                 }
         } finally {
             store.clear()
@@ -3389,7 +3360,6 @@ class ChatListModelTest {
             runCurrent()
             assertEquals(ChatListSource.Network, model.uiState.value.source)
             assertEquals("Personal chat", model.uiState.value.threads.single().title)
-            assertEquals(ChatReadPhase.Ready, model.uiState.value.agentsPhase)
             assertEquals(ChatReadPhase.Ready, model.uiState.value.indicatorsPhase)
             snapshot.completeExceptionally(IOException("offline"))
             advanceUntilIdle()
@@ -3536,65 +3506,5 @@ class ChatListModelTest {
         }
     }
 
-    @Test
-    fun lateDiskRestoreDoesNotReplaceNetworkConfirmedAgentNames() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(dispatcher)
-        val cache = cache(temporary.newFolder())
-        val checkpoint =
-            ChatCheckpoint(
-                ai.okou.android.api.generated.ChatArchive(emptyList()),
-                ChatCursor(),
-                page().events,
-                ChatCursor(CHAT_EVENT, 17),
-            )
-        val store = ViewModelStore()
-        val entered = CompletableDeferred<Unit>()
-        val release = CountDownLatch(1)
-        val list = CompletableDeferred<ChatEvents>()
-        var owner: Job? = null
-        try {
-            cache
-                .open(identity) { true }
-                .use {
-                    it.save(checkpoint, 1234, CachedChatNavigation(agents = Service().agents()))
-                }
-            val service =
-                Service().apply {
-                    listRead = { list.await() }
-                    agentRead = { Service().agents().map { it.copy(displayName = "Updated Okou") } }
-                }
-            val authorized = {
-                if (Thread.currentThread().name.startsWith("DefaultDispatcher")) {
-                    entered.complete(Unit)
-                    release.await()
-                }
-                true
-            }
-            val model =
-                ViewModelProvider(
-                    store,
-                    viewModelFactory {
-                        initializer {
-                            ChatListModel(service, cache, identity, authorized, {}, dispatcher)
-                        }
-                    },
-                )[ChatListModel::class.java]
-            owner = model.viewModelScope.coroutineContext[Job]
-            model.refresh()
-            entered.await()
-            model.uiState.first { it.agentsSource == ChatListSource.Network }
-            release.countDown()
-            val restored = model.uiState.first { it.source == ChatListSource.Cache }
-            assertEquals("Updated Okou", restored.agents.single().displayName)
-            assertEquals(ChatListSource.Network, restored.agentsSource)
-        } finally {
-            release.countDown()
-            list.completeExceptionally(IOException("offline"))
-            store.clear()
-            owner?.join()
-            runCurrent()
-            Dispatchers.resetMain()
-        }
-    }
+
 }

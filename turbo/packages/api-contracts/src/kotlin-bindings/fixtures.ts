@@ -1,5 +1,4 @@
 import type { ZodType } from "zod";
-import { agentsMainContract } from "../contracts/agents";
 import {
   chatThreadsContract,
   chatThreadSnapshotArchiveSchema,
@@ -24,7 +23,6 @@ export const kotlinFixtureRoutes = [
     response: "Indicators",
     route: chatThreadsContract.indicators,
   },
-  { name: "agents", response: "Agents", route: agentsMainContract.list },
   { name: "projects", response: "Projects", route: projectsContract.list },
 ] satisfies readonly KotlinRouteBinding[];
 
@@ -109,18 +107,6 @@ export function kotlinFixtureJson(): string {
           threads: { [threadId]: "unread" },
           unreadAt: { [threadId]: date },
         }),
-        agents: wire(agentsMainContract.list.responses[200], [
-          {
-            agentId,
-            isDefaultAgent: true,
-            ownerId: "user_fixture",
-            description: null,
-            displayName: "My Okou",
-            sound: null,
-            avatarUrl: null,
-            visibility: "private",
-          },
-        ]),
         projects: wire(projectsContract.list.responses[200], {
           projects: [
             {

@@ -87,7 +87,7 @@ class ApiClientTest {
             assertTrue(value.memoryInitialized)
             val request = server.takeRequest()
             assertEquals("POST", request.method)
-            assertEquals("/api/user-preferences/initialize", request.path)
+            assertEquals("/api/member/preferences/initialize", request.path)
             assertEquals(
                 Json.parseToJsonElement("""{"locale":"zh-Hant"}"""),
                 Json.parseToJsonElement(request.body.readUtf8()),
@@ -393,7 +393,7 @@ class ApiClientTest {
             """{"id":"org_one","name":"Workspace","role":"admin","futureField":true}"""
         const val error = """{"error":{"code":"FIXTURE_ERROR","message":"Try again"}}"""
         const val preferences =
-            """{"timezone":null,"locale":null,"supportedLocales":["en-US","zh-Hant"],"pinnedAgentIds":[],"sendMode":"enter","cloudBrowserEnabledByDefault":false,"chatResourcesEnabledByDefault":false,"theme":"system","colorTheme":null,"captureNetworkBodiesRemaining":0,"memoryInitialized":true}"""
+            """{"timezone":null,"locale":null,"supportedLocales":["en-US","zh-Hant"],"sendMode":"enter","cloudBrowserEnabledByDefault":false,"chatResourcesEnabledByDefault":false,"theme":"system","colorTheme":null,"captureNetworkBodiesRemaining":0,"memoryInitialized":true}"""
     }
 }
 

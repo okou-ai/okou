@@ -9,9 +9,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 
 /** The same two draft identities used by Web; Project is only create-thread context. */
-data class ServerDraftTarget(val id: String, val thread: Boolean) {
+data class ServerDraftTarget(val threadId: String? = null) {
     val key: String
-        get() = if (thread) "thread:$id" else "agent:$id"
+        get() = threadId?.let { "thread:$it" } ?: "new:"
 }
 
 @Serializable

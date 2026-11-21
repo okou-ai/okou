@@ -1,7 +1,7 @@
 import type { ZodType } from "zod";
 import type { NoBodyMarker } from "../contracts/trpc-contract";
 import { orgContract } from "../contracts/org-routes";
-import { userPreferencesContract } from "../contracts/user-preferences";
+import { memberPreferencesContract } from "../contracts/user-preferences";
 import { apiErrorSchema } from "../contracts/api-error";
 import { androidUpgradeRequiredSchema } from "../contracts/android-client-compatibility";
 import { androidUpdatesContract } from "../contracts/android-updates";
@@ -20,15 +20,14 @@ import {
   chatThreadPinOrderContract,
   chatThreadDraftContract,
 } from "../contracts/chat-threads";
-import { agentDraftContract } from "../contracts/agent-draft";
+import { composerDraftContract } from "../contracts/agent-draft";
 import { chatEventRowSchema } from "../contracts/chat-event-rows";
-import { agentsMainContract } from "../contracts/agents";
 import { projectsContract } from "../contracts/projects";
 import { projectSnapshotArchiveSchema } from "../validators/projects";
 import { instructionsContract } from "../contracts/instructions";
 import { chatEventsContract } from "../contracts/chat-event-send";
 import { chatInputStatusContract } from "../contracts/chat-input-status";
-import { onboardingStatusContract } from "../contracts/onboarding";
+import { memberOnboardingContract } from "../contracts/onboarding";
 import { platformRealtimeTokenContract } from "../contracts/realtime";
 import { sessionOutputDeltaSchema } from "../validators/realtime";
 import { modelCatalogContract } from "../contracts/model-catalog";
@@ -68,7 +67,6 @@ const chatReadBindings = [
     response: "Indicators",
     route: chatThreadsContract.indicators,
   },
-  { name: "agents", response: "Agents", route: agentsMainContract.list },
   {
     name: "projectSnapshot",
     response: "ProjectSnapshot",
@@ -113,9 +111,9 @@ const historyReadBindings = [
 /** Only routes used by the installed native client, not every Web contract. */
 export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
   {
-    name: "agentDraft",
+    name: "workspaceDraft",
     response: "ComposerDraft",
-    route: agentDraftContract.get,
+    route: composerDraftContract.get,
   },
   {
     name: "threadDraft",
@@ -123,10 +121,10 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: chatThreadDraftContract.get,
   },
   {
-    name: "saveAgentDraft",
-    request: "SaveAgentDraft",
+    name: "saveWorkspaceDraft",
+    request: "SaveWorkspaceDraft",
     response: "Unit",
-    route: agentDraftContract.patch,
+    route: composerDraftContract.patch,
   },
   {
     name: "saveThreadDraft",
@@ -186,7 +184,7 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
   {
     name: "onboardingStatus",
     response: "OnboardingStatus",
-    route: onboardingStatusContract.getStatus,
+    route: memberOnboardingContract.getStatus,
   },
   {
     name: "personalInstructions",
@@ -209,19 +207,19 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
   {
     name: "preferences",
     response: "UserPreferences",
-    route: userPreferencesContract.get,
+    route: memberPreferencesContract.get,
   },
   {
     name: "initializePreferences",
     response: "UserPreferences",
     request: "InitializePreferencesRequest",
-    route: userPreferencesContract.initialize,
+    route: memberPreferencesContract.initialize,
   },
   {
     name: "updatePreferences",
     response: "UserPreferences",
     request: "UpdatePreferencesRequest",
-    route: userPreferencesContract.update,
+    route: memberPreferencesContract.update,
   },
   ...chatReadBindings,
   ...historyReadBindings,
@@ -316,13 +314,13 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   },
   {
     name: "ComposerDraft",
-    schema: agentDraftContract.get.responses[200],
+    schema: composerDraftContract.get.responses[200],
     direction: "output",
     representation: "raw-object",
   },
   {
-    name: "SaveAgentDraft",
-    schema: agentDraftContract.patch.body,
+    name: "SaveWorkspaceDraft",
+    schema: composerDraftContract.patch.body,
     direction: "input",
   },
   {
@@ -415,7 +413,7 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   },
   {
     name: "OnboardingStatus",
-    schema: onboardingStatusContract.getStatus.responses[200],
+    schema: memberOnboardingContract.getStatus.responses[200],
     direction: "output",
   },
   {
@@ -435,17 +433,17 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   },
   {
     name: "UserPreferences",
-    schema: userPreferencesContract.get.responses[200],
+    schema: memberPreferencesContract.get.responses[200],
     direction: "output",
   },
   {
     name: "InitializePreferencesRequest",
-    schema: userPreferencesContract.initialize.body,
+    schema: memberPreferencesContract.initialize.body,
     direction: "input",
   },
   {
     name: "UpdatePreferencesRequest",
-    schema: userPreferencesContract.update.body,
+    schema: memberPreferencesContract.update.body,
     direction: "input",
   },
   { name: "ApiError", schema: apiErrorSchema, direction: "output" },

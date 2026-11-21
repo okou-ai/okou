@@ -273,14 +273,9 @@ internal fun ChatListScreen(
             }
         }
     val runningFrame = rememberRunningWaveFrame(listState, runningKeys)
-    val metadataUsable = state.agentsSource != null && state.projectsSource != null
+    val metadataUsable = state.projectsSource != null
     val metadataMissing =
-        state.agentsSource == null && state.agentsPhase == ChatReadPhase.Failed ||
-            state.projectsSource == null && state.projectsPhase == ChatReadPhase.Failed
-    val missingDefault =
-        state.agentsPhase == ChatReadPhase.Ready &&
-            state.agents.none { it.isDefaultAgent } &&
-            state.threads.any { it.hidden != true && it.projectId == null }
+        state.projectsSource == null && state.projectsPhase == ChatReadPhase.Failed
     val listLabel = stringResource(R.string.chat_list_title)
     val widthDp = currentWindowSizeDp().width
     val largeCompact = widthDp >= 600
@@ -410,7 +405,7 @@ internal fun ChatListScreen(
                         ChatAction(R.string.retry, projectExpansion::retry)
                     }
                 }
-                if (!state.offline && (metadataMissing || missingDefault))
+                if (!state.offline && metadataMissing)
                     row("list_metadata_unavailable") {
                         ChatNotice(R.string.chat_metadata_unavailable)
                         ChatAction(R.string.retry, retryMetadata)
@@ -560,7 +555,6 @@ internal fun ChatListScreen(
                     groups.all { it.threads.isEmpty() } &&
                         pendingByProject.isEmpty() &&
                         metadataUsable &&
-                        !missingDefault &&
                         (state.filter != ChatListFilter.Unread || unreadAt != null)
                 ) {
                     item {

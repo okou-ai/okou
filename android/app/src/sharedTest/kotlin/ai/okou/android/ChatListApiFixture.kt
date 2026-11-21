@@ -177,11 +177,6 @@ class ChatListApiFixture : Closeable {
         )
     }
     @Volatile
-    var agents: () -> MockResponse = {
-        jsonResponse(
-            """[{"agentId":"$CHAT_AGENT","isDefaultAgent":true,"ownerId":"user-a","description":null,"displayName":"My Okou","sound":null,"avatarUrl":null,"visibility":"private"},{"agentId":"$CHAT_OTHER_AGENT","isDefaultAgent":false,"ownerId":"user-a","description":null,"displayName":"Research Okou","sound":null,"avatarUrl":null,"visibility":"private"}]"""
-        )
-    }
     @Volatile
     var projects: () -> MockResponse = {
         jsonResponse(
@@ -209,9 +204,12 @@ class ChatListApiFixture : Closeable {
                     if (
                         segments.size in 3..4 &&
                             segments[0] == "api" &&
-                            segments[1] in setOf("agents", "chat-threads")
+                            (segments[1] == "chat-threads" ||
+                                segments == listOf("api", "chat-drafts", "composer"))
                     ) {
-                        val draftPath = segments.size == 4 && segments[3] == "draft"
+                        val draftPath =
+                            segments[1] == "chat-drafts" ||
+                                segments.size == 4 && segments[3] == "draft"
                         val key = "${segments[1]}:${segments[2]}"
                         if (request.method == "GET" && draftPath)
                             return jsonResponse(
@@ -219,7 +217,7 @@ class ChatListApiFixture : Closeable {
                             )
                         if (
                             request.method == "PATCH" &&
-                                (segments[1] == "agents" && draftPath ||
+                                (segments[1] == "chat-drafts" ||
                                     segments[1] == "chat-threads" && segments.size == 3)
                         ) {
                             composerDrafts[key] =
@@ -250,7 +248,6 @@ class ChatListApiFixture : Closeable {
                         "/api/chat-threads/snapshot" -> snapshot()
                         "/api/chat-threads/events" -> events(request)
                         "/api/indicators" -> indicators()
-                        "/api/agents" -> agents()
                         "/api/projects/snapshot" -> projects()
                         "/api/projects/events" -> projectEvents(request)
                         "/archive" -> archive()

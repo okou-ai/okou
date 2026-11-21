@@ -49,27 +49,30 @@ class ComposerApiFixture : Closeable {
         chats.commandResponse = { request ->
             val path = request.requestUrl?.encodedPath.orEmpty()
             when {
-                request.method == "GET" && path.endsWith("/draft") -> {
+                request.method == "GET" &&
+                    (path == "/api/chat-drafts/composer" || path.endsWith("/draft")) -> {
                     requests += request
                     val body = drafts[path] ?: plainDraftDocument("")
                     beforeDraftRead(path)
                     json(body.toString()).setResponseCode(draftReadStatus)
                 }
                 request.method == "PATCH" &&
-                    (path.startsWith("/api/agents/") && path.endsWith("/draft") ||
+                    (path == "/api/chat-drafts/composer" ||
                         path.startsWith("/api/chat-threads/") &&
                             !path.removePrefix("/api/chat-threads/").contains('/')) -> {
                     requests += request
                     val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
                     beforeDraftWrite(path)
-                    drafts[if (path.endsWith("/draft")) path else "$path/draft"] = body
+                    drafts[
+                        if ((path == "/api/chat-drafts/composer" || path.endsWith("/draft"))) path
+                        else "$path/draft"] = body
                     MockResponse().setResponseCode(204)
                 }
-                path == "/api/onboarding/status" -> {
+                path == "/api/onboarding/member-status" -> {
                     requests += request
                     beforeContextReturn()
                     json(
-                        """{"needsOnboarding":false,"onboardingComplete":true,"isAdmin":false,"hasOrg":true,"hasDefaultAgent":true,"defaultAgentId":"$CHAT_AGENT","defaultAgentMetadata":null}"""
+                        """{"needsOnboarding":false,"onboardingComplete":true,"isAdmin":false,"hasOrg":true}"""
                     )
                 }
                 path == "/api/chat-threads" && request.method == "POST" -> {
