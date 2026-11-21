@@ -261,24 +261,29 @@ class ChatReplayTest {
         val outside = replay(event(1, "created"), event(2, "pinned")).single()
         val otherOutside = outside.copy(id = "other-outside", agentId = CHAT_OTHER_AGENT)
         val member = outside.copy(id = CHAT_IN_PROJECT, projectId = CHAT_PROJECT)
+        val unresolved = member.copy(id = "unresolved", projectId = "missing")
         val hidden = member.copy(id = "hidden", hidden = true, agentId = CHAT_OTHER_AGENT)
         val archived = member.copy(id = "archived", archived = true)
         val project =
             ConfirmedProject(CHAT_PROJECT, "Research", outside.createdAt, outside.createdAt)
         val state =
             ChatListUiState(
-                threads = listOf(outside, otherOutside, member, hidden, archived),
+                threads = listOf(outside, otherOutside, member, hidden, archived, unresolved),
                 listPhase = ChatReadPhase.Ready,
                 source = ChatListSource.Network,
                 agents = agents(),
                 projectList =
                     ProjectListUiState(rows = listOf(project), source = ChatListSource.Network),
             )
-        val (projectGroup, outsideGroup) = chatListGroups(state)
+        val (projectGroup, unresolvedGroup, outsideGroup) = chatListGroups(state)
         assertEquals(listOf(member), projectGroup.threads)
         assertEquals(listOf(member, hidden, archived), projectGroup.rankScope(state))
         assertEquals(listOf(outside, otherOutside), outsideGroup.threads)
         assertEquals(listOf(outside, otherOutside), outsideGroup.rankScope(state))
+        assertEquals(listOf(unresolved), unresolvedGroup.threads)
+        assertTrue(ChatRowAction.Unpin in state.rowActions(unresolved, unresolvedGroup, 0))
+        val unpinned = unresolved.copy(pinnedAt = null)
+        assertFalse(ChatRowAction.Pin in state.rowActions(unpinned, unresolvedGroup, 0))
         val actions = state.rowActions(member, projectGroup, 0)
         assertTrue(ChatRowAction.Unpin in actions)
         assertFalse(ChatRowAction.MovePinUp in actions)
