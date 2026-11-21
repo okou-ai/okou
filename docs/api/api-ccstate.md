@@ -67,12 +67,12 @@ derived first; connect that dependency when constructing the owning graph.
 
 **Narrow exception — `AgentRunContextSignals`:** the identity-grouped read-only
 interface returned by `createAgentRunContextSignals(identity, requestInputs)` may
-cross the enqueue, pick and Thread graph boundaries. Its values consist of the
-organization, user, Agent and Chat Thread IDs and async computed nodes. Consumers
-read the groups they need. Dependencies share a source when their identity scope
-matches. Database handles, accessors, commands, mutable state and unrelated graph
-interfaces stay with their owners. Read-only computed factory inputs follow the
-separate graph-construction allowance above.
+cross the enqueue, pick and Thread graph boundaries. It carries the organization,
+user and Chat Thread IDs and async computed nodes. Consumers read the groups they
+need. Dependencies share a source when their identity scope matches. Database
+handles, accessors, commands, mutable state and unrelated graph interfaces stay
+with their owners. Read-only computed factory inputs follow the separate
+graph-construction allowance above.
 
 **Picked-event context — `ThreadContext`:**
 `createThreadContext(bootstrap, pickedEvent$, chatThreadId)` builds the read-only

@@ -301,7 +301,8 @@ function capturedFeatureSwitchContext(
   overrides: BootstrapFeatureSwitchContext["overrides"],
 ): BootstrapFeatureSwitchContext {
   return {
-    ...scope,
+    userId: scope.userId,
+    orgId: scope.orgId,
     email: member.profile?.email ?? undefined,
     overrides,
     personalExecution: true,
@@ -434,7 +435,14 @@ function createRequestInputSources(
   const requestTemplateSources$ = createRunTemplateSources(
     computed(() => {
       return Promise.resolve(
-        requestInputs ? { ...scope, ...requestInputs } : null,
+        requestInputs
+          ? {
+              userId: scope.userId,
+              orgId: scope.orgId,
+              presentationIds: requestInputs.presentationIds,
+              userTemplateIds: requestInputs.userTemplateIds,
+            }
+          : null,
       );
     }),
   );
