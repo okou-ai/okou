@@ -476,8 +476,8 @@ class ChatListModel(
 
     private suspend fun persistProjects(saved: CachedProjects): CachedProjects =
         try {
-            cache.saveProjects(saved.checkpoint, saved.confirmedAt)
-            val disk = cache.loadProjects()
+            val written = cache.saveProjects(saved.checkpoint, saved.confirmedAt)
+            val disk = if (written) null else cache.loadProjects()
             requireCurrent()
             mutable.value = mutable.value.copy(projectCacheUnavailable = false)
             if (disk != null && disk.checkpoint.cursor.seqId > saved.checkpoint.cursor.seqId) disk
@@ -1532,21 +1532,22 @@ class ChatListModel(
                         requireCurrent()
                         val previous = confirmedProjects
                         val result = projectSync.synchronize(previous?.checkpoint)
-                        val checkpoint = result.checkpoint
-                        withContext(dispatcher) { replayProjects(checkpoint) }
-                        requireCurrent()
-                        val saved =
+                        val candidate =
                             if (
                                 !result.changed &&
                                     previous != null &&
                                     !mutable.value.projectCacheUnavailable
                             )
                                 previous
-                            else
-                                persistProjects(
-                                    CachedProjects(checkpoint, System.currentTimeMillis())
-                                )
-                        val rows = withContext(dispatcher) { replayProjects(saved.checkpoint) }
+                            else CachedProjects(result.checkpoint, System.currentTimeMillis())
+                        val projected =
+                            withContext(dispatcher) { replayProjects(candidate.checkpoint) }
+                        requireCurrent()
+                        val saved =
+                            if (candidate === previous) candidate else persistProjects(candidate)
+                        val rows =
+                            if (saved === candidate) projected
+                            else withContext(dispatcher) { replayProjects(saved.checkpoint) }
                         requireCurrent()
                         confirmedProjects = saved
                         if (retryableProjectRenames.isNotEmpty()) {

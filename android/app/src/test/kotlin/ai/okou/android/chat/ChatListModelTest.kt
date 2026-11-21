@@ -20,6 +20,7 @@ import ai.okou.android.api.generated.ChatSnapshot
 import ai.okou.android.api.generated.ChatSnapshotVariant1
 import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.IndicatorsThreadsValue
+import ai.okou.android.api.generated.ProjectArchive
 import ai.okou.android.api.generated.ProjectEvents
 import ai.okou.android.api.generated.ProjectEventsEventsItem
 import ai.okou.android.api.generated.ProjectEventsEventsItemKind
@@ -2227,6 +2228,25 @@ class ChatListModelTest {
             advanceUntilIdle()
             assertEquals("Before", model.uiState.value.projects.single().name)
             assertFalse(model.uiState.value.projectCacheUnavailable)
+            page =
+                ProjectEvents(
+                    listOf(
+                        ProjectEventsEventsItem(
+                            id = CHAT_EVENT,
+                            seqId = 17,
+                            projectId = CHAT_IN_PROJECT,
+                            kind = ProjectEventsEventsItemKind.RENAMED,
+                            name = "Missing project",
+                            createdAt = CHAT_DATE,
+                        )
+                    ),
+                    false,
+                )
+            model.refreshMetadata()
+            advanceUntilIdle()
+            assertEquals(ChatReadPhase.Failed, model.uiState.value.projectsPhase)
+            assertEquals("Before", model.uiState.value.projects.single().name)
+            page = ProjectEvents(emptyList(), false)
             execute(
                 root,
                 "CREATE TRIGGER fail_project_write BEFORE INSERT ON project_scopes BEGIN SELECT RAISE(ABORT, 'disk failure fixture'); END",
@@ -2257,6 +2277,56 @@ class ChatListModelTest {
                     assertEquals(17L, saved.checkpoint.cursor.seqId)
                     assertEquals("After", replayProjects(saved.checkpoint).single().name)
                 }
+        } finally {
+            store.clear()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun projectRefreshPublishesTheNewerCheckpointPreservedOnDisk() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val root = temporary.newFolder()
+        val modelCache = cache(root, dispatcher)
+        val diskCache = cache(root, dispatcher)
+        val store = ViewModelStore()
+        val project = ConfirmedProject(CHAT_PROJECT, "From disk", CHAT_DATE, CHAT_DATE)
+        val service =
+            object : TestChatService() {
+                override suspend fun projectSnapshot(): ProjectSnapshot {
+                    diskCache
+                        .open(identity) { true }
+                        .use {
+                            assertTrue(
+                                it.saveProjects(
+                                    ProjectCheckpoint(
+                                        ProjectArchive(listOf(project), CHAT_EVENT, 17)
+                                    ),
+                                    100,
+                                )
+                            )
+                        }
+                    return ProjectSnapshotVariant1(emptyList(), null, 0)
+                }
+
+                override suspend fun projectEvents(since: Long) = ProjectEvents(emptyList(), false)
+            }
+        try {
+            val model =
+                ViewModelProvider(
+                    store,
+                    viewModelFactory {
+                        initializer {
+                            ChatListModel(service, modelCache, identity, { true }, {}, dispatcher)
+                        }
+                    },
+                )[ChatListModel::class.java]
+            model.refresh()
+            advanceUntilIdle()
+            assertEquals(listOf(project), model.uiState.value.projects)
+            assertFalse(model.uiState.value.projectCacheUnavailable)
         } finally {
             store.clear()
             runCurrent()
