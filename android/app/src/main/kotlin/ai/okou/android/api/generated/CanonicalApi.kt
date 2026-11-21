@@ -110,6 +110,13 @@ internal interface CanonicalApi {
         @Query("hostname") `queryHostname`: String,
     ): Response<ArtifactSitePreview>
 
+    @GET("/api/chat/search")
+    suspend fun `searchChatMessages`(
+        @Header("Authorization") token: String,
+        @Query("keyword") `queryKeyword`: String,
+        @Query("agentId") `queryAgentId`: String? = null,
+    ): Response<ChatMessageSearchResponse>
+
     @GET("/api/agents/{id}/draft")
     suspend fun `agentDraft`(
         @Header("Authorization") token: String,

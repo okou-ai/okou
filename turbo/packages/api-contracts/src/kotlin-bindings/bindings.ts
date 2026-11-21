@@ -7,6 +7,7 @@ import { androidUpgradeRequiredSchema } from "../contracts/android-client-compat
 import { androidUpdatesContract } from "../contracts/android-updates";
 import {
   chatThreadsContract,
+  chatSearchContract,
   chatThreadSnapshotArchiveSchema,
   chatThreadEventsContract,
   chatThreadByIdContract,
@@ -202,6 +203,11 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     name: "artifactSitePreview",
     response: "ArtifactSitePreview",
     route: hostContract.sitePreview,
+  },
+  {
+    name: "searchChatMessages",
+    response: "ChatMessageSearchResponse",
+    route: chatSearchContract.search,
   },
   {
     name: "agentDraft",
@@ -477,6 +483,11 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   {
     name: "ArtifactSitePreview",
     schema: hostContract.sitePreview.responses[200],
+    direction: "output",
+  },
+  {
+    name: "ChatMessageSearchResponse",
+    schema: chatSearchContract.search.responses[200],
     direction: "output",
   },
   {

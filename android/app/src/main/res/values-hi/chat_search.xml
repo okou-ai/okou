@@ -4,4 +4,25 @@
     <string name="chat_search_clear">खोज मिटाएँ</string>
     <string name="chat_search_recent">हाल की चैट</string>
     <string name="chat_search_empty">कोई मिलती-जुलती चैट नहीं</string>
+    <string name="chat_search_all">सभी</string>
+    <string name="chat_search_messages">संदेश</string>
+    <string name="chat_search_workflows">वर्कफ़्लो</string>
+    <string name="chat_search_artifacts">आर्टिफ़ैक्ट</string>
+    <string name="chat_search_recently_opened">हाल में खोले गए</string>
+    <string name="chat_search_enter_keyword">खोजने के लिए कोई शब्द डालें</string>
+    <string name="chat_search_view_all">सभी देखें</string>
+    <string name="chat_search_view_type">सभी देखें: %1$s</string>
+    <string name="chat_search_all_types">सभी प्रकारों में खोजें</string>
+    <string name="chat_search_no_results">कोई मिलता-जुलता नतीजा नहीं</string>
+    <string name="chat_search_no_messages">कोई मिलता-जुलता संदेश नहीं</string>
+    <string name="chat_search_no_workflows">कोई मिलता-जुलता वर्कफ़्लो नहीं</string>
+    <string name="chat_search_no_artifacts">कोई मिलता-जुलता आर्टिफ़ैक्ट नहीं</string>
+    <string name="chat_search_online_only">इस प्रकार को खोजने के लिए ऑनलाइन जाएँ</string>
+    <string name="chat_search_offline_titles">ऑफ़लाइन केवल सहेजे गए चैट शीर्षक खोजे जाते हैं।</string>
+    <string name="chat_search_unavailable">कुछ नतीजे लोड नहीं हो सके</string>
+    <string name="chat_search_message_unavailable">यह संदेश अब उपलब्ध नहीं है</string>
+    <string name="chat_search_workflow_add_draft">नई चैट के ड्राफ़्ट में जोड़ें</string>
+    <string name="chat_search_workflow_details">वर्कफ़्लो की जानकारी देखें</string>
+    <string name="chat_search_workflow_shadowed">यह कमांड एक निजी वर्कफ़्लो उपयोग करता है</string>
+    <string name="chat_search_artifact_preview">आर्टिफ़ैक्ट का पूर्वावलोकन</string>
 </resources>

@@ -4,4 +4,25 @@
     <string name="chat_search_clear">Cancella ricerca</string>
     <string name="chat_search_recent">Chat recenti</string>
     <string name="chat_search_empty">Nessuna chat corrispondente</string>
+    <string name="chat_search_all">Tutto</string>
+    <string name="chat_search_messages">Messaggi</string>
+    <string name="chat_search_workflows">Workflow</string>
+    <string name="chat_search_artifacts">Artefatti</string>
+    <string name="chat_search_recently_opened">Aperti di recente</string>
+    <string name="chat_search_enter_keyword">Inserisci una parola chiave</string>
+    <string name="chat_search_view_all">Mostra tutto</string>
+    <string name="chat_search_view_type">Mostra tutto: %1$s</string>
+    <string name="chat_search_all_types">Cerca in tutti i tipi</string>
+    <string name="chat_search_no_results">Nessun risultato corrispondente</string>
+    <string name="chat_search_no_messages">Nessun messaggio corrispondente</string>
+    <string name="chat_search_no_workflows">Nessun workflow corrispondente</string>
+    <string name="chat_search_no_artifacts">Nessun artefatto corrispondente</string>
+    <string name="chat_search_online_only">Connettiti per cercare in questo tipo</string>
+    <string name="chat_search_offline_titles">Offline vengono cercati solo i titoli delle chat salvate.</string>
+    <string name="chat_search_unavailable">Impossibile caricare alcuni risultati</string>
+    <string name="chat_search_message_unavailable">Questo messaggio non è più disponibile</string>
+    <string name="chat_search_workflow_add_draft">Aggiungi alla bozza di una nuova chat</string>
+    <string name="chat_search_workflow_details">Visualizza i dettagli del workflow</string>
+    <string name="chat_search_workflow_shadowed">Un workflow privato usa questo comando</string>
+    <string name="chat_search_artifact_preview">Anteprima dell’artefatto</string>
 </resources>

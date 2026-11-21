@@ -4,4 +4,25 @@
     <string name="chat_search_clear">清除搜索</string>
     <string name="chat_search_recent">最近聊天</string>
     <string name="chat_search_empty">没有匹配的聊天</string>
+    <string name="chat_search_all">全部</string>
+    <string name="chat_search_messages">消息</string>
+    <string name="chat_search_workflows">工作流</string>
+    <string name="chat_search_artifacts">成果</string>
+    <string name="chat_search_recently_opened">最近打开</string>
+    <string name="chat_search_enter_keyword">输入关键词开始搜索</string>
+    <string name="chat_search_view_all">查看全部</string>
+    <string name="chat_search_view_type">查看全部%1$s</string>
+    <string name="chat_search_all_types">搜索全部类型</string>
+    <string name="chat_search_no_results">没有匹配的结果</string>
+    <string name="chat_search_no_messages">没有匹配的消息</string>
+    <string name="chat_search_no_workflows">没有匹配的工作流</string>
+    <string name="chat_search_no_artifacts">没有匹配的成果</string>
+    <string name="chat_search_online_only">联网后可搜索此类型</string>
+    <string name="chat_search_offline_titles">离线时仅搜索已保存的聊天标题</string>
+    <string name="chat_search_unavailable">部分结果暂时无法加载</string>
+    <string name="chat_search_message_unavailable">此消息已不可用</string>
+    <string name="chat_search_workflow_add_draft">加入新聊天草稿</string>
+    <string name="chat_search_workflow_details">查看工作流详情</string>
+    <string name="chat_search_workflow_shadowed">此命令当前用于同名私有工作流</string>
+    <string name="chat_search_artifact_preview">成果预览</string>
 </resources>

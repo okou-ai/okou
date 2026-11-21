@@ -4,4 +4,25 @@
     <string name="chat_search_clear">Clear search</string>
     <string name="chat_search_recent">Recent chats</string>
     <string name="chat_search_empty">No matching chats</string>
+    <string name="chat_search_all">All</string>
+    <string name="chat_search_messages">Messages</string>
+    <string name="chat_search_workflows">Workflows</string>
+    <string name="chat_search_artifacts">Artifacts</string>
+    <string name="chat_search_recently_opened">Recently opened</string>
+    <string name="chat_search_enter_keyword">Enter a keyword to search</string>
+    <string name="chat_search_view_all">View all</string>
+    <string name="chat_search_view_type">View all %1$s</string>
+    <string name="chat_search_all_types">Search all types</string>
+    <string name="chat_search_no_results">No matching results</string>
+    <string name="chat_search_no_messages">No matching messages</string>
+    <string name="chat_search_no_workflows">No matching workflows</string>
+    <string name="chat_search_no_artifacts">No matching artifacts</string>
+    <string name="chat_search_online_only">Go online to search this type</string>
+    <string name="chat_search_offline_titles">Offline. Searching saved chat titles only.</string>
+    <string name="chat_search_unavailable">Some results couldn’t load</string>
+    <string name="chat_search_message_unavailable">This message is no longer available</string>
+    <string name="chat_search_workflow_add_draft">Add to new chat draft</string>
+    <string name="chat_search_workflow_details">View workflow details</string>
+    <string name="chat_search_workflow_shadowed">A private workflow uses this command</string>
+    <string name="chat_search_artifact_preview">Artifact preview</string>
 </resources>

@@ -4,4 +4,25 @@
     <string name="chat_search_clear">Hapus pencarian</string>
     <string name="chat_search_recent">Chat terbaru</string>
     <string name="chat_search_empty">Tidak ada chat yang cocok</string>
+    <string name="chat_search_all">Semua</string>
+    <string name="chat_search_messages">Pesan</string>
+    <string name="chat_search_workflows">Workflow</string>
+    <string name="chat_search_artifacts">Artefak</string>
+    <string name="chat_search_recently_opened">Baru dibuka</string>
+    <string name="chat_search_enter_keyword">Masukkan kata kunci untuk mencari</string>
+    <string name="chat_search_view_all">Lihat semua</string>
+    <string name="chat_search_view_type">Lihat semua: %1$s</string>
+    <string name="chat_search_all_types">Cari semua jenis</string>
+    <string name="chat_search_no_results">Tidak ada hasil yang cocok</string>
+    <string name="chat_search_no_messages">Tidak ada pesan yang cocok</string>
+    <string name="chat_search_no_workflows">Tidak ada workflow yang cocok</string>
+    <string name="chat_search_no_artifacts">Tidak ada artefak yang cocok</string>
+    <string name="chat_search_online_only">Sambungkan ke internet untuk mencari jenis ini</string>
+    <string name="chat_search_offline_titles">Saat offline, pencarian hanya mencakup judul chat yang tersimpan.</string>
+    <string name="chat_search_unavailable">Sebagian hasil tidak dapat dimuat</string>
+    <string name="chat_search_message_unavailable">Pesan ini sudah tidak tersedia</string>
+    <string name="chat_search_workflow_add_draft">Tambahkan ke draf chat baru</string>
+    <string name="chat_search_workflow_details">Lihat detail workflow</string>
+    <string name="chat_search_workflow_shadowed">Sebuah workflow privat menggunakan perintah ini</string>
+    <string name="chat_search_artifact_preview">Pratinjau artefak</string>
 </resources>

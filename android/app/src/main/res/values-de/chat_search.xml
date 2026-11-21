@@ -4,4 +4,25 @@
     <string name="chat_search_clear">Suche leeren</string>
     <string name="chat_search_recent">Letzte Chats</string>
     <string name="chat_search_empty">Keine passenden Chats</string>
+    <string name="chat_search_all">Alle</string>
+    <string name="chat_search_messages">Nachrichten</string>
+    <string name="chat_search_workflows">Workflows</string>
+    <string name="chat_search_artifacts">Artefakte</string>
+    <string name="chat_search_recently_opened">Zuletzt geöffnet</string>
+    <string name="chat_search_enter_keyword">Suchbegriff eingeben</string>
+    <string name="chat_search_view_all">Alle anzeigen</string>
+    <string name="chat_search_view_type">Alle anzeigen: %1$s</string>
+    <string name="chat_search_all_types">Alle Typen durchsuchen</string>
+    <string name="chat_search_no_results">Keine passenden Ergebnisse</string>
+    <string name="chat_search_no_messages">Keine passenden Nachrichten</string>
+    <string name="chat_search_no_workflows">Keine passenden Workflows</string>
+    <string name="chat_search_no_artifacts">Keine passenden Artefakte</string>
+    <string name="chat_search_online_only">Für diesen Typ ist eine Verbindung erforderlich</string>
+    <string name="chat_search_offline_titles">Offline werden nur gespeicherte Chat-Titel durchsucht.</string>
+    <string name="chat_search_unavailable">Einige Ergebnisse konnten nicht geladen werden</string>
+    <string name="chat_search_message_unavailable">Diese Nachricht ist nicht mehr verfügbar</string>
+    <string name="chat_search_workflow_add_draft">Zum neuen Chatentwurf hinzufügen</string>
+    <string name="chat_search_workflow_details">Workflow-Details anzeigen</string>
+    <string name="chat_search_workflow_shadowed">Ein privater Workflow verwendet diesen Befehl</string>
+    <string name="chat_search_artifact_preview">Artefaktvorschau</string>
 </resources>

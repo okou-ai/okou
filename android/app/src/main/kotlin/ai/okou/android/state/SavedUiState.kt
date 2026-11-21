@@ -1,6 +1,7 @@
 package ai.okou.android.state
 
 import ai.okou.android.artifacts.ArtifactFilter
+import ai.okou.android.chat.WorkspaceSearchType
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableIntState
@@ -82,33 +83,78 @@ internal fun rememberArtifactSiteScroll(): MutableIntState = rememberSaveable {
     mutableIntStateOf(0)
 }
 
+@Composable
+internal fun rememberSearchWorkflowId(): MutableState<String?> = rememberSaveable {
+    mutableStateOf(null)
+}
+
 private const val MAX_SAVED_SEARCH_QUERY_CHARS = 256
 
-internal data class SearchResultAnchor(val chatId: String, val offset: Int)
+internal data class SearchResultAnchor(val key: String, val offset: Int)
 
 internal class ChatSearchState(
     query: TextFieldValue = TextFieldValue(),
     anchor: SearchResultAnchor? = null,
+    type: WorkspaceSearchType = WorkspaceSearchType.All,
+    focusedResult: String? = null,
 ) {
+    private var committed = query
     var query by mutableStateOf(query)
+        private set
+
+    var keyword by mutableStateOf(query.text.trim())
+        private set
+
+    var type by mutableStateOf(type)
         private set
 
     val position = LazyListState()
     var pendingAnchor by mutableStateOf(anchor)
         private set
 
+    var pendingFocus by mutableStateOf(focusedResult)
+        private set
+
     fun edit(value: TextFieldValue) {
-        if (query.text != value.text) {
-            pendingAnchor = null
-            position.requestScrollToItem(0)
-        }
         query = value
+        if (value.composition != null) return
+        committed = value
+        if (keyword != value.text.trim()) {
+            keyword = value.text.trim()
+            resetPosition()
+        }
     }
 
+    fun selectType(value: WorkspaceSearchType) {
+        if (type == value) return
+        type = value
+        resetPosition()
+    }
+
+    fun clearQuery() = edit(TextFieldValue())
+
+    fun returnToResult(key: String) {
+        query = committed
+        pendingAnchor = savedAnchor()
+        pendingFocus = key
+    }
+
+    fun restoreFocus() {
+        pendingFocus = null
+    }
+
+    fun savedQuery(): TextFieldValue = committed
+
     fun reset() {
+        type = WorkspaceSearchType.All
+        clearQuery()
+        resetPosition()
+    }
+
+    private fun resetPosition() {
         pendingAnchor = null
+        pendingFocus = null
         position.requestScrollToItem(0)
-        query = TextFieldValue()
     }
 
     fun restorePosition(index: Int?) {
@@ -137,24 +183,30 @@ internal fun rememberChatSearchState(): ChatSearchState =
         saver =
             listSaver<ChatSearchState, Any>(
                 save = {
-                    val query = it.query
+                    val query = it.savedQuery()
                     if (query.text.length <= MAX_SAVED_SEARCH_QUERY_CHARS) {
                         val anchor = it.savedAnchor()
                         listOf(
                             query.text,
                             query.selection.start,
                             query.selection.end,
-                            anchor?.chatId.orEmpty(),
+                            anchor?.key.orEmpty(),
                             anchor?.offset ?: 0,
+                            it.type.name,
+                            it.pendingFocus.orEmpty(),
                         )
                     } else emptyList()
                 },
-                restore = { (text, start, end, chatId, offset) ->
+                restore = { fields ->
+                    val (text, start, end, key, offset) = fields
                     ChatSearchState(
                         TextFieldValue(text as String, TextRange(start as Int, end as Int)),
-                        (chatId as String)
+                        (key as String)
                             .takeIf { it.isNotEmpty() }
                             ?.let { SearchResultAnchor(it, offset as Int) },
+                        WorkspaceSearchType.entries.firstOrNull { it.name == fields.getOrNull(5) }
+                            ?: WorkspaceSearchType.All,
+                        (fields.getOrNull(6) as? String)?.ifEmpty { null },
                     )
                 },
             )
@@ -166,6 +218,7 @@ internal data class WorkspaceNavigation(
     val target: WorkspaceTarget = WorkspaceTarget.List,
     val settings: SettingsDestination? = null,
     val search: SearchRoute = SearchRoute.Closed,
+    val messageSequence: Long? = null,
 )
 
 @Composable
@@ -180,7 +233,13 @@ internal fun rememberWorkspaceNavigation(): MutableState<WorkspaceNavigation> =
                             is WorkspaceTarget.Chat -> "chat" to target.id
                             is WorkspaceTarget.NewChat -> "new" to target.projectId.orEmpty()
                         }
-                    listOf(kind, id, navigation.settings?.name.orEmpty(), navigation.search.name)
+                    listOf(
+                        kind,
+                        id,
+                        navigation.settings?.name.orEmpty(),
+                        navigation.search.name,
+                        navigation.messageSequence ?: 0L,
+                    )
                 },
                 restore = { fields ->
                     val (kind, id, settings) = fields
@@ -200,7 +259,12 @@ internal fun rememberWorkspaceNavigation(): MutableState<WorkspaceNavigation> =
                             else -> null
                         }
                     val search = SearchRoute.entries.firstOrNull { it.name == fields.getOrNull(3) }
-                    WorkspaceNavigation(target, destination, search ?: SearchRoute.Closed)
+                    WorkspaceNavigation(
+                        target,
+                        destination,
+                        search ?: SearchRoute.Closed,
+                        (fields.getOrNull(4) as? Long)?.takeIf { it > 0L },
+                    )
                 },
             )
     ) {

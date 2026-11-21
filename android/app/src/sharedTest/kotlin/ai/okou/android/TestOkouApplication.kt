@@ -95,6 +95,7 @@ open class TestOkouApplication : OkouApplication() {
     var chatService: ChatListService = TestChatService()
     var workflows: WorkflowService? = null
     var initialPreferences: UserPreferences? = null
+    var searchService: ai.okou.android.chat.WorkspaceSearchService = EmptyWorkspaceSearchService
     var realtimeService: RealtimeService = TestRealtimeService()
     var composerService: ChatComposerService = TestChatComposerService()
     var journalStore: ComposerJournalStore? = null
@@ -138,6 +139,7 @@ open class TestOkouApplication : OkouApplication() {
             ai.okou.android.chat.AssistantRecoveryService by recoveryService,
             RealtimeService by realtimeService,
             ChatListService by chatService,
+            ai.okou.android.chat.WorkspaceSearchService by searchService,
             ChatComposerService by composerService {
 
             override val workflowService = workflows

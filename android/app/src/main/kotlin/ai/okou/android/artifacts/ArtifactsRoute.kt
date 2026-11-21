@@ -52,6 +52,7 @@ internal fun ArtifactsRoute(
     listWidth: Int?,
     onClose: () -> Unit,
     onSource: (ConfirmedChat) -> Unit,
+    searchArtifactId: String? = null,
 ) {
     val state by model.state.collectAsStateWithLifecycle()
     val position = rememberLazyListState()
@@ -59,7 +60,8 @@ internal fun ArtifactsRoute(
     val keyboard = LocalSoftwareKeyboardController.current
     val input = rememberTextFieldState()
     var filter by rememberArtifactFilter()
-    var selectedId by rememberArtifactId()
+    var catalogSelection by rememberArtifactId()
+    val selectedId = searchArtifactId ?: catalogSelection
     var restoreRow by rememberArtifactId()
     var restoreSource by rememberArtifactFlag()
     var pendingSaveId by rememberArtifactId()
@@ -84,36 +86,41 @@ internal fun ArtifactsRoute(
         }
 
     LifecycleStartEffect(model) {
-        model.setActive(true, ArtifactQuery(filter, input.text.toString().trim()))
+        model.setActive(
+            true,
+            ArtifactQuery(filter, input.text.toString().trim()),
+            readDirectory = searchArtifactId == null,
+        )
         onStopOrDispose { model.setActive(false) }
     }
     LaunchedEffect(model, selectedId) { model.select(selectedId) }
-    LaunchedEffect(model, input) {
-        snapshotFlow { input.text.toString().trim() }
-            .collect { keyword ->
-                if (keyword != model.state.value.query.keyword) {
-                    restoreRow = null
-                    position.requestScrollToItem(0)
-                    model.query(ArtifactQuery(filter, keyword), debounce = keyword.isNotEmpty())
+    if (searchArtifactId == null)
+        LaunchedEffect(model, input) {
+            snapshotFlow { input.text.toString().trim() }
+                .collect { keyword ->
+                    if (keyword != model.state.value.query.keyword) {
+                        restoreRow = null
+                        position.requestScrollToItem(0)
+                        model.query(ArtifactQuery(filter, keyword), debounce = keyword.isNotEmpty())
+                    }
                 }
-            }
-    }
+        }
 
     fun back() {
         focus.clearFocus()
         keyboard?.hide()
         val current = selectedId
-        if (current == null) {
+        if (current == null || searchArtifactId != null) {
             onClose()
         } else {
             restoreRow = current
-            selectedId = null
+            catalogSelection = null
             model.select(null)
         }
     }
 
     BackHandler(onBack = ::back)
-    val wide = listWidth != null
+    val wide = searchArtifactId == null && listWidth != null
     Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
         if (wide || selectedId == null) {
             ArtifactCatalogList(
@@ -140,7 +147,7 @@ internal fun ArtifactsRoute(
                     focus.clearFocus()
                     keyboard?.hide()
                     pickerFailed = false
-                    selectedId = item.id
+                    catalogSelection = item.id
                     model.select(item.id, item)
                 },
                 onClose = {
@@ -156,8 +163,15 @@ internal fun ArtifactsRoute(
         if (wide) VerticalDivider(color = MaterialTheme.colorScheme.outline)
         if (selectedId != null) {
             Column(Modifier.weight(1f)) {
-                if (!wide)
-                    ArtifactToolbar(R.string.artifact_title, R.string.artifact_return_list, ::back)
+                if (!wide) {
+                    ArtifactToolbar(
+                        if (searchArtifactId == null) R.string.artifact_title
+                        else R.string.chat_search_artifact_preview,
+                        if (searchArtifactId == null) R.string.artifact_return_list
+                        else R.string.back,
+                        ::back,
+                    )
+                }
                 key(selectedId) {
                     val id = checkNotNull(selectedId)
                     val preview = state.preview?.takeIf { it.id == id }

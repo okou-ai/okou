@@ -14,6 +14,8 @@ import ai.okou.android.chat.ProjectExpansionModel
 import ai.okou.android.chat.ProjectExpansionStore
 import ai.okou.android.chat.RunControlJournalStore
 import ai.okou.android.chat.RunControlsModel
+import ai.okou.android.chat.SearchRecentChatsStore
+import ai.okou.android.chat.WorkspaceSearchModel
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.instructions.PersonalInstructionsModel
 import ai.okou.android.preferences.MemberAppearance
@@ -67,6 +69,7 @@ data class ReadyWorkspace(
     val recovery: AssistantRecoveryModel,
     val workflows: WorkflowModel?,
     val artifacts: ArtifactCatalogModel,
+    val search: WorkspaceSearchModel,
 )
 
 sealed interface OpeningWorkspace {
@@ -83,6 +86,7 @@ sealed interface OpeningWorkspace {
         val controls: RunControlsModel,
         val recovery: AssistantRecoveryModel,
         val artifacts: ArtifactCatalogModel,
+        val search: WorkspaceSearchModel,
     ) : OpeningWorkspace
 }
 
@@ -110,6 +114,7 @@ class SessionModel(
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     updatesRequired: Flow<Boolean> = emptyFlow(),
     private val connectivity: Flow<Boolean> = emptyFlow(),
+    private val searchRecents: SearchRecentChatsStore? = null,
 ) : ViewModel() {
     @Volatile private var generation = 0L
     private val mutable = MutableStateFlow(SessionUiState(generation))
@@ -353,6 +358,15 @@ class SessionModel(
                                     workspaceFailure(ticket, snapshot, it)
                                 }
                             },
+                            store.workspaceModel {
+                                WorkspaceSearchModel(
+                                    owner,
+                                    identity,
+                                    searchRecents,
+                                    { current(ticket, snapshot) },
+                                    { workspaceFailure(ticket, snapshot, it) },
+                                )
+                            },
                         )
                     val knownMemberships =
                         if (fastAccess == null) memberships
@@ -513,6 +527,7 @@ class SessionModel(
                         opened.recovery,
                         workflows,
                         opened.artifacts,
+                        opened.search,
                     ),
                 working = false,
                 cachedAppearance = null,

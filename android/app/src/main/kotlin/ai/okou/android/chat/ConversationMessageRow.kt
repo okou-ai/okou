@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -48,6 +50,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
@@ -109,9 +112,20 @@ internal fun ConversationMessageRow(
     @StringRes activity: Int?,
     revoke: (() -> Unit)?,
     runningFrame: LongState? = null,
+    highlightedEventId: String? = null,
+    onReveal: (() -> Unit)? = null,
 ) {
     val message = entry.message
     val colors = MaterialTheme.colorScheme
+    @Composable
+    fun Body(value: HistoryMessage, compact: Boolean = false) {
+        MessageBody(
+            value,
+            compact,
+            highlighted = value.id == highlightedEventId,
+            onReveal = onReveal.takeIf { value.id == highlightedEventId },
+        )
+    }
     when {
         message.queued && message.role == HistoryRole.User ->
             Surface(
@@ -127,7 +141,7 @@ internal fun ConversationMessageRow(
                 ) {
                     Column(Modifier.weight(1f)) {
                         ConversationMeta(stringResource(R.string.history_queued))
-                        MessageBody(message, compact = true)
+                        Body(message, compact = true)
                     }
                     if (revoke != null) {
                         TextButton(
@@ -155,7 +169,7 @@ internal fun ConversationMessageRow(
                         Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        MessageBody(message)
+                        Body(message)
                         MessageStatus(message, entry.deliveryStatus)
                     }
                 }
@@ -165,6 +179,11 @@ internal fun ConversationMessageRow(
                 ConversationReplyHeader(message)
                 if (entry.earlier.isNotEmpty()) {
                     var expanded by rememberEarlierRepliesExpanded()
+                    LaunchedEffect(highlightedEventId, onReveal != null) {
+                        if (onReveal != null && entry.earlier.any { it.id == highlightedEventId }) {
+                            expanded = true
+                        }
+                    }
                     TextButton(
                         onClick = { expanded = !expanded },
                         colors =
@@ -189,20 +208,18 @@ internal fun ConversationMessageRow(
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             for (earlier in entry.earlier) {
-                                Column(Modifier.testTag("message_${earlier.id}")) {
-                                    MessageBody(earlier)
-                                }
+                                Column(Modifier.testTag("message_${earlier.id}")) { Body(earlier) }
                             }
                         }
                 }
-                MessageBody(message)
+                Body(message)
                 if (activity != null)
                     ConversationActivity(activity, Modifier.padding(top = 8.dp), runningFrame)
             }
         else ->
             Column(Modifier.fillMaxWidth().testTag("message_${message.id}")) {
                 MessageStatus(message, entry.deliveryStatus)
-                MessageBody(message, compact = true)
+                Body(message, compact = true)
             }
     }
 }
@@ -344,12 +361,36 @@ private fun ConversationMeta(text: String, maxLines: Int = Int.MAX_VALUE) {
 }
 
 @Composable
-private fun MessageBody(message: HistoryMessage, compact: Boolean = false) {
+private fun MessageBody(
+    message: HistoryMessage,
+    compact: Boolean,
+    highlighted: Boolean,
+    onReveal: (() -> Unit)?,
+) {
     val typography = MaterialTheme.typography
     val style =
         if (compact) typography.bodyMedium
         else typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 28.sp, letterSpacing = 0.sp)
-    SelectionContainer {
+    val revealModifier =
+        if (onReveal != null) {
+            val reveal = remember { BringIntoViewRequester() }
+            var placed by remember { mutableStateOf(false) }
+            LaunchedEffect(placed) {
+                if (placed) {
+                    reveal.bringIntoView()
+                    onReveal()
+                }
+            }
+            Modifier.bringIntoViewRequester(reveal).onGloballyPositioned { placed = true }
+        } else Modifier
+    val highlight =
+        if (highlighted) {
+            Modifier.background(
+                MaterialTheme.colorScheme.secondaryContainer,
+                RoundedCornerShape(4.dp),
+            )
+        } else Modifier
+    SelectionContainer(modifier = highlight.then(revealModifier)) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             for (block in message.blocks) {
                 when (block.kind) {

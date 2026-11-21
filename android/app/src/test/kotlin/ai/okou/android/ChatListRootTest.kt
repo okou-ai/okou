@@ -80,6 +80,7 @@ class ChatListApplication : TestOkouApplication() {
         fixture = ChatListApiFixture()
         fixture.beforeResponse = { responseGate.await() }
         chatService = fixture.service
+        searchService = fixture.service
         cacheSnapshot = ChatCacheSnapshot(noBackupFilesDir.resolve("chat-list"), chatCache)
         super.onCreate()
     }
@@ -273,8 +274,12 @@ class ChatListRootTest {
         compose.onNodeWithText("Personal chat").performClick()
         compose.onNodeWithContentDescription("Search workspace").performClick()
         compose.onNodeWithTag("conversation").assertExists()
+        compose.onNodeWithText("Chats").performClick()
         compose.onNodeWithTag("chat_search_query").performTextInput("missing")
         compose.onNodeWithText("No matching chats").assertExists()
+        compose.onNodeWithText("Search all types").performClick()
+        compose.onNodeWithText("All").assertIsSelected()
+        compose.onNodeWithTag("chat_search_query").assert(hasText("missing"))
         compose.onNodeWithContentDescription("Clear search").performClick()
         compose.onNodeWithTag("chat_search_query").assertIsFocused().performTextInput("CHAT")
         val results = hasAnyAncestor(hasTestTag("chat_search_results"))
@@ -291,6 +296,44 @@ class ChatListRootTest {
         compose.onNodeWithTag("chat_$CHAT_IN_PROJECT").assertDoesNotExist()
         setResearchExpanded(true)
         compose.onNodeWithTag("chat_$CHAT_IN_PROJECT").assertIsSelected()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun workspaceMessageSearchRestoresItsTypeAndOpensTheExactEvent() {
+        val app = compose.activity.application as ChatListApplication
+        app.fixture.searchMessages = { request ->
+            assertEquals("history", request.requestUrl?.queryParameter("keyword"))
+            assertEquals("Bearer fixture-token", request.getHeader("Authorization"))
+            jsonResponse(
+                """
+                {"results":[{"chatThreadId":"$CHAT_PERSONAL","agentName":"Okou",
+                  "matchedMessage":{"chatThreadId":"$CHAT_PERSONAL","role":"assistant",
+                    "content":"Native history reply","createdAt":"$CHAT_DATE","seqId":23,"runId":"$HISTORY_RUN"},
+                  "matchedRanges":[{"start":7,"end":14}]}]}
+                """
+            )
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        compose.onNodeWithText("Messages").performClick()
+        val field = compose.onNodeWithTag("chat_search_query")
+        field.performTextInput("history")
+        val match =
+            hasText("Native history reply") and hasAnyAncestor(hasTestTag("chat_search_results"))
+        compose.waitUntilExactlyOneExists(match, 5_000)
+        compose.onNode(match).performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag("message_output"), 5_000)
+        compose.onNodeWithTag("message_output").assertIsDisplayed()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        field.assert(hasText("history"))
+        compose.onNode(hasText("Messages") and isSelectable()).assertIsSelected()
+        compose.onNode(match).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Clear search").performClick()
+        field.assertIsFocused()
+        compose.onNode(hasText("Messages") and isSelectable()).assertIsSelected()
+        compose.onNodeWithText("Enter a keyword to search").assertIsDisplayed()
     }
 
     @Test

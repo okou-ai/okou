@@ -109,6 +109,7 @@ internal fun WorkflowScreen(
     onUse: (WorkflowDetail) -> Unit,
     sourceChatAvailable: (String) -> Boolean,
     onOpenChat: (String) -> Unit,
+    fromSearch: Boolean = false,
 ) {
     LifecycleResumeEffect(model) {
         model.visibilityChanged(true)
@@ -128,7 +129,7 @@ internal fun WorkflowScreen(
         when {
             editor != null -> exitEditor()
             state.writing -> Unit
-            route.id != null && !wide && !handoffPending -> {
+            route.id != null && !wide && !fromSearch && !handoffPending -> {
                 restoreRow = route.id
                 changeRoute(route.copy(id = null, tab = WorkflowTab.Instructions))
             }
@@ -292,7 +293,7 @@ private fun WorkflowDirectory(
     val anchor = query.pendingAnchor
     LaunchedEffect(rows, anchor, state.catalog) {
         if (anchor != null && state.catalog != null)
-            query.restorePosition(rows.indexOfFirst { it.id == anchor.chatId }.takeIf { it >= 0 })
+            query.restorePosition(rows.indexOfFirst { it.id == anchor.key }.takeIf { it >= 0 })
     }
     Column(
         modifier.testTag("workflow_directory"),

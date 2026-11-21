@@ -71,6 +71,7 @@ internal constructor(
     private val previews = LinkedHashMap<String, ArtifactPreviewState>(3, 0.75f, true)
     private val thumbnails = LruCache<String, Bitmap>(40)
     private var active = false
+    private var directoryActive = false
     private var catalogJob: Job? = null
     private var previewJob: Job? = null
     private var saveJob: Job? = null
@@ -97,12 +98,19 @@ internal constructor(
         }
     }
 
-    internal fun setActive(visible: Boolean, currentQuery: ArtifactQuery = mutable.value.query) {
+    internal fun setActive(
+        visible: Boolean,
+        currentQuery: ArtifactQuery = mutable.value.query,
+        readDirectory: Boolean = true,
+    ) {
         if (active == visible) return
         active = visible
+        directoryActive = visible && readDirectory
         if (visible) {
-            if (currentQuery != mutable.value.query) query(currentQuery, debounce = false)
-            else readCatalog()
+            if (directoryActive) {
+                if (currentQuery != mutable.value.query) query(currentQuery, debounce = false)
+                else readCatalog()
+            }
             mutable.value.preview?.let { readPreview(it.id) }
         } else {
             catalogJob?.cancel()
@@ -198,7 +206,7 @@ internal constructor(
 
     private fun readCatalog(append: Boolean = false, debounce: Boolean = false) {
         val current = mutable.value
-        if (!active || current.offline) return
+        if (!directoryActive || current.offline) return
         catalogJob?.cancel()
         val query = current.query
         val cursor = if (append) current.page?.nextCursor ?: return else null

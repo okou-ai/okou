@@ -5,8 +5,8 @@ import ai.okou.android.TestOkouApplication
 import ai.okou.android.chat.ChatListSource
 import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
-import ai.okou.android.chat.ChatTitleSearch
 import ai.okou.android.chat.ConfirmedChat
+import ai.okou.android.chat.WorkspaceSearchScreen
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Column
@@ -38,6 +38,7 @@ import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
@@ -51,6 +52,18 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = TestOkouApplication::class)
 class SavedUiStateTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun searchWaitsForTheImeToCommitTheNewKeyword() {
+        val search = ChatSearchState(TextFieldValue("发"))
+        val composing = TextFieldValue("发bu", composition = TextRange(1, 3))
+        search.edit(composing)
+        assertEquals("发bu", search.query.text)
+        assertEquals("发", search.keyword)
+        assertEquals("发", search.savedQuery().text)
+        search.edit(TextFieldValue("发布"))
+        assertEquals("发布", search.keyword)
+    }
 
     @Test
     fun searchRestoresTheSameResultWhenCacheAddsAnEarlierMatch() {
@@ -96,7 +109,7 @@ class SavedUiStateTest {
             }
             val search = rememberChatSearchState()
             OkouTheme(false) {
-                ChatTitleSearch(
+                WorkspaceSearchScreen(
                     state =
                         ChatListUiState(
                             listPhase = ChatReadPhase.Ready,
@@ -118,6 +131,7 @@ class SavedUiStateTest {
         }
         val results = compose.onNodeWithTag("chat_search_results")
         val field = compose.onNodeWithTag("chat_search_query")
+        compose.onNodeWithText("Chats").performClick()
         field.performTextInput(query)
         val target = compose.onNodeWithText(targetTitle)
         results.performScrollToIndex(6)

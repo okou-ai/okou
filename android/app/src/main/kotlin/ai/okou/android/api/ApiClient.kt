@@ -314,6 +314,10 @@ class ApiClient(
         reads.artifactSitePreview(it, slug, host)
     }
 
+    suspend fun searchChatMessages(keyword: String) = execute {
+        reads.searchChatMessages(it, keyword)
+    }
+
     suspend fun markRead(threadId: String) = execute { api.markRead(it, threadId) }
 
     suspend fun markUnread(threadId: String) = execute { api.markUnread(it, threadId) }

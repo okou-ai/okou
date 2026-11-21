@@ -78,6 +78,8 @@ internal fun ConversationRoute(
     historyAvailable: Boolean = true,
     realtime: ChatUpdatesModel? = null,
     controls: ConversationRunControls? = null,
+    messageSequence: Long? = null,
+    onMessageJumpCompleted: (sequence: Long, found: Boolean) -> Unit = { _, _ -> },
     recovery: @Composable (failureId: String) -> Unit = {},
 ) {
     // Deferred work must acknowledge this composition's confirmation, never a newer State.value.
@@ -232,7 +234,18 @@ internal fun ConversationRoute(
             }
         val density = LocalDensity.current
         val jumpDistance = with(density) { 80.dp.roundToPx() }
-        val messages = content.asReversed()
+        val messages = remember(content) { content.asReversed() }
+        val searchEventId =
+            remember(transcript, messageSequence) {
+                messageSequence?.let { sequence ->
+                    transcript?.messages?.firstOrNull { it.sourceSeqId == sequence }?.id
+                }
+            }
+        val searchIndex =
+            remember(messages, searchEventId) {
+                searchEventId?.let { id -> messages.indexOfFirst { it.includes(id) } } ?: -1
+            }
+        var highlightedEventId by remember { mutableStateOf<String?>(null) }
         // Measure the tail and the nearest four rows. Older rows each reserve a 20dp gap.
         val recentKeys = remember(content) { listOf(TimelineEnd) + messages.take(4).map { it.key } }
         val recentSizes = remember(position) { mutableStateMapOf<String, Int>() }
@@ -245,8 +258,22 @@ internal fun ConversationRoute(
             restoredAnchor = model.restoreReadingAnchor(threadId)
             restored = true
         }
-        LaunchedEffect(restored, positioned, messages, state.phase, list.offline) {
-            if (!restored || positioned || (!hasContent && !missing)) return@LaunchedEffect
+        LaunchedEffect(messageSequence, searchIndex, searchEventId, state.phase) {
+            val sequence = messageSequence ?: return@LaunchedEffect
+            if (thread == null) return@LaunchedEffect
+            if (searchIndex >= 0) {
+                position.scrollToItem(searchIndex + 1)
+                highlightedEventId = searchEventId
+                lastReply = newestReply
+                positioned = true
+            } else if (state.phase == HistoryPhase.Ready || state.phase == HistoryPhase.Missing) {
+                highlightedEventId = null
+                onMessageJumpCompleted(sequence, false)
+            }
+        }
+        LaunchedEffect(restored, positioned, messages, state.phase, list.offline, messageSequence) {
+            if (messageSequence != null || !restored || positioned || (!hasContent && !missing))
+                return@LaunchedEffect
             val anchor = restoredAnchor
             val index = messages.indexOfFirst { it.includes(anchor?.eventId) }
             // A cached checkpoint can be older than the saved anchor. Give catch-up a chance first.
@@ -263,7 +290,12 @@ internal fun ConversationRoute(
         LaunchedEffect(positioned, previewId) {
             // A newly submitted local preview is an action in this chat. A restored preview
             // belongs to the original attempt and should leave the restored reading position.
-            if (positioned && previewId != null && previewId != lastPreviewId) {
+            if (
+                positioned &&
+                    messageSequence == null &&
+                    previewId != null &&
+                    previewId != lastPreviewId
+            ) {
                 position.scrollToItem(0)
             }
             lastPreviewId = previewId
@@ -282,7 +314,9 @@ internal fun ConversationRoute(
                 }
             }
         val displayedConfirmation =
-            state.confirmation.takeIf { positioned && atEnd && latestDisplayed && !list.offline }
+            state.confirmation.takeIf {
+                messageSequence == null && positioned && atEnd && latestDisplayed && !list.offline
+            }
         LaunchedEffect(visit, displayedConfirmation) {
             displayedConfirmation?.let { visit?.confirmDisplayed(it) }
         }
@@ -368,6 +402,11 @@ internal fun ConversationRoute(
                             activity = activity.takeIf { entry.message.id == activeMessage },
                             revoke = controls?.revoke(entry.message.id),
                             runningFrame = runningFrame,
+                            highlightedEventId = highlightedEventId,
+                            onReveal =
+                                messageSequence
+                                    ?.takeIf { highlightedEventId == searchEventId }
+                                    ?.let { sequence -> { onMessageJumpCompleted(sequence, true) } },
                         )
                         if (
                             activity != null &&
