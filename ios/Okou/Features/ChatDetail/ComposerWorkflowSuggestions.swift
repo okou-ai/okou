@@ -9,7 +9,6 @@ final class ComposerWorkflowSuggestions {
   private(set) var selectedIndex = -1
   @ObservationIgnored let resources = ComposerWorkflowResources()
   private var source: ComposerWorkflowSource?
-  private var agentID: String?
   @ObservationIgnored private weak var view: ComposerTextView?
   @ObservationIgnored private var range: NSRange?
   @ObservationIgnored private var dismissed: String?
@@ -27,11 +26,10 @@ final class ComposerWorkflowSuggestions {
     return result.values
   }
 
-  func configure(source: ComposerWorkflowSource?, agentID: String?) {
-    guard self.source !== source || self.agentID != agentID else { return }
+  func configure(source: ComposerWorkflowSource?) {
+    guard self.source !== source else { return }
     dismiss()
     self.source = source
-    self.agentID = agentID
     dismissed = nil
   }
 
@@ -42,7 +40,7 @@ final class ComposerWorkflowSuggestions {
   ) {
     guard isCurrent() else { return }
     if textChanged { dismissed = nil }
-    guard source?.isClosed == false, agentID != nil, view.isFirstResponder, view.isEditable,
+    guard source?.isClosed == false, view.isFirstResponder, view.isEditable,
       view.markedTextRange == nil, !view.isSettlingComposition,
       let range = ComposerWorkflowSearch.activeRange(
         in: view.text ?? "", selection: view.selectedRange)
@@ -68,8 +66,8 @@ final class ComposerWorkflowSuggestions {
   }
 
   func reload() {
-    guard query != nil, let source, !source.isClosed, let agentID else { return }
-    resources.reload(source: source, agentID: agentID)
+    guard query != nil, let source, !source.isClosed else { return }
+    resources.reload(source: source)
   }
 
   /// Keyboard activation reads the same native table snapshot that a tap can activate.

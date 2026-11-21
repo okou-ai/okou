@@ -1,7 +1,6 @@
 import { command, type Command, type Computed } from "ccstate";
 import type {
   ChatRunOptionsRequest,
-  UserMessageDocument,
   UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ChatEvent } from "./chat-event-types.ts";
@@ -24,32 +23,10 @@ import {
 import { registerActiveChatEventSignals$ } from "./chat-event-signal-registry.ts";
 import { withSelectedModelAnnotation } from "./model-selection-request.ts";
 
-export interface ChatAgentRunSource {
+export interface ChatRunSource {
   readonly runId: string;
   readonly threadId: string;
   readonly titleSnapshot: string;
-}
-
-export function withOptimisticAgentRunSource(
-  document: UserMessageDocument,
-  source: ChatAgentRunSource,
-): UserMessageDocument {
-  return {
-    version: 1,
-    parts: [
-      ...document.parts.filter((part) => {
-        return part.type !== "source" && part.type !== "automation";
-      }),
-      {
-        type: "source",
-        kind: "agent",
-        runId: source.runId,
-        threadId: source.threadId,
-        titleSnapshot: source.titleSnapshot,
-        href: `/chats/${source.threadId}#run-${source.runId}`,
-      },
-    ],
-  };
 }
 
 export interface SendInputChatEvent {
@@ -64,7 +41,7 @@ export interface SendInputChatEvent {
   readonly computerUseHostId?: string | null;
   readonly cloudBrowserEnabled?: boolean;
   readonly revokesEventId?: string;
-  readonly source?: ChatAgentRunSource;
+  readonly source?: ChatRunSource;
   readonly onOptimisticSend?: () => void;
 }
 
@@ -109,9 +86,6 @@ function createSendInputChatEvent({
                 : input.runOptions?.codexServiceTier,
             )
           : input.userMessage;
-      const optimisticUserMessage = input.source
-        ? withOptimisticAgentRunSource(userMessage, input.source)
-        : userMessage;
       set(touchOptimisticChatThreadSort$, {
         id: chatThreadSortEventId,
         threadId,
@@ -127,7 +101,7 @@ function createSendInputChatEvent({
             threadId,
             eventType: "input.prompt",
             content: null,
-            userMessage: optimisticUserMessage,
+            userMessage,
             ...(input.revokesEventId === undefined
               ? {}
               : { revokesEventId: input.revokesEventId }),

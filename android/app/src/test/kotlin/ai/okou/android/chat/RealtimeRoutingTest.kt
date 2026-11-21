@@ -90,7 +90,6 @@ class RealtimeRoutingTest {
                     model.uiState.first {
                         it.listPhase == ChatReadPhase.Ready &&
                             it.projectsPhase == ChatReadPhase.Ready &&
-                            it.agentsPhase == ChatReadPhase.Ready &&
                             it.indicatorsPhase == ChatReadPhase.Ready
                     }
                 }

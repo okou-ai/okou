@@ -20,8 +20,8 @@ final class ComposerVoiceInputTests: XCTestCase {
     defer { composer.close() }
     composer.text = "Before old after "
     let reference = MessageJSON.object([
-      "type": .string("agent"), "agentId": .string("73000000-0000-4000-8000-000000000001"),
-      "nameSnapshot": .string("Planner")
+      "type": .string("chat_thread"), "threadId": .string("73000000-0000-4000-8000-000000000001"),
+      "titleSnapshot": .string("Planner")
     ])
     let block = try XCTUnwrap(composer.editorBlocks.first)
     var document = block.content

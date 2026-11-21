@@ -4,7 +4,6 @@ import SwiftUI
 
 /// Workspace chat references, independent of the sidebar's current filter.
 struct ComposerMentionSource: Equatable {
-  let agentID: String?
   let threads: [ChatThread]
 
   func suggestions(for query: String) -> [ComposerMentionSuggestion] {

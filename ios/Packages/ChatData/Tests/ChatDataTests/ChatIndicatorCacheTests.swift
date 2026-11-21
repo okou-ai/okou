@@ -148,7 +148,7 @@ final class ChatIndicatorCacheTests: XCTestCase {
     try await app.prefetchThreadList()
     _ = try await app.indicators()
     let commands = ChatCommands(client: fixture.client, sync: app)
-    let marking = Task { try await commands.markAgentRead(agentID: indicatorAgent) }
+    let marking = Task { try await commands.markAllRead() }
     addTeardownBlock {
       marking.cancel()
       gate.open()
