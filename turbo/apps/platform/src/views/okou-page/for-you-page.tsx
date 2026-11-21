@@ -409,7 +409,14 @@ function ForYouHeader() {
   return (
     <header
       data-tone={cover.tone}
-      style={{ "--for-you-scrim": cover.tint } as CSSProperties}
+      style={
+        {
+          "--for-you-scrim": cover.tint,
+          // Fixed ink, not theme tokens: the header follows the cover, not
+          // the color scheme.
+          "--for-you-ink": cover.tone === "dark" ? "255 255 255" : "36 36 36",
+        } as CSSProperties
+      }
       className="group/header absolute inset-x-0 top-0 z-10 grid h-14 grid-flow-col grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-3 px-4 sm:h-15 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8 sm:px-8"
     >
       <div
@@ -418,12 +425,12 @@ function ForYouHeader() {
         style={HEADER_SCRIM}
       />
       <div className="min-w-0">
-        <h1 className="text-base font-semibold text-black/85 group-data-[tone=dark]/header:text-white sm:text-lg">
+        <h1 className="text-base font-semibold text-[rgb(var(--for-you-ink)/0.9)] sm:text-lg">
           {t(($) => {
             return $.chat.agentSuggestions.forYou.title;
           })}
         </h1>
-        <p className="mt-0.5 truncate text-xs text-black/60 group-data-[tone=dark]/header:text-white/75">
+        <p className="mt-0.5 truncate text-xs text-[rgb(var(--for-you-ink)/0.7)]">
           {t(($) => {
             return $.chat.agentSuggestions.forYou.subtitle;
           })}
@@ -475,7 +482,7 @@ function ForYouHeader() {
                 <span
                   aria-hidden
                   className={cn(
-                    "h-1 w-full rounded-full bg-black/10 transition-colors group-data-[tone=dark]/header:bg-white/30",
+                    "h-1 w-full rounded-full bg-[rgb(var(--for-you-ink)/0.12)] transition-colors group-data-[tone=dark]/header:bg-[rgb(var(--for-you-ink)/0.3)]",
                     index === position &&
                       "bg-linear-to-r from-primary/65 via-primary to-primary-hover",
                   )}
@@ -485,13 +492,13 @@ function ForYouHeader() {
           })}
         </nav>
         {cards.length > 0 && (
-          <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-black/60 group-data-[tone=dark]/header:text-white/75">
-            <span className="text-black/85 group-data-[tone=dark]/header:text-white">
+          <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-[rgb(var(--for-you-ink)/0.7)]">
+            <span className="text-[rgb(var(--for-you-ink)/0.9)]">
               {position + 1}
             </span>
             <span
               aria-hidden
-              className="mx-1 text-black/25 group-data-[tone=dark]/header:text-white/40"
+              className="mx-1 text-[rgb(var(--for-you-ink)/0.3)]"
             >
               /
             </span>
