@@ -14,16 +14,13 @@ use tokio::time::{self, Instant};
 
 use crate::operation_tracker::{
     NormalOperationRejection, NormalOperationToken, NormalOperationTransitionError,
-    NormalOperationTransitionHandle,
+    NormalOperationTransitionHandle, PendingNormalOperation,
 };
 use crate::protocol_error;
 use crate::request_progress::RequestWriteProgress;
 use crate::{FrameWriteObserver, GuestControlClient, RequestTimeoutError, RequestTimeoutStage};
 
-use super::{
-    ConnectionState, FrameWriteDecision, OutboundFrame, PendingNormalOperation, PendingResponse,
-    RouteId, Shared,
-};
+use super::{ConnectionState, FrameWriteDecision, OutboundFrame, PendingResponse, RouteId, Shared};
 
 struct PendingRequestGuard {
     shared: Arc<Shared>,
@@ -509,38 +506,14 @@ fn mark_pending_normal_operation_possible_guest_write(
                     "normal request missing operation token",
                 ));
             };
-            mark_pending_normal_operation_possible_guest_write_started(normal_operation)
+            normal_operation
+                .mark_possible_guest_write_started()
+                .map_err(normal_operation_transition_error)
         }
         ConnectionState::Closed(_) => Err(io::Error::new(
             io::ErrorKind::ConnectionReset,
             "connection closed",
         )),
-    }
-}
-
-fn mark_pending_normal_operation_possible_guest_write_started(
-    normal_operation: &mut PendingNormalOperation,
-) -> io::Result<()> {
-    match normal_operation {
-        PendingNormalOperation::Owned(normal_operation) => normal_operation
-            .mark_possible_guest_write_started()
-            .map_err(normal_operation_transition_error),
-        PendingNormalOperation::Composite(normal_operation) => normal_operation
-            .mark_possible_guest_write_started()
-            .map_err(normal_operation_transition_error),
-    }
-}
-
-pub(super) fn complete_pending_normal_operation(
-    normal_operation: PendingNormalOperation,
-) -> io::Result<()> {
-    match normal_operation {
-        PendingNormalOperation::Owned(normal_operation) => normal_operation
-            .complete()
-            .map_err(normal_operation_transition_error),
-        PendingNormalOperation::Composite(normal_operation) => normal_operation
-            .mark_possible_guest_write_completed()
-            .map_err(normal_operation_transition_error),
     }
 }
 
