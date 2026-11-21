@@ -2521,16 +2521,7 @@ const prepareNormalSendContext$ = command(
       ),
     );
     waitUntil(agentRunSource);
-    const existing = await existingRead;
-    signal.throwIfAborted();
-    if (request.body.threadId !== undefined && !existing) {
-      return notFound("Chat thread not found");
-    }
-    // Start the remaining reads before authorization and reuse the same context in the picker.
-    set(preloadAgentRunContext$, context, signal);
-    waitUntil(settle(get(context.executionPackageSources$)));
-    // Start the passive attachment read in this batch. Only a validated send
-    // consumes it and asks storage to verify an object.
+    // Only a validated send consumes these records and verifies the objects.
     const attachmentRecords = set(
       startIncomingAttachmentRecords$,
       args.body.userMessage,
@@ -2539,6 +2530,13 @@ const prepareNormalSendContext$ = command(
     if (attachmentRecords) {
       waitUntil(attachmentRecords.rows);
     }
+    const existing = await existingRead;
+    signal.throwIfAborted();
+    if (request.body.threadId !== undefined && !existing) {
+      return notFound("Chat thread not found");
+    }
+    set(preloadAgentRunContext$, context, signal);
+    waitUntil(settle(get(context.executionPackageSources$)));
     const prepared = await set(
       prepareNormalSend$,
       { ...args, context, existing, agentRunSource },

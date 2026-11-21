@@ -169,6 +169,7 @@ class ChatListModelTest {
         service: ChatListService,
         realtime: TestRealtimeService? = null,
         connectivity: MutableStateFlow<Boolean> = MutableStateFlow(true),
+        authorized: () -> Boolean = { true },
         exercise: suspend (ChatListModel) -> Unit,
     ) {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -184,7 +185,7 @@ class ChatListModelTest {
                                 service,
                                 cache(temporary.newFolder(), dispatcher),
                                 identity,
-                                { true },
+                                authorized,
                                 {},
                                 dispatcher,
                                 realtime,
@@ -454,6 +455,135 @@ class ChatListModelTest {
             advanceUntilIdle()
             val archived = model.uiState.value.threads.filter { it.archived }
             assertEquals(listOf(CHAT_PERSONAL), archived.map { it.id })
+        }
+    }
+
+    @Test
+    fun deleteReconcilesExplicitRejectionLostResponseAndConcurrentDeletion() = runTest {
+        for (status in listOf(400, 404, null)) {
+            var deletion: String? = null
+            val source =
+                object : Service() {
+                    override suspend fun chatEvents(since: Long?) =
+                        when {
+                            since == null -> page()
+                            since < 18 -> page(listOfNotNull(deletion))
+                            else -> page(emptyList())
+                        }
+
+                    override suspend fun deleteThread(threadId: String, eventId: String) {
+                        if (status != 400) {
+                            deletion =
+                                chatEventWire(
+                                    id =
+                                        if (status == 404) "77777777-7777-4777-8777-777777777777"
+                                        else eventId,
+                                    seq = 18,
+                                    thread = threadId,
+                                    kind = "deleted",
+                                )
+                        }
+                        if (status == null) throw IOException("Unavailable response")
+                        throw ApiFailure.Http(status, null, null, null)
+                    }
+                }
+            withCatchUpModel(source) { model ->
+                model.refresh()
+                advanceUntilIdle()
+                model.performRowAction(CHAT_PERSONAL, ChatRowAction.Delete)
+                advanceUntilIdle()
+                val state = model.uiState.value
+                assertTrue(state.pendingRowActions.isEmpty())
+                assertNull(state.rowUndo)
+                if (status == 400) {
+                    assertEquals(CHAT_PERSONAL, state.threads.single().id)
+                    assertEquals(ChatRowAction.Delete, state.failedRowAction)
+                } else {
+                    assertTrue(state.threads.isEmpty())
+                    assertNull(state.failedRowAction)
+                    model.refresh()
+                    advanceUntilIdle()
+                    assertTrue(model.uiState.value.threads.isEmpty())
+                }
+            }
+        }
+    }
+
+    @Test
+    fun reconnectRestoresARejectedDeletionAfterItsFirstReadbackFails() = runTest {
+        val connected = MutableStateFlow(true)
+        var readbackFails = false
+        var deletes = 0
+        val source =
+            object : Service() {
+                override suspend fun chatEvents(since: Long?) =
+                    when {
+                        since == null -> page()
+                        readbackFails -> throw IOException("Unavailable list")
+                        else -> page(emptyList())
+                    }
+
+                override suspend fun deleteThread(threadId: String, eventId: String) {
+                    deletes++
+                    readbackFails = true
+                    throw ApiFailure.Http(400, null, null, null)
+                }
+            }
+        withCatchUpModel(source, connectivity = connected) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Delete))
+            advanceUntilIdle()
+            val unavailable = model.uiState.value
+            assertEquals(ChatReadPhase.Failed, unavailable.listPhase)
+            assertEquals(ChatRowAction.Delete, unavailable.failedRowAction)
+            assertTrue(chatListGroups(unavailable).all { it.threads.isEmpty() })
+
+            connected.value = false
+            runCurrent()
+            readbackFails = false
+            connected.value = true
+            advanceUntilIdle()
+
+            val recovered = model.uiState.value
+            assertEquals(ChatReadPhase.Ready, recovered.listPhase)
+            assertEquals(
+                listOf(CHAT_PERSONAL),
+                chatListGroups(recovered).flatMap { group -> group.threads.map { it.id } },
+            )
+            assertEquals(1, deletes)
+        }
+    }
+
+    @Test
+    fun deletionResponseCannotPublishAfterWorkspaceReplacement() = runTest {
+        val release = CompletableDeferred<Unit>()
+        var active = true
+        var reads = 0
+        val source =
+            object : Service() {
+                override suspend fun chatEvents(since: Long?): ChatEvents {
+                    reads++
+                    return if (since == null) page() else page(emptyList())
+                }
+
+                override suspend fun deleteThread(threadId: String, eventId: String) {
+                    release.await()
+                }
+            }
+        withCatchUpModel(source, authorized = { active }) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.Delete)
+            runCurrent()
+            val pending = model.uiState.value
+            assertEquals(ChatRowAction.Delete, pending.pendingRowActions[CHAT_PERSONAL])
+            val priorReads = reads
+            active = false
+            release.complete(Unit)
+            advanceUntilIdle()
+            assertSame(pending, model.uiState.value)
+            assertEquals(priorReads, reads)
         }
     }
 

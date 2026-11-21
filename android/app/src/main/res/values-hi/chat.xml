@@ -53,4 +53,8 @@
     <string name="chat_title_field">चैट शीर्षक</string>
     <string name="chat_rename_confirm">नाम बदलें</string>
     <string name="chat_rename_cancel">रद्द करें</string>
+    <string name="chat_delete">चैट हटाएं</string>
+    <string name="chat_delete_title">चैट हटाएं?</string>
+    <string name="chat_delete_description">इससे यह चैट स्थायी रूप से हट जाएगी. इस चैट में वर्तमान में चल रहा कोई भी कार्य तुरंत बंद कर दिया जाएगा। इससे जुड़ी सभी ऑटोमेशन रोक दी जाएंगी। इस एक्शन को वापस नहीं किया जा सकता।</string>
+    <string name="chat_delete_confirm">हटाएँ</string>
 </resources>

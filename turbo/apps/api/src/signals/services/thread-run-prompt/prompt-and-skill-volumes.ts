@@ -316,14 +316,10 @@ export function createPromptAndSkillVolumesSignals(
 function createDeviceUsePrompts(
   event$: Parameters<typeof createComputerUsePrompt>[0],
   threadContext: ThreadContext,
-  features$: Parameters<typeof createComputerUsePrompt>[2],
+  features$: Parameters<typeof createComputerUsePrompt>[1],
 ) {
   return {
-    computerUsePrompt$: createComputerUsePrompt(
-      event$,
-      threadContext.computerUseHostGrant$,
-      features$,
-    ),
+    computerUsePrompt$: createComputerUsePrompt(event$, features$),
     phoneUsePrompt$: createPhoneUsePrompt(
       threadContext.phoneUseGrant$,
       features$,

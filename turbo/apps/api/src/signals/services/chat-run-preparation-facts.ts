@@ -28,6 +28,10 @@ export type PickedChatThread = Readonly<
 export interface ChatRunPreparationFacts {
   readonly isOfficialWorkflowThread: boolean;
   readonly captureNetworkBodies: boolean;
+  readonly computerUseHostGrant: {
+    readonly hostId: string;
+    readonly displayName: string;
+  } | null;
   readonly projectReferences?: readonly ProjectReferenceRow[];
 }
 

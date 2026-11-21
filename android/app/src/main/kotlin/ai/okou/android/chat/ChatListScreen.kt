@@ -2,6 +2,8 @@ package ai.okou.android.chat
 
 import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
+import ai.okou.android.WorkspaceMenu
+import ai.okou.android.WorkspaceMenuItem
 import ai.okou.android.currentWindowSizeDp
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
@@ -22,8 +24,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -48,6 +52,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
@@ -82,6 +88,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.text.NumberFormat
 import kotlinx.coroutines.delay
@@ -108,6 +115,53 @@ internal fun ChatListScreen(
     feedback: @Composable () -> Unit,
 ) {
     var renamingId by remember { mutableStateOf<String?>(null) }
+    var deletingId by remember { mutableStateOf<String?>(null) }
+    deletingId?.let { id ->
+        val thread = state.threads.firstOrNull { it.id == id && it.hidden != true }
+        if (thread != null) {
+            AlertDialog(
+                onDismissRequest = { deletingId = null },
+                modifier =
+                    Modifier.padding(horizontal = 24.dp).widthIn(max = 360.dp).fillMaxWidth(),
+                shape = RoundedCornerShape(28.dp),
+                containerColor = MaterialTheme.colorScheme.surface,
+                tonalElevation = 0.dp,
+                properties = DialogProperties(usePlatformDefaultWidth = false),
+                title = {
+                    Text(
+                        stringResource(R.string.chat_delete_title),
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                },
+                text = {
+                    Text(
+                        stringResource(R.string.chat_delete_description),
+                        Modifier.verticalScroll(rememberScrollState()),
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            deletingId = null
+                            performRowAction(id, ChatRowAction.Delete)
+                        },
+                        enabled =
+                            id !in state.pendingRowActions &&
+                                ChatRowAction.Delete in state.rowActions(thread),
+                        colors =
+                            ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            ),
+                    ) {
+                        Text(stringResource(R.string.chat_delete_confirm))
+                    }
+                },
+                dismissButton = { ChatAction(R.string.chat_rename_cancel, { deletingId = null }) },
+            )
+        } else if (state.listPhase == ChatReadPhase.Ready) {
+            LaunchedEffect(id) { deletingId = null }
+        }
+    }
     val renaming =
         renamingId?.let { id -> state.threads.firstOrNull { it.id == id && it.hidden != true } }
     if (renaming != null) {
@@ -396,8 +450,11 @@ internal fun ChatListScreen(
                                             .orEmpty(),
                                     pendingAction = state.pendingRowActions[id],
                                     performAction = { action ->
-                                        if (action == ChatRowAction.Rename) renamingId = id
-                                        else performRowAction(id, action)
+                                        when (action) {
+                                            ChatRowAction.Rename -> renamingId = id
+                                            ChatRowAction.Delete -> deletingId = id
+                                            else -> performRowAction(id, action)
+                                        }
                                     },
                                 ) {
                                     if (provisional != null) openProvisional(provisional)
@@ -642,6 +699,14 @@ private fun ChatRow(
     open: () -> Unit,
 ) {
     var menuOpen by remember(actions) { mutableStateOf(false) }
+    val rowFocus = remember { FocusRequester() }
+    var restoreMenuFocus by remember { mutableStateOf(false) }
+    LaunchedEffect(menuOpen) {
+        if (!menuOpen && restoreMenuFocus) {
+            restoreMenuFocus = false
+            rowFocus.requestFocus()
+        }
+    }
     val openMenu: (() -> Unit)? =
         if (actions.isNotEmpty() && pendingAction == null) ({ menuOpen = true }) else null
     val labels =
@@ -675,6 +740,7 @@ private fun ChatRow(
                 .clip(shape)
                 .background(if (isSelected) colors.secondaryContainer else colors.background)
                 .contextMenuInput(openMenu)
+                .focusRequester(rowFocus)
                 .combinedClickable(
                     onClick = open,
                     onLongClick = openMenu,
@@ -700,24 +766,27 @@ private fun ChatRow(
             Spacer(Modifier.width(8.dp))
             ChatStatusGlyph(status, runningFrame, row)
         }
-        if (actions.isNotEmpty()) {
-            DropdownMenu(
-                expanded = menuOpen && pendingAction == null,
-                onDismissRequest = { menuOpen = false },
-            ) {
-                for (action in actions) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(action.label())) },
-                        leadingIcon = {
-                            Icon(painterResource(action.icon()), contentDescription = null)
-                        },
-                        onClick = {
+        if (menuOpen && pendingAction == null) {
+            WorkspaceMenu(
+                items =
+                    actions.map { action ->
+                        WorkspaceMenuItem(
+                            stringResource(action.label()),
+                            action.icon(),
+                            destructive = action == ChatRowAction.Delete,
+                        ) {
                             menuOpen = false
                             performAction(action)
-                        },
-                    )
-                }
-            }
+                        }
+                    },
+                close = {
+                    restoreMenuFocus = true
+                    menuOpen = false
+                },
+                title =
+                    thread.title?.takeIf { it.isNotBlank() }
+                        ?: stringResource(R.string.chat_untitled),
+            )
         }
     }
 }
@@ -738,6 +807,7 @@ internal fun ChatRowAction.label(): Int =
         ChatRowAction.Unmute -> R.string.chat_unmute
         ChatRowAction.Archive -> R.string.chat_archive
         ChatRowAction.Unarchive -> R.string.chat_unarchive
+        ChatRowAction.Delete -> R.string.chat_delete
         ChatRowAction.Rename -> R.string.chat_rename
         ChatRowAction.Pin -> R.string.chat_pin
         ChatRowAction.Unpin -> R.string.chat_unpin
@@ -754,6 +824,7 @@ private fun ChatRowAction.icon(): Int =
         ChatRowAction.Unmute -> R.drawable.ic_notifications
         ChatRowAction.Archive -> R.drawable.ic_archive
         ChatRowAction.Unarchive -> R.drawable.ic_unarchive
+        ChatRowAction.Delete -> R.drawable.ic_delete
         ChatRowAction.Rename -> R.drawable.ic_edit
         ChatRowAction.Pin -> R.drawable.ic_keep
         ChatRowAction.Unpin -> R.drawable.ic_keep_off
