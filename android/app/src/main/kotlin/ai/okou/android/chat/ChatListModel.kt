@@ -2,8 +2,6 @@ package ai.okou.android.chat
 
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.Agents
-import ai.okou.android.api.generated.ChatEventsEventsItemVariant1
-import ai.okou.android.api.generated.ChatEventsEventsItemVariant1Kind
 import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.IndicatorsThreadsValue
 import ai.okou.android.auth.WorkspaceIdentity
@@ -257,22 +255,7 @@ class ChatListModel(
         )
     private val sync = ChatListSync(service, dispatcher)
     private var confirmed: CachedChats? = null
-    private var confirmedRows = ReplayedChats(emptyList(), emptyList())
-    private var rowEdits = emptyList<ChatRowEdit>()
-    private val unconfirmedRowEvents = mutableSetOf<String>()
-    private val rejectedRowEvents = mutableSetOf<String>()
-
-    private enum class OutgoingResult {
-        Sending,
-        Acknowledged,
-        Unknown,
-    }
-
-    private class OutgoingActivity(val threadId: String) {
-        var result = OutgoingResult.Sending
-    }
-
-    private val outgoingActivity = linkedMapOf<String, OutgoingActivity>()
+    private val projection = ChatListProjection()
     private var confirmedProjects: CachedProjects? = null
     private var cacheRead = false
     private var restoreJob: Job? = null
@@ -774,7 +757,7 @@ class ChatListModel(
                     }
                 if (edits.isNotEmpty()) {
                     requireCurrent()
-                    rowEdits = rowEdits + edits
+                    projection.addEdits(edits)
                     publishRows()
                 }
                 var confirmation: ReadConfirmation? = null
@@ -886,35 +869,21 @@ class ChatListModel(
     }
 
     private fun publishRows(state: ChatListUiState = mutable.value) {
-        val recentThreads = outgoingActivity.values.toList().asReversed().map { it.threadId }
-        val rows = confirmedRows.withLocalChanges(rowEdits, recentThreads)
+        val rows = projection.rows()
         mutable.value =
             state.copy(
                 threads = rows.threads,
                 threadsByRecency = rows.byRecency,
-                acceptedNewChats = unobservedNewChats(state.acceptedNewChats),
+                acceptedNewChats = projection.acceptedNewChats,
             )
-    }
-
-    private fun unobservedNewChats(chats: List<ProvisionalChat>): List<ProvisionalChat> {
-        if (chats.isEmpty()) return chats
-        val observed = confirmedRows.threads.mapTo(hashSetOf()) { it.id }
-        confirmed?.checkpoint?.events?.forEach { event ->
-            if (
-                event is ChatEventsEventsItemVariant1 &&
-                    event.kind == ChatEventsEventsItemVariant1Kind.DELETED
-            )
-                observed.add(event.chatThreadId)
-        }
-        return chats.filterNot { it.threadId in observed }
     }
 
     internal fun retainAcceptedNewChats(chats: List<ProvisionalChat>, restored: Boolean = false) {
         if (!current() || chats.isEmpty()) return
         // A new draft can replace the composer target while these chats await their list rows.
         val state = mutable.value
-        val accepted = (chats + state.acceptedNewChats).distinctBy { it.threadId }
-        mutable.value = state.copy(acceptedNewChats = unobservedNewChats(accepted))
+        projection.retainAcceptedNewChats(chats)
+        mutable.value = state.copy(acceptedNewChats = projection.acceptedNewChats)
         if (restored) {
             chats.mapTo(acceptedChatsToVerify) { it.threadId }
             if (state.source == ChatListSource.Network) verifyAcceptedChats()
@@ -923,7 +892,7 @@ class ChatListModel(
 
     private fun verifyAcceptedChats() {
         if (acceptedChatsToVerify.isEmpty()) return
-        val accepted = mutable.value.acceptedNewChats
+        val accepted = projection.acceptedNewChats
         acceptedChatsToVerify.retainAll(accepted.map { it.threadId }.toSet())
         for (chat in accepted) {
             val id = chat.threadId
@@ -942,7 +911,7 @@ class ChatListModel(
         // Consume the current request before reading so a newer snapshot can request another read.
         while (acceptedChatsToVerify.remove(id)) {
             requireCurrent()
-            if (mutable.value.acceptedNewChats.none { it.threadId == id }) return
+            if (projection.acceptedNewChats.none { it.threadId == id }) return
             try {
                 service.threadDetail(id)
                 requireCurrent()
@@ -952,10 +921,9 @@ class ChatListModel(
                 requireCurrent()
                 if (error is ApiFailure.Http && error.status == 404) {
                     acceptedChatsToVerify.remove(id)
-                    val state = mutable.value
-                    val remaining = state.acceptedNewChats.filterNot { it.threadId == id }
-                    if (remaining.size < state.acceptedNewChats.size) {
-                        mutable.value = state.copy(acceptedNewChats = remaining)
+                    if (projection.removeMissingAcceptedChat(id)) {
+                        mutable.value =
+                            mutable.value.copy(acceptedNewChats = projection.acceptedNewChats)
                         onAcceptedChatMissing?.invoke(id)
                     }
                     return
@@ -974,7 +942,7 @@ class ChatListModel(
     }
 
     internal fun reloadAfterRowActionFailure() {
-        requestListRead(unconfirmedRowEvents + rejectedRowEvents, userRequested = true)
+        requestListRead(projection.retryEvents(), userRequested = true)
     }
 
     internal fun dismissRowActionFailure(action: ChatRowAction) {
@@ -1026,32 +994,18 @@ class ChatListModel(
     internal fun showOutgoingActivity(pending: PendingText) {
         if (!current() || pending.create != null) return
         val id = pending.send.chatThreadSortEventId ?: return
-        val checkpoint = confirmed?.checkpoint
-        if (
-            checkpoint?.snapshotCursor?.eventId == id ||
-                checkpoint?.events?.any { it.cursor().eventId == id } == true
-        )
-            return
-        val existing = outgoingActivity[id]
-        if (existing?.result == OutgoingResult.Sending) return
-        outgoingActivity[id] = OutgoingActivity(pending.threadId)
-        if (existing == null) publishRows()
+        if (projection.showOutgoing(id, pending.threadId)) publishRows()
     }
 
     internal fun acknowledgeOutgoingActivity(pending: PendingText) {
         if (!current()) return
         // Send accepts the input before the server's list sort work finishes.
-        outgoingActivity[pending.send.chatThreadSortEventId]?.result = OutgoingResult.Acknowledged
+        projection.completeOutgoing(pending.send.chatThreadSortEventId)
     }
 
     internal fun refreshAfterSendFailure(pending: PendingText, rejected: Boolean) {
         if (!current()) return
-        val id = pending.send.chatThreadSortEventId
-        if (rejected && outgoingActivity.remove(id) != null) {
-            publishRows()
-        } else {
-            outgoingActivity[id]?.result = OutgoingResult.Unknown
-        }
+        if (projection.completeOutgoing(pending.send.chatThreadSortEventId, rejected)) publishRows()
         refreshList()
     }
 
@@ -1113,11 +1067,11 @@ class ChatListModel(
             viewModelScope.launch {
                 try {
                     val saved = cache.load() ?: return@launch
-                    val projection = withContext(dispatcher) { replayChatList(saved.checkpoint) }
+                    val rows = withContext(dispatcher) { replayChatList(saved.checkpoint) }
                     requireCurrent()
                     val state = mutable.value
                     confirmed = saved
-                    confirmedRows = projection
+                    projection.restore(saved.checkpoint, rows)
                     publishRows(
                         state.copy(
                             confirmedAt = saved.confirmedAt,
@@ -1216,28 +1170,18 @@ class ChatListModel(
         writeRejected: Boolean,
     ): Boolean {
         requireCurrent()
-        if (edits.none { it in rowEdits }) return true
+        if (!projection.hasUnsettledEdits(edits)) return true
         // A missing response can still leave a committed event on the server.
         val completion = CompletableDeferred<Unit>(currentCoroutineContext()[Job])
         val batch = listReadBatch()
         batch.confirmations.add(ListConfirmation(edits, completion))
-        if (writeRejected) {
-            for (edit in edits) {
-                if (edit in rowEdits) rejectedRowEvents.add(edit.eventId)
-            }
-        }
+        if (writeRejected) projection.recordRejectedEdits(edits)
         listReadRequests.trySend(Unit)
         completion.await()
         requireCurrent()
-        val unresolved = edits.filter { it in rowEdits }
-        if (!writeRejected) unresolved.mapTo(unconfirmedRowEvents) { it.eventId }
-        val deleted =
-            action == ChatRowAction.Delete &&
-                confirmedRows.byRecency.none { it.id == edits.single().threadId }
-        if (!deleted && (writeRejected || unresolved.isNotEmpty())) {
-            mutable.value = mutable.value.copy(failedRowAction = action)
-        }
-        return deleted || !writeRejected && unresolved.isEmpty()
+        val confirmedEdits = projection.confirmEdits(action, edits, writeRejected)
+        if (!confirmedEdits) mutable.value = mutable.value.copy(failedRowAction = action)
+        return confirmedEdits
     }
 
     private suspend fun readPendingListBatch() {
@@ -1245,7 +1189,7 @@ class ChatListModel(
         pendingListRead = null
         val unconfirmed =
             batch?.confirmations.orEmpty().filter { confirmation ->
-                if (confirmation.edits.any { it in rowEdits }) true
+                if (projection.hasUnsettledEdits(confirmation.edits)) true
                 else {
                     confirmation.done.complete(Unit)
                     false
@@ -1273,7 +1217,7 @@ class ChatListModel(
         if (confirmed?.checkpoint !== rebased.baseline) return
         // Keep unseen mutation IDs available to the next incremental confirmation read.
         if (
-            (rowEdits.isNotEmpty() || outgoingActivity.isNotEmpty()) &&
+            projection.hasPendingMutations &&
                 rebased.result.checkpoint.snapshotCursor.seqId > rebased.baseline.cursor.seqId
         )
             return
@@ -1297,16 +1241,14 @@ class ChatListModel(
             filterGeneration.takeIf { !batch.userRequested && filterIsVisible && listInForeground }
         // A rejected edit stays recoverable if its first read fails. Only a read started after
         // the rejection can restore that row.
-        val discardOnSuccess = batch.discardOnSuccess + rejectedRowEvents
+        val discardOnSuccess = projection.discardAfterRead(batch.discardOnSuccess)
         mutable.value = mutable.value.copy(listPhase = ChatReadPhase.Loading)
         try {
             // A normal catch-up still needs the sort event. Resume or an explicit refresh can
             // restore the canonical order for completed attempts after a successful read.
             val reconciliation = completedActivityReconciliation
             val finishedActivity =
-                if (reconciliation != null)
-                    outgoingActivity.filterValues { it.result != OutgoingResult.Sending }
-                else emptyMap()
+                if (reconciliation != null) projection.completedOutgoingAttempts() else emptyMap()
             val result = sync.synchronize(confirmed?.checkpoint)
             val retrying = mutable.value.listReadFailure == ChatListReadFailure.Retrying
             publishList(result, discardOnSuccess, finishedActivity = finishedActivity)
@@ -1410,14 +1352,14 @@ class ChatListModel(
         result: ChatListSync.Result,
         discardOnSuccess: Set<String>,
         preparedProjection: ReplayedChats? = null,
-        finishedActivity: Map<String, OutgoingActivity> = emptyMap(),
+        finishedActivity: Map<String, ChatListProjection.OutgoingAttempt> = emptyMap(),
     ) {
         requireCurrent()
         val previous = confirmed
         val checkpoint = result.checkpoint
         val replayed =
             preparedProjection
-                ?: if (checkpoint === previous?.checkpoint) confirmedRows
+                ?: if (checkpoint === previous?.checkpoint) projection.confirmedRows
                 else withContext(dispatcher) { replayChatList(checkpoint) }
         requireCurrent()
         val saved =
@@ -1429,39 +1371,13 @@ class ChatListModel(
                 confirmed = CachedChats(checkpoint, confirmedAt, navigation())
                 checkNotNull(persistChats(adoptNewerCheckpoint = true))
             }
-        val projection =
+        val rows =
             if (saved.checkpoint === checkpoint) replayed
             else withContext(dispatcher) { replayChatList(saved.checkpoint) }
         requireCurrent()
         confirmed = saved
-        confirmedRows = projection
-        val editsAtPublish = rowEdits
-        val activityCount = outgoingActivity.size
-        if (editsAtPublish.isNotEmpty() || activityCount > 0) {
-            val observed = buildSet {
-                checkpoint.snapshotCursor.eventId?.let(::add)
-                checkpoint.events.forEach { it.cursor().eventId?.let(::add) }
-                if (saved.checkpoint !== checkpoint) {
-                    saved.checkpoint.snapshotCursor.eventId?.let(::add)
-                    saved.checkpoint.events.forEach { it.cursor().eventId?.let(::add) }
-                }
-                addAll(result.eventIdsBeforeRebase)
-                if (editsAtPublish.any { it.action == ChatRowAction.Delete }) {
-                    val present = projection.byRecency.mapTo(hashSetOf()) { it.id }
-                    for (edit in editsAtPublish) {
-                        if (edit.action == ChatRowAction.Delete && edit.threadId !in present)
-                            add(edit.eventId)
-                    }
-                }
-            }
-            settleRowEdits(observed, discardOnSuccess)
-            val settledThreads = mutableSetOf<String>()
-            for ((id, activity) in outgoingActivity.entries.toList().asReversed()) {
-                if (id in observed || finishedActivity[id] === activity)
-                    settledThreads.add(activity.threadId)
-                if (activity.threadId in settledThreads) outgoingActivity.remove(id)
-            }
-        }
+        val projectionChanged =
+            projection.reconcile(result, saved.checkpoint, rows, discardOnSuccess, finishedActivity)
         val state =
             mutable.value.copy(
                 confirmedAt = saved.confirmedAt,
@@ -1471,36 +1387,11 @@ class ChatListModel(
                 sustainedRefreshFailure = false,
             )
         resetListReadFailures()
-        if (
-            saved.checkpoint === previous?.checkpoint &&
-                rowEdits === editsAtPublish &&
-                outgoingActivity.size == activityCount
-        )
-            mutable.value = state
-        else publishRows(state)
+        if (projectionChanged) publishRows(state) else mutable.value = state
         // Snapshot absence can also mean a creation raced the read. Verify by thread ID.
         if (result.replacedSnapshot)
-            mutable.value.acceptedNewChats.mapTo(acceptedChatsToVerify) { it.threadId }
+            projection.acceptedNewChats.mapTo(acceptedChatsToVerify) { it.threadId }
         verifyAcceptedChats()
-    }
-
-    private fun settleRowEdits(observed: Set<String>, discarded: Set<String>) {
-        val settledThrough = mutableMapOf<Pair<String, ChatRowField>, Int>()
-        rowEdits.forEachIndexed { index, edit ->
-            if (edit.eventId in observed) settledThrough[edit.threadId to edit.field] = index
-        }
-        if (settledThrough.isEmpty() && discarded.isEmpty()) return
-        rowEdits =
-            rowEdits.filterIndexed { index, edit ->
-                val settled =
-                    edit.eventId in discarded ||
-                        index <= (settledThrough[edit.threadId to edit.field] ?: -1)
-                if (settled) {
-                    unconfirmedRowEvents.remove(edit.eventId)
-                    rejectedRowEvents.remove(edit.eventId)
-                }
-                !settled
-            }
     }
 
     fun refreshMetadata() {
