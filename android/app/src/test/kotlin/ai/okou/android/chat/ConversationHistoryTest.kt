@@ -73,7 +73,7 @@ class ConversationHistoryTest {
 
     private fun thread(id: String = CHAT_PERSONAL): ConfirmedChat =
         Json.decodeFromString<ChatArchive>(
-                """{"chatThreads":[{"id":"$id","agentId":"agent-original","projectId":"project-original","title":"History thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null}]}"""
+                """{"chatThreads":[{"id":"$id","projectId":"project-original","title":"History thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null}]}"""
             )
             .chatThreads
             .single()
@@ -470,7 +470,6 @@ class ConversationHistoryTest {
         model.open(thread())
         model.uiState.first { it.phase == HistoryPhase.Ready }
         assertEquals(0, service.markCount)
-        assertEquals("agent-original", model.uiState.value.thread!!.agentId)
         val visit = checkNotNull(model.beginVisit(CHAT_PERSONAL, model.uiState.value.generation))
         model.uiState.first { it.phase == HistoryPhase.Ready }
         runCurrent()

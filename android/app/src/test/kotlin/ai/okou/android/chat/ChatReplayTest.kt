@@ -1,8 +1,6 @@
 package ai.okou.android.chat
 
-import ai.okou.android.CHAT_AGENT
 import ai.okou.android.CHAT_IN_PROJECT
-import ai.okou.android.CHAT_OTHER_AGENT
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.CHAT_PROJECT
 import ai.okou.android.api.generated.ChatArchive
@@ -32,30 +30,22 @@ class ChatReplayTest {
         )
     }
 
-    private fun event(
-        seq: Long,
-        kind: String,
-        extra: String = "",
-        agent: String = CHAT_AGENT,
-        thread: String = CHAT_PERSONAL,
-    ) =
+    private fun event(seq: Long, kind: String, extra: String = "", thread: String = CHAT_PERSONAL) =
         chatEventWire(
             id = "00000000-0000-4000-8000-${seq.toString().padStart(12, '0')}",
             seq = seq,
             kind = kind,
             extra = extra,
-            agent = agent,
             thread = thread,
         )
 
     @Test
-    fun metadataTouchesPreserveOriginalAgentActivityAndUnrelatedModelSettings() {
+    fun metadataTouchesPreserveActivityAndUnrelatedModelSettings() {
         val row =
             replay(
                     event(
                         1,
                         "created",
-                        agent = CHAT_OTHER_AGENT,
                         extra = ",\"modelSettings\":{\"codex/test\":{\"effort\":\"high\"}}",
                     ),
                     event(3, "sort_touched", extra = ",\"muted\":true")
@@ -76,17 +66,11 @@ class ChatReplayTest {
     }
 
     @Test
-    fun projectEventsClearMembershipAndOnlyExplicitReassignmentChangesAgent() {
+    fun projectEventsClearMembership() {
         val row =
             replay(
-                    event(
-                        1,
-                        "created",
-                        extra = ",\"projectId\":\"$CHAT_PROJECT\"",
-                        agent = CHAT_OTHER_AGENT,
-                    ),
+                    event(1, "created", extra = ",\"projectId\":\"$CHAT_PROJECT\""),
                     event(4, "project_updated", extra = ",\"projectId\":null"),
-                    event(9, "sort_touched", extra = ",\"reassignedAgentId\":\"$CHAT_AGENT\""),
                 )
                 .single()
         assertNull(row.projectId)
@@ -113,15 +97,10 @@ class ChatReplayTest {
     }
 
     @Test
-    fun projectGroupsSpanOriginalAgentsAndUnreadIncludesArchivedButExcludesMuted() {
+    fun projectGroupsIncludeArchivedUnreadAndExcludeMutedChats() {
         val projectRow =
             replay(
-                    event(
-                        1,
-                        "created",
-                        extra = ",\"projectId\":\"$CHAT_PROJECT\"",
-                        agent = CHAT_OTHER_AGENT,
-                    ),
+                    event(1, "created", extra = ",\"projectId\":\"$CHAT_PROJECT\""),
                     event(2, "archived"),
                     event(3, "sort_touched", extra = ",\"muted\":false"),
                 )
@@ -252,10 +231,10 @@ class ChatReplayTest {
     @Test
     fun rankingIncludesHiddenAndArchivedPeersButDoesNotCrossListGroups() {
         val outside = replay(event(1, "created"), event(2, "pinned")).single()
-        val otherOutside = outside.copy(id = "other-outside", agentId = CHAT_OTHER_AGENT)
+        val otherOutside = outside.copy(id = "other-outside")
         val member = outside.copy(id = CHAT_IN_PROJECT, projectId = CHAT_PROJECT)
         val unresolved = member.copy(id = "unresolved", projectId = "missing")
-        val hidden = member.copy(id = "hidden", hidden = true, agentId = CHAT_OTHER_AGENT)
+        val hidden = member.copy(id = "hidden", hidden = true)
         val archived = member.copy(id = "archived", archived = true)
         val project =
             ConfirmedProject(CHAT_PROJECT, "Research", outside.createdAt, outside.createdAt)

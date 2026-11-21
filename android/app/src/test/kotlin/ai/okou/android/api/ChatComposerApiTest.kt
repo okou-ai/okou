@@ -177,13 +177,11 @@ class ChatComposerApiTest {
             assertEquals(thread, created.id)
             assertEquals(CHAT_PROJECT, created.projectId)
             val create = fixture.created.single()
-            assertFalse(create.containsKey("agentId"))
             assertFalse(create.containsKey("model"))
             assertFalse(create.containsKey("serviceTier"))
             val send = input(thread)
             assertEquals(thread, fixture.service.sendInput(send).threadId)
             val wire = fixture.inputs.values.single()
-            assertFalse(wire.containsKey("agentId"))
             for (key in listOf("model", "computerUseHostId", "cloudBrowserEnabled")) assertFalse(
                 wire.containsKey(key)
             )
