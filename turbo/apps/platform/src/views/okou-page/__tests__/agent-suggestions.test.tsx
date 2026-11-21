@@ -2,6 +2,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   feedContract,
   type Suggestion,
+  type PlatformEvent,
 } from "@okouai/api-contracts/contracts/feed";
 import { screen, within, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -570,4 +571,105 @@ test("agent-suggestions-027 feedback on two independent cards can finish in oppo
   click(await findFastControl("button", "Undo", toast));
   await expect(activeCard(one)).resolves.toBeVisible();
   await expect(undone.promise).resolves.toBe(original);
+});
+test("agent-suggestions-037 sending a custom budget instruction leaves the next suggestion on For you", async () => {
+  const launch = proposal("Launch plan", 40),
+    second = proposal("Revisit estimates", 10);
+  feed([launch, second]);
+  const wrote = context.mocks.deferred<UserMessageDocument | undefined>();
+  createChatRunFixtures(context).installRunChat({
+    onSendRequest: (body) => {
+      return wrote.resolve(body.userMessage);
+    },
+  });
+  context.mocks.api(feedContract.consume, ({ respond }) => {
+    return respond(200, launch);
+  });
+  await openDeck();
+  click(
+    await findFastControl(
+      "button",
+      "What do you have in mind?",
+      await activeCard(launch),
+    ),
+  );
+  const box = await screen.findByRole("region", {
+    name: "What do you have in mind?",
+  });
+  const direction = "Summarize the open budget question first";
+  await appendDirection(
+    await within(box).findByRole("textbox", { name: /message/i }),
+    direction,
+  );
+  click(
+    await waitFor(() => {
+      const send = queryFastControl("button", "Send", box);
+      if (!send || send.hasAttribute("disabled")) {
+        throw new Error("Waiting for custom direction");
+      }
+      return send;
+    }),
+  );
+  const doc = await wrote.promise;
+  expect(JSON.stringify(doc?.parts)).toContain(direction);
+  expect(JSON.stringify(doc?.parts)).toContain("Launch plan");
+  await expect(activeCard(second)).resolves.toBeVisible();
+  expect(location.pathname).toBe("/for-you");
+});
+test("agent-suggestions-041 dismissing a suggestion leaves the disabled automation until its own dismissal", async () => {
+  const first = proposal("Reconcile vendor credit", 90),
+    label = "Renew vendor archive";
+  const event: PlatformEvent = {
+    id: crypto.randomUUID(),
+    priority: 1,
+    createdAt: first.createdAt,
+    updatedAt: first.updatedAt,
+    expiresAt: null,
+    type: "event",
+    sourceType: "platform-event",
+    state: { status: "active" },
+    content: {
+      eventType: "automation-disabled",
+      automationId: crypto.randomUUID(),
+      workflowId: crypto.randomUUID(),
+      workspaceId: context.resourceId,
+      automationName: label,
+      disabledAt: first.createdAt,
+      consecutiveFailures: 3,
+      recoveryScheduled: false,
+    },
+  };
+  let consumed = false,
+    dismissed = false;
+  context.mocks.api(feedContract.list, ({ respond }) => {
+    return respond(200, {
+      items: [...(consumed ? [] : [first]), ...(dismissed ? [] : [event])],
+    });
+  });
+  context.mocks.api(feedContract.feedback, ({ body, params, respond }) => {
+    consumed = params.id === first.id && body.kind === "dismissed";
+    return respond(200, { restored: false });
+  });
+  context.mocks.api(feedContract.dismiss, ({ params, respond }) => {
+    dismissed = params.id === event.id;
+    return respond(204);
+  });
+  await openDeck();
+  click(await findFastControl("button", "Dismiss", await activeCard(first)));
+  const title = await screen.findByText(label, { exact: false });
+  expect(title).toBeVisible();
+  await waitFor(() => {
+    return expect(consumed).toBeTruthy();
+  });
+  click(
+    await findFastControl(
+      "button",
+      "Dismiss",
+      title.closest("article") ?? document.body,
+    ),
+  );
+  await screen.findByText("All caught up");
+  await waitFor(() => {
+    return expect(dismissed).toBeTruthy();
+  });
 });

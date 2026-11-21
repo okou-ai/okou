@@ -186,3 +186,18 @@ export function createMarkdownChatFixture(
     },
   };
 }
+
+/** A completed assistant reply delivered by the ordinary thread endpoints. */
+export function completedMarkdownReply(context: TestContext, content: string) {
+  const chat = createMarkdownChatFixture(context);
+  chat.install({
+    rows: () => {
+      return [
+        chat.inputPrompt("Review this material", { seqId: 1 }),
+        chat.outputMessage(content, { seqId: 2 }),
+        chat.runCompleted({ seqId: 3 }),
+      ];
+    },
+  });
+  return chat.path;
+}

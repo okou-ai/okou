@@ -1,3 +1,4 @@
+import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import {
   getAction,
   findAction,
@@ -305,4 +306,69 @@ test("connectors-accounts-019 late deletion of Work leaves Personal's confirmati
   expect(
     screen.getByRole("dialog", { name: "Disconnect Personal?" }),
   ).toBeInTheDocument();
+});
+test("connectors-accounts-020 reviewing Personal reconnects that account while Work remains default", async () => {
+  const work = connectorAccountFixture(target, {
+    displayName: "Work",
+    isDefault: true,
+  });
+  const personal = connectorAccountFixture(target, {
+    displayName: "Personal",
+    isDefault: false,
+    scopeMismatch: true,
+  });
+  mockSavedConnectorAccounts(context, () => {
+    return [work, personal];
+  });
+  context.mocks.api(
+    connectorAccountsContract.scopeDiff,
+    ({ params, respond }) => {
+      const added =
+        params.connectionId === personal.id ? "read:user" : "read:org";
+      return respond(200, {
+        addedScopes: [added],
+        currentScopes: ["repo", added],
+        storedScopes: ["repo"],
+        removedScopes: [],
+      });
+    },
+  );
+  const destination = "https://provider.example.org/oauth/personal";
+  const popup = Object.assign(context.mocks.browser.authWindow(), {
+    location: { href: "about:blank" },
+  });
+  context.mocks.browser.open(popup);
+  context.mocks.api(
+    builtinConnectorOauthStartContract.start,
+    ({ body, params, respond }) => {
+      expect(params.connectorSlug).toBe("github");
+      expect(body.account).toStrictEqual({
+        intent: "reconnect",
+        connectionId: personal.id,
+      });
+      return respond(200, {
+        authorizationUrl: destination,
+        oauthAttemptId: crypto.randomUUID(),
+      });
+    },
+  );
+  const manager = await manageAccounts();
+  const row = await within(manager).findByRole("group", { name: "Personal" });
+  click(getAction("button", "Account actions", row));
+  click(
+    await screen.findByText("Review permissions", {
+      selector: '[role="menuitem"]',
+    }),
+  );
+  const scope = await screen.findByText("read:user");
+  const review = scope.closest('[role="dialog"]');
+  if (!review) {
+    throw new Error("Missing scope review");
+  }
+  click(getAction("button", "Reconnect", review));
+  const connect = await screen.findByRole("dialog", { name: /GitHub/i });
+  click(await findAction("button", "Reconnect", connect));
+  await waitFor(() => {
+    return expect(popup.location.href).toBe(destination);
+  });
 });
