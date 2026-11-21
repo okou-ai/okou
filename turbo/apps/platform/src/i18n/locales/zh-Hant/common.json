@@ -4796,7 +4796,6 @@
     "create": "创建 Project",
     "delete": "删除",
     "deleteChoiceDescription": "可以只刪除 Project 並保留聊天，也可以同時刪除其中的聊天。",
-    "deleteDescription": "僅刪除 Project，聊天及其歷史記錄會保留。",
     "deleteError": "无法删除 Project",
     "deleteProjectAndThreads_other": "刪除 Project 和 {{count}} 個聊天…",
     "deleteProjectOnly": "僅刪除 Project",

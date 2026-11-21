@@ -122,13 +122,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
-  [FeatureSwitchKey.ProjectThreadDeletion]: {
-    maintainer: "ethan@okou.ai",
-    displayName: "Delete Project threads",
-    description:
-      "Offer permanent deletion of a Project and its threads after a second confirmation.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ProjectTitleReveal]: {
     maintainer: "ming@okou.ai",
     displayName: "Project title reveal",

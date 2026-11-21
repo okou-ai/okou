@@ -2,7 +2,6 @@ import { CHAT_LIST_AGENT_ID } from "./chat-list-test-helpers.ts";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   projectsContract,
   type ProjectEvent,
@@ -202,11 +201,6 @@ async function openDeletion() {
   click(item);
   return screen.findByRole("dialog", { name: "Delete Project?" });
 }
-function switches() {
-  return {
-    [FeatureSwitchKey.ProjectThreadDeletion]: true,
-  };
-}
 
 test("Project deletion confirmation includes every archived page and returns safely to choices", async () => {
   const fixture = installDeletion(members(101));
@@ -214,7 +208,6 @@ test("Project deletion confirmation includes every archived page and returns saf
     context,
     path: `/chats/${fixture.ordinary.id}`,
     ...fixture.workspace.pageOptions,
-    featureSwitches: switches(),
   });
   const first = await openDeletion();
   const fullDelete = await waitFor(() => {
@@ -273,7 +266,6 @@ test("Retry reconciles an unknown deletion of the open thread and recovers navig
     context,
     path: `/chats/${threads[1]!.id}`,
     ...fixture.workspace.pageOptions,
-    featureSwitches: switches(),
   });
   const first = await openDeletion();
   click(
@@ -310,7 +302,6 @@ test("A new Project member requires reviewing the changed list before deleting a
     context,
     path: `/chats/${fixture.ordinary.id}`,
     ...fixture.workspace.pageOptions,
-    featureSwitches: switches(),
   });
   const first = await openDeletion();
   click(
@@ -352,7 +343,6 @@ test("Deleting an empty Project keeps the Project-only action available", async 
     context,
     path: `/chats/${fixture.ordinary.id}`,
     ...fixture.workspace.pageOptions,
-    featureSwitches: switches(),
   });
   const first = await openDeletion();
   await waitFor(() => {
@@ -383,7 +373,6 @@ test("Deleting the open Project thread finishes the batch before navigating to a
     context,
     path: `/chats/${threads[0]!.id}`,
     ...fixture.workspace.pageOptions,
-    featureSwitches: switches(),
   });
   const first = await openDeletion();
   click(
@@ -433,7 +422,6 @@ test("Retry reconciles a final Project deletion that committed before its error 
     context,
     path: `/chats/${fixture.ordinary.id}`,
     ...fixture.workspace.pageOptions,
-    featureSwitches: switches(),
   });
   const first = await openDeletion();
   click(
