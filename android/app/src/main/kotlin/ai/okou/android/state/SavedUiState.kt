@@ -1,5 +1,6 @@
 package ai.okou.android.state
 
+import ai.okou.android.artifacts.ArtifactFilter
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
@@ -56,6 +57,28 @@ internal fun rememberUpdateWorkspaceState(): SaveableStateHolder = rememberSavea
 
 @Composable
 internal fun rememberEarlierRepliesExpanded() = rememberSaveable { mutableStateOf(false) }
+
+@Composable
+internal fun rememberArtifactPageState(): SaveableStateHolder = rememberSaveableStateHolder()
+
+@Composable
+internal fun rememberArtifactFlag(): MutableState<Boolean> = rememberSaveable {
+    mutableStateOf(false)
+}
+
+@Composable
+internal fun rememberArtifactId(initial: String? = null): MutableState<String?> =
+    rememberSaveable(initial) { mutableStateOf(initial) }
+
+@Composable
+internal fun rememberArtifactFilter(): MutableState<ArtifactFilter> = rememberSaveable {
+    mutableStateOf(ArtifactFilter.All)
+}
+
+@Composable
+internal fun rememberArtifactSiteScroll(): MutableState<Int> = rememberSaveable {
+    mutableStateOf(0)
+}
 
 private const val MAX_SAVED_SEARCH_QUERY_CHARS = 256
 

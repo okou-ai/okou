@@ -25,6 +25,7 @@ import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UpdateWorkflowAutomationRequest
 import ai.okou.android.api.generated.UpdateWorkflowRequest
 import ai.okou.android.api.generated.UserPreferences
+import ai.okou.android.artifacts.ArtifactService
 import ai.okou.android.chat.AblyRealtimeConnection
 import ai.okou.android.chat.AssistantRecoveryService
 import ai.okou.android.chat.ChatComposerService
@@ -81,6 +82,8 @@ interface WorkspaceSession :
     val workflowService: WorkflowService?
         get() = null
 
+    val artifacts: ArtifactService
+
     suspend fun organization(): Organization
 
     suspend fun preferences(): UserPreferences
@@ -105,6 +108,7 @@ class CanonicalWorkspaceSession(
     private val api =
         ApiClient(identity.apiOrigin.toHttpUrl(), tokens, onUpdateRequired = onUpdateRequired)
     private val transfers = SignedTransferClient()
+    override val artifacts = ArtifactService(api, transfers, identity.apiOrigin)
     private val archiveJson = Json {
         ignoreUnknownKeys = true
         explicitNulls = true

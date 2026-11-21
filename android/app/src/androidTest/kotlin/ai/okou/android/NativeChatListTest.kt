@@ -27,6 +27,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import okhttp3.mockwebserver.MockResponse
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -224,15 +225,16 @@ class NativeChatListTest {
                 checkNotNull(
                     device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000)
                 )
-            fun disabledTool(label: String) =
+            fun tool(label: String) =
                 checkNotNull(
                         device.wait(Until.findObject(By.pkg(app.packageName).desc(label)), 10_000)
                     ) {
                         "Missing workspace tool $label"
                     }
                     .also {
-                        assertFalse("Workspace tool $label is enabled", it.isEnabled)
-                        assertFalse("Workspace tool $label is clickable", it.isClickable)
+                        val enabled = label == app.getString(R.string.workspace_artifacts)
+                        assertEquals("Workspace tool $label availability", enabled, it.isEnabled)
+                        assertEquals("Workspace tool $label click action", enabled, it.isClickable)
                     }
             fun click(selector: UiSelector) {
                 // Resolve at action time. The SDK return acknowledges accessibility events;
@@ -292,7 +294,7 @@ class NativeChatListTest {
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             device.awaitChatList(app)
             revealText("Research")
-            toolLabels.forEach { disabledTool(it) }
+            toolLabels.forEach { tool(it) }
             takeScreenshot().writeToTestStorage("android-list-home")
             click(UiSelector().description(app.getString(R.string.chat_search_workspace)))
             text(app.getString(R.string.chat_search_recent))
@@ -394,9 +396,7 @@ class NativeChatListTest {
                 val conversation = text("Native history reply")
                 assertTrue(listTitle.visibleBounds.right < conversation.visibleBounds.left)
                 toolLabels.forEach { label ->
-                    assertTrue(
-                        disabledTool(label).visibleBounds.right < conversation.visibleBounds.left
-                    )
+                    assertTrue(tool(label).visibleBounds.right < conversation.visibleBounds.left)
                 }
                 val toolbarBack = By.pkg(app.packageName).desc(app.getString(R.string.back))
                 assertTrue(device.wait(Until.gone(toolbarBack), 10_000))
@@ -500,7 +500,7 @@ class NativeChatListTest {
                 assertTrue(device.wait(Until.gone(undo), 10_000))
                 revealText("Personal chat")
                 assertTrue(rowEvents.size == 2)
-                toolLabels.forEach { disabledTool(it) }
+                toolLabels.forEach { tool(it) }
                 takeScreenshot().writeToTestStorage("android-list-home-large-text")
             } finally {
                 if (fontScale.toFloatOrNull() == null)

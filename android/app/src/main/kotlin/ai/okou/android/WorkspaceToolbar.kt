@@ -229,6 +229,8 @@ internal fun WorkspaceListToolbar(
 internal fun WorkspaceToolEntries(
     openWorkflows: (() -> Unit)? = null,
     workflowsFocus: Modifier = Modifier,
+    openArtifacts: (() -> Unit)? = null,
+    artifactModifier: Modifier = Modifier,
 ) {
     val stackBelow = with(LocalDensity.current) { 16.sp.toDp() * 19 }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -255,7 +257,8 @@ internal fun WorkspaceToolEntries(
                 R.drawable.ic_inventory_2,
                 R.string.workspace_artifacts,
                 stacked,
-                Modifier.weight(1f),
+                artifactModifier.weight(1f),
+                action = openArtifacts,
             )
         }
     }
@@ -279,7 +282,7 @@ private fun WorkspaceToolEntry(
                 role = Role.Button
                 disabled()
             }
-        else Modifier.clickable(role = Role.Button, onClick = action)
+        else Modifier.clickable(role = Role.Button, onClick = action).semantics { contentDescription = title }
     val entry =
         modifier
             .heightIn(min = 48.dp)

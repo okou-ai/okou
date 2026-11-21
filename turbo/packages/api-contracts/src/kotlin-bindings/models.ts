@@ -840,6 +840,18 @@ ${variants.map((variant) => `            is ${name}.${variant.name} -> JsonPrimi
 }`);
         return name;
       }
+      // A URI or a hostless reference still has one wire representation.
+      if (
+        Array.isArray(value.anyOf) &&
+        union.some(
+          (item) =>
+            schemaObject(item) &&
+            item.type === "string" &&
+            Object.keys(item).length === 1,
+        ) &&
+        union.every((item) => schemaObject(item) && item.type === "string")
+      )
+        return "String";
       const variants = objectUnionVariants(union);
       if (variants.length < 2) throw new Error(`${name}: unsupported union`);
       const selectors = unionSelectors(variants, name);
