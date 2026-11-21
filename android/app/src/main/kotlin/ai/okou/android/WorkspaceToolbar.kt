@@ -60,6 +60,7 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusTarget
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -143,19 +144,20 @@ internal fun WorkspaceSearchField(
     focused: Boolean? = null,
     onClick: (() -> Unit)? = null,
     hasTrailingAction: Boolean = false,
+    shape: Shape = CircleShape,
     content: @Composable RowScope.() -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val outline =
         when (focused) {
-            true -> Modifier.border(2.dp, LocalActivityStatusColor.current, CircleShape)
-            false -> Modifier.border(1.dp, colors.outline, CircleShape)
+            true -> Modifier.border(2.dp, LocalActivityStatusColor.current, shape)
+            false -> Modifier.border(1.dp, colors.outline, shape)
             null -> Modifier
         }
     Row(
         modifier
             .heightIn(min = workspaceSearchControlHeight())
-            .clip(CircleShape)
+            .clip(shape)
             .background(colors.surfaceVariant)
             .then(outline)
             .then(
@@ -224,7 +226,10 @@ internal fun WorkspaceListToolbar(
 }
 
 @Composable
-internal fun WorkspaceToolEntries() {
+internal fun WorkspaceToolEntries(
+    openWorkflows: (() -> Unit)? = null,
+    workflowsFocus: Modifier = Modifier,
+) {
     val stackBelow = with(LocalDensity.current) { 16.sp.toDp() * 19 }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val stacked = maxWidth <= stackBelow
@@ -237,7 +242,8 @@ internal fun WorkspaceToolEntries() {
                 R.drawable.ic_account_tree,
                 R.string.workspace_workflows,
                 stacked,
-                Modifier.weight(1f),
+                Modifier.weight(1f).then(workflowsFocus),
+                openWorkflows,
             )
             WorkspaceToolEntry(
                 R.drawable.ic_extension,
@@ -262,18 +268,23 @@ private fun WorkspaceToolEntry(
     @StringRes label: Int,
     stacked: Boolean,
     modifier: Modifier,
+    action: (() -> Unit)? = null,
 ) {
     val title = stringResource(label)
-    val color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-    val entry =
-        modifier
-            .heightIn(min = 48.dp)
-            .clip(RoundedCornerShape(9.dp))
-            .clearAndSetSemantics {
+    val color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (action == null) 0.4f else 1f)
+    val semantics =
+        if (action == null)
+            Modifier.clearAndSetSemantics {
                 contentDescription = title
                 role = Role.Button
                 disabled()
             }
+        else Modifier.clickable(role = Role.Button, onClick = action)
+    val entry =
+        modifier
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .then(semantics)
             .padding(horizontal = 4.dp, vertical = 4.dp)
     val content: @Composable () -> Unit = {
         Icon(painterResource(icon), null, Modifier.size(18.dp), tint = color)

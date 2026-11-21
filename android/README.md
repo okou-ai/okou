@@ -808,8 +808,10 @@ Add only contracts a native consumer actually needs. Unsupported schema shapes
 fail generation; do not replace them with untyped JSON or parallel handwritten DTOs.
 
 The selected emitter supports string-keyed records, root array/map aliases and
-typed object unions with disjoint string tags, unique required wire keys,
-required null/non-null selectors, compound tags or forbidden/required key pairs.
+typed object unions with disjoint string tags, including required nested
+configuration tags, unique required wire keys, required null/non-null
+selectors, compound tags or forbidden/required key pairs. Disjoint string,
+safe-integer and boolean scalar alternatives also retain their wire types.
 Nested object unions are flattened only when no extra schema constraint is lost;
 joint selectors require every variant pair to be provably disjoint.
 Union selection rejects unknown or ambiguous variants and preserves the original

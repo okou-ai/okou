@@ -36,6 +36,15 @@ import { runModelsMainContract } from "../contracts/run-models";
 import { thirdPartySubscriptionsMainContract } from "../contracts/third-party-subscriptions";
 import { billingStatusContract } from "../contracts/billing";
 import { personalModelProviderAccountsByIdContract } from "../contracts/personal-model-providers";
+import { featureSwitchesContract } from "../contracts/feature-switches";
+import { connectedConnectorsContract } from "../contracts/connected-connectors";
+import {
+  workflowAutomationsContract,
+  workflowScheduleAutomationSummarySchema,
+  workflowSummarySchema,
+  workflowsCollectionContract,
+  workflowsDetailContract,
+} from "../contracts/workflows";
 
 export interface KotlinRouteBinding {
   readonly authenticated?: boolean;
@@ -112,6 +121,59 @@ const historyReadBindings = [
 
 /** Only routes used by the installed native client, not every Web contract. */
 export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
+  {
+    name: "connectedConnectors",
+    response: "ConnectedConnectors",
+    route: connectedConnectorsContract.list,
+  },
+  {
+    name: "featureSwitches",
+    response: "FeatureSwitches",
+    route: featureSwitchesContract.get,
+  },
+  {
+    name: "workflows",
+    response: "Workflows",
+    route: workflowsCollectionContract.list,
+  },
+  {
+    name: "workflow",
+    response: "WorkflowDetail",
+    route: workflowsDetailContract.get,
+  },
+  {
+    name: "updateWorkflow",
+    request: "UpdateWorkflowRequest",
+    response: "WorkflowDetail",
+    route: workflowsDetailContract.update,
+  },
+  {
+    name: "workspaceWorkflowAutomations",
+    response: "WorkspaceWorkflowAutomations",
+    route: workflowAutomationsContract.listWorkspace,
+  },
+  {
+    name: "createWorkflowAutomation",
+    request: "CreateWorkflowAutomationRequest",
+    response: "WorkflowAutomation",
+    route: workflowAutomationsContract.create,
+  },
+  {
+    name: "updateWorkflowAutomation",
+    request: "UpdateWorkflowAutomationRequest",
+    response: "WorkflowAutomation",
+    route: workflowAutomationsContract.update,
+  },
+  {
+    name: "enableWorkflowAutomation",
+    response: "WorkflowAutomation",
+    route: workflowAutomationsContract.enable,
+  },
+  {
+    name: "disableWorkflowAutomation",
+    response: "WorkflowAutomation",
+    route: workflowAutomationsContract.disable,
+  },
   {
     name: "agentDraft",
     response: "ComposerDraft",
@@ -291,9 +353,78 @@ export interface KotlinTypeBinding {
   readonly direction: "input" | "output";
   /** Raw transport/cache envelopes retain all JSON members; their consumer owns decoding. */
   readonly representation?: "raw-object";
+  /** Reuse precisely this output shape when the same schema appears inside another DTO. */
+  readonly reusableOutput?: boolean;
+  readonly unionFields?: readonly string[];
 }
 
 export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
+  {
+    name: "ConnectedConnectors",
+    schema: connectedConnectorsContract.list.responses[200],
+    direction: "output",
+  },
+  {
+    name: "FeatureSwitches",
+    schema: featureSwitchesContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "WorkflowSummary",
+    schema: workflowSummarySchema,
+    direction: "output",
+    reusableOutput: true,
+  },
+  {
+    name: "WorkflowAutomationRuleOrigin",
+    schema: workflowScheduleAutomationSummarySchema.shape.official.unwrap(),
+    direction: "output",
+    reusableOutput: true,
+  },
+  {
+    name: "WorkflowAutomation",
+    schema: workflowAutomationsContract.enable.responses[200],
+    direction: "output",
+    reusableOutput: true,
+    unionFields: [
+      "id",
+      "enabled",
+      "chatThreadId",
+      "nextRunAt",
+      "lastRunAt",
+      "official",
+    ],
+  },
+  {
+    name: "Workflows",
+    schema: workflowsCollectionContract.list.responses[200],
+    direction: "output",
+  },
+  {
+    name: "WorkflowDetail",
+    schema: workflowsDetailContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "UpdateWorkflowRequest",
+    schema: workflowsDetailContract.update.body,
+    direction: "input",
+  },
+  {
+    name: "WorkspaceWorkflowAutomations",
+    schema: workflowAutomationsContract.listWorkspace.responses[200],
+    direction: "output",
+  },
+  {
+    name: "CreateWorkflowAutomationRequest",
+    schema: workflowAutomationsContract.create.body,
+    direction: "input",
+  },
+  {
+    name: "UpdateWorkflowAutomationRequest",
+    schema: workflowAutomationsContract.update.body,
+    direction: "input",
+  },
   {
     name: "RenameProjectRequest",
     schema: projectsContract.update.body,
