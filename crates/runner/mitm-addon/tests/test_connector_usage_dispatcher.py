@@ -7,7 +7,6 @@ import pytest
 import flow_metadata_keys as metadata_keys
 import usage
 from tests.jsonl_log_helpers import (
-    jsonl_exists_after_flush,
     read_jsonl_entries_after_flush,
     read_jsonl_text_after_flush,
 )
@@ -42,9 +41,8 @@ class TestConnectorUsageDispatcher:
         flow = self._make_x_flow(real_flow, tmp_path)
         flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:openrouter-codex"
         assert self._x_usage.call_and_get_billing(flow) == []
-        proxy_log = tmp_path / "proxy.jsonl"
-        if jsonl_exists_after_flush(proxy_log):
-            assert "no registered handler" not in read_jsonl_text_after_flush(proxy_log)
+        log_text = read_jsonl_text_after_flush(tmp_path / "proxy.jsonl", missing_ok=True)
+        assert "no registered handler" not in log_text
 
     @pytest.mark.parametrize("firewall_name", [None, 42])
     def test_skips_malformed_firewall_name_without_warning(
@@ -58,9 +56,8 @@ class TestConnectorUsageDispatcher:
 
         assert self._x_usage.call_and_get_billing(flow) == []
 
-        proxy_log = tmp_path / "proxy.jsonl"
-        if jsonl_exists_after_flush(proxy_log):
-            assert "no registered handler" not in read_jsonl_text_after_flush(proxy_log)
+        log_text = read_jsonl_text_after_flush(tmp_path / "proxy.jsonl", missing_ok=True)
+        assert "no registered handler" not in log_text
 
     def test_skips_for_non_x_billable_firewall(self, tmp_path, real_flow):
         """Billable non-x connectors (hypothetical future additions to
@@ -120,13 +117,12 @@ class TestConnectorUsageDispatcher:
     def test_does_not_warn_on_empty_firewall_name(self, tmp_path, real_flow):
         """Empty firewall_name is a different bug class (web-layer contract
         violation) already logged elsewhere; don't double-warn here."""
-        proxy_log = tmp_path / "proxy.jsonl"
         flow = self._make_x_flow(real_flow, tmp_path)
         flow.metadata[metadata_keys.FIREWALL_NAME] = ""
         assert self._x_usage.call_and_get_billing(flow) == []
 
-        if jsonl_exists_after_flush(proxy_log):
-            assert "no registered handler" not in read_jsonl_text_after_flush(proxy_log)
+        log_text = read_jsonl_text_after_flush(tmp_path / "proxy.jsonl", missing_ok=True)
+        assert "no registered handler" not in log_text
 
     def test_registered_x_usage_requires_original_url(self, tmp_path, real_flow, mitm_ctx):
         flow = self._make_x_flow(real_flow, tmp_path)

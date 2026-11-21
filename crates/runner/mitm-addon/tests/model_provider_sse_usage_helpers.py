@@ -12,10 +12,7 @@ from mitmproxy import http
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 import usage
-from tests.jsonl_log_helpers import (
-    jsonl_exists_after_flush,
-    read_jsonl_entries_after_flush,
-)
+from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.model_provider_flow_helpers import RealFlowFactory, make_model_provider_sse_flow
 from tests.usage_helpers import UsageWebhookServer
 
@@ -80,11 +77,9 @@ def run_error(
 
 def model_sse_parse_warnings(flow: http.HTTPFlow) -> list[dict]:
     proxy_log = Path(flow.metadata[metadata_keys.SANDBOX_PROXY_LOG_PATH])
-    if not jsonl_exists_after_flush(proxy_log):
-        return []
     return [
         entry
-        for entry in read_jsonl_entries_after_flush(proxy_log)
+        for entry in read_jsonl_entries_after_flush(proxy_log, missing_ok=True)
         if entry.get("message") == "Model provider SSE usage extraction failed"
     ]
 
