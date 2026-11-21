@@ -293,6 +293,13 @@ class NativeChatListTest {
             text("Hello history")
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             assertTrue(device.wait(Until.gone(By.text("Hello history")), 10_000))
+            revealText("Personal chat")
+            text("Personal chat").longClick()
+            val renameChat = app.getString(R.string.chat_rename)
+            text(renameChat)
+            takeScreenshot().writeToTestStorage("android-chat-row-menu")
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            assertTrue(device.wait(Until.gone(By.text(renameChat)), 10_000))
             revealText("Project chat")
             val historyRows = fixture.historyRows
             val releaseHistory = CountDownLatch(1)

@@ -748,7 +748,7 @@ private fun ProjectRow(
                     }
                 )
             }
-            WorkspaceMenu(items, close = { menuOpen = false }, title = name)
+            WorkspaceMenu(items, close = { menuOpen = false })
         }
     }
 }
@@ -880,7 +880,6 @@ private fun ChatRow(
                     restoreMenuFocus = true
                     menuOpen = false
                 },
-                title = title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
             )
         }
     }
