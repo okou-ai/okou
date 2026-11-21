@@ -47,7 +47,12 @@ class ScreenshotScenario {
 
         fun text(label: String): UiObject2 =
             checkNotNull(
-                device.wait(Until.findObject(By.pkg(app.packageName).textContains(label)), 12_000)
+                device.wait(
+                    Until.findObject(
+                        By.pkg(app.packageName).clazz("android.widget.TextView").textContains(label)
+                    ),
+                    12_000,
+                )
             ) {
                 "Missing visible text: $label"
             }
@@ -155,7 +160,7 @@ class ScreenshotScenario {
                         enter("搜索连接器", "Google Drive")
                         text("Google Drive").click()
                         text("连接账号")
-                        description("返回").click()
+                        assertTrue(device.pressBack())
                         text("Google Drive")
                         assertFalse(device.hasObject(By.text("Gmail")))
                         description("清除关键词").click()
