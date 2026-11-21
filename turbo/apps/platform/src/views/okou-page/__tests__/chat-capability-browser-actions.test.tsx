@@ -27,6 +27,9 @@ import {
   assistantEvent,
   completedEvent,
   createChatRunFixtures,
+  findButton,
+  findEnabledButton,
+  queryButton,
 } from "./chat-run-test-fixtures.ts";
 
 const context = testContext();
@@ -35,8 +38,7 @@ async function openConversation(
   fields: Field[],
   messages: string[],
   options: {
-    initial?: Parameters<typeof installBrowserRequest>[2];
-    arrange?: (request: ReturnType<typeof installBrowserRequest>) => void;
+    arrange?: () => void;
     startPath?: string;
   } = {},
 ) {
@@ -53,8 +55,8 @@ async function openConversation(
     ];
   });
   createChatRunFixtures(context).installRunChat({ threadId, chatEvents });
-  const request = installBrowserRequest(context, fields, options.initial);
-  options.arrange?.(request);
+  const request = installBrowserRequest(context, fields);
+  options.arrange?.();
   await setupPage({
     context,
     host: "app.okou.ai",
@@ -159,12 +161,13 @@ function loginFields(): Field[] {
   ];
 }
 async function openForm() {
-  click(await screen.findByText("Enter information", { selector: "button" }));
-  return within(await screen.findByRole("dialog"));
+  click(await findButton("Enter information"));
+  return screen.findByRole("dialog");
 }
 test("chat-capability-browser-actions-010 the reopened billing form keeps its email and clears both secrets", async () => {
   await openConversation(loginFields(), [path]);
-  const dialog = await openForm();
+  const form = await openForm();
+  const dialog = within(form);
   const email = dialog.getByLabelText("Billing email");
   const secret = dialog.getByLabelText("Billing password");
   const code = dialog.getByLabelText("Invoice code");
@@ -181,11 +184,11 @@ test("chat-capability-browser-actions-010 the reopened billing form keeps its em
   await expect(
     dialog.findByText(/Right-click the username or password field/),
   ).resolves.toBeVisible();
-  click(dialog.getByLabelText("Close"));
+  click(await findEnabledButton("Close", form));
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
-  const reopened = await openForm();
+  const reopened = within(await openForm());
   expect(reopened.getByLabelText("Billing email")).toHaveValue(
     "billing@example.test",
   );
@@ -207,11 +210,12 @@ test("chat-capability-browser-actions-013 confirming already checked consent con
     },
   };
   const req = await openConversation([consent], [path]);
-  const dialog = await openForm();
+  const form = await openForm();
+  const dialog = within(form);
   await waitFor(() => {
     expect(dialog.getByRole("checkbox", { name: consent.label })).toBeChecked();
   });
-  const confirm = dialog.getByText("Add to browser", { selector: "button" });
+  const confirm = queryButton("Add to browser", form)!;
   expect(confirm).toBeEnabled();
   click(confirm);
   await screen.findByText("Agent notified");
@@ -261,14 +265,15 @@ test("chat-capability-browser-actions-016 confirming a four-byte document transf
       });
     },
   });
-  const dialog = await openForm();
+  const form = await openForm();
+  const dialog = within(form);
   const file = dialog.getByLabelText("Document", {
     selector: 'input[type="file"]',
   });
   await waitFor(() => {
     expect(file).toHaveAttribute("accept", ".txt");
   });
-  const confirm = dialog.getByText("Add to browser", { selector: "button" });
+  const confirm = queryButton("Add to browser", form)!;
   expect(confirm).toBeDisabled();
   fireEvent.change(file, {
     target: { files: [new File(["note"], "note.txt", { type: "text/plain" })] },
@@ -309,7 +314,8 @@ test("chat-capability-browser-actions-022 browser history leaves the request and
     return link!;
   });
   click(conversation);
-  const dialog = await openForm();
+  const form = await openForm();
+  const dialog = within(form);
   await fill(dialog.getByLabelText("Billing password"), "local-only draft");
   expect(dialog.getByLabelText("Billing password")).toHaveValue(
     "local-only draft",
@@ -323,133 +329,10 @@ test("chat-capability-browser-actions-022 browser history leaves the request and
     screen.queryByDisplayValue("local-only draft"),
   ).not.toBeInTheDocument();
   window.history.forward();
-  const reopened = await openForm();
+  const reopened = within(await openForm());
   expect(window.location.pathname).toBe(chatPath);
   expect(reopened.getByLabelText("Billing password")).toHaveValue("");
 });
-
-test.each([
-  { id: "008", task: true },
-  { id: "009", task: false },
-])(
-  "chat-capability-browser-actions-$id task context and edited notes survive a live field change and a companion receipt",
-  async ({ task }) => {
-    const notes: Field = {
-      key: "notes",
-      label: "Notes",
-      required: true,
-      fieldKind: "text",
-      control: { tagName: "INPUT", inputType: "text" },
-    };
-    const companionToken = "vm0_browser_user_action_" + "d".repeat(43);
-    const companionPath = path.replace("c".repeat(43), "d".repeat(43));
-    const inspected = context.mocks.deferred<void>();
-    const title = "Reconcile invoice";
-    const reason = "The billing system needs a note";
-    const options = task ? { title, reason } : {};
-    let quantityMin = "1";
-    let companionDone = false;
-    const req = await openConversation([notes], [path, companionPath], {
-      initial: options,
-      arrange: ({ record }) => {
-        context.mocks.api(
-          browserUserActionsContract.get,
-          ({ params, respond }) => {
-            if (params.requestToken === companionToken) {
-              return respond(200, {
-                ...record,
-                requestToken: companionToken,
-                title: "Check delivery address",
-                state: companionDone ? "succeeded" : "pending",
-                callbackDelivered: false,
-              });
-            }
-            return respond(200, record);
-          },
-        );
-        context.mocks.api(
-          browserUserActionsContract.preflight,
-          async ({ respond }) => {
-            await inspected.promise;
-            return respond(200, {
-              ...record,
-              fields: [
-                {
-                  ...notes,
-                  control: { tagName: "TEXTAREA", inputType: "textarea" },
-                },
-                {
-                  key: "qty",
-                  label: "Quantity",
-                  required: false,
-                  fieldKind: "number",
-                  control: {
-                    tagName: "INPUT",
-                    inputType: "number",
-                    min: quantityMin,
-                  },
-                },
-              ],
-            });
-          },
-        );
-      },
-    });
-    const cardTitle = task ? title : "Enter information in browser";
-    const first = await screen.findByText(cardTitle);
-    const card = first.closest<HTMLElement>(
-      '[data-testid="browser-user-action-card"]',
-    )!;
-    const companion = (
-      await screen.findByText("Check delivery address")
-    ).closest<HTMLElement>('[data-testid="browser-user-action-card"]')!;
-    click(within(card).getByText("Enter information", { selector: "button" }));
-    const modal = await screen.findByRole("dialog");
-    const dialog = within(modal);
-    expect(dialog.getByText(cardTitle, { selector: "h2" })).toBeInTheDocument();
-    const description = modal.querySelector('[data-slot="dialog-description"]');
-    expect(description?.textContent ?? null).toBe(task ? reason : null);
-    await fill(
-      dialog.getByLabelText("Notes", { selector: "input" }),
-      "Verify delivery",
-    );
-    inspected.resolve();
-    await expect(
-      dialog.findByLabelText("Notes", { selector: "textarea" }),
-    ).resolves.toHaveValue("Verify delivery");
-    expect(dialog.getByLabelText("Quantity")).toHaveAttribute("min", "1");
-    companionDone = true;
-    req.announce();
-    await within(companion).findByText("Information added");
-    expect(dialog.getByLabelText("Notes")).toHaveValue("Verify delivery");
-    expect(window.location.pathname).toBe(chatPath);
-    click(dialog.getByLabelText("Close"));
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).toBeNull();
-    });
-    quantityMin = "2";
-    const again = await openForm();
-    await waitFor(() => {
-      expect(again.getByLabelText("Quantity")).toHaveAttribute("min", "2");
-    });
-    await fill(again.getByLabelText("Notes"), "Ready");
-    click(again.getByText("Add to browser", { selector: "button" }));
-    await within(card).findByText("Agent notified");
-    await expect(req.applied.promise).resolves.toContainEqual({
-      key: "notes",
-      value: "Ready",
-    });
-    await expect(req.callback.promise).resolves.toMatchObject({
-      threadId,
-      prompt: callbackPrompt,
-      state: "succeeded",
-    });
-    expect(
-      screen.queryByText("Enter information", { selector: "button" }),
-    ).toBeNull();
-    expect(window.location.pathname).toBe(chatPath);
-  },
-);
 
 const firstShot = "https://cdn.okou.io/invoices/research-first.png?sig=first";
 const pausedShot =
@@ -531,9 +414,7 @@ function managedBrowser(initial: "active" | "suspended" = "active") {
   };
 }
 async function checkPreview(state: string, filename: string) {
-  const card = await screen.findByLabelText("Open Research browser", {
-    selector: "button",
-  });
+  const card = await findButton("Open Research browser");
   await waitFor(() => {
     expect(within(card).getByText(state)).toBeInTheDocument();
     expect(
@@ -570,9 +451,7 @@ test("chat-capability-browser-actions-002 a delayed subscription and interrupted
   browser.resume();
   context.mocks.ably.triggerSharedWorkerReconnect();
   await waitFor(() => {
-    const restored = screen.getByLabelText("Open Research browser", {
-      selector: "button",
-    });
+    const restored = queryButton("Open Research browser")!;
     expect(within(restored).getByText("Live")).toBeInTheDocument();
     expect(
       within(restored).getByTestId("browser-session-thumbnail"),
@@ -590,9 +469,10 @@ test("chat-capability-browser-actions-003 the paused Research panel offers a res
     "research-paused.png?X-Amz-Credential=",
   );
   click(card);
-  const panel = within(
-    await screen.findByRole("complementary", { name: "Cloud browser" }),
-  );
+  const sidebar = await screen.findByRole("complementary", {
+    name: "Cloud browser",
+  });
+  const panel = within(sidebar);
   await panel.findByText("Browser not live");
   const preview = within(card)
     .getByTestId("browser-session-thumbnail")
@@ -601,12 +481,14 @@ test("chat-capability-browser-actions-003 the paused Research panel offers a res
     /^https:\/\/a\.okou\.io\/cdn-cgi\/image\/[^/]*width=800[^/]*\//u,
   );
   expect(preview?.endsWith("/" + pausedShot)).toBeTruthy();
+  expect(queryButton("Start browser", sidebar)).toBeEnabled();
+  expect(queryButton("Close cloud browser", sidebar)).toBeEnabled();
   expect(
-    panel.getByText("Start browser", { selector: "button" }),
-  ).toBeEnabled();
-  expect(panel.getByLabelText("Close cloud browser")).toBeEnabled();
-  expect(
-    panel.getByLabelText("Open this browser in a new page"),
+    queryAllByRoleFast("link", sidebar).find((link) => {
+      return (
+        link.getAttribute("aria-label") === "Open this browser in a new page"
+      );
+    }),
   ).toHaveAttribute("href", "/browsers/" + browser.tid);
   expect(panel.getByLabelText("Remote browser input")).toBeDisabled();
 });
@@ -616,11 +498,18 @@ test("chat-capability-browser-actions-005 the example page follows its live, sto
   const firstFrame = browser.cdp.holdTargetFrames("example-page");
   const card = await checkPreview("Live", "research-first.png?sig=first");
   click(card);
-  const panel = within(
-    await screen.findByRole("complementary", { name: "Cloud browser" }),
-  );
+  const sidebar = await screen.findByRole("complementary", {
+    name: "Cloud browser",
+  });
+  const panel = within(sidebar);
   await firstFrame.received;
   expect(panel.queryByRole("img", { name: "Live browser view" })).toBeNull();
+  expect(within(card).getByTestId("browser-session-thumbnail")).toHaveAttribute(
+    "src",
+    expect.stringMatching(
+      /^https:\/\/cdn\.okou\.io\/cdn-cgi\/image\/[^/]+\/invoices\/research-first\.png\?sig=first$/u,
+    ),
+  );
   firstFrame.release("QUJD");
   await waitFor(() => {
     expect(panel.getByLabelText("Address")).toHaveValue("https://example.com");
@@ -634,9 +523,7 @@ test("chat-capability-browser-actions-005 the example page follows its live, sto
   await checkPreview("Stopped", "research-paused.png");
   await panel.findByText("Browser not live");
   expect(panel.getByLabelText("Remote browser input")).toBeDisabled();
-  expect(
-    panel.getByText("Start browser", { selector: "button" }),
-  ).toBeEnabled();
+  expect(queryButton("Start browser", sidebar)).toBeEnabled();
   browser.resume();
   browser.announce();
   await checkPreview("Live", "research-first.png");

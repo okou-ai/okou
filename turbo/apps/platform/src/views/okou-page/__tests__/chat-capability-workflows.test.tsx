@@ -13,6 +13,8 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { AGENT_ID } from "./chat-lifecycle-test-helpers.ts";
 import {
   createChatRunFixtures,
+  findButton,
+  findEnabledButton,
   RUN_PATH,
   RUN_THREAD_ID,
   completedEvent,
@@ -72,7 +74,7 @@ test("chat-capability-workflows-001 editing the audit schedule replaces the five
     },
   );
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-  click(await screen.findByLabelText("More actions", { selector: "button" }));
+  click(await findButton("More actions"));
   click(
     await waitFor(() => {
       const item = queryAllByRoleFast("menuitem").find((el) => {
@@ -82,13 +84,15 @@ test("chat-capability-workflows-001 editing the audit schedule replaces the five
       return item!;
     }),
   );
-  const panel = within(await screen.findByTestId("automation-sidebar"));
+  const sidebar = await screen.findByTestId("automation-sidebar");
+  const panel = within(sidebar);
   await panel.findByText("Every 5 minutes");
-  click(panel.getByText("Edit", { selector: "button" }));
-  const editor = within(await screen.findByRole("dialog"));
+  click(await findEnabledButton("Edit", sidebar));
+  const dialog = await screen.findByRole("dialog");
+  const editor = within(dialog);
   click(editor.getByRole("combobox", { name: "Every" }));
   click(await screen.findByRole("option", { name: "15 minutes" }));
-  click(editor.getByText("Save automation", { selector: "button" }));
+  click(await findEnabledButton("Save automation", dialog));
   await panel.findByText("Every 15 minutes");
   expect(panel.queryByText("Every 5 minutes")).toBeNull();
   expect(screen.queryByRole("dialog")).toBeNull();
@@ -140,9 +144,12 @@ test("chat-capability-workflows-003 completed, legacy and pending triggers rende
   });
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
   const text = await screen.findByText(prompt);
-  const turn = within(text.closest<HTMLElement>('[data-role="user"]')!);
+  const message = text.closest<HTMLElement>('[data-role="user"]')!;
+  const turn = within(message);
   expect(
-    turn.getByLabelText("Open workflow receipt-audit", { selector: "a" }),
+    queryAllByRoleFast("link", message).find((link) => {
+      return link.getAttribute("aria-label") === "Open workflow receipt-audit";
+    }),
   ).toHaveAttribute("href", "/workflows/" + workflowId + "/automations");
   expect(turn.queryByText(ignored)).toBeNull();
   click(text);

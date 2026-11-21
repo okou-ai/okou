@@ -13,6 +13,8 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { AGENT_ID } from "./chat-lifecycle-test-helpers.ts";
 import {
   createChatRunFixtures,
+  findButton,
+  queryButton,
   RUN_THREAD_ID,
   RUN_PATH,
 } from "./chat-run-test-fixtures.ts";
@@ -43,16 +45,17 @@ function releaseSchedule(): Extract<
     scheduleSummary: "Every 2 hours",
   };
 }
-async function openPanel(records: ChatThreadWorkflowAutomation[]) {
+test("chat-capability-automations-001 the active release schedule identifies both run times and its available actions", async () => {
+  const record = releaseSchedule();
   createChatRunFixtures(context).installRunChat();
   context.mocks.api(
     workflowAutomationsContract.listForChatThread,
     ({ params, respond }) => {
-      return respond(200, params.threadId === RUN_THREAD_ID ? records : []);
+      return respond(200, params.threadId === RUN_THREAD_ID ? [record] : []);
     },
   );
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-  click(await screen.findByLabelText("More actions", { selector: "button" }));
+  click(await findButton("More actions"));
   click(
     await waitFor(() => {
       const item = queryAllByRoleFast("menuitem").find((el) => {
@@ -62,13 +65,11 @@ async function openPanel(records: ChatThreadWorkflowAutomation[]) {
       return item!;
     }),
   );
-  return within(await screen.findByTestId("automation-sidebar"));
-}
-test("chat-capability-automations-001 the active release schedule identifies both run times and its available actions", async () => {
-  const record = releaseSchedule();
-  const panel = await openPanel([record]);
+  const sidebar = await screen.findByTestId("automation-sidebar");
+  const panel = within(sidebar);
   await panel.findByText("Active release schedule");
-  const card = within(panel.getByRole("article"));
+  const schedule = panel.getByRole("article");
+  const card = within(schedule);
   function value(label: string) {
     return card.getByText(label, { selector: "dt" }).nextElementSibling;
   }
@@ -80,9 +81,13 @@ test("chat-capability-automations-001 the active release schedule identifies bot
   });
   expect(value("Last run")).toHaveTextContent(format.format(new Date(last)));
   expect(value("Next run")).toHaveTextContent(format.format(new Date(next)));
-  expect(card.getByText("Edit", { selector: "button" })).toBeEnabled();
-  expect(card.getByText("Run now", { selector: "button" })).toBeEnabled();
-  expect(panel.getByText("View", { selector: "a" })).toHaveAttribute(
+  expect(queryButton("Edit", schedule)).toBeEnabled();
+  expect(queryButton("Run now", schedule)).toBeEnabled();
+  expect(
+    queryAllByRoleFast("link", sidebar).find((link) => {
+      return link.textContent?.trim() === "View";
+    }),
+  ).toHaveAttribute(
     "href",
     "/workflows/" + record.workflow.id + "/automations",
   );

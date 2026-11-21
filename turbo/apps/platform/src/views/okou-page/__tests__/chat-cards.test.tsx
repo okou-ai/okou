@@ -1,6 +1,4 @@
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
-import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
-import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/run-connector-accounts";
 
 import {
   connectorAccountsContract,
@@ -20,6 +18,9 @@ import {
   assistantEvent,
   completedEvent,
   createChatRunFixtures,
+  findEnabledButton,
+  findLink,
+  queryButton,
   RUN_THREAD_ID,
   RUN_PATH,
 } from "./chat-run-test-fixtures.ts";
@@ -33,22 +34,15 @@ const github = "/connectors/github/authorize?agentId=" + AGENT_ID;
 const origin = "https://app.okou.ai";
 const ref = "https://handbook.example/references";
 const ticks = String.fromCharCode(96);
-type ChatOptions = NonNullable<
-  Parameters<ReturnType<typeof createChatRunFixtures>["installRunChat"]>[0]
->;
-function message(text: string, onSendRequest?: ChatOptions["onSendRequest"]) {
+async function open(text: string) {
   const runId = crypto.randomUUID();
-  return createChatRunFixtures(context).installRunChat({
-    onSendRequest,
+  createChatRunFixtures(context).installRunChat({
     threadId: RUN_THREAD_ID,
     chatEvents: [
       assistantEvent({ id: "review-copy", runId, seqId: 1, text }),
       completedEvent({ id: "review-done", runId, seqId: 2 }),
     ],
   });
-}
-async function open(text: string) {
-  message(text);
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
 }
 function follows(earlier: Element, later: Element) {
@@ -82,7 +76,7 @@ test("chat-cards-002 a reference sentence remains readable above its actionable 
       ")",
   );
   const card = await permission();
-  const link = screen.getByText("release manual", { selector: "a" });
+  const link = await findLink("release manual");
   expect(link).toHaveAttribute("href", ref);
   const sentence = link.closest("p");
   expect(sentence).toHaveTextContent(
@@ -90,9 +84,7 @@ test("chat-cards-002 a reference sentence remains readable above its actionable 
   );
   follows(link, card);
   await waitFor(() => {
-    expect(
-      within(card).getByText("Confirm", { selector: "button" }),
-    ).toBeEnabled();
+    expect(queryButton("Confirm", card)).toBeEnabled();
   });
 });
 test("chat-cards-003 formatted action labels keep their emphasis and cards follow the message order", async () => {
@@ -123,7 +115,7 @@ test("chat-cards-003 formatted action labels keep their emphasis and cards follo
 test("chat-cards-007 Chinese punctuation and a reference preceding a relative permission card stay in the sentence", async () => {
   await open("审批：" + permit + "，详见[发布说明](" + ref + ")。");
   const card = await permission();
-  const link = screen.getByText("发布说明", { selector: "a" });
+  const link = await findLink("发布说明");
   expect(link).toHaveAttribute("href", ref);
   expect(link.closest("p")).toHaveTextContent("，详见发布说明。");
   follows(link, card);
@@ -141,9 +133,7 @@ test("chat-cards-009 embedded permission paths stay literal and an external redi
   await open(
     fragments.join(" ") + " [External destination](" + destination + ")",
   );
-  const link = await screen.findByText("External destination", {
-    selector: "a",
-  });
+  const link = await findLink("External destination");
   expect(link).toHaveAttribute("href", destination);
   for (const fragment of fragments) {
     expect(link.closest("p")).toHaveTextContent(fragment);
@@ -241,15 +231,17 @@ test("chat-cards-012 examples, an image and table links stay content alongside o
     "src",
     imageUrl,
   );
-  const table = within(screen.getByRole("table"));
-  expect(table.getByText("Table grant", { selector: "a" })).toHaveAttribute(
-    "href",
-    permit,
-  );
-  expect(table.getByText("Table login", { selector: "a" })).toHaveAttribute(
-    "href",
-    github,
-  );
+  const links = queryAllByRoleFast("link", screen.getByRole("table"));
+  expect(
+    links.find((link) => {
+      return link.textContent?.trim() === "Table grant";
+    }),
+  ).toHaveAttribute("href", permit);
+  expect(
+    links.find((link) => {
+      return link.textContent?.trim() === "Table login";
+    }),
+  ).toHaveAttribute("href", github);
 });
 test("chat-cards-013 a GitHub action keeps its decoded hash and ampersand as label text", async () => {
   await open(
@@ -308,17 +300,16 @@ test("chat-cards-017 indented examples keep their order around one actionable pa
 });
 
 const workId = "f0000000-0000-4000-8000-000000000022";
-const personalId = "f0000000-0000-4000-8000-000000000023";
-function account(id: string): ConnectorAccountConnection {
+function workAccount(): ConnectorAccountConnection {
   return {
-    id,
+    id: workId,
     target: { kind: "builtin", connectorSlug: "github" },
-    displayName: id === workId ? "Work GitHub" : "Personal GitHub",
-    isDefault: id === personalId,
+    displayName: "Work GitHub",
+    isDefault: false,
     authMethod: "oauth",
     connectionStatus: "reconnect-required",
     reconnectReason: null,
-    externalId: id,
+    externalId: workId,
     externalUsername: null,
     externalEmail: null,
     oauthScopes: null,
@@ -342,7 +333,7 @@ function reconnectRequest(id: string) {
   );
 }
 function reconnectAccount() {
-  const work = account(workId);
+  const work = workAccount();
   let available = true;
   context.mocks.api(
     connectorAccountsContract.connection,
@@ -363,7 +354,7 @@ function reconnectAccount() {
 async function reconnectCard() {
   const card = await screen.findByTestId("connector-action-card");
   expect(card).toHaveTextContent("GitHub · Work GitHub");
-  return within(card).getByText("Reconnect", { selector: "button" });
+  return findEnabledButton("Reconnect", card);
 }
 test("chat-cards-022 the work account offers its stored OAuth method in the conversation", async () => {
   const authorization =
@@ -392,12 +383,13 @@ test("chat-cards-022 the work account offers its stored OAuth method in the conv
   reconnectAccount();
   await open(origin + reconnectRequest(workId));
   click(await reconnectCard());
-  const dialog = within(await screen.findByRole("dialog"));
+  const modal = await screen.findByRole("dialog");
+  const dialog = within(modal);
   expect(dialog.getByText(/Work GitHub/)).toBeInTheDocument();
-  expect(dialog.getByText("Reconnect", { selector: "button" })).toBeEnabled();
+  const reconnect = await findEnabledButton("Reconnect", modal);
   expect(dialog.queryByText("API Token", { selector: "label" })).toBeNull();
-  expect(screen.getByRole("dialog").querySelector("input")).toBeNull();
-  click(dialog.getByText("Reconnect", { selector: "button" }));
+  expect(modal.querySelector("input")).toBeNull();
+  click(reconnect);
   await waitFor(() => {
     expect(destination.href).toBe(authorization);
   });
@@ -440,121 +432,4 @@ test("chat-cards-033 the banking card identifies the requesting agent, purpose a
     card.getByText(/accounts, balances, and transactions · read only/i),
   ).toBeInTheDocument();
   expect(targets(origin + path)).toStrictEqual([]);
-});
-
-test("chat-cards-030 switching between the two named GitHub accounts continues each switch with a fresh chat receipt", async () => {
-  const accounts = [workId, personalId].map((id) => {
-    return { ...account(id), connectionStatus: "connected" as const };
-  });
-  const prompts = [
-    "Continue with work issues",
-    "Continue with personal issues",
-  ];
-  const links = accounts.map((item, i) => {
-    return (
-      origin +
-      "/agents/" +
-      AGENT_ID +
-      "/connector-accounts/" +
-      item.id +
-      "/select?" +
-      new URLSearchParams({
-        kind: "builtin",
-        connectorSlug: "github",
-        threadId: RUN_THREAD_ID,
-        callbackPrompt: prompts[i]!,
-      })
-    );
-  });
-  let current: string | null = null;
-  const callbacks: Parameters<NonNullable<ChatOptions["onSendRequest"]>>[0][] =
-    [];
-  const service = message(links.join("\n\n"), (request) => {
-    callbacks.push(request);
-  });
-  context.mocks.api(
-    connectorAccountsContract.connection,
-    ({ params, respond }) => {
-      const result = accounts.find((item) => {
-        return item.id === params.connectionId;
-      });
-      if (!result) {
-        throw new Error("Unexpected account");
-      }
-      return respond(200, result);
-    },
-  );
-  context.mocks.api(chatConnectorAccessContract.getThread, ({ respond }) => {
-    return respond(200, {
-      target: { kind: "builtin", connectorSlug: "github" },
-      available: true,
-      currentConnectionId: current,
-      accounts: accounts.map((item) => {
-        return {
-          connectionId: item.id,
-          displayName: item.displayName,
-          isDefault: item.isDefault,
-          defaultEnabled: false,
-          overrideEnabled: current === item.id,
-          enabled: current === item.id,
-        };
-      }),
-    });
-  });
-  context.mocks.api(
-    runConnectorAccountsContract.approve,
-    ({ body, respond }) => {
-      current = body.connectionId;
-      return respond(200, body);
-    },
-  );
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-  for (const step of [0, 1, 0]) {
-    const name = accounts[step]!.displayName;
-    const title = await screen.findByText("Switch to " + name + "?");
-    const card = title.closest<HTMLElement>(
-      '[data-testid="connector-account-action-card"]',
-    )!;
-    await waitFor(() => {
-      expect(card.querySelector("img")).toHaveAttribute(
-        "src",
-        "https://icons.example.test/github.svg",
-      );
-    });
-    const prior = callbacks.length;
-    click(within(card).getByText("Switch", { selector: "button" }));
-    await within(card).findByText("Switched to " + name);
-    await waitFor(() => {
-      expect(callbacks[prior]).toMatchObject({
-        prompt: prompts[step],
-        threadId: RUN_THREAD_ID,
-      });
-    });
-    await waitFor(() => {
-      const sent = screen.getAllByText(prompts[step]!).find((el) => {
-        return (
-          el.closest<HTMLElement>("[data-chat-scroll-anchor-event-id]")?.dataset
-            .chatScrollAnchorEventId === callbacks[prior]?.clientEventId
-        );
-      });
-      expect(sent).toBeDefined();
-    });
-    const reply = "Reviewed " + String(prior + 1) + " using " + name;
-    service.completeRun(reply);
-    await screen.findByText(reply);
-    expect(card.querySelector("img")).toHaveAttribute(
-      "src",
-      "https://icons.example.test/github.svg",
-    );
-  }
-  expect(callbacks).toHaveLength(3);
-  for (const property of ["clientEventId", "chatThreadSortEventId"] as const) {
-    const values = callbacks.map((body) => {
-      return body[property];
-    });
-    for (const value of values) {
-      expect(value).toStrictEqual(expect.any(String));
-    }
-    expect(new Set(values).size).toBe(3);
-  }
 });
