@@ -46,6 +46,7 @@
     <string name="chat_unarchive">アーカイブを解除</string>
     <string name="chat_row_action_pending">チャットを更新しています…</string>
     <string name="chat_row_action_failed">チャットの変更を確認できませんでした。</string>
+    <string name="chat_row_action_rejected">チャットの変更を完了できませんでした。</string>
     <string name="chat_rename">チャットの名前を変更する</string>
     <string name="chat_pin">チャットをピン留めする</string>
     <string name="chat_unpin">チャットの固定を解除する</string>

@@ -11,7 +11,6 @@ internal class ChatListProjection {
 
     private var rowEdits = emptyList<ChatRowEdit>()
     private val unconfirmedRowEvents = mutableSetOf<String>()
-    private val rejectedRowEvents = mutableSetOf<String>()
 
     class OutgoingAttempt(val threadId: String) {
         var sending = true
@@ -41,27 +40,20 @@ internal class ChatListProjection {
 
     fun hasUnsettledEdits(edits: List<ChatRowEdit>) = edits.any { it in rowEdits }
 
-    fun discardEdits(edits: List<ChatRowEdit>) {
+    fun discardEdits(edits: List<ChatRowEdit>): Boolean {
+        if (!hasUnsettledEdits(edits)) return false
         settleRowEdits(emptySet(), edits.mapTo(hashSetOf()) { it.eventId })
+        return true
     }
 
-    fun recordRejectedEdits(edits: List<ChatRowEdit>) {
-        for (edit in edits) {
-            if (edit in rowEdits) rejectedRowEvents.add(edit.eventId)
-        }
-    }
+    fun hasConfirmedThread(threadId: String) = confirmedRows.byRecency.any { it.id == threadId }
 
-    fun retryEvents(): Set<String> = unconfirmedRowEvents + rejectedRowEvents
+    fun retryEvents(): Set<String> = unconfirmedRowEvents.toSet()
 
-    fun discardAfterRead(requested: Set<String>): Set<String> = requested + rejectedRowEvents
-
-    fun confirmEdits(action: ChatRowAction, edits: List<ChatRowEdit>, rejected: Boolean): Boolean {
+    fun confirmEdits(edits: List<ChatRowEdit>): Boolean {
         val unresolved = edits.filter { it in rowEdits }
-        if (!rejected) unresolved.mapTo(unconfirmedRowEvents) { it.eventId }
-        val deleted =
-            action == ChatRowAction.Delete &&
-                confirmedRows.byRecency.none { it.id == edits.single().threadId }
-        return deleted || !rejected && unresolved.isEmpty()
+        unresolved.mapTo(unconfirmedRowEvents) { it.eventId }
+        return unresolved.isEmpty()
     }
 
     fun showOutgoing(eventId: String, threadId: String): Boolean {
@@ -163,10 +155,7 @@ internal class ChatListProjection {
                 val settled =
                     edit.eventId in discarded ||
                         index <= (settledThrough[edit.threadId to edit.field] ?: -1)
-                if (settled) {
-                    unconfirmedRowEvents.remove(edit.eventId)
-                    rejectedRowEvents.remove(edit.eventId)
-                }
+                if (settled) unconfirmedRowEvents.remove(edit.eventId)
                 !settled
             }
     }

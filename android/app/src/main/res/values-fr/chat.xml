@@ -48,6 +48,7 @@
     <string name="chat_unarchive">Désarchiver la discussion</string>
     <string name="chat_row_action_pending">Mise à jour de la discussion…</string>
     <string name="chat_row_action_failed">Impossible de confirmer la modification de la discussion.</string>
+    <string name="chat_row_action_rejected">Impossible de terminer la modification de la discussion.</string>
     <string name="chat_rename">Renommer la discussion</string>
     <string name="chat_pin">Épingler la discussion</string>
     <string name="chat_unpin">Détacher la discussion</string>
