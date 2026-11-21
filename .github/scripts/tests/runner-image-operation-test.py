@@ -619,19 +619,6 @@ class ImageOperationTest(unittest.TestCase):
             1,
         )
 
-    def test_launch_timeout_without_a_service_keeps_outcome_unknown(self):
-        self.invoke("claim")
-        self.environment["IMAGE_FAULT"] = "launch-timeout-without-unit"
-        result = self.invoke("run", "build", str(self.result), check=False)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("execution outcome unknown", result.stderr)
-        self.assertFalse(self.result.exists())
-        self.assertFalse(self.records("executions"))
-        self.assertEqual(
-            sum("--service-type=exec" in entry for entry in self.records("systemd")),
-            1,
-        )
-
     def test_expiration_submission_failure_blocks_worker_launch(self):
         self.invoke("claim")
         self.environment["IMAGE_FAULT"] = "expiration-submission-failed"
@@ -665,6 +652,16 @@ class ImageOperationTest(unittest.TestCase):
                     path.read_bytes(),
                     str(path),
                 )
+
+        # The verified result belongs to the original inputs, even after reattachment.
+        self.environment["HEAD_SHA"] = "c" * 40
+        self.result.unlink()
+        self.assertNotEqual(self.invoke("claim", check=False).returncode, 0)
+        self.assertNotEqual(
+            self.invoke("run", "build", str(self.result), check=False).returncode, 0
+        )
+        self.assertFalse(self.result.exists())
+        self.assert_one_build()
 
     def test_lost_reply_while_original_launch_is_still_submitting(self):
         self.environment["IMAGE_FAULT"] = "pending-launch"
@@ -864,33 +861,39 @@ class ImageOperationTest(unittest.TestCase):
         output, error = process.communicate(timeout=15)
         self.assertEqual(process.returncode, 0, output + error)
 
-    def test_ambiguous_launch_never_restarts_and_permanent_ssh_never_retries(self):
+    def test_lost_launch_without_a_service_cannot_replay_or_start_late(self):
         self.invoke("claim")
-        self.environment["IMAGE_FAULT"] = "absent-launch"
-        self.assertNotEqual(
-            self.invoke("run", "build", str(self.result), check=False).returncode, 0
+        self.environment["IMAGE_FAULT"] = "lost-launch-without-unit"
+        observed = self.invoke("run", "build", str(self.result), check=False)
+        self.assertNotEqual(observed.returncode, 0)
+        self.assertIn("execution outcome unknown", observed.stderr)
+        self.assertEqual(
+            self.records("requests").count({"action": "run", "phase": "build"}), 2
         )
         self.environment["IMAGE_FAULT"] = ""
-        self.assertNotEqual(
-            self.invoke("run", "build", str(self.result), check=False).returncode, 0
+        # Check the first call's cancellation before a retry can cancel the owner.
+        operation = next(self.root.glob("vm0-runner-image-*/*/*/intent.json")).parent
+        late = subprocess.run(
+            [sys.executable, str(operation / "worker.py"), "worker", str(operation)],
+            env=self.environment,
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
+        self.assertNotEqual(late.returncode, 0)
+        self.assertIn("cancelled", late.stderr)
         self.assertFalse(self.records("executions"))
-        self.environment["IMAGE_FAULT"] = "ssh-error"
-        before = len(self.records("requests"))
         self.assertNotEqual(self.invoke("claim", check=False).returncode, 0)
-        self.assertEqual(len(self.records("requests")) - before, 1)
 
-    def test_changed_inputs_cannot_consume_existing_success(self):
-        self.invoke("claim")
-        self.invoke("run", "build", str(self.result))
-        self.environment["HEAD_SHA"] = "c" * 40
-        self.result.unlink()
-        self.assertNotEqual(self.invoke("claim", check=False).returncode, 0)
         self.assertNotEqual(
             self.invoke("run", "build", str(self.result), check=False).returncode, 0
         )
         self.assertFalse(self.result.exists())
-        self.assert_one_build()
+        self.assertEqual(
+            sum("--service-type=exec" in entry for entry in self.records("systemd")),
+            1,
+        )
+        self.assertFalse(self.records("executions"))
 
     def test_expired_result_cannot_permit_execution_again(self):
         self.invoke("claim")
@@ -933,31 +936,17 @@ class ImageOperationTest(unittest.TestCase):
         self.assertEqual(json.loads(self.result.read_text())["status"], 0)
         self.assertEqual([r["phase"] for r in self.records("executions")], ["warm"])
 
-    def test_broken_request_pipe_recovers_before_submission(self):
+    def test_claim_retries_transport_loss_but_not_a_command_error(self):
         self.environment["IMAGE_FAULT"] = "early-eof"
         self.invoke("claim")
         self.assertEqual(self.records("requests")[0]["action"], "unread")
         self.invoke("run", "build", str(self.result))
         self.assert_one_build()
 
-    def test_cancellation_fences_late_systemd_acceptance(self):
-        self.invoke("claim")
-        self.environment["IMAGE_FAULT"] = "absent-launch"
-        self.assertNotEqual(
-            self.invoke("run", "build", str(self.result), check=False).returncode, 0
-        )
-        operation = next(self.root.glob("vm0-runner-image-*/*/*/intent.json")).parent
-        late = subprocess.run(
-            ["python3", str(operation / "worker.py"), "worker", str(operation)],
-            env=self.environment,
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        self.assertNotEqual(late.returncode, 0)
-        self.assertIn("cancelled", late.stderr)
-        self.assertFalse(self.records("executions"))
+        self.environment["IMAGE_FAULT"] = "ssh-error"
+        before = len(self.records("requests"))
         self.assertNotEqual(self.invoke("claim", check=False).returncode, 0)
+        self.assertEqual(len(self.records("requests")) - before, 1)
 
     def test_cancellation_before_first_claim_fences_that_generation(self):
         for existing_owner in (False, True):
@@ -1019,22 +1008,7 @@ class ImageOperationTest(unittest.TestCase):
         self.assertEqual(log.stat().st_size, 1024 * 1024)
         self.assertNotIn(self.environment["R2_SECRET_ACCESS_KEY"].encode(), log.read_bytes())
 
-    def test_guarded_preparation_is_fenced_and_does_not_replay(self):
-        self.invoke("claim")
-        output = self.invoke("guard", "bash", "-s", input_text="printf prepared")
-        self.assertEqual(output.stdout, "prepared")
-        self.environment["HEAD_SHA"] = "c" * 40
-        output = self.invoke(
-            "guard",
-            "bash",
-            "-s",
-            check=False,
-            input_text="echo unsafe > '" + str(self.root / "unsafe") + "'",
-        )
-        self.assertNotEqual(output.returncode, 0)
-        self.assertFalse((self.root / "unsafe").exists())
-
-    def test_lost_preparation_reply_does_not_repeat_mutation(self):
+    def test_guarded_preparation_does_not_replay_or_accept_stale_inputs(self):
         self.invoke("claim")
         self.environment["IMAGE_FAULT"] = "lost-guard"
         marker = self.root / "mutations"
@@ -1042,10 +1016,27 @@ class ImageOperationTest(unittest.TestCase):
             "guard",
             "bash",
             "-s",
+            "--",
+            str(marker),
             check=False,
-            input_text="echo prepared >> '" + str(marker) + "'",
+            input_text='printf "prepared stdout\\n"\nprintf "prepared\\n" >> "$1"',
         )
         self.assertEqual(output.returncode, 0, output.stderr)
+        self.assertIn("prepared stdout", output.stdout.splitlines())
+        self.assertTrue((self.root / "fault-used").is_file())
+        self.assertEqual(marker.read_text().splitlines(), ["prepared"])
+
+        self.environment["HEAD_SHA"] = "c" * 40
+        result = self.invoke(
+            "guard",
+            "bash",
+            "-s",
+            "--",
+            str(marker),
+            check=False,
+            input_text='printf "unsafe\\n" >> "$1"',
+        )
+        self.assertNotEqual(result.returncode, 0)
         self.assertEqual(marker.read_text().splitlines(), ["prepared"])
 
 
