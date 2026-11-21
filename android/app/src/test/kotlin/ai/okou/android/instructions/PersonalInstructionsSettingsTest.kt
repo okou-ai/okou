@@ -12,13 +12,13 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.text.TextRange
@@ -214,22 +214,12 @@ class PersonalInstructionsSettingsTest {
         awaitPhase(InstructionsPhase.Ready)
         val input = compose.onNodeWithTag("instructions_editor")
         input.performScrollTo().performTextReplacement("Keep **my** 中文 👋 draft")
-        input.performTextInputSelection(TextRange(5, 8))
-        compose.onNodeWithText("Preview").performScrollTo().performClick()
         compose.waitUntil(10_000) {
-            compose
-                .onAllNodesWithText("Keep my 中文 👋 draft", substring = true)
-                .fetchSemanticsNodes()
-                .isNotEmpty()
+            input.fetchSemanticsNode().config[SemanticsProperties.EditableText].spanStyles.any {
+                it.item.fontWeight == FontWeight.Bold
+            }
         }
-        val rendered =
-            compose
-                .onNodeWithText("Keep my 中文 👋 draft", substring = true)
-                .fetchSemanticsNode()
-                .config[SemanticsProperties.Text]
-                .single()
-        assertTrue(rendered.spanStyles.any { it.item.fontWeight == FontWeight.Bold })
-        compose.onNodeWithText("Edit").performScrollTo().performClick()
+        input.performTextInputSelection(TextRange(5, 8))
         app.fixture.externalEdit("Changed on Web")
         compose.runOnIdle { model.refresh() }
         awaitPhase(InstructionsPhase.Conflict)
@@ -246,11 +236,12 @@ class PersonalInstructionsSettingsTest {
         compose.onNodeWithText("Reload latest and discard changes").performScrollTo().performClick()
         awaitPhase(InstructionsPhase.Ready)
         input.assertTextEquals("Changed on Web")
+        input.performScrollTo().performTextClearance()
+        assertEquals("", input.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
         app.fixture.disconnectSave = true
         val markdown = "**Accepted** despite lost response"
         input.performScrollTo().performTextReplacement(markdown)
-        compose.onNodeWithText("Preview").performScrollTo().performClick()
-        compose.onNodeWithText("Save").performScrollTo().performClick()
+        compose.onNodeWithText("Save").performClick()
         compose.waitUntil(10_000) {
             compose.runOnIdle {
                 model.uiState.value.phase == InstructionsPhase.Ready &&

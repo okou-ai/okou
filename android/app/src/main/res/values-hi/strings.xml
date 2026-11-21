@@ -159,6 +159,4 @@
     <string name="updates_waiting_to_check">जाँच का इंतज़ार</string>
     <string name="updates_waiting_to_download">डाउनलोड का इंतज़ार</string>
     <string name="instructions_placeholder">आप चाहते हैं कि Okou किन बातों का ध्यान रखे?</string>
-    <string name="instructions_markdown_edit">संपादित करें</string>
-    <string name="instructions_markdown_preview">पूर्वावलोकन</string>
 </resources>

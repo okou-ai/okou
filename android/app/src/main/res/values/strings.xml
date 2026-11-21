@@ -160,6 +160,4 @@
     <string name="updates_waiting_to_check">Waiting to check</string>
     <string name="updates_waiting_to_download">Waiting to download</string>
     <string name="instructions_placeholder">What would you like Okou to keep in mind?</string>
-    <string name="instructions_markdown_edit">Edit</string>
-    <string name="instructions_markdown_preview">Preview</string>
 </resources>

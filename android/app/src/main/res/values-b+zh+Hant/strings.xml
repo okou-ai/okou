@@ -159,6 +159,4 @@
     <string name="updates_waiting_to_check">等待檢查</string>
     <string name="updates_waiting_to_download">等待下載</string>
     <string name="instructions_placeholder">填寫你希望 Okou 遵循的回覆偏好</string>
-    <string name="instructions_markdown_edit">編輯</string>
-    <string name="instructions_markdown_preview">預覽</string>
 </resources>

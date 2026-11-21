@@ -3,10 +3,8 @@ package ai.okou.android.instructions
 import ai.okou.android.R
 import ai.okou.android.SettingsConfirmation
 import ai.okou.android.SettingsSheet
-import ai.okou.android.chat.HistoryMarkdown
 import ai.okou.android.state.rememberJournalEditor
 import ai.okou.android.state.rememberSettingsFlag
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,17 +14,11 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -70,9 +62,6 @@ internal fun PersonalInstructionsSettings(
     }
     var closeAfterSave by rememberSettingsFlag()
     var confirmDiscard by rememberSettingsFlag()
-    var preview by rememberSettingsFlag()
-    val editScroll = rememberScrollState()
-    val previewScroll = rememberScrollState()
     LaunchedEffect(closeAfterSave, state.phase, state.draft) {
         if (closeAfterSave && state.phase == InstructionsPhase.Ready && state.draft == null) {
             closeAfterSave = false
@@ -94,7 +83,6 @@ internal fun PersonalInstructionsSettings(
     SettingsSheet(
         title,
         dismiss,
-        scroll = if (preview) previewScroll else editScroll,
         actions = {
             FlowRow(
                 Modifier.fillMaxWidth(),
@@ -142,60 +130,26 @@ internal fun PersonalInstructionsSettings(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (editing != null) {
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    SegmentedButton(
-                        selected = !preview,
-                        onClick = { preview = false },
-                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                    ) {
-                        Text(stringResource(R.string.instructions_markdown_edit))
-                    }
-                    SegmentedButton(
-                        selected = preview,
-                        onClick = { preview = true },
-                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                    ) {
-                        Text(stringResource(R.string.instructions_markdown_preview))
-                    }
-                }
-                if (preview) {
-                    Surface(
+                OutlinedTextField(
+                    value = editing.value,
+                    onValueChange = { value ->
+                        if (value.text != state.content) closeAfterSave = false
+                        editing.edit(value)
+                        model.edit(value.text)
+                    },
+                    modifier =
                         Modifier.fillMaxWidth()
                             .heightIn(min = 112.dp)
-                            .testTag("instructions_preview"),
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                    ) {
-                        Box(Modifier.padding(12.dp)) {
-                            if (editing.value.text.isBlank()) {
-                                Text(stringResource(R.string.instructions_placeholder))
-                            } else {
-                                HistoryMarkdown(editing.value.text)
-                            }
-                        }
-                    }
-                } else
-                    OutlinedTextField(
-                        value = editing.value,
-                        onValueChange = { value ->
-                            if (!preview) {
-                                if (value.text != state.content) closeAfterSave = false
-                                editing.edit(value)
-                                model.edit(value.text)
-                            }
-                        },
-                        modifier =
-                            Modifier.fillMaxWidth()
-                                .heightIn(min = 112.dp)
-                                .testTag("instructions_editor")
-                                .semantics { contentDescription = title },
-                        textStyle = MaterialTheme.typography.bodyLarge,
-                        shape = RoundedCornerShape(12.dp),
-                        placeholder = { Text(stringResource(R.string.instructions_placeholder)) },
-                        minLines = 3,
-                        maxLines = 8,
-                        readOnly = !state.canEdit,
-                    )
+                            .testTag("instructions_editor")
+                            .semantics { contentDescription = title },
+                    textStyle = MaterialTheme.typography.bodyLarge,
+                    visualTransformation = rememberInstructionsMarkdown(editing.value.text),
+                    shape = RoundedCornerShape(12.dp),
+                    placeholder = { Text(stringResource(R.string.instructions_placeholder)) },
+                    minLines = 3,
+                    maxLines = 8,
+                    readOnly = !state.canEdit,
+                )
             }
             val loading =
                 editing == null &&
