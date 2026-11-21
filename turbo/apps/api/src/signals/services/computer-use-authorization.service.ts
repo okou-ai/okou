@@ -377,12 +377,12 @@ const applyChatAuthorizationScope$ = command(
       .where(
         and(
           eq(chatThreads.id, chatThreadId),
+          eq(chatThreads.orgId, args.orgId),
           eq(chatThreads.userId, args.userId),
         ),
       )
       .returning({ id: chatThreads.id, agentId: chatThreads.agentId });
-    // A nullable agent still commits the preference, without reserving an event.
-    const eligibleThread = sql`EXISTS (SELECT 1 FROM updated_thread WHERE agent_id IS NOT NULL)`;
+    const eligibleThread = sql`EXISTS (SELECT 1 FROM updated_thread)`;
     const [result] = parseRawRows(
       object({ applied: boolean() }),
       await db.execute(

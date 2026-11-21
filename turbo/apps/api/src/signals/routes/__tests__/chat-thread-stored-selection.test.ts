@@ -96,11 +96,8 @@ describe("public selection of a retired model for webhook automation", () => {
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped workflow actor");
     }
-    const agent = await wf.createAgent(actor, {
-      displayName: "Retired Selection Automation Agent",
-    });
+
     const workflowId = await wf.createWorkflow(actor, {
-      agentId: agent.agentId,
       name: "retired-selection-workflow",
     });
     mocks.clerk.session(actor.userId, actor.orgId, "org:member");

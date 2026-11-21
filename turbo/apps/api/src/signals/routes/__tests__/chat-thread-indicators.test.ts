@@ -197,7 +197,7 @@ describe("GET /api/indicators", () => {
 
     const indicators = await accept(client().indicators({ headers }), [200]);
     expect(indicators.body).toStrictEqual({
-      agents: { [agentId]: "unread" },
+      agents: {},
       threads: { [unread.threadId]: "unread" },
       unreadAt: { [unread.threadId]: unread.unreadAt },
     });
@@ -247,7 +247,7 @@ describe("GET /api/indicators", () => {
 
     const indicators = await accept(client().indicators({ headers }), [200]);
     expect(indicators.body).toStrictEqual({
-      agents: { [ownerAgentId]: "unread" },
+      agents: {},
       threads: { [ownerUnread.threadId]: "unread" },
       unreadAt: { [ownerUnread.threadId]: ownerUnread.unreadAt },
     });
@@ -271,14 +271,14 @@ describe("GET /api/indicators", () => {
     await expect(
       chat.markThreadRead(actor, toggled.threadId),
     ).resolves.toStrictEqual({ lastReadAt: expect.any(String) });
-    await expect(chat.listThreadUnreads(actor, agentId)).resolves.toStrictEqual(
-      [untouched],
-    );
+    await expect(chat.listThreadUnreads(actor)).resolves.toStrictEqual([
+      untouched,
+    ]);
 
     await expect(
       chat.markThreadUnread(actor, toggled.threadId),
     ).resolves.toStrictEqual({ lastReadAt: null });
-    const unreads = await chat.listThreadUnreads(actor, agentId);
+    const unreads = await chat.listThreadUnreads(actor);
     expect(unreads).toHaveLength(2);
     expect(unreads).toStrictEqual(expect.arrayContaining([toggled, untouched]));
   });
@@ -313,7 +313,7 @@ describe("GET /api/indicators", () => {
       [200],
     );
     expect(indicators.body).toStrictEqual({
-      agents: { [agentId]: "unread" },
+      agents: {},
       threads: {
         [rerun.threadId]: "active",
         [unread.threadId]: "unread",
@@ -322,7 +322,7 @@ describe("GET /api/indicators", () => {
     });
   });
 
-  it("limits active threads after filtering out inaccessible Agents", async () => {
+  it("returns the 50 most recent active threads owned by this member", async () => {
     await prepareChatRuntime();
     // Every send must start a Run (runs, not waiting inputs, feed the active
     // indicator), so lift the organization concurrency limit.
@@ -344,11 +344,13 @@ describe("GET /api/indicators", () => {
 
     await indicatorCredentials.executionInput(actor, visible.runId);
 
+    const recent: Record<string, string> = {};
     for (let index = 0; index < 50; index += 1) {
-      await chat.sendAndLaunch(actor, {
+      const sent = await chat.sendAndLaunch(actor, {
         agentId: hiddenAgent.agentId,
-        prompt: `Later hidden active indicator ${index}`,
+        prompt: `Later active indicator ${index}`,
       });
+      recent[sent.threadId] = "active";
     }
     await bdd.updateAgent(peer, hiddenAgent.agentId, {
       visibility: "private",
@@ -364,8 +366,8 @@ describe("GET /api/indicators", () => {
       [200],
     );
     expect(indicators.body).toStrictEqual({
-      agents: { [visibleAgentId]: "active" },
-      threads: { [visible.threadId]: "active" },
+      agents: {},
+      threads: recent,
       unreadAt: {},
     });
   }, 180_000);

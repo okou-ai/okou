@@ -3478,7 +3478,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       },
     });
     await ownedRuns.run(async () => {
-      const { runnerGroup, outboundRequests, defaultAgentId } =
+      const { runnerGroup, outboundRequests } =
         await setupConnectedTeamsBotActor(fixture);
       const personalChatId = `19:${teamsFixtureExternalId(
         fixture,
@@ -3560,7 +3560,7 @@ describe("POST /api/webhooks/teams/bot", () => {
         expect.objectContaining({
           id: runId,
           prompt: "continue this private task",
-          agentId: defaultAgentId,
+          agentId: null,
         }),
       );
       await runsApi.heartbeatRunner(runnerGroup);

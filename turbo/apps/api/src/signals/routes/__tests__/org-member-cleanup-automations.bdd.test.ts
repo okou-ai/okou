@@ -95,15 +95,10 @@ async function seedOwnedAutomations(
   owner: ApiTestUser,
   label: string,
 ): Promise<OwnedAutomations> {
-  const agent = await wf.createAgent(owner, {
-    displayName: `${label} automation agent`,
-  });
   const scheduleWorkflowId = await wf.createWorkflow(owner, {
-    agentId: agent.agentId,
     name: `${label}-schedule-${shortId()}`,
   });
   const eventWorkflowId = await wf.createWorkflow(owner, {
-    agentId: agent.agentId,
     name: `${label}-event-${shortId()}`,
   });
   mocks.clerk.session(owner.userId, owner.orgId, owner.orgRole);

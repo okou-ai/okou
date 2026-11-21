@@ -90,9 +90,8 @@ async function invoke(actor: ApiTestUser, workflowId: string) {
 
 test("retains the creator separately from the executor and the complete lineage after Workflow deletion", async () => {
   const received = capture();
-  const { actor } = await workflows.setupWorkflowOrg({ tier: "team" });
-  const { agentId } = await workflows.createAgent(actor, {
-    visibility: "public",
+  const { actor, defaultAgentId: agentId } = await workflows.setupWorkflowOrg({
+    tier: "team",
   });
   installWorkflowVolumeS3Fixture(context);
   const workflowId = await workflows.createWorkflow(actor, {
@@ -181,8 +180,9 @@ test("retains the creator separately from the executor and the complete lineage 
 
 test("records event automation provenance but never certifies a failed Run or an ordinary Run that mounts a Workflow", async () => {
   const received = capture();
-  const { actor } = await workflows.setupWorkflowOrg({ tier: "team" });
-  const { agentId } = await workflows.createAgent(actor);
+  const { actor, defaultAgentId: agentId } = await workflows.setupWorkflowOrg({
+    tier: "team",
+  });
   installWorkflowVolumeS3Fixture(context);
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
@@ -213,8 +213,7 @@ test("continues publishing source facts after the creator has already earned the
   const received = capture();
   const settlementSecret = "workflow-lifetime-settlement-12345678901234567890";
   mockEnv("MARKETING_REWARDS_SETTLEMENT_SECRET", settlementSecret);
-  const { actor } = await workflows.setupWorkflowOrg();
-  const { agentId } = await workflows.createAgent(actor);
+  const { actor, defaultAgentId: agentId } = await workflows.setupWorkflowOrg();
   installWorkflowVolumeS3Fixture(context);
   const workflowId = await workflows.createWorkflow(actor, {
     agentId,

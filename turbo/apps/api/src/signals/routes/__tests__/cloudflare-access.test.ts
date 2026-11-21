@@ -1524,7 +1524,7 @@ describe("protected SSH authority", () => {
     ).toStrictEqual([f.host.id]);
   });
 
-  it("uses only the Run owner's protected hosts for a shared Agent and rejects lost visibility", async () => {
+  it("uses only the Run owner's protected hosts after legacy Agent visibility changes", async () => {
     const creator = owner();
     const shared = await accept(
       setupApp({ context, routes: agentsRoutes })(agentsMainContract).create({
@@ -1583,10 +1583,10 @@ describe("protected SSH authority", () => {
       [200],
     );
     authenticate(user);
-    expect((await accept(runner().resolve(request), [200])).body).toStrictEqual(
-      { outcome: "unavailable" },
+    expect((await accept(runner().resolve(request), [200])).body).toMatchObject(
+      { outcome: "resolved_access", access: { configId: ownConfig.id } },
     );
-    await accept(inventory.list({ headers: r.guestHeaders }), [404]);
+    await accept(inventory.list({ headers: r.guestHeaders }), [200]);
     expect(
       (
         await accept(
@@ -1601,7 +1601,7 @@ describe("protected SSH authority", () => {
           [200],
         )
       ).body,
-    ).toStrictEqual({ outcome: "unavailable" });
+    ).toMatchObject({ outcome: "pinned" });
   });
 
   it("preserves key authentication separately from the Access token", async () => {

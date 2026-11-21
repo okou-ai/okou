@@ -644,59 +644,15 @@ export function createChatFilesBddApi(context: TestContext) {
 
     async listThreadUnreads(
       actor: ApiTestUser,
-      agentId: string,
     ): Promise<readonly { threadId: string; unreadAt: string }[]> {
-      const headers = authenticate(context, actor);
-      const indicators = await accept(
-        threadsClient().indicators({ headers }),
+      const { body } = await accept(
+        threadsClient().indicators({ headers: authenticate(context, actor) }),
         [200],
       );
-      if (Object.keys(indicators.body.unreadAt).length === 0) {
-        return [];
-      }
-
-      const snapshot = await accept(
-        threadsClient().snapshot({ headers }),
-        [200],
-      );
-      const chatThreads =
-        "url" in snapshot.body
-          ? chatThreadSnapshotArchiveSchema.parse(
-              await (await fetch(snapshot.body.url)).json(),
-            ).chatThreads
-          : snapshot.body.chatThreads;
-      const agentByThreadId = new Map(
-        chatThreads.map((thread) => {
-          return [thread.id, thread.agentId];
-        }),
-      );
-      let sinceSeqId = snapshot.body.latestSeqId ?? undefined;
-      let hasMore = true;
-      while (hasMore) {
-        const page = await accept(
-          threadsClient().events({
-            headers,
-            query: sinceSeqId === undefined ? {} : { sinceSeqId },
-          }),
-          [200],
-        );
-        for (const event of page.body.events) {
-          if (event.kind === "deleted") {
-            agentByThreadId.delete(event.chatThreadId);
-          } else {
-            agentByThreadId.set(event.chatThreadId, event.agentId);
-          }
-          sinceSeqId = event.seqId;
-        }
-        hasMore = page.body.hasMore;
-      }
-      return Object.entries(indicators.body.unreadAt).flatMap(
-        ([threadId, unreadAt]) => {
-          return agentByThreadId.get(threadId) === agentId
-            ? [{ threadId, unreadAt }]
-            : [];
-        },
-      );
+      return Object.entries(body.unreadAt).map(([threadId, unreadAt]) => ({
+        threadId,
+        unreadAt,
+      }));
     },
 
     async listActiveChatThreadIds(
