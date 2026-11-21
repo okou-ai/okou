@@ -154,6 +154,7 @@ open class TestOkouApplication : OkouApplication() {
                 val updated =
                     stored()
                         .copy(
+                            timezone = update.timezone ?: stored().timezone,
                             colorTheme =
                                 update.colorTheme?.let {
                                     UserPreferencesColorTheme.valueOf(it.name)
