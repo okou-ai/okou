@@ -707,6 +707,7 @@ describe("ORG-03 onboarding status mapping", () => {
       isAdmin: true,
       hasOrg: true,
     });
+    await api.provisionWorkspace(admin);
     const bootstrappedBilling = await runsApi.readBillingStatus(admin);
     expect(bootstrappedBilling).toMatchObject({
       credits: 0,

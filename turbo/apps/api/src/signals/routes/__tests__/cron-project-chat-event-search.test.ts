@@ -46,7 +46,7 @@ describe("chat search publication", () => {
     await createRunsApi(context).configureRunnerGroup();
     bdd.acceptAgentStorageWrites();
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
-    await bdd.readOnboardingStatus(owner);
+    await bdd.provisionWorkspace(owner);
     await bdd.completeOnboarding(owner);
     await bdd.createAgent(owner, {
       displayName: "Recalled search publication",
@@ -136,14 +136,13 @@ describe("chat search publication", () => {
       );
     });
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
-    await bdd.readOnboardingStatus(owner);
+    await bdd.provisionWorkspace(owner);
     await bdd.completeOnboarding(owner);
     const named = await bdd.createAgent(owner, {
       displayName: "MCP Research",
       visibility: "private",
     });
     const peer = bdd.user({ orgId: owner.orgId });
-    await bdd.readOnboardingStatus(peer);
     await bdd.completeOnboarding(peer);
     const shared = await bdd.createAgent(peer, {
       displayName: "Shared research",
@@ -152,7 +151,7 @@ describe("chat search publication", () => {
       userId: owner.userId,
       orgId: `org_${randomUUID()}`,
     });
-    await bdd.readOnboardingStatus(otherOrg);
+    await bdd.provisionWorkspace(otherOrg);
     await bdd.completeOnboarding(otherOrg);
     const foreign = await bdd.createAgent(otherOrg, {
       displayName: "Other organization",
@@ -350,7 +349,7 @@ describe("chat search publication", () => {
       await createRunsApi(context).configureRunnerGroup();
       bdd.acceptAgentStorageWrites();
       const owner = bdd.user({ orgId: `org_${randomUUID()}` });
-      await bdd.readOnboardingStatus(owner);
+      await bdd.provisionWorkspace(owner);
       await bdd.completeOnboarding(owner);
       const agent = await bdd.createAgent(owner, {
         displayName: "Unicode research",

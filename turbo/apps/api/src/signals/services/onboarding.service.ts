@@ -6,7 +6,6 @@ import type {
   OnboardingIndustry,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { isValidTimeZone } from "@okouai/core/timezone";
-import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -115,25 +114,6 @@ interface CompleteOnboardingArgs {
   readonly isAdmin: boolean;
   readonly timezone?: string;
   readonly industry?: OnboardingIndustry;
-}
-
-export function onboardingWorkspaceProvisioningId(
-  orgId: string,
-): Computed<Promise<string | null>> {
-  return computed(async (get): Promise<string | null> => {
-    const db = get(db$);
-    const [row] = await db
-      .select({ id: agents.id })
-      .from(orgMetadata)
-      .innerJoin(
-        agents,
-        and(eq(agents.id, orgMetadata.defaultAgentId), eq(agents.orgId, orgId)),
-      )
-      .where(eq(orgMetadata.orgId, orgId))
-      .limit(1);
-
-    return row?.id ?? null;
-  });
 }
 
 function onboardingComplete(orgId: string): Computed<Promise<boolean>> {

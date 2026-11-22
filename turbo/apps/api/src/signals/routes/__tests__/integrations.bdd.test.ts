@@ -236,7 +236,7 @@ async function configureFastCodexPreference(
     [200, 201],
   );
   await runs.updateUserModelPreference(actor, "gpt-6-astra");
-  await bdd.readOnboardingStatus(actor);
+  await bdd.provisionWorkspace(actor);
   await integrations.updateUserModelPreference(
     actor,
     "gpt-6-astra",
@@ -1570,7 +1570,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await integrations.configureNativeSubscriptionModels(actor);
-    await bdd.readOnboardingStatus(actor);
+    await bdd.provisionWorkspace(actor);
     const slackUserId = uniqueSlackUserId();
     const home = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,
@@ -3080,7 +3080,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       const runnerGroup = await runs.configureRunnerGroup();
       await runs.grantProEntitlement(actor);
       await integrations.configureNativeSubscriptionModels(actor);
-      await bdd.readOnboardingStatus(actor);
+      await bdd.provisionWorkspace(actor);
       const slackUserId = uniqueSlackUserId();
       const { teamId } = await integrations.installSlackWorkspace(actor, {
         installerSlackUserId: slackUserId,
@@ -3228,7 +3228,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await integrations.configureNativeSubscriptionModels(actor);
-    await bdd.readOnboardingStatus(actor);
+    await bdd.provisionWorkspace(actor);
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,
@@ -4702,7 +4702,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     bdd.acceptAgentStorageWrites();
     integrations.configureSlackAppMocks();
     await bdd.readMe(actor);
-    await bdd.readOnboardingStatus(actor);
+    await bdd.provisionWorkspace(actor);
     await bdd.completeOnboarding(actor);
     const slackUserId = uniqueSlackUserId();
     const install = await integrations.installSlackWorkspace(actor, {
@@ -4985,8 +4985,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
         throw new Error("Expected Slack failing default actor to have an org");
       }
       await integrations.configureNativeSubscriptionModels(actor);
-      const onboarding = await bdd.readOnboardingStatus(actor);
-      expect(onboarding).toMatchObject({});
+      await bdd.provisionWorkspace(actor);
       await plan.update("canceled");
       const slackUserId = uniqueSlackUserId();
       const { teamId } = await integrations.installSlackWorkspace(actor, {
@@ -5049,7 +5048,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       [200, 201],
     );
     await runs.updateUserModelPreference(actor, "gpt-6-astra");
-    await bdd.readOnboardingStatus(actor);
+    await bdd.provisionWorkspace(actor);
     const slackUserId = uniqueSlackUserId();
     const { teamId, botUserId } = await integrations.installSlackWorkspace(
       actor,
@@ -5180,7 +5179,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await integrations.configureNativeSubscriptionModels(actor);
-    await bdd.readOnboardingStatus(actor);
+    await bdd.provisionWorkspace(actor);
     await integrations.enableOkouDebug(actor);
     const slackUser1 = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
@@ -5431,7 +5430,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     integrations.acceptSlackSessionHistoryDownloads();
     const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await bdd.readOnboardingStatus(actor);
+    await bdd.provisionWorkspace(actor);
     await integrations.configureNativeSubscriptionModels(actor);
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
@@ -5802,7 +5801,7 @@ describe("INT-02: Telegram integration", () => {
         TELEGRAM_OFFICIAL_WEBHOOK_SECRET,
       );
       const webhookSecret = TELEGRAM_OFFICIAL_WEBHOOK_SECRET;
-      await bdd.readOnboardingStatus(actor);
+      await bdd.provisionWorkspace(actor);
       const chatActions: {
         readonly chat_id: string;
         readonly action: string;

@@ -70,7 +70,7 @@ async function linkTelegramTestSender(
 ) {
   const bdd = createBddApi(context);
   bdd.acceptAgentStorageWrites();
-  await bdd.readOnboardingStatus(actor);
+  await bdd.provisionWorkspace(actor);
   await bdd.completeOnboarding(actor);
   await createBddIntegrationApi(context).requestLinkTelegram(
     actor,

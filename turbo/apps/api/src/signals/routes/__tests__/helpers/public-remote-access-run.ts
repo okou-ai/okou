@@ -90,7 +90,6 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
     await runs.ensurePersonalSubscriptionModel(bootstrapActor, {
       model: "claude-fable-5-1",
     });
-    await bdd.readOnboardingStatus(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "Remote access lifecycle Agent",
       visibility: "public",

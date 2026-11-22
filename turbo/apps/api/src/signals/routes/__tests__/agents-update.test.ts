@@ -12,7 +12,7 @@ import {
   cliAuthDeviceContract,
   cliAuthTokenContract,
 } from "@okouai/api-contracts/contracts/cli-auth";
-import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
+import { deliverOrganizationCreated } from "./helpers/api-bdd-webhooks";
 import { createStore } from "ccstate";
 
 import { mockNow } from "../../../lib/time";
@@ -23,7 +23,6 @@ import { seedOrgMembership$ } from "./helpers/org-membership";
 import { cliAuthRoutes } from "../cli-auth";
 import { agentInstructionsRoutes } from "../agent-instructions";
 import { agentsRoutes } from "../agents";
-import { onboardingStatusRoutes } from "../onboarding-status";
 
 const context = testContext();
 const store = createStore();
@@ -91,12 +90,6 @@ function agentsClient() {
 
 function agentsCollectionClient() {
   return setupApp({ context, routes: agentsRoutes })(agentsMainContract);
-}
-
-function onboardingStatusClient() {
-  return setupApp({ context, routes: onboardingStatusRoutes })(
-    onboardingStatusContract,
-  );
 }
 
 function instructionsClient() {
@@ -353,10 +346,7 @@ describe("PUT /api/agents/:id", () => {
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.test/default-agent.tar.gz?signature=test",
     );
-    await accept(
-      onboardingStatusClient().getStatus({ headers: authHeaders() }),
-      [200],
-    );
+    await deliverOrganizationCreated(context, owner);
     const listed = await accept(
       agentsCollectionClient().list({ headers: authHeaders() }),
       [200],
@@ -365,7 +355,7 @@ describe("PUT /api/agents/:id", () => {
       return entry.isDefaultAgent;
     })?.agentId;
     if (!agentId) {
-      throw new Error("Expected onboarding to create a default Agent");
+      throw new Error("Expected workspace creation to publish a default Agent");
     }
     const configured = await accept(
       agentsClient().update({
@@ -646,10 +636,7 @@ describe("PATCH /api/agents/:id", () => {
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.test/default-agent.tar.gz?signature=test",
     );
-    await accept(
-      onboardingStatusClient().getStatus({ headers: authHeaders() }),
-      [200],
-    );
+    await deliverOrganizationCreated(context, owner);
     const listed = await accept(
       agentsCollectionClient().list({ headers: authHeaders() }),
       [200],
@@ -658,7 +645,7 @@ describe("PATCH /api/agents/:id", () => {
       return entry.isDefaultAgent;
     })?.agentId;
     if (!agentId) {
-      throw new Error("Expected onboarding to create a default agent");
+      throw new Error("Expected workspace creation to publish a default agent");
     }
 
     mocks.clerk.session(`user_${randomUUID()}`, owner.orgId, "org:member");
@@ -816,10 +803,7 @@ describe("PATCH /api/agents/:id", () => {
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.test/default-agent.tar.gz?signature=test",
     );
-    await accept(
-      onboardingStatusClient().getStatus({ headers: authHeaders() }),
-      [200],
-    );
+    await deliverOrganizationCreated(context, owner);
     const listed = await accept(
       agentsCollectionClient().list({ headers: authHeaders() }),
       [200],
@@ -828,7 +812,7 @@ describe("PATCH /api/agents/:id", () => {
       return entry.isDefaultAgent;
     })?.agentId;
     if (!agentId) {
-      throw new Error("Expected onboarding to create a default Agent");
+      throw new Error("Expected workspace creation to publish a default Agent");
     }
     const saved = await accept(
       agentsClient().updateMetadata({

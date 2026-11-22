@@ -108,12 +108,12 @@ function detailClient() {
   );
 }
 
-async function readThreadLifecycleEvents() {
+async function readThreadLifecycleEvents(sinceSeqId?: number) {
   const response = await accept(
     setupApp({ context, routes: chatThreadRoutes })(chatThreadsContract).events(
       {
         headers: authHeaders(),
-        query: {},
+        query: { sinceSeqId },
       },
     ),
     [200],
@@ -4326,6 +4326,7 @@ describe("okou workflow automations", () => {
       useDefaultAgent: true,
     });
     await owned.run(async () => {
+      const sinceSeqId = (await readThreadLifecycleEvents()).at(-1)?.seqId;
       const workflowId = await wf.createWorkflow(owned.actor, {
         name: WORKFLOW_NAME,
         displayName: "Lazy workflow destination",
@@ -4345,7 +4346,9 @@ describe("okou workflow automations", () => {
         [201],
       );
       expect(created.body.chatThreadId).toBeNull();
-      await expect(readThreadLifecycleEvents()).resolves.toStrictEqual([]);
+      await expect(
+        readThreadLifecycleEvents(sinceSeqId),
+      ).resolves.toStrictEqual([]);
       const runNow = () => {
         return accept(
           automationsClient().run({
@@ -4360,7 +4363,7 @@ describe("okou workflow automations", () => {
       expect(second.body).toStrictEqual(first.body);
       await flushWaitUntilForTest();
       const threadId = first.body.chatThreadId;
-      const before = await readThreadLifecycleEvents();
+      const before = await readThreadLifecycleEvents(sinceSeqId);
       expect(
         before.filter((event) => {
           return event.kind === "created";
@@ -4379,7 +4382,9 @@ describe("okou workflow automations", () => {
       const repeated = await runNow();
       expect(repeated.body).toStrictEqual(first.body);
       await flushWaitUntilForTest();
-      await expect(readThreadLifecycleEvents()).resolves.toStrictEqual(before);
+      await expect(
+        readThreadLifecycleEvents(sinceSeqId),
+      ).resolves.toStrictEqual(before);
       await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
         chatThreadId: threadId,
         nextRunAt: created.body.nextRunAt,
@@ -4489,6 +4494,7 @@ describe("okou workflow automations", () => {
       useDefaultAgent: true,
     });
     await owned.run(async () => {
+      const sinceSeqId = (await readThreadLifecycleEvents()).at(-1)?.seqId;
       const workflowId = await wf.createWorkflow(owned.actor, {
         name: WORKFLOW_NAME,
       });
@@ -4516,7 +4522,7 @@ describe("okou workflow automations", () => {
       const first = await createAndRun(workflowId);
       const second = await createAndRun(secondWorkflowId);
       expect(second.chatThreadId).not.toBe(first.chatThreadId);
-      const ownerEvents = await readThreadLifecycleEvents();
+      const ownerEvents = await readThreadLifecycleEvents(sinceSeqId);
       expect(
         ownerEvents
           .filter((event) => {
@@ -4537,7 +4543,6 @@ describe("okou workflow automations", () => {
         restoreEnvironment: accepted,
       });
       await memberOwner.run(async () => {
-        await bdd.readOnboardingStatus(member);
         await bdd.completeOnboarding(member);
         await runs.ensurePersonalSubscriptionModel(member);
         const memberRun = await createAndRun(workflowId);
@@ -4568,9 +4573,9 @@ describe("okou workflow automations", () => {
         owned.actor.orgId,
         owned.actor.orgRole,
       );
-      await expect(readThreadLifecycleEvents()).resolves.toStrictEqual(
-        ownerEvents,
-      );
+      await expect(
+        readThreadLifecycleEvents(sinceSeqId),
+      ).resolves.toStrictEqual(ownerEvents);
     });
   });
 

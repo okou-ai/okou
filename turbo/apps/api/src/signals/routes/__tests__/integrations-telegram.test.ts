@@ -878,7 +878,7 @@ describe("GET /api/integrations/telegram/download-file", () => {
     const bdd = createBddApi(context);
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
-    await bdd.readOnboardingStatus(actor);
+    await bdd.provisionWorkspace(actor);
     await bdd.completeOnboarding(actor);
     const userId = newTelegramBotId();
     const chatId = previousPrivateAccount ? Number(userId) : -Number(userId);

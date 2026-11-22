@@ -34,6 +34,7 @@ import { onboardingCompleteRoutes } from "../../onboarding-complete";
 import { onboardingStatusRoutes } from "../../onboarding-status";
 import { orgReadRoutes } from "../../org-read";
 import { userPreferencesRoutes } from "../../user-preferences";
+import { deliverOrganizationCreated } from "./api-bdd-webhooks";
 import { createRouteMocks } from "./route-test";
 
 type ClerkOrgRole = "org:admin" | "org:member";
@@ -141,15 +142,24 @@ export function createBddApi(context: TestContext) {
     })(agentsMainContract);
   }
 
+  async function provisionWorkspace(creator: ApiTestUser) {
+    authenticate(creator);
+    await deliverOrganizationCreated(context, creator);
+  }
+
+  async function listedDefaultAgentId(headers: AuthHeaders) {
+    const listed = await accept(agentsClient().list({ headers }), [200]);
+    return listed.body.find((entry) => entry.isDefaultAgent)?.agentId ?? null;
+  }
+
   async function readDefaultAgentId(user: ApiTestUser) {
     const headers = authenticate(user);
-    await accept(onboardingStatusClient().getStatus({ headers }), [200]);
-    const listed = await accept(agentsClient().list({ headers }), [200]);
-    return (
-      listed.body.find((entry) => {
-        return entry.isDefaultAgent;
-      })?.agentId ?? null
-    );
+    const id = await listedDefaultAgentId(headers);
+    if (id || user.orgRole !== "org:admin") {
+      return id;
+    }
+    await deliverOrganizationCreated(context, user);
+    return await listedDefaultAgentId(headers);
   }
 
   function agentsByIdClient() {
@@ -235,6 +245,7 @@ export function createBddApi(context: TestContext) {
     },
 
     readDefaultAgentId,
+    provisionWorkspace,
 
     async readOnboardingStatus(nextUser: ApiTestUser) {
       const response = await accept(

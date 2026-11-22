@@ -685,12 +685,27 @@ async function entitledActor(email?: string) {
   const group = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
+  const mailboxActor = await startEmailThreadHistory({ ...actor, orgId });
   verifiedDirectory(actor);
-  return { actor: { ...actor, orgId }, group };
+  return { actor: mailboxActor, group };
 }
 
-async function createdThreads(actor: ApiTestUser) {
-  const response = await files.requestThreadEvents(actor, {}, [200]);
+async function startEmailThreadHistory<T extends ApiTestUser>(actor: T) {
+  const events = await files.requestThreadEvents(actor, {}, [200]);
+  if (events.status !== 200 || events.body.hasMore) {
+    throw new Error("Expected the initial workspace thread events");
+  }
+  return { ...actor, emailSinceSeqId: events.body.events.at(-1)?.seqId };
+}
+
+async function createdThreads(
+  actor: ApiTestUser & { readonly emailSinceSeqId?: number },
+) {
+  const response = await files.requestThreadEvents(
+    actor,
+    { sinceSeqId: actor.emailSinceSeqId },
+    [200],
+  );
   if (response.status !== 200) {
     throw new Error("Expected thread lifecycle events");
   }
@@ -2628,13 +2643,14 @@ describe("Email workspace binding", () => {
   it("switches workspaces, confirms by email and starts a fresh conversation for old reply references", async () => {
     const { actor, token, message } = await startEmailFileExecution();
     const originalThreads = await createdThreads(actor);
-    const target = bdd.user({
+    const targetAccount = bdd.user({
       userId: actor.userId,
       email: actor.email,
       orgId: createUniqueStaffOrgIdFixture(),
     });
-    await runs.grantProEntitlement(target);
-    await runs.ensurePersonalSubscriptionModel(target);
+    await runs.grantProEntitlement(targetAccount);
+    await runs.ensurePersonalSubscriptionModel(targetAccount);
+    const target = await startEmailThreadHistory(targetAccount);
     verifiedDirectory(actor);
     const workspaces = [
       { id: actor.orgId!, name: "Original workspace" },

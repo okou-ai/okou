@@ -17,7 +17,6 @@ setup() {
 }
 
 teardown() {
-    # The workspace default Agent is borrowed, not owned by this test.
     runner_e2e_teardown_test
     if [[ -n "$WORKFLOW_ID" ]]; then
         runner_e2e_delete_workflow "$WORKFLOW_ID" >/dev/null 2>&1 || true
@@ -39,13 +38,10 @@ teardown() {
 }
 
 @test "runner refreshes workspace workflow files and mounts personal instructions" {
-    run runner_api_curl "/api/onboarding/status"
+    run create_runner_agent "runner-context-${TEST_ID}"
     echo "$output"
     assert_success
-    run runner_api_curl "/api/agents"
-    assert_success
-    local agent_id
-    agent_id=$(jq -er '.[] | select(.isDefaultAgent) | .agentId' <<<"$output")
+    AGENT_ID="$output"
 
     # Both turns share one member. Restore the saved version during teardown.
     run runner_api_curl "/api/instructions"
@@ -65,11 +61,9 @@ teardown() {
     local workflow_marker="WORKFLOW_FILE_${TEST_ID}"
     local workflow_payload
     workflow_payload=$(jq -nc \
-        --arg agentId "$agent_id" \
         --arg name "$workflow_name" \
         --arg marker "$workflow_marker" '
         {
-            agentId: $agentId,
             name: $name,
             instruction: "Use the supplementary context files.",
             files: [
@@ -93,7 +87,6 @@ grep -F '__INSTRUCTION_MARKER__' "$HOME/.codex/AGENTS.md"
 grep -F '__WORKFLOW_MARKER__' "$HOME/.codex/skills/__WORKFLOW_NAME__/context.txt"
 test ! -s "$HOME/.codex/skills/__WORKFLOW_NAME__/empty.txt"
 test -n "$OKOU_APP_URL"
-test -z "${OKOU_AGENT_ID:-}"
 test -n "$OKOU_CHAT_THREAD_ID"
 test -n "$OKOU_TOKEN"
 node -e '
@@ -113,7 +106,7 @@ EOF
     prompt=${prompt//__WORKFLOW_NAME__/$workflow_name}
     prompt=${prompt//__OUTPUT_MARKER__/$output_marker}
 
-    run runner_e2e_start_mock_shell_chat_run "$agent_id" "$prompt"
+    run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" "$prompt"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")
@@ -185,7 +178,7 @@ EOF
     continuation_prompt=${continuation_prompt//__CONTINUATION_MARKER__/$continuation_marker}
 
     run runner_e2e_continue_chat_run \
-        "$agent_id" \
+        "$AGENT_ID" \
         "$THREAD_ID" \
         "$continuation_prompt"
     echo "$output"

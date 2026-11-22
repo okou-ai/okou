@@ -754,6 +754,7 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
     },
 
     readDefaultAgentId: createBddApi(context).readDefaultAgentId,
+    provisionWorkspace: createBddApi(context).provisionWorkspace,
 
     async readOnboardingStatus(actor: ApiTestUser) {
       const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(

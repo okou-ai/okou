@@ -5,7 +5,10 @@ import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import {
+  createWebhookCallbackApi,
+  deliverOrganizationCreated,
+} from "./helpers/api-bdd-webhooks";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -53,23 +56,6 @@ function membershipEvent(actor: ApiTestUser): void {
 
 async function deliverMembershipCreated(actor: ApiTestUser): Promise<void> {
   membershipEvent(actor);
-  await webhooks.requestClerkWebhook("{}", {}, [200]);
-  await flushWaitUntilForTest();
-}
-
-async function deliverOrganizationCreated(actor: ApiTestUser): Promise<void> {
-  if (!actor.orgId) {
-    throw new Error("Expected a workspace");
-  }
-  webhooks.configureClerkWebhookSecret();
-  webhooks.verifyNextClerkWebhook({
-    type: "organization.created",
-    data: {
-      id: actor.orgId,
-      created_by: actor.userId,
-      created_at: now(),
-    },
-  });
   await webhooks.requestClerkWebhook("{}", {}, [200]);
   await flushWaitUntilForTest();
 }
@@ -169,7 +155,8 @@ describe("automatic welcome thread delivery", () => {
   it.each([
     {
       registration: "organization.created",
-      deliver: deliverOrganizationCreated,
+      deliver: (actor: ApiTestUser) =>
+        deliverOrganizationCreated(context, actor),
     },
     {
       registration: "organizationMembership.created",

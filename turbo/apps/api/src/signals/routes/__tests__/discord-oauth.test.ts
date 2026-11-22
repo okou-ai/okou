@@ -565,7 +565,7 @@ describe("Discord product OAuth", () => {
     const authOrgApi = createAuthOrgAgentsBddApi(context);
     const actor = authOrgApi.user(admin);
     authOrgApi.acceptAgentStorageWrites();
-    await authOrgApi.readOnboardingStatus(actor);
+    await authOrgApi.provisionWorkspace(actor);
 
     await installed(f, admin);
 

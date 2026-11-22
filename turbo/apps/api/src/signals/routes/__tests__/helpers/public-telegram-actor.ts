@@ -166,7 +166,7 @@ export function createPublicTelegramActor(
     onboard: () => {
       bdd.acceptAgentStorageWrites();
       return run(async () => {
-        await bdd.readOnboardingStatus(actor);
+        await bdd.provisionWorkspace(actor);
         const completed = await bdd.completeOnboarding(actor);
         if (completed.status !== 200) {
           throw new Error("Expected normal onboarding to complete");

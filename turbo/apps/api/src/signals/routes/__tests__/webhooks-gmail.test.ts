@@ -571,7 +571,7 @@ async function setupFixture(
   }
 
   bdd.acceptAgentStorageWrites();
-  await bdd.readOnboardingStatus(actor);
+  await bdd.provisionWorkspace(actor);
   await bdd.bootstrapLimitedFreeOnboarding(actor, {
     displayName: "BDD Gmail Webhook Owner",
   });
