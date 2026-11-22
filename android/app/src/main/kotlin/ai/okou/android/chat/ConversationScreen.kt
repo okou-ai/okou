@@ -245,6 +245,7 @@ internal fun ConversationRoute(
         var restored by remember { mutableStateOf(false) }
         var restoredAnchor by remember { mutableStateOf<ConversationAnchor?>(null) }
         var positioned by remember { mutableStateOf(false) }
+        var hasSeenLatest by remember { mutableStateOf(false) }
         var newReply by remember { mutableStateOf(false) }
         val previewId = content.lastOrNull()?.takeIf { it.deliveryStatus != null }?.message?.id
         var lastPreviewId by remember { mutableStateOf(previewId) }
@@ -289,7 +290,6 @@ internal fun ConversationRoute(
                 return@LaunchedEffect
             if (index >= 0 && anchor != null) {
                 position.scrollToItem(index + 1, with(density) { anchor.offsetDp.dp.roundToPx() })
-                newReply = position.canScrollBackward
             } else {
                 position.scrollToItem(0)
             }
@@ -323,13 +323,15 @@ internal fun ConversationRoute(
         }
         SideEffect {
             if (positioned) {
-                if (atEnd) newReply = false
-                else {
+                if (atEnd && visible && latestDisplayed) {
+                    hasSeenLatest = true
+                    newReply = false
+                } else if (!atEnd) {
                     position.keepMessageWhenStatusMoves(timeline)
                     if (newestReply != null && newestReply != lastReply) newReply = true
                 }
-                lastReply = newestReply
             }
+            lastReply = newestReply
         }
         LaunchedEffect(model, thread?.id, position, positioned, visible, density) {
             if (!positioned || !visible || thread == null) return@LaunchedEffect
@@ -354,7 +356,8 @@ internal fun ConversationRoute(
         val jump =
             when {
                 !positioned || atEnd || !position.canScrollBackward -> null
-                newReply -> R.string.conversation_new_reply
+                newReply || (!hasSeenLatest && list.isUnread(threadId)) ->
+                    R.string.conversation_new_reply
                 !pastJumpThreshold -> null
                 activity != null -> R.string.conversation_view_progress
                 else -> R.string.conversation_jump_latest

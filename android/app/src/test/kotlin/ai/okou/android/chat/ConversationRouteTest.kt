@@ -19,6 +19,7 @@ import ai.okou.android.jsonResponse
 import android.content.ClipboardManager
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.geometry.Offset
@@ -435,6 +436,67 @@ class ConversationRouteTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h320dp")
+    fun reopeningAnOlderPositionOnlyShowsNewReplyForUnreadContent() {
+        val showConversation = mutableStateOf(true)
+        val unread = AtomicBoolean(false)
+        fixture.indicators = {
+            if (unread.get())
+                jsonResponse(
+                    """{"agents":{},"threads":{"$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}"""
+                )
+            else jsonResponse("""{"agents":{},"threads":{},"unreadAt":{}}""")
+        }
+        val received = AtomicInteger(12)
+        val model = openScrollHistory(received, showConversation)
+        val readCountBeforeReply = fixture.readRequests.get()
+        received.incrementAndGet()
+        compose.runOnIdle { model.history.refresh() }
+        compose.waitUntilExactlyOneExists(hasText("The first reply"), 10_000)
+        compose.onNodeWithText("The first reply").assertIsDisplayed()
+        compose.waitUntil(10_000) { fixture.readRequests.get() == readCountBeforeReply + 1 }
+
+        val conversation = compose.onNodeWithTag("conversation")
+        val jump = hasTestTag("conversation_jump")
+        val newReply =
+            jump and
+                hasContentDescription(compose.activity.getString(R.string.conversation_new_reply))
+        conversation.performScrollToIndex(7)
+        compose.waitUntilExactlyOneExists(jump, 10_000)
+        val anchorTag = "message_${scrollEventId(6)}"
+        val anchor = compose.onNodeWithTag(anchorTag).assertIsDisplayed()
+        val bounds = anchor.getUnclippedBoundsInRoot()
+
+        compose.runOnIdle { showConversation.value = false }
+        compose.waitUntilDoesNotExist(hasTestTag("conversation"), 5_000)
+        compose.runOnIdle { showConversation.value = true }
+        compose.waitUntilExactlyOneExists(hasTestTag(anchorTag), 10_000)
+        compose.waitUntilExactlyOneExists(jump, 10_000)
+        assertEquals(bounds, anchor.getUnclippedBoundsInRoot())
+        compose.onNode(newReply).assertDoesNotExist()
+        assertEquals(readCountBeforeReply + 1, fixture.readRequests.get())
+
+        compose.runOnIdle { showConversation.value = false }
+        compose.waitUntilDoesNotExist(hasTestTag("conversation"), 5_000)
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { model.uiState.value.indicatorsPhase != ChatReadPhase.Loading }
+        }
+        received.incrementAndGet()
+        unread.set(true)
+        compose.runOnIdle { model.refreshIndicators() }
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { model.uiState.value.isUnread(CHAT_IN_PROJECT) }
+        }
+        compose.runOnIdle { showConversation.value = true }
+        compose.waitUntilExactlyOneExists(newReply, 10_000)
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { model.history.uiState.value.confirmation?.cursor?.seqId == 14L }
+        }
+        assertEquals(bounds, anchor.getUnclippedBoundsInRoot())
+        assertEquals(readCountBeforeReply + 1, fixture.readRequests.get())
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h320dp")
     fun firstReplyPreservesTheMessageUnderAnActiveDrag() {
         val received = AtomicInteger(12)
         val model = openScrollHistory(received)
@@ -469,7 +531,10 @@ class ConversationRouteTest {
     private fun scrollEventId(sequence: Int) =
         "aaaaaaaa-aaaa-4aaa-8aaa-${sequence.toString().padStart(12, '0')}"
 
-    private fun openScrollHistory(received: AtomicInteger): ChatListModel {
+    private fun openScrollHistory(
+        received: AtomicInteger,
+        showConversation: State<Boolean>? = null,
+    ): ChatListModel {
         fixture.historyRows = { request ->
             val after = request.requestUrl?.queryParameter("sinceSeqId")?.toInt() ?: 0
             val last = received.get()
@@ -495,7 +560,10 @@ class ConversationRouteTest {
         val model = createListModel()
         compose.setContent {
             val list by model.uiState.collectAsStateWithLifecycle()
-            OkouTheme { ConversationRoute(model.history, CHAT_IN_PROJECT, list) }
+            OkouTheme {
+                if (showConversation?.value != false)
+                    ConversationRoute(model.history, CHAT_IN_PROJECT, list)
+            }
         }
         compose.waitUntil(10_000) {
             compose.runOnIdle { model.uiState.value.listPhase == ChatReadPhase.Ready }
