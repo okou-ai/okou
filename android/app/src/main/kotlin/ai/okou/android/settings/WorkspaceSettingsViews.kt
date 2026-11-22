@@ -234,8 +234,8 @@ private fun ModelAccountRow(
             ?: stringResource(R.string.settings_model_account_fallback, index)
     val selection =
         when {
-            account.needsReconnect -> stringResource(R.string.settings_account_reconnect)
             account.isActive == true -> stringResource(R.string.settings_account_current)
+            account.needsReconnect -> stringResource(R.string.settings_account_reconnect)
             switching -> stringResource(R.string.settings_account_switching)
             else -> stringResource(R.string.settings_account_select)
         }
@@ -322,21 +322,18 @@ private fun QuotaView(quota: ModelAccountQuota, modifier: Modifier) {
     val typography = MaterialTheme.typography
     val colors = MaterialTheme.colorScheme
     val locale = LocalLocale.current.platformLocale
+    val seconds = quota.windowSeconds
     val label =
-        when (quota.period) {
-            QuotaPeriod.Week -> stringResource(R.string.settings_weekly_quota)
-            QuotaPeriod.Unknown -> stringResource(R.string.settings_quota)
-            QuotaPeriod.Short -> {
-                val seconds = quota.windowSeconds
-                when {
-                    seconds != null && seconds >= 86_400 && seconds % 86_400 == 0.0 ->
-                        stringResource(R.string.settings_day_quota, (seconds / 86_400).toInt())
-                    seconds != null && seconds >= 3_600 && seconds % 3_600 == 0.0 ->
-                        stringResource(R.string.settings_hour_quota, (seconds / 3_600).toInt())
-                    seconds == null -> stringResource(R.string.settings_hour_quota, 5)
-                    else -> stringResource(R.string.settings_quota)
-                }
-            }
+        when {
+            seconds == 604_800.0 || seconds == null && quota.period == QuotaPeriod.Week ->
+                stringResource(R.string.settings_weekly_quota)
+            seconds != null && seconds >= 86_400 && seconds % 86_400 == 0.0 ->
+                stringResource(R.string.settings_day_quota, (seconds / 86_400).toInt())
+            seconds != null && seconds >= 3_600 && seconds % 3_600 == 0.0 ->
+                stringResource(R.string.settings_hour_quota, (seconds / 3_600).toInt())
+            seconds == null && quota.period == QuotaPeriod.Short ->
+                stringResource(R.string.settings_hour_quota, 5)
+            else -> stringResource(R.string.settings_quota)
         }
     val remaining = quota.remaining
     Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {

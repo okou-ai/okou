@@ -48,13 +48,13 @@ internal fun RecoverySubscriptionsSubscriptionsItem.quotas(): List<ModelAccountQ
     }
     if (quotas.isNotEmpty()) return quotas
     val reset = parseReset(subscriptionNextResetAt) ?: return emptyList()
-    val period =
-        when (subscriptionResetPeriod?.lowercase()) {
-            "weekly" -> QuotaPeriod.Week
-            "5-hour",
-            "5h",
-            "five-hour" -> QuotaPeriod.Short
-            else -> QuotaPeriod.Unknown
+    return listOf(
+        when (subscriptionResetPeriod) {
+            "weekly" -> ModelAccountQuota(QuotaPeriod.Week, null, reset)
+            "5-hour window" -> ModelAccountQuota(QuotaPeriod.Short, null, reset, 18_000.0)
+            "hourly" -> ModelAccountQuota(QuotaPeriod.Short, null, reset, 3_600.0)
+            "daily" -> ModelAccountQuota(QuotaPeriod.Short, null, reset, 86_400.0)
+            else -> ModelAccountQuota(QuotaPeriod.Unknown, null, reset)
         }
-    return listOf(ModelAccountQuota(period, null, reset))
+    )
 }

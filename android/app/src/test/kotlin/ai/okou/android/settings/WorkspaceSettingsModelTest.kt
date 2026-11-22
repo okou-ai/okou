@@ -48,17 +48,26 @@ class WorkspaceSettingsModelTest {
                 val claude = accounts.single { it.provider == ModelAccountProvider.Claude }
                 assertEquals(listOf(0.0, 0.0), claude.quotas().map { it.remaining })
                 val usage = checkNotNull(claude.subscriptionUsage)
+                val shortWindow = checkNotNull(usage.fiveHour)
                 val invalidShortReset =
                     claude
                         .copy(
                             subscriptionUsage =
-                                usage.copy(
-                                    fiveHour =
-                                        checkNotNull(usage.fiveHour).copy(resetAt = "unavailable")
-                                )
+                                usage.copy(fiveHour = shortWindow.copy(resetAt = "unavailable"))
                         )
                         .quotas()
                 assertEquals(invalidShortReset[1].resetAt, invalidShortReset[0].resetAt)
+                val resetOnly =
+                    claude
+                        .copy(
+                            subscriptionUsage = null,
+                            subscriptionResetPeriod = "5-hour window",
+                            subscriptionNextResetAt = shortWindow.resetAt,
+                        )
+                        .quotas()
+                        .single()
+                assertEquals(QuotaPeriod.Short, resetOnly.period)
+                assertNull(resetOnly.remaining)
                 val alternate = accounts.single { it.id == SettingsApiFixture.alternateAccount }
                 val credits = alternate.subscriptionCredits
                 check(credits is CanonicalOptional.Present)
