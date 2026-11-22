@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.53.0](https://github.com/okou-ai/okou/compare/ios-v0.52.1...ios-v0.53.0) (2026-11-22)
+
+
+### Features
+
+* **ios:** add model subscriptions to settings ([#49963](https://github.com/okou-ai/okou/issues/49963)) ([72ecc81](https://github.com/okou-ai/okou/commit/72ecc819a9a20d2ad3e8df5ac5e9a89f7b748bf5))
+
+
+### Bug Fixes
+
+* **ios:** skip unknown parts when reading chat history ([#49957](https://github.com/okou-ai/okou/issues/49957)) ([1a11a42](https://github.com/okou-ai/okou/commit/1a11a42cc7401a96a7b0aaa66e475d68d7e45dd4))
+
 ## [0.52.1](https://github.com/okou-ai/okou/compare/ios-v0.52.0...ios-v0.52.1) (2026-11-22)
 
 

@@ -32,9 +32,12 @@ internal class ConnectorApiFixture : Closeable {
     val service: ConnectorService
     @Volatile var discoveryRequested = CountDownLatch(1)
     @Volatile var discoveryGate: CountDownLatch? = null
+    @Volatile var omittedFromDefaultBrowse: Set<String> = emptySet()
+    @Volatile var unavailableCatalogSlugs: Set<String> = emptySet()
     @Volatile var failDiscovery = false
     @Volatile var failAccountReads = false
     @Volatile var loseRenameReply = false
+    @Volatile var renameReplyGate: CountDownLatch? = null
     @Volatile var failOauthCompletion = false
     @Volatile var oauthCompletion: String? = null
     private val entries = buildList {
@@ -102,21 +105,26 @@ internal class ConnectorApiFixture : Closeable {
                         if (failDiscovery) return rejected(503)
                         val keyword = url.queryParameter("keyword")
                         val category = url.queryParameter("category")
+                        val unavailable = unavailableCatalogSlugs
+                        val available = entries.filterNot { it.slug in unavailable }
                         val matched =
-                            entries.filter {
+                            available.filter {
                                 (category == null || it.category == category) &&
                                     (keyword == null ||
                                         it.name.contains(keyword, true) ||
-                                        it.slug.contains(keyword, true))
+                                        it.slug.contains(keyword, true)) &&
+                                    (keyword != null ||
+                                        category != null ||
+                                        it.slug !in omittedFromDefaultBrowse)
                             }
                         return json(
                             buildJsonObject {
                                 put("connectors", JsonArray(matched.map(CatalogEntry::body)))
-                                put("totalConnectorCount", entries.size)
+                                put("totalConnectorCount", available.size)
                                 put(
                                     "categoryConnectorCounts",
                                     buildJsonObject {
-                                        for ((key, entry) in entries.groupBy { it.category }) put(
+                                        for ((key, entry) in available.groupBy { it.category }) put(
                                             key,
                                             entry.size,
                                         )
@@ -125,7 +133,13 @@ internal class ConnectorApiFixture : Closeable {
                             }
                         )
                     }
-                    return synchronized(accounts) { respond(request) }
+                    val response = synchronized(accounts) { respond(request) }
+                    if (
+                        request.method == "PATCH" &&
+                            url.pathSegments.getOrNull(1) == "connector-accounts"
+                    )
+                        renameReplyGate?.await()
+                    return response
                 }
             }
         api = ApiClient(https.server.url("/"), { "connector-test" })
@@ -198,10 +212,13 @@ internal class ConnectorApiFixture : Closeable {
                 )
             parts.getOrNull(1) == "connector-catalog" -> {
                 val slug = parts.getOrNull(2)
+                if (slug in unavailableCatalogSlugs) return rejected(404)
                 val entry = entries.find { it.slug == slug } ?: return rejected(404)
                 if (parts.getOrNull(3) == "permissions") {
+                    val (read, write) =
+                        if (slug == "gmail") "读取邮件" to "起草与发送邮件" else "读取日历与日程" to "创建和更新日程"
                     jsonResponse(
-                        """{"permissions":{"connectorSlug":"$slug","label":"${entry.name}","icon":$icon,"permissionCount":2,"permissions":[{"name":"读取日历与日程"},{"name":"创建和更新日程"}],"categories":null,"defaultPolicy":{"permissionDefault":"ask","unknownPolicy":"deny"}}}"""
+                        """{"permissions":{"connectorSlug":"$slug","label":"${entry.name}","icon":$icon,"permissionCount":2,"permissions":[{"name":"$read"},{"name":"$write"}],"categories":null,"defaultPolicy":{"permissionDefault":"ask","unknownPolicy":"deny"}}}"""
                     )
                 } else json(buildJsonObject { put("connector", entry.body()) })
             }
@@ -347,6 +364,7 @@ internal class ConnectorApiFixture : Closeable {
 
     override fun close() {
         discoveryGate?.countDown()
+        renameReplyGate?.countDown()
         https.use { api.close() }
     }
 

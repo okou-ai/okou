@@ -14,4 +14,16 @@
     <string name="conversation_reply_copied">Risposta copiata</string>
     <string name="conversation_revoke">Ritira</string>
     <string name="conversation_stop">Interrompi</string>
+    <string name="conversation_find">Cerca messaggi</string>
+    <string name="conversation_find_turns">Sfoglia i turni</string>
+    <string name="conversation_find_empty">Nessun messaggio da cercare</string>
+    <string name="conversation_find_no_match">Nessun messaggio corrispondente</string>
+    <string name="conversation_find_you">Il tuo messaggio</string>
+    <string name="conversation_find_unavailable">Questo messaggio non è disponibile.</string>
+    <string name="conversation_find_attachment">Allegato</string>
+    <plurals name="conversation_find_matches">
+        <item quantity="one">%d messaggio corrispondente</item>
+        <item quantity="many">%d messaggi corrispondenti</item>
+        <item quantity="other">%d messaggi corrispondenti</item>
+    </plurals>
 </resources>

@@ -493,6 +493,27 @@ class WorkflowRootTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w1180dp-h800dp")
+    fun sourceChatClosesFindBeforeReturningToWorkflowHistory() {
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_tab_history").performClick()
+        val source = hasText(app.fixture.ruleTitle) and hasClickAction()
+        compose.waitUntil(10_000) { compose.onAllNodes(source).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(source).performClick()
+        waitForTag("conversation")
+
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Find messages").performClick()
+        compose.onNodeWithTag("conversation_find").assertIsDisplayed()
+        back()
+        compose.onNodeWithTag("conversation_find").assertDoesNotExist()
+        compose.onNodeWithTag("conversation").assertIsDisplayed()
+
+        back()
+        compose.onNodeWithTag("workflow_tab_history").assertIsSelected()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h800dp")
     fun rejectedSourceChatDeletionRestoresTheRunLinkAndShowsFeedbackInHistory() {
         val requested = CountDownLatch(1)
         val releaseDelete = CountDownLatch(1)

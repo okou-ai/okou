@@ -106,7 +106,7 @@ internal fun ConnectorsPage(model: ConnectorModel, listWidth: Int?, close: () ->
     val keyboard = LocalSoftwareKeyboardController.current
     var restoreRow by remember { mutableStateOf<String?>(null) }
     val filter =
-        if (route.connected) null
+        if (route.connected) ConnectorBrowseFilter.of("", route.category)
         else ConnectorBrowseFilter.of(route.committedQuery.text, route.category)
     val wide = listWidth != null
     val selected = route.slug
@@ -263,15 +263,19 @@ private fun ConnectorDirectory(
         if (!route.hasPendingSearchInput) state
         else remember(route.connected, filter, query) { state }
     val recommended = !route.connected && filter == null
-    val serviceEntries = directory.browse.data?.entries
     val connected = directory.connected.data
-    val read =
-        when {
-            route.connected -> directory.connected
-            filter != null ->
-                directory.matches?.takeIf { it.filter == filter }?.entries ?: ConnectorRead()
-            else -> directory.browse
-        }
+    val filtered =
+        filter
+            ?.takeUnless { route.connected && connected?.isEmpty() == true }
+            ?.let { current ->
+                directory.matches?.takeIf { it.filter == current }?.entries ?: ConnectorRead()
+            }
+    val catalogRead = filtered ?: directory.browse
+    val serviceEntries = catalogRead.data?.entries
+    val failure =
+        if (route.connected)
+            listOfNotNull(directory.connected.failure, filtered?.failure).maxOrNull()
+        else catalogRead.failure
     val entries =
         remember(
             route.connected,
@@ -280,19 +284,22 @@ private fun ConnectorDirectory(
             recommended,
             serviceEntries,
             connected,
-            read,
+            directory.slug,
+            directory.accounts.data,
         ) {
             when {
                 route.connected -> {
+                    if (filtered != null && serviceEntries == null) return@remember null
                     val bySlug = serviceEntries.orEmpty().associateBy { it.slug }
                     connected
                         ?.mapNotNull { (slug, service) ->
                             val entry =
-                                bySlug[slug] ?: ConnectorEntry(slug, service.label, "", null, null)
-                            if (route.category != null && entry.category != route.category) null
-                            else if (
+                                bySlug[slug]
+                                    ?: if (filtered != null) return@mapNotNull null
+                                    else ConnectorEntry(slug, service.label, "", null, null)
+                            if (
                                 entry.matches(query) ||
-                                    service.accounts.any { account ->
+                                    directory.accountsFor(slug).any { account ->
                                         account.displayName?.contains(query, ignoreCase = true) ==
                                             true ||
                                             account.identity?.contains(query, ignoreCase = true) ==
@@ -305,13 +312,7 @@ private fun ConnectorDirectory(
                         ?.sortedWith(compareBy { it.name.lowercase(Locale.ROOT) })
                 }
                 recommended -> serviceEntries?.let(::recommendedConnectors)
-                else ->
-                    directory.matches
-                        ?.takeIf { it.filter == filter }
-                        ?.entries
-                        ?.data
-                        ?.entries
-                        ?.filter { route.category == null || it.matches(query) }
+                else -> serviceEntries?.filter { route.category == null || it.matches(query) }
             }
         }
 
@@ -338,10 +339,11 @@ private fun ConnectorDirectory(
                     when {
                         entries == null ->
                             when {
+                                failure == ConnectorReadFailure.Unavailable ->
+                                    ConnectorEmpty(R.string.connector_load_failed)
                                 state.offline ->
                                     ConnectorLoadWhenOnline(Modifier.padding(horizontal = 12.dp))
-                                read.failure != null ->
-                                    ConnectorEmpty(R.string.connector_load_failed)
+                                failure != null -> ConnectorEmpty(R.string.connector_load_failed)
                                 else ->
                                     key(route.connected, filter) {
                                         ConnectorSkeleton(
@@ -406,7 +408,7 @@ private fun ConnectorDirectory(
         }
         if (entries != null) {
             if (state.offline) ConnectorStatusBanner(R.string.connector_offline)
-            else if (read.failure == ConnectorReadFailure.Sustained)
+            else if (failure == ConnectorReadFailure.Sustained)
                 ConnectorStatusBanner(R.string.connector_refresh_failed)
         }
     }

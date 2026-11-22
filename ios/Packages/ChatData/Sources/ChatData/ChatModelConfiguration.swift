@@ -139,7 +139,9 @@ public struct ChatModelConfiguration: Sendable {
     updated.preference = preference
     return updated
   }
-  public var canLinkSubscriptions: Bool { switches["subscriptionLinkingEntry"] == true }
+  public var canLinkSubscriptions: Bool {
+    SidebarFeatureSwitches(effectiveSwitches: switches).canLinkSubscriptions
+  }
   public var models: [AvailableRunModels.Model] {
     available.models.sorted {
       let a = catalog.order($0.selectedModel)
