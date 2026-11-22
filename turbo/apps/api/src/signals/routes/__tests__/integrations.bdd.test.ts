@@ -4515,51 +4515,52 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(context.mocks.slack.apiCall).not.toHaveBeenCalled();
   });
 
-  it("notifies connected Slack users when no usable org agent is configured", async () => {
-    bdd.acceptAgentStorageWrites();
+  it("opens the connected member's chat for Slack mentions and DMs without a profile", async () => {
     integrations.configureSlackAppMocks();
-
-    const bare = bdd.user();
-    const bareSlackUserId = uniqueSlackUserId();
-    const bareInstall = await integrations.installSlackWorkspace(bare, {
-      installerSlackUserId: bareSlackUserId,
+    const actor = bdd.user();
+    const sender = uniqueSlackUserId();
+    const { teamId } = await integrations.installSlackWorkspace(actor, {
+      installerSlackUserId: sender,
     });
-    integrations.clearSlackCallHistory();
-    await integrations.postSlackEvent(bareInstall.teamId, {
-      type: "app_mention",
-      user: bareSlackUserId,
-      text: "hello agent",
-      ts: "2100.000100",
-      channel: "C_BDD_NOAGENT",
-    });
-    await flushWaitUntilAndAssert(() => {
-      expect(context.mocks.slack.chat.postEphemeral).toHaveBeenCalledWith(
-        expect.objectContaining({
-          channel: "C_BDD_NOAGENT",
-          user: bareSlackUserId,
-          text: expect.stringContaining("No agent is configured"),
-        }),
-      );
-    });
-
-    // The same unonboarded member can also receive guidance in a DM.
-    integrations.clearSlackCallHistory();
-    await integrations.postSlackEvent(bareInstall.teamId, {
-      type: "message",
-      channel_type: "im",
-      user: bareSlackUserId,
-      text: "hello in dm",
-      ts: "2100.000200",
-      channel: "D_BDD_MISSING_AGENT",
-    });
-    await flushWaitUntilAndAssert(() => {
-      expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({
-          channel: "D_BDD_MISSING_AGENT",
-          text: expect.stringContaining("No agent is configured"),
-        }),
-      );
-    });
+    const activity = async (
+      type: "app_mention" | "message",
+      channel: string,
+      ts: string,
+    ) => {
+      await integrations.postSlackEvent(teamId, {
+        type,
+        channel_type: type === "message" ? "im" : "channel",
+        user: sender,
+        text: "Hello from Slack",
+        ts,
+        channel,
+      });
+      await flushWaitUntilForTest();
+      const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+      if (lifecycle.status !== 200) {
+        throw new Error("Expected the member's chat threads");
+      }
+      return lifecycle.body.events
+        .filter((event) => {
+          return event.kind === "created";
+        })
+        .map((event) => {
+          return event.chatThreadId;
+        });
+    };
+    const mentionThreads = await activity(
+      "app_mention",
+      "C_BDD_NOAGENT",
+      "2100.000100",
+    );
+    expect(mentionThreads).toHaveLength(1);
+    const bothThreads = await activity(
+      "message",
+      "D_BDD_MISSING_AGENT",
+      "2100.000200",
+    );
+    expect(new Set(bothThreads).size).toBe(2);
+    expect(bothThreads).toContain(mentionThreads[0]);
   });
 
   it("serves Slack help, connect, and disconnect commands", async () => {
