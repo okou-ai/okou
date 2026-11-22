@@ -126,7 +126,7 @@ internal constructor(
     }
 
     private suspend fun loadCatalog() = coroutineScope {
-        val catalog = async { read { service.workflows().filter { it.official == null } } }
+        val catalog = async { read { service.workspaceCatalog() } }
         val rules = async {
             read { service.workflowAutomations().groupBy({ it.workflow.id }, { it.automation }) }
         }

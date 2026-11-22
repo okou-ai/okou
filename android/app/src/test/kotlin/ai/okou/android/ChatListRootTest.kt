@@ -3,6 +3,7 @@ package ai.okou.android
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ChatChanges
 import ai.okou.android.chat.ChatRowAction
+import ai.okou.android.chat.HistoryPhase
 import android.os.Looper
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -23,6 +24,7 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
+import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
@@ -53,6 +55,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -197,6 +200,54 @@ class ChatListRootTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w400dp-h460dp")
+    fun returningToRecentSearchFocusesTheOpenedChatAfterItMovesUp() {
+        val app = compose.activity.application as ChatListApplication
+        val threads = List(8) { UUID.randomUUID().toString() }
+        val events =
+            threads.mapIndexed { index, id ->
+                chatEventWire(
+                    id = UUID.randomUUID().toString(),
+                    seq = 17L + index,
+                    thread = id,
+                    title = "Visit $index",
+                )
+            }
+        app.fixture.historyThreadIds = threads.toSet()
+        app.fixture.events = { request ->
+            val rows =
+                if (request.requestUrl?.queryParameter("sinceSeqId") == null) events
+                else emptyList()
+            jsonResponse("""{"events":[${rows.joinToString(",")}],"hasMore":false}""")
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val ready =
+            compose.runOnIdle {
+                checkNotNull(
+                    ViewModelProvider(compose.activity)[SessionModel::class.java]
+                        .uiState
+                        .value
+                        .ready
+                )
+            }
+        runBlocking { threads.forEach { app.searchRecents.record(ready.identity, it) } }
+
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        compose.waitUntilExactlyOneExists(hasText("Recently opened"), 5_000)
+        compose.onNodeWithTag("chat_search_results").performScrollToNode(hasText("Visit 0"))
+        compose.onNodeWithText("Visit 0").performClick()
+        compose.onNodeWithTag("conversation").assertIsDisplayed()
+        compose.waitUntil(5_000) {
+            compose.runOnIdle { ready.search.recentlyOpened.value.firstOrNull() == threads.first() }
+        }
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+
+        compose.waitUntilExactlyOneExists(hasText("Visit 0") and isFocused(), 5_000)
+        compose.onNodeWithText("Visit 0").assertIsDisplayed().assertIsFocused()
+    }
+
+    @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
     fun pastedTitleRetainsItsUnicodeAndMatchesTheWholeQuery() {
         val app = compose.activity.application as ChatListApplication
@@ -336,6 +387,82 @@ class ChatListRootTest {
         field.assertIsFocused()
         compose.onNode(hasText("Messages") and isSelectable()).assertIsSelected()
         compose.onNodeWithText("Enter a keyword to search").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h820dp")
+    fun workspaceMessageSearchCatchesUpAnAlreadyOpenHistoryBeforeRevealingTheHit() {
+        val app = compose.activity.application as ChatListApplication
+        val fixture = app.fixture
+        val text = "New search message"
+        val eventId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        fixture.searchMessages = {
+            jsonResponse(
+                """
+                {"results":[{"chatThreadId":"$CHAT_PERSONAL","agentName":"Okou",
+                  "matchedMessage":{"chatThreadId":"$CHAT_PERSONAL","role":"assistant",
+                    "content":"$text","createdAt":"$CHAT_DATE","seqId":41,"runId":"$HISTORY_RUN"},
+                  "matchedRanges":[{"start":4,"end":10}]}]}
+                """
+            )
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val history =
+            compose.runOnIdle {
+                checkNotNull(
+                        ViewModelProvider(compose.activity)[SessionModel::class.java]
+                            .uiState
+                            .value
+                            .ready
+                    )
+                    .chats
+                    .history
+            }
+        compose.onNodeWithTag("chat_$CHAT_PERSONAL").performClick()
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { history.uiState.value.phase == HistoryPhase.Ready }
+        }
+
+        val staleRead = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val oldRows = fixture.historyRows
+        val nextReadIsStale = AtomicBoolean(true)
+        fixture.historyRows = { request ->
+            val url = checkNotNull(request.requestUrl)
+            if (url.pathSegments[2] != CHAT_PERSONAL || url.queryParameter("sinceSeqId") != "37") {
+                oldRows(request)
+            } else if (nextReadIsStale.getAndSet(false)) {
+                staleRead.countDown()
+                release.await()
+                oldRows(request)
+            } else {
+                val event =
+                    historyEventWire(id = eventId, seq = 41, payload = """{"content":"$text"}""")
+                jsonResponse(
+                    """{"rows":[$event],"cursor":{"lastEventId":"$eventId","lastSeqId":41},"hasMore":false}"""
+                )
+            }
+        }
+        try {
+            compose.runOnIdle { history.invalidate(CHAT_PERSONAL) }
+            compose.waitUntil(10_000) { staleRead.count == 0L }
+            compose.onNodeWithContentDescription("Search workspace").performClick()
+            compose.onNodeWithTag("search_type_Messages").performClick()
+            compose.onNodeWithTag("chat_search_query").performTextInput("search")
+            val hit = hasText(text) and hasAnyAncestor(hasTestTag("chat_search_results"))
+            compose.waitUntilExactlyOneExists(hit, 5_000)
+            compose.onNode(hit).performClick()
+            compose.onNodeWithTag("chat_search").assertDoesNotExist()
+            release.countDown()
+
+            compose.waitUntilExactlyOneExists(hasTestTag("search_message_hit"), 10_000)
+            compose.onNodeWithTag("search_message_hit").assertIsFocused()
+            compose.onNodeWithText(text).assertIsDisplayed()
+            compose.onNodeWithTag("chat_$CHAT_PERSONAL").assertIsSelected()
+        } finally {
+            release.countDown()
+        }
     }
 
     @Test

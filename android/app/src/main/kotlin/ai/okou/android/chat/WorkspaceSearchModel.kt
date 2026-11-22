@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.artifacts.ArtifactKind
 import ai.okou.android.auth.WorkspaceIdentity
 import androidx.lifecycle.ViewModel
@@ -48,10 +49,13 @@ data class SearchWorkflowHit(
     val id: String,
     val agentId: String,
     val name: String,
-    val title: String,
+    val displayName: String?,
     val description: String?,
     val canUse: Boolean,
 ) {
+    internal val title
+        get() = displayName?.takeIf(String::isNotBlank) ?: name
+
     internal val key
         get() = "workflow:$id"
 
@@ -60,6 +64,9 @@ data class SearchWorkflowHit(
             "/$name".contains(keyword, ignoreCase = true) ||
             description?.contains(keyword, ignoreCase = true) == true
 }
+
+internal fun WorkflowSummary.toSearchHit() =
+    SearchWorkflowHit(id, agentId, name, displayName, description, shadowedBy == null)
 
 data class SearchArtifactHit(val id: String, val title: String, val kind: ArtifactKind) {
     internal val key
@@ -111,12 +118,12 @@ internal constructor(
     private var workflowCatalog: List<SearchWorkflowHit>? = null
     private var online = false
 
-    internal fun opened(threadId: String) {
+    internal fun opened(chat: ConfirmedChat) {
         val store = recents ?: return
-        if (!authorized()) return
+        if (chat.archived || !authorized()) return
         viewModelScope.launch {
             try {
-                store.record(identity, threadId)
+                store.record(identity, chat.id)
             } catch (_: IOException) {
                 // The last confirmed visit list and recent-chat fallback remain usable.
             }
@@ -131,7 +138,7 @@ internal constructor(
         artifactsAvailable: Boolean = false,
     ) {
         if (!authorized()) return
-        if (online != connected || keyword.isEmpty()) workflowCatalog = null
+        if (online != connected || keyword.isEmpty() || !workflowsAvailable) workflowCatalog = null
         if (mutable.value.keyword != keyword || online != connected) {
             online = connected
             artifactPageJob?.cancel()
@@ -139,6 +146,9 @@ internal constructor(
             searches.values.forEach { it.cancel() }
             searches.clear()
             mutable.value = WorkspaceSearchResults(keyword)
+        } else if (!workflowsAvailable) {
+            searches.remove(WorkspaceSearchType.Workflows)?.cancel()
+            mutable.value = mutable.value.copy(workflows = SearchRead.Loading)
         }
         if (!connected || keyword.isEmpty()) return
         if (type.includes(WorkspaceSearchType.Messages)) {
@@ -149,17 +159,33 @@ internal constructor(
                 state.copy(messages = read)
             }
         }
-        if (workflowsAvailable && type.includes(WorkspaceSearchType.Workflows)) {
-            request(WorkspaceSearchType.Workflows, { SearchRead.Ready(findWorkflows(keyword)) }) {
-                state,
-                read ->
-                state.copy(workflows = read)
-            }
+        if (
+            workflowsAvailable &&
+                type.includes(WorkspaceSearchType.Workflows) &&
+                mutable.value.workflows !is SearchRead.Ready
+        ) {
+            requestWorkflows(keyword)
         }
         if (artifactsAvailable && type.includes(WorkspaceSearchType.Artifacts)) {
             request(WorkspaceSearchType.Artifacts, { artifactPage(keyword, null) }) { state, read ->
                 state.copy(artifacts = read)
             }
+        }
+    }
+
+    internal fun refreshWorkflows(catalog: List<SearchWorkflowHit>?) {
+        val state = mutable.value
+        if (!authorized() || !online || state.keyword.isEmpty()) return
+        searches.remove(WorkspaceSearchType.Workflows)?.cancel()
+        workflowCatalog = catalog
+        if (catalog == null) {
+            mutable.value = state.copy(workflows = SearchRead.Loading)
+            requestWorkflows(state.keyword)
+        } else {
+            mutable.value =
+                state.copy(
+                    workflows = SearchRead.Ready(catalog.filter { it.matches(state.keyword) })
+                )
         }
     }
 
@@ -200,6 +226,13 @@ internal constructor(
         val page = service.searchArtifacts(keyword, cursor)
         return SearchRead.Ready(page.hits.distinctBy { it.id }, page.nextCursor)
     }
+
+    private fun requestWorkflows(keyword: String) =
+        request(WorkspaceSearchType.Workflows, { SearchRead.Ready(findWorkflows(keyword)) }) {
+            state,
+            read ->
+            state.copy(workflows = read)
+        }
 
     private suspend fun findWorkflows(keyword: String): List<SearchWorkflowHit> {
         val catalog =

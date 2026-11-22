@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.CHAT_DATE
 import ai.okou.android.EmptyWorkspaceSearchService
 import ai.okou.android.artifacts.ArtifactKind
 import ai.okou.android.auth.WorkspaceIdentity
@@ -191,6 +192,56 @@ class WorkspaceSearchModelTest {
                 emptyList<String>(),
                 store.observe(identity.copy(userId = "other")).first(),
             )
+        }
+    }
+
+    @Test
+    fun openingAnArchivedChatPreservesTheEightRecentVisits() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val models = ViewModelStore()
+        try {
+            withStore(temporary.root.resolve("recents.preferences_pb")) { store ->
+                repeat(RecentSearchChatLimit) { store.record(identity, "chat$it") }
+                val expected = store.observe(identity).first()
+                val model =
+                    ViewModelProvider(
+                        models,
+                        viewModelFactory {
+                            initializer {
+                                WorkspaceSearchModel(
+                                    EmptyWorkspaceSearchService,
+                                    identity,
+                                    store,
+                                    { true },
+                                    { throw it },
+                                )
+                            }
+                        },
+                    )[WorkspaceSearchModel::class.java]
+                val chat =
+                    ConfirmedChat(
+                        id = "archived",
+                        title = "Archived chat",
+                        sortAt = CHAT_DATE,
+                        createdAt = CHAT_DATE,
+                        updatedAt = CHAT_DATE,
+                        pinnedAt = null,
+                        archived = true,
+                        renamedAt = null,
+                    )
+                model.opened(chat)
+                runCurrent()
+                assertEquals(expected, store.observe(identity).first())
+
+                model.opened(chat.copy(archived = false))
+                assertEquals(
+                    listOf(chat.id) + expected.dropLast(1),
+                    store.observe(identity).first { it.firstOrNull() == chat.id },
+                )
+            }
+        } finally {
+            models.clear()
+            Dispatchers.resetMain()
         }
     }
 

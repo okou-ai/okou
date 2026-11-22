@@ -51,8 +51,10 @@ import ai.okou.android.chat.TextDisposition
 import ai.okou.android.chat.WorkspaceSearchService
 import ai.okou.android.chat.historyJson
 import ai.okou.android.chat.readHistoryNdjson
+import ai.okou.android.chat.toSearchHit
 import ai.okou.android.instructions.PersonalInstructionsService
 import ai.okou.android.workflows.WorkflowService
+import ai.okou.android.workflows.workspaceCatalog
 import java.io.Closeable
 import java.io.IOException
 import java.util.Locale
@@ -147,17 +149,10 @@ class CanonicalWorkspaceSession(
     override suspend fun setAutomationEnabled(id: String, enabled: Boolean) =
         api.setWorkflowAutomationEnabled(id, enabled)
 
-    override suspend fun searchableWorkflows(): List<SearchWorkflowHit> =
-        workflows().map {
-            SearchWorkflowHit(
-                id = it.id,
-                agentId = it.agentId,
-                name = it.name,
-                title = it.displayName?.takeIf(String::isNotBlank) ?: it.name,
-                description = it.description,
-                canUse = it.shadowedBy == null,
-            )
-        }
+    override suspend fun searchableWorkflows(): List<SearchWorkflowHit> {
+        if (!workflowsEnabled()) return emptyList()
+        return workspaceCatalog().map { it.toSearchHit() }
+    }
 
     override suspend fun searchArtifacts(keyword: String, cursor: String?): SearchArtifactPage {
         val page = artifacts.page(ArtifactQuery(keyword = keyword), cursor = cursor, limit = 25)

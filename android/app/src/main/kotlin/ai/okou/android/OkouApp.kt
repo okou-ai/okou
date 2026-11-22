@@ -29,6 +29,7 @@ import ai.okou.android.chat.SearchWorkflowIntro
 import ai.okou.android.chat.WorkspaceSearchModel
 import ai.okou.android.chat.WorkspaceSearchScreen
 import ai.okou.android.chat.conversationRunControls
+import ai.okou.android.chat.toSearchHit
 import ai.okou.android.state.SearchRoute
 import ai.okou.android.state.SettingsDestination
 import ai.okou.android.state.WorkflowTab
@@ -194,7 +195,7 @@ internal fun OkouApp(
             navigation.search == SearchRoute.Open
     val searchKeyword =
         searchState.keyword.takeIf { navigation.search != SearchRoute.Closed }.orEmpty()
-    val searchWorkflowsAvailable = workflows != null
+    val searchWorkflowsAvailable = workflows != null && workflowState?.enabled != false
     val searchArtifactsAvailable = artifacts != null
     LaunchedEffect(
         workspaceSearch,
@@ -250,6 +251,12 @@ internal fun OkouApp(
     var searchEntryFocused by remember { mutableStateOf(false) }
     var restoreSearchFocus by remember { mutableStateOf(false) }
     var restoreSettingsFocus by remember { mutableStateOf(false) }
+    LaunchedEffect(list.offline, workflowState?.enabled) {
+        if (searchWorkflowId != null && (list.offline || workflowState?.enabled == false)) {
+            handoff?.cancel()
+            searchWorkflowId = null
+        }
+    }
 
     fun closeArtifacts(restoreFocus: Boolean) {
         restoreArtifactEntryFocus = restoreFocus
@@ -303,6 +310,12 @@ internal fun OkouApp(
     fun closeWorkflows() {
         handoff?.cancel()
         handoff = null
+        if (workflowOrigin.search == SearchRoute.Open) {
+            val state = workflows?.state?.value
+            if (state?.enabled != false) {
+                workspaceSearch?.refreshWorkflows(state?.catalog?.map { it.toSearchHit() })
+            }
+        }
         workflowRoute = WorkflowsRoute()
         workflows?.select(null)
     }
@@ -326,10 +339,15 @@ internal fun OkouApp(
         (target as? WorkspaceTarget.Chat)?.let { chat ->
             list.threads.firstOrNull { it.id == chat.id && it.hidden != true }
         }
-    val visibleThreadId =
-        thread?.id?.takeIf { settings == null && (!searchActive || listWidth != null) }
-    LaunchedEffect(workspaceSearch, visibleThreadId) {
-        if (visibleThreadId != null) workspaceSearch?.opened(visibleThreadId)
+    val visibleThread =
+        thread?.takeIf {
+            settings == null &&
+                !showWorkflows &&
+                !showArtifacts &&
+                (!searchActive || listWidth != null)
+        }
+    LaunchedEffect(workspaceSearch, visibleThread?.id, visibleThread?.archived) {
+        if (visibleThread != null) workspaceSearch?.opened(visibleThread)
     }
 
     val showConversationFeedback = settings == null && !showChatList && thread != null
@@ -1012,7 +1030,7 @@ internal fun OkouApp(
                                     (remote?.workflows as? SearchRead.Ready)?.rows?.firstOrNull {
                                         it.id == searchWorkflowId
                                     }
-                                if (intro != null) {
+                                if (searchWorkflowsAvailable && intro != null) {
                                     SearchWorkflowIntro(
                                         intro,
                                         canStartDraft = workspaceReady && !list.offline,
@@ -1106,7 +1124,11 @@ internal fun OkouApp(
                                                 historyAvailable = !awaitingCreatedChat,
                                                 realtime = chats.updates.takeIf { workspaceReady },
                                                 controls = runActions,
-                                                messageSequence = navigation.messageSequence,
+                                                messageSequence =
+                                                    navigation.messageSequence.takeIf {
+                                                        artifactSource == null &&
+                                                            navigation.target == target
+                                                    },
                                                 onMessageJumpCompleted = { sequence, found ->
                                                     if (
                                                         navigation.target == target &&

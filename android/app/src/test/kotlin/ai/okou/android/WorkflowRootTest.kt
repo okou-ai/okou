@@ -158,15 +158,25 @@ class WorkflowRootTest {
         val query = compose.onNodeWithTag("chat_search_query")
         scope.performClick()
         query.performTextInput("launch")
-        waitFor(app.fixture.releaseTitle)
-        compose.onNodeWithText(app.fixture.releaseTitle).performClick()
+        val originalTitle = app.fixture.releaseTitle
+        waitFor(originalTitle)
+        compose.onNodeWithText("Official launch workflow").assertDoesNotExist()
+        compose.onNodeWithText(originalTitle).performClick()
         waitFor("View workflow details")
         compose.onNodeWithText("View workflow details").performClick()
         waitForTag("workflow_detail_title")
+        compose.onNodeWithText("Edit instructions").performClick()
+        val renamed = "Launch planning"
+        compose.onNodeWithText(originalTitle).performTextReplacement(renamed)
+        compose.onNodeWithTag("workflow_save").performClick()
+        compose.waitUntil(10_000) { app.fixture.releaseTitle == renamed }
+        waitForTag("workflow_detail_title")
+        compose.onNodeWithTag("workflow_detail_title").assertTextContains(renamed)
         back()
         query.assertTextContains("launch")
         scope.assertIsSelected()
-        compose.onNodeWithText(app.fixture.releaseTitle).performClick()
+        compose.onNodeWithText(originalTitle).assertDoesNotExist()
+        compose.onNodeWithText(renamed).performClick()
         waitFor("Add to new chat draft")
         compose.onNodeWithText("Add to new chat draft").performClick()
         waitForTag("message_input")
@@ -182,7 +192,39 @@ class WorkflowRootTest {
         back()
         query.assertTextContains("launch")
         scope.assertIsSelected()
-        compose.onNodeWithText(app.fixture.releaseTitle).assertIsDisplayed()
+        compose.onNodeWithText(renamed).assertIsDisplayed()
+    }
+
+    @Test
+    fun workspaceSearchUsesTheSameWorkflowAvailabilityAsTheDirectory() {
+        app.fixture.workflowsEnabled = false
+        app.gate.countDown()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        compose.onNodeWithTag("search_type_Workflows").performClick()
+        compose.onNodeWithTag("chat_search_query").performTextInput("launch")
+        waitFor("No matching workflows")
+        assertTrue(
+            app.fixture.requests.any { it.requestUrl?.encodedPath == "/api/feature-switches" }
+        )
+        assertFalse(app.fixture.requests.any { it.requestUrl?.encodedPath == "/api/workflows" })
+    }
+
+    @Test
+    fun workspaceSearchReconnectsWithoutReopeningTheDismissedWorkflowIntro() {
+        app.gate.countDown()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        compose.onNodeWithTag("search_type_Workflows").performClick()
+        compose.onNodeWithTag("chat_search_query").performTextInput("launch")
+        waitFor(app.fixture.releaseTitle)
+        compose.onNodeWithText(app.fixture.releaseTitle).performClick()
+        waitFor("View workflow details")
+
+        compose.runOnIdle { app.connectivity.value = false }
+        waitFor("Go online to search this type")
+        compose.onNodeWithText("View workflow details").assertDoesNotExist()
+        compose.runOnIdle { app.connectivity.value = true }
+        waitFor(app.fixture.releaseTitle)
+        compose.onNodeWithText("View workflow details").assertDoesNotExist()
     }
 
     private fun waitFor(label: String) =

@@ -84,9 +84,6 @@ internal data class ConversationMessage(
     fun includes(id: String?) = message.id == id || earlier.any { it.id == id }
 }
 
-internal fun HistoryMessage.visibleInConversation() =
-    status != "run.completed" || blocks.isNotEmpty()
-
 internal fun conversationMessages(messages: List<HistoryMessage>): List<ConversationMessage> =
     buildList {
         var previous: HistoryMessage? = null

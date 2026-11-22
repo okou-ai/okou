@@ -44,6 +44,9 @@ data class HistoryMessage(
     val sourceSeqId: Long? = null,
 )
 
+internal fun HistoryMessage.visibleInConversation() =
+    status != "run.completed" || blocks.isNotEmpty()
+
 data class HistoryTranscript(
     val messages: List<HistoryMessage>,
     val execution: HistoryExecution,

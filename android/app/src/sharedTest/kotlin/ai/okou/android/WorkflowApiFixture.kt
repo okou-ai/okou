@@ -20,13 +20,14 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
     val requests = CopyOnWriteArrayList<RecordedRequest>()
     val active = AtomicBoolean(false)
     @Volatile var beforeCatalog: () -> Unit = {}
+    @Volatile var workflowsEnabled = true
     @Volatile var previousDraft = if (chinese) "保留原有草稿" else "Keep my existing draft"
     @Volatile
     var instruction =
         if (chinese) "1. 核对发布文案和产品说明。\n2. 查看官网、邮件和社区素材，列出缺项。\n3. 汇总负责人、发布时间和要确认的阻塞项。"
         else
             "Review launch copy and product notes.\nCheck the website, email, and community assets."
-    val releaseTitle = if (chinese) "发布检查流程" else "Release checklist"
+    @Volatile var releaseTitle = if (chinese) "发布检查流程" else "Release checklist"
     val sharedTitle = if (chinese) "发布后跟进" else "Release follow-up"
     private val feedbackTitle = if (chinese) "客户反馈汇总" else "Customer feedback"
     val releasePurpose =
@@ -43,18 +44,19 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
         return when (path) {
             "/api/feature-switches" ->
                 jsonResponse(
-                    """{"switches":{},"effectiveSwitches":{"androidWorkspaceWorkflows":true}}"""
+                    """{"switches":{},"effectiveSwitches":{"androidWorkspaceWorkflows":$workflowsEnabled}}"""
                 )
             "/api/connectors/connected" ->
                 jsonResponse("""{"builtinConnectors":[],"customConnectors":[]}""")
             "/api/workflows" -> {
                 assertEquals("workspace", request.requestUrl?.queryParameter("scope"))
                 beforeCatalog()
-                jsonResponse("[${release()},${shared()},${feedback()}]")
+                jsonResponse("[${release()},${shared()},${feedback()},${official()}]")
             }
             "/api/workflows/$WORKFLOW_RELEASE" -> {
                 if (request.method == "PATCH") {
                     val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
+                    body["displayName"]?.jsonPrimitive?.content?.let { releaseTitle = it }
                     body["instruction"]?.jsonPrimitive?.content?.let { instruction = it }
                 }
                 jsonResponse(detail(release(), instruction, "[${schedule()},${gmail()}]"))
@@ -125,6 +127,17 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
             else "Summarize today's feedback and track action items.",
         )
 
+    private fun official() =
+        summary(
+            "a4444444-4444-4444-8444-444444444444",
+            "launch-official",
+            "Official launch workflow",
+            "Installed workflow",
+            manage = false,
+            official =
+                """{"definitionName":"launch-official","installationState":"installed","definitionLifecycle":"active","readOnly":true}""",
+        )
+
     private fun summary(
         id: String,
         name: String,
@@ -132,8 +145,9 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
         purpose: String,
         visibility: String = "private",
         manage: Boolean = true,
+        official: String = "null",
     ) =
-        """{"id":"$id","agentId":"$CHAT_AGENT","agentName":null,"agentDisplayName":null,"name":"$name","displayName":"$title","description":"$purpose","visibility":"$visibility","ownerUserId":"user-a","createdAt":"$CHAT_DATE","canManage":$manage,"canPublish":$manage,"official":null,"shadowedBy":null,"importSource":null}"""
+        """{"id":"$id","agentId":"$CHAT_AGENT","agentName":null,"agentDisplayName":null,"name":"$name","displayName":${Json.encodeToString(title)},"description":"$purpose","visibility":"$visibility","ownerUserId":"user-a","createdAt":"$CHAT_DATE","canManage":$manage,"canPublish":$manage,"official":$official,"shadowedBy":null,"importSource":null}"""
 
     private fun detail(summary: String, instruction: String, automations: String) =
         summary.dropLast(1) +

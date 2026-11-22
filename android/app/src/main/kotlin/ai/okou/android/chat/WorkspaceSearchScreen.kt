@@ -50,7 +50,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
@@ -281,7 +283,8 @@ private fun SearchTypes(
                     .heightIn(min = 48.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .then(
-                        if (type == WorkspaceSearchType.All) Modifier.focusRequester(allTabFocus)
+                        if (type == WorkspaceSearchType.All)
+                            Modifier.focusRequester(allTabFocus).focusProperties { canFocus = true }
                         else Modifier
                     )
                     .background(if (selected) colors.secondaryContainer else colors.background)
@@ -509,8 +512,14 @@ private fun SearchResults(
         }
     }
     val pendingFocus = search.pendingFocus.takeIf { restoreResultFocus }
-    LaunchedEffect(pendingFocus, items, pending) {
-        if (pendingFocus != null && !pending && items.none { it.key == pendingFocus }) {
+    LaunchedEffect(pendingFocus, anchor, items, pending) {
+        if (pendingFocus == null || anchor != null) return@LaunchedEffect
+        val index = items.indexOfFirst { it.key == pendingFocus }
+        if (index >= 0) {
+            if (search.position.layoutInfo.visibleItemsInfo.none { it.key == pendingFocus }) {
+                search.position.scrollToItem(index)
+            }
+        } else if (!pending) {
             resultFocus.requestFocus()
             search.restoreFocus()
         }
@@ -699,10 +708,10 @@ private fun SearchResult(
     onOpen: () -> Unit,
 ) {
     val rowFocus = remember { FocusRequester() }
-    val restoreFocus = restoreResultFocus && search.pendingFocus == key
+    val restoreFocus =
+        restoreResultFocus && search.pendingFocus == key && search.pendingAnchor == null
     LaunchedEffect(restoreFocus) {
-        if (restoreFocus) {
-            rowFocus.requestFocus()
+        if (restoreFocus && rowFocus.requestFocus(FocusDirection.Enter)) {
             search.restoreFocus()
         }
     }
@@ -711,6 +720,7 @@ private fun SearchResult(
             .heightIn(min = ChatListRowHeight)
             .clip(ChatListRowShape)
             .focusRequester(rowFocus)
+            .focusProperties { canFocus = true }
             .clickable(role = Role.Button, onClick = onOpen)
             .padding(ChatListRowPadding),
         verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),

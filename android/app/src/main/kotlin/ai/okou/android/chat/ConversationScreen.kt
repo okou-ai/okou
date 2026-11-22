@@ -258,15 +258,18 @@ internal fun ConversationRoute(
             restoredAnchor = model.restoreReadingAnchor(threadId)
             restored = true
         }
-        LaunchedEffect(messageSequence, searchIndex, searchEventId, state.phase) {
-            val sequence = messageSequence ?: return@LaunchedEffect
-            if (thread == null) return@LaunchedEffect
-            if (searchIndex >= 0) {
+        LaunchedEffect(messageSequence, searchIndex, searchEventId) {
+            if (messageSequence != null && searchIndex >= 0) {
                 position.scrollToItem(searchIndex + 1)
                 highlightedEventId = searchEventId
                 lastReply = newestReply
                 positioned = true
-            } else if (state.phase == HistoryPhase.Ready || state.phase == HistoryPhase.Missing) {
+            }
+        }
+        LaunchedEffect(model, thread?.id, messageSequence, list.offline) {
+            val sequence = messageSequence ?: return@LaunchedEffect
+            if (thread == null || list.offline) return@LaunchedEffect
+            if (model.searchMessageIsMissing(threadId, sequence)) {
                 highlightedEventId = null
                 onMessageJumpCompleted(sequence, false)
             }
