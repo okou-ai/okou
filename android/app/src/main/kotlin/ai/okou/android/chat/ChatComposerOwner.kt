@@ -272,28 +272,33 @@ internal class ChatComposerOwner(
     ): Boolean {
         val target = ComposerTarget()
         open(connection, target)?.join() ?: return false
+        val agentId = mutable.value.defaultAgentId ?: return false
+        val key = "agent:$agentId"
+        // Joining a draft read can also start a follow-up refresh queued while it was in flight.
+        while (true) {
+            val job = draftWork[key]?.job ?: break
+            job.join()
+        }
         val state = mutable.value
-        val agentId = state.defaultAgentId ?: return false
         if (
             !connection.current() ||
+                state.context != ComposerContext.Ready ||
+                state.defaultAgentId != agentId ||
                 expectedAgent != null && expectedAgent != agentId ||
                 state.journal == null ||
                 state.entry(target).pending != null ||
                 target.key in state.busy ||
-                state.synchronization["agent:$agentId"] != ComposerSync.Saved
+                state.synchronization[key] != ComposerSync.Saved
         )
             return false
         beginNew(connection, null)
         val text = mutable.value.entry(target).text
         val command = prefix.trimEnd()
         val existing = text.trimStart()
-        if (
-            existing != command &&
-                !existing.startsWith(prefix) &&
-                !existing.startsWith("$command\n")
-        ) {
-            edit(connection, target, prefix + text)
-        }
+        val alreadyPrefilled =
+            existing.startsWith(command) &&
+                (existing.length == command.length || existing[command.length].isWhitespace())
+        if (!alreadyPrefilled) edit(connection, target, prefix + text)
         return true
     }
 

@@ -74,7 +74,10 @@ internal enum class RuleSource(
     Forms(R.string.workflow_forms, R.drawable.ic_bolt, "google-forms"),
     Meet(R.string.workflow_meet, R.drawable.ic_bolt, "google-meet"),
     Notion(R.string.workflow_notion, R.drawable.ic_bolt, "notion"),
-    Webhook(R.string.workflow_webhook, R.drawable.ic_bolt),
+    Webhook(R.string.workflow_webhook, R.drawable.ic_bolt);
+
+    fun needsConnection(connected: Set<String>?): Boolean =
+        connector != null && connected != null && connector !in connected
 }
 
 internal val WorkflowAutomation.source: RuleSource
@@ -126,7 +129,7 @@ internal val WorkflowAutomation.eventLabel: Int
         }
 
 internal fun WorkflowAutomation.needsConnection(connected: Set<String>?): Boolean =
-    source.connector?.let { connected != null && it !in connected } == true ||
+    source.needsConnection(connected) ||
         when (this) {
             is WorkflowAutomationVariant11 -> warning?.name == "RECONNECT_REQUIRED"
             is WorkflowAutomationVariant12 -> warning?.name == "RECONNECT_REQUIRED"
@@ -166,7 +169,7 @@ internal data class InstructionsFields(
             title.isNotBlank() &&
                 title.length <= 256 &&
                 purpose.length <= 1024 &&
-                instruction.isNotBlank()
+                instruction.length <= 5 * 1024 * 1024
 
     fun changesFrom(original: InstructionsFields) =
         UpdateWorkflowRequest(
@@ -184,10 +187,10 @@ internal fun WorkflowDetail.editableInstructions() =
         InstructionsFields(displayName ?: name, description.orEmpty(), instruction.orEmpty())
     )
 
-internal enum class EditableTrigger {
-    Schedule,
-    Gmail,
-    Calendar,
+internal enum class EditableTrigger(val source: RuleSource) {
+    Schedule(RuleSource.Schedule),
+    Gmail(RuleSource.Gmail),
+    Calendar(RuleSource.Calendar),
 }
 
 internal data class RuleFields(

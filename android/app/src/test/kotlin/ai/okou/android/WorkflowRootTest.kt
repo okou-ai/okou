@@ -10,6 +10,7 @@ import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -118,6 +119,15 @@ class WorkflowRootTest {
         waitFor("Confirm the release owner.")
         compose.onNodeWithTag("workflow_tab_automations").performClick()
         waitFor("Paused · Needs connection")
+        compose.onNodeWithText("Add automation").performClick()
+        compose.onNodeWithText("Schedule").performClick()
+        compose.onNodeWithText("Gmail message received").performClick()
+        compose.onNodeWithContentDescription("Subject contains").performTextInput("Release")
+        compose.onNodeWithText("Gmail · Needs connection").assertIsDisplayed()
+        compose.onNodeWithText("View connections").assertIsDisplayed()
+        compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
+        back()
+        compose.onNodeWithText("Discard").performClick()
         compose.onNodeWithTag("workflow_toggle_weekday").performClick()
         waitFor("Enabled")
         assertTrue(app.fixture.active.get())
@@ -137,6 +147,28 @@ class WorkflowRootTest {
         compose.onNodeWithText("Enabled").assertIsDisplayed()
         back()
         compose.onNodeWithTag("workflow_query").assertTextContains("/release-review")
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1000dp-h800dp")
+    fun wideChatClosesSearchBeforeReturningToTheWorkflowTab() {
+        app.gate.countDown()
+        compose.onNodeWithText("Workflows").performClick()
+        waitFor("Release checklist")
+        compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").performClick()
+        waitForTag("workflow_detail_title")
+        compose.onNodeWithTag("workflow_tab_automations").performClick()
+        compose.onNodeWithTag("workflow_use").performClick()
+        waitForTag("message_input")
+
+        compose.onNodeWithTag("workspace_search_entry").performClick()
+        compose.onNodeWithTag("chat_search_query").performTextInput("Release")
+        back()
+        compose.onNodeWithTag("chat_search_query").assertDoesNotExist()
+        compose.onNodeWithTag("message_input").assertIsDisplayed()
+
+        back()
+        compose.onNodeWithTag("workflow_tab_automations").assertIsSelected()
     }
 
     private fun waitFor(label: String) =

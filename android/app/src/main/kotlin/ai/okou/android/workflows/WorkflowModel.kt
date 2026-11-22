@@ -13,7 +13,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -24,17 +26,18 @@ internal data class WorkflowState(
     val rules: Map<String, List<WorkflowAutomation>>? = null,
     val connections: Set<String>? = null,
     val detail: WorkflowDetail? = null,
-    val catalogFailed: Boolean = false,
-    val detailFailure: WorkflowDetailFailure? = null,
+    val catalogFailure: WorkflowReadFailure? = null,
+    val detailFailure: WorkflowReadFailure? = null,
     val offline: Boolean = false,
     val writing: Boolean = false,
     val issue: WorkflowWriteIssue? = null,
     val editor: WorkflowEdit? = null,
 )
 
-internal enum class WorkflowDetailFailure {
+internal enum class WorkflowReadFailure {
     Unavailable,
     CouldNotLoad,
+    RefreshFailed,
 }
 
 internal enum class WorkflowWriteIssue {
@@ -48,6 +51,7 @@ internal constructor(
     private val service: WorkflowService,
     private val authorized: () -> Boolean,
     private val onFailure: (Exception) -> Unit,
+    private val monotonicMillis: () -> Long = { System.nanoTime() / 1_000_000 },
 ) : ViewModel() {
     private val mutable = MutableStateFlow(WorkflowState())
     internal val state = mutable.asStateFlow()
@@ -55,39 +59,35 @@ internal constructor(
     private var selected: String? = null
     private var catalogLoad: Job? = null
     private var detailLoad: Job? = null
-    private var retryClock: Job? = null
+    private var refreshAfterWrite = false
 
     internal fun connectivityChanged(offline: Boolean) {
         if (mutable.value.offline == offline) return
         mutable.value = mutable.value.copy(offline = offline)
-        if (offline) {
-            catalogLoad?.cancel()
-            detailLoad?.cancel()
-        } else refresh()
+        if (offline) stopReads() else refresh()
     }
 
     internal fun visibilityChanged(open: Boolean) {
         if (visible == open) return
         visible = open
-        if (open) {
-            refresh()
-            retryClock =
-                viewModelScope.launch {
-                    while (true) {
-                        delay(30_000)
-                        val state = mutable.value
-                        if (
-                            state.catalogFailed ||
-                                state.detailFailure == WorkflowDetailFailure.CouldNotLoad
-                        )
-                            refresh()
-                    }
-                }
-        } else {
-            retryClock?.cancel()
-            catalogLoad?.cancel()
-            detailLoad?.cancel()
-        }
+        if (open) refresh() else stopReads()
+    }
+
+    private fun stopReads() {
+        catalogLoad?.cancel()
+        detailLoad?.cancel()
+        val current = mutable.value
+        mutable.value =
+            current.copy(
+                catalogFailure =
+                    current.catalogFailure.takeUnless {
+                        it == WorkflowReadFailure.RefreshFailed && current.catalog != null
+                    },
+                detailFailure =
+                    current.detailFailure.takeUnless {
+                        it == WorkflowReadFailure.RefreshFailed && current.detail != null
+                    },
+            )
     }
 
     internal fun select(id: String?) {
@@ -100,61 +100,82 @@ internal constructor(
     }
 
     private fun refresh() {
-        if (!authorized() || !visible || mutable.value.offline || mutable.value.writing) return
+        if (!authorized() || !visible || mutable.value.offline) return
+        if (mutable.value.writing) {
+            refreshAfterWrite = true
+            return
+        }
         if (catalogLoad?.isActive == true) return
         catalogLoad =
             viewModelScope.launch {
-                val enabled = read { service.workflowsEnabled() }
-                if (!authorized()) return@launch
-                when (enabled.getOrNull()) {
-                    false -> {
-                        detailLoad?.cancel()
-                        mutable.value =
-                            WorkflowState(enabled = false, offline = mutable.value.offline)
-                    }
-                    true -> {
-                        mutable.value = mutable.value.copy(enabled = true)
-                        selected?.let(::loadDetail)
-                        loadCatalog()
-                    }
-                    null -> {
-                        if (enabled.exceptionOrNull().denied()) clearAccess()
-                        mutable.value = mutable.value.copy(catalogFailed = true)
+                var detailRefreshed = false
+                retryReads({ mutable.value = mutable.value.copy(catalogFailure = it) }) {
+                    val enabled = read { service.workflowsEnabled() }
+                    if (!authorized()) return@retryReads null
+                    when (enabled.getOrNull()) {
+                        false -> {
+                            detailLoad?.cancel()
+                            mutable.value =
+                                WorkflowState(enabled = false, offline = mutable.value.offline)
+                            null
+                        }
+                        true -> {
+                            mutable.value = mutable.value.copy(enabled = true)
+                            if (!detailRefreshed) {
+                                detailRefreshed = true
+                                selected?.let(::loadDetail)
+                            }
+                            loadCatalog()
+                        }
+                        null -> {
+                            val error = enabled.exceptionOrNull()
+                            if (error.denied()) {
+                                clearAccess()
+                                null
+                            } else error
+                        }
                     }
                 }
             }
     }
 
-    private suspend fun loadCatalog() = coroutineScope {
+    private suspend fun loadCatalog(): Throwable? = coroutineScope {
         val catalog = async { read { service.workflows().filter { it.official == null } } }
         val rules = async {
             read { service.workflowAutomations().groupBy({ it.workflow.id }, { it.automation }) }
         }
         val accounts = async { read { service.workflowConnections() } }
         val workflows = catalog.await()
-        if (!authorized()) return@coroutineScope
-        if (workflows.exceptionOrNull().denied()) {
-            clearAccess()
+        if (!authorized()) return@coroutineScope null
+        val catalogError = workflows.exceptionOrNull()
+        if (catalogError != null) {
             rules.cancel()
             accounts.cancel()
-            return@coroutineScope
+            if (catalogError.denied()) {
+                clearAccess()
+                return@coroutineScope null
+            }
+            return@coroutineScope catalogError
         }
-        mutable.value =
-            mutable.value.copy(
-                catalog = workflows.getOrNull() ?: mutable.value.catalog,
-                catalogFailed = workflows.isFailure,
-            )
+        mutable.value = mutable.value.copy(catalog = workflows.getOrThrow())
         val automationRules = rules.await()
         val connections = accounts.await()
-        if (!authorized()) return@coroutineScope
+        if (!authorized()) return@coroutineScope null
+        val failure =
+            listOfNotNull(automationRules.exceptionOrNull(), connections.exceptionOrNull())
+                .maxByOrNull { it.retryAfterMillis() ?: -1L }
         val current = mutable.value
         mutable.value =
             current.copy(
-                rules = automationRules.getOrNull() ?: current.rules,
-                connections = connections.getOrNull() ?: current.connections,
-                catalogFailed =
-                    workflows.isFailure || automationRules.isFailure || connections.isFailure,
+                rules =
+                    if (automationRules.exceptionOrNull().denied()) null
+                    else automationRules.getOrNull() ?: current.rules,
+                connections =
+                    if (connections.exceptionOrNull().denied()) null
+                    else connections.getOrNull() ?: current.connections,
+                catalogFailure = if (failure == null) null else current.catalogFailure,
             )
+        failure
     }
 
     private fun clearAccess() {
@@ -165,8 +186,10 @@ internal constructor(
                 rules = null,
                 connections = null,
                 detail = null,
-                catalogFailed = true,
-                detailFailure = WorkflowDetailFailure.Unavailable,
+                catalogFailure = WorkflowReadFailure.Unavailable,
+                detailFailure = WorkflowReadFailure.Unavailable,
+                editor = null,
+                issue = null,
             )
     }
 
@@ -183,32 +206,71 @@ internal constructor(
             return
         detailLoad =
             viewModelScope.launch {
-                val response = read {
-                    service.workflow(id).also {
-                        if (it.id != id) throw ApiFailure.IncompatibleResponse()
+                retryReads({ mutable.value = mutable.value.copy(detailFailure = it) }) {
+                    val response = read {
+                        service.workflow(id).also {
+                            if (it.id != id) throw ApiFailure.IncompatibleResponse()
+                        }
                     }
-                }
-                if (!authorized() || selected != id) return@launch
-                val detail = response.getOrNull()
-                val error = response.exceptionOrNull()
-                when {
-                    error.denied() ||
-                        (error as? ApiFailure.Http)?.status == 404 ||
-                        detail?.official != null -> {
-                        val current = mutable.value
-                        mutable.value =
-                            current.copy(
-                                catalog = current.catalog?.filterNot { it.id == id },
-                                detail = null,
-                                detailFailure = WorkflowDetailFailure.Unavailable,
-                            )
+                    if (!authorized() || selected != id) return@retryReads null
+                    val detail = response.getOrNull()
+                    val error = response.exceptionOrNull()
+                    when {
+                        error.denied() ||
+                            (error as? ApiFailure.Http)?.status == 404 ||
+                            detail?.official != null -> {
+                            val current = mutable.value
+                            mutable.value =
+                                current.copy(
+                                    catalog = current.catalog?.filterNot { it.id == id },
+                                    detail = null,
+                                    detailFailure = WorkflowReadFailure.Unavailable,
+                                    editor = null,
+                                    issue = null,
+                                )
+                            null
+                        }
+                        detail != null -> {
+                            publishDetail(detail)
+                            null
+                        }
+                        else -> error
                     }
-                    detail != null -> publishDetail(detail)
-                    else ->
-                        mutable.value =
-                            mutable.value.copy(detailFailure = WorkflowDetailFailure.CouldNotLoad)
                 }
             }
+    }
+
+    private suspend fun retryReads(
+        publishFailure: (WorkflowReadFailure) -> Unit,
+        attempt: suspend () -> Throwable?,
+    ) = coroutineScope {
+        var failures = 0
+        var firstFailureAt = 0L
+        var notice: Job? = null
+        try {
+            while (authorized()) {
+                val error = attempt() ?: break
+                val retryAfter = error.retryAfterMillis()
+                if (retryAfter == null) {
+                    publishFailure(WorkflowReadFailure.RefreshFailed)
+                    break
+                }
+                if (failures == 0) {
+                    firstFailureAt = monotonicMillis()
+                    publishFailure(WorkflowReadFailure.CouldNotLoad)
+                }
+                if (failures == 2) {
+                    notice = launch {
+                        delay((30_000L - (monotonicMillis() - firstFailureAt)).coerceAtLeast(0))
+                        if (authorized()) publishFailure(WorkflowReadFailure.RefreshFailed)
+                    }
+                }
+                delay(maxOf(workflowRetryDelays[failures], retryAfter))
+                failures = (failures + 1).coerceAtMost(workflowRetryDelays.lastIndex)
+            }
+        } finally {
+            notice?.cancel()
+        }
     }
 
     internal fun updateInstructions(request: UpdateWorkflowRequest) = mutate { before ->
@@ -246,13 +308,19 @@ internal constructor(
         }
     }
 
-    private fun changeRule(id: String, change: suspend () -> WorkflowAutomation) =
+    private fun changeRule(id: String, change: suspend () -> WorkflowAutomation) {
+        val current = mutable.value
+        if (current.detail?.automations?.none { it.id == id && it.official == null } == true) {
+            if (authorized() && !current.writing)
+                mutable.value = current.copy(issue = WorkflowWriteIssue.Failed)
+            return
+        }
         mutate { detail ->
-            if (detail.automations.none { it.id == id && it.official == null }) return@mutate
             val confirmed = change()
             if (confirmed.id != id) throw ApiFailure.IncompatibleResponse()
             publishRules(detail, detail.automations.map { if (it.id == id) confirmed else it })
         }
+    }
 
     private fun mutate(creating: Boolean = false, action: suspend (WorkflowDetail) -> Unit) {
         val state = mutable.value
@@ -267,6 +335,7 @@ internal constructor(
                 detail.id != selected
         )
             return
+        refreshAfterWrite = catalogLoad?.isActive == true || detailLoad?.isActive == true
         catalogLoad?.cancel()
         detailLoad?.cancel()
         mutable.value = state.copy(writing = true, issue = null)
@@ -293,7 +362,9 @@ internal constructor(
             } finally {
                 if (authorized()) {
                     mutable.value = mutable.value.copy(writing = false)
-                    if (mutable.value.issue != null) refresh()
+                    val refreshNeeded = refreshAfterWrite || mutable.value.issue != null
+                    refreshAfterWrite = false
+                    if (refreshNeeded) refresh()
                 }
             }
         }
@@ -326,10 +397,13 @@ internal constructor(
 
     private suspend fun <T> read(block: suspend () -> T): Result<T> =
         try {
-            Result.success(block())
+            val value = block()
+            currentCoroutineContext().ensureActive()
+            Result.success(value)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
+            currentCoroutineContext().ensureActive()
             if (authorized()) reportSessionFailure(error)
             Result.failure(error)
         }
@@ -344,5 +418,18 @@ internal constructor(
     }
 }
 
+private val workflowRetryDelays = listOf(5_000L, 10_000L, 20_000L, 40_000L, 60_000L)
+
 private fun Throwable?.denied() =
-    this is ApiFailure.Unauthenticated || this is ApiFailure.Http && status in setOf(401, 403)
+    this is ApiFailure.Unauthenticated ||
+        this is ApiFailure.Http && (status == 401 || status == 403)
+
+private fun Throwable.retryAfterMillis(): Long? =
+    when (this) {
+        is ApiFailure.Network -> 0L
+        is ApiFailure.Http ->
+            if (status == 408 || status == 429 || status in 500..599)
+                (retryAfterSeconds ?: 0L).coerceIn(0, Long.MAX_VALUE / 1_000) * 1_000
+            else null
+        else -> null
+    }

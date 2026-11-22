@@ -5,9 +5,10 @@ import ai.okou.android.R
 import ai.okou.android.WorkspaceSearchField
 import ai.okou.android.api.generated.WorkflowAutomation
 import ai.okou.android.api.generated.WorkflowDetail
+import ai.okou.android.api.generated.WorkflowDetailVisibility
 import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.api.generated.WorkflowSummaryVisibility
-import ai.okou.android.chat.ChatListSkeleton
+import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.chat.rememberChatWaitIndicator
 import ai.okou.android.state.ChatSearchState
 import ai.okou.android.state.WorkflowScope
@@ -17,6 +18,7 @@ import ai.okou.android.workspaceSearchTextStyle
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,6 +48,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -79,10 +82,12 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -204,14 +209,16 @@ internal fun WorkflowScreen(
                     )
                 when {
                     route.id == null -> WorkflowPlaceholder(R.string.workflow_select)
-                    detail == null && state.detailFailure == WorkflowDetailFailure.Unavailable ->
+                    state.enabled == false ||
+                        state.detailFailure == WorkflowReadFailure.Unavailable ->
                         WorkflowPlaceholder(R.string.workflow_unavailable)
                     detail == null && state.offline ->
                         WorkflowPlaceholder(R.string.workflow_offline)
                     detail == null && state.detailFailure != null ->
                         WorkflowPlaceholder(R.string.workflow_load_failed)
-                    detail == null -> WorkflowSkeleton()
-                    editor != null -> WorkflowEditor(detail, editor, state, model, ::exitEditor)
+                    detail == null -> WorkflowSkeleton(directory = false)
+                    editor != null ->
+                        WorkflowEditor(detail, editor, state, model, wide, ::exitEditor)
                     else ->
                         WorkflowDetailPane(
                             detail = detail,
@@ -301,7 +308,11 @@ private fun WorkflowDirectory(
         WorkflowToolbar(stringResource(R.string.workspace_workflows), onBack) {
             TextButton(
                 onClick = onCreate,
-                enabled = canNavigate && state.enabled == true && !state.offline,
+                enabled =
+                    canNavigate &&
+                        state.enabled == true &&
+                        !state.offline &&
+                        state.catalogFailure != WorkflowReadFailure.Unavailable,
                 modifier = Modifier.heightIn(min = 48.dp).testTag("workflow_create"),
                 colors =
                     ButtonDefaults.textButtonColors(
@@ -314,7 +325,7 @@ private fun WorkflowDirectory(
                 Text(stringResource(R.string.workflow_new), style = workflowSmallStyle())
             }
         }
-        if (state.enabled == false) {
+        if (state.enabled == false || state.catalogFailure == WorkflowReadFailure.Unavailable) {
             WorkflowPlaceholder(R.string.workflow_unavailable)
             return@Column
         }
@@ -353,34 +364,37 @@ private fun WorkflowDirectory(
             }
         }
         if (handoffFailed) WorkflowNotice(R.string.workflow_draft_unavailable)
-        when {
-            state.catalog == null && state.offline -> WorkflowPlaceholder(R.string.workflow_offline)
-            state.catalog == null && state.catalogFailed ->
-                WorkflowPlaceholder(R.string.workflow_load_failed)
-            state.catalog == null -> WorkflowSkeleton()
-            rows.isEmpty() -> WorkflowEmpty(route.scope, text, query::reset, onScope)
-            else -> {
-                if (state.offline) WorkflowNotice(R.string.workflow_offline_cache)
-                else if (state.catalogFailed) WorkflowNotice(R.string.workflow_refresh_failed)
-                LazyColumn(
-                    Modifier.widthIn(max = 730.dp).fillMaxWidth().weight(1f),
-                    state = query.position,
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp),
-                ) {
-                    items(rows, key = { it.id }) { row ->
-                        WorkflowRow(
-                            row,
-                            state.rules?.get(row.id) ?: state.rules?.let { emptyList() },
-                            state.connections,
-                            row.id == route.id,
-                            canNavigate,
-                            row.id == restoreRow,
-                            onRowRestored,
-                            onSelect = { onSelect(row.id) },
-                        )
+        Box(Modifier.weight(1f).widthIn(max = 730.dp).fillMaxWidth()) {
+            when {
+                state.catalog == null && state.offline ->
+                    WorkflowPlaceholder(R.string.workflow_offline)
+                state.catalog == null && state.catalogFailure != null ->
+                    WorkflowPlaceholder(R.string.workflow_load_failed)
+                state.catalog == null -> WorkflowSkeleton(directory = true)
+                rows.isEmpty() -> WorkflowEmpty(route.scope, text, query::reset, onScope)
+                else ->
+                    LazyColumn(
+                        Modifier.fillMaxSize(),
+                        state = query.position,
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp),
+                    ) {
+                        items(rows, key = { it.id }) { row ->
+                            WorkflowRow(
+                                row,
+                                state.rules?.get(row.id) ?: state.rules?.let { emptyList() },
+                                state.connections,
+                                row.id == route.id,
+                                canNavigate,
+                                row.id == restoreRow,
+                                onRowRestored,
+                                onSelect = { onSelect(row.id) },
+                            )
+                        }
                     }
-                }
             }
+        }
+        if (state.catalog != null) {
+            WorkflowReadFeedback(state.offline, state.catalogFailure)
         }
     }
 }
@@ -411,6 +425,7 @@ private fun WorkflowQuery(query: ChatSearchState) {
     val name = stringResource(R.string.workflow_search)
     val requester = remember { FocusRequester() }
     var focused by remember { mutableStateOf(false) }
+    val keyboard = LocalSoftwareKeyboardController.current
     val colors = MaterialTheme.colorScheme
     val style = workspaceSearchTextStyle()
     BasicTextField(
@@ -426,6 +441,7 @@ private fun WorkflowQuery(query: ChatSearchState) {
         singleLine = true,
         cursorBrush = SolidColor(colors.onBackground),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
         decorationBox = { input ->
             WorkspaceSearchField(
                 Modifier.fillMaxWidth(),
@@ -449,6 +465,7 @@ private fun WorkflowQuery(query: ChatSearchState) {
                         onClick = {
                             query.reset()
                             requester.requestFocus()
+                            keyboard?.show()
                         }
                     ) {
                         Icon(
@@ -621,9 +638,6 @@ private fun WorkflowDetailPane(
         ) {
             item(key = "header") { WorkflowDetailHeader(detail) }
             stickyHeader(key = "tabs") { WorkflowTabs(tab, onTab) }
-            if (state.offline) item { WorkflowNotice(R.string.workflow_offline_cache) }
-            else if (state.detailFailure == WorkflowDetailFailure.CouldNotLoad)
-                item { WorkflowNotice(R.string.workflow_refresh_failed) }
             when (tab) {
                 WorkflowTab.Instructions ->
                     item {
@@ -679,6 +693,7 @@ private fun WorkflowDetailPane(
                 }
             }
         }
+        WorkflowReadFeedback(state.offline, state.detailFailure)
         WorkflowDivider()
         val unavailable =
             detail.shadowedBy != null || handoffPending || state.writing || state.offline
@@ -735,7 +750,8 @@ private fun WorkflowDetailHeader(detail: WorkflowDetail) {
             WorkflowSecondary(
                 stringResource(
                     when {
-                        detail.visibility.name == "PRIVATE" -> R.string.workflow_private
+                        detail.visibility == WorkflowDetailVisibility.PRIVATE ->
+                            R.string.workflow_private
                         detail.canManage -> R.string.workflow_shared_manageable
                         else -> R.string.workflow_shared_usable
                     }
@@ -778,6 +794,9 @@ private fun WorkflowTabs(current: WorkflowTab, pick: (WorkflowTab) -> Unit) {
                                     lineHeight = 20.sp,
                                     fontWeight = FontWeight(550),
                                 ),
+                            color =
+                                if (chosen) MaterialTheme.colorScheme.onBackground
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
                         )
                         Box(
@@ -898,12 +917,62 @@ private fun WorkflowPlaceholder(label: Int) {
 }
 
 @Composable
-private fun WorkflowSkeleton() {
+private fun WorkflowSkeleton(directory: Boolean) {
     if (rememberChatWaitIndicator(true)) {
-        Box(Modifier.fillMaxWidth().padding(16.dp).testTag("workflow_loading")) {
-            ChatListSkeleton()
+        val label = stringResource(R.string.workspace_workflows)
+        Column(
+            Modifier.fillMaxWidth().padding(16.dp).testTag("workflow_loading").semantics {
+                contentDescription = label
+                progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate
+            }
+        ) {
+            if (directory) {
+                repeat(5) {
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        ChatSkeletonBlock(Modifier.size(40.dp), 12.dp)
+                        Column(
+                            Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            ChatSkeletonBlock(Modifier.fillMaxWidth(.7f).height(14.dp))
+                            ChatSkeletonBlock(Modifier.fillMaxWidth(.5f).height(14.dp))
+                        }
+                    }
+                }
+            } else {
+                ChatSkeletonBlock(Modifier.fillMaxWidth(.6f).height(24.dp))
+                Spacer(Modifier.height(12.dp))
+                ChatSkeletonBlock(Modifier.fillMaxWidth(.8f).height(14.dp))
+            }
         }
     }
+}
+
+@Composable
+private fun WorkflowReadFeedback(offline: Boolean, failure: WorkflowReadFailure?) {
+    val label =
+        when {
+            offline -> R.string.workflow_offline_cache
+            failure == WorkflowReadFailure.RefreshFailed -> R.string.workflow_refresh_failed
+            else -> return
+        }
+    val shape = RoundedCornerShape(12.dp)
+    Text(
+        stringResource(label),
+        Modifier.widthIn(max = 480.dp)
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .heightIn(min = 48.dp)
+            .background(MaterialTheme.colorScheme.surface, shape)
+            .border(1.dp, MaterialTheme.colorScheme.outline, shape)
+            .padding(12.dp)
+            .semantics { liveRegion = LiveRegionMode.Polite },
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = workflowBodyStyle().copy(fontSize = 14.sp, lineHeight = 20.sp),
+    )
 }
 
 @Composable

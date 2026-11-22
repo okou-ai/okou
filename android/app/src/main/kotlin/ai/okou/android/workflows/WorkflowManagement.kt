@@ -17,12 +17,15 @@ import ai.okou.android.api.generated.WorkflowAutomationVariant3
 import ai.okou.android.api.generated.WorkflowAutomationVariant4
 import ai.okou.android.api.generated.WorkflowDetail
 import ai.okou.android.chat.chatTime
+import ai.okou.android.state.rememberJournalEditor
 import android.icu.text.TimeZoneNames
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,13 +39,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -53,18 +57,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import java.text.DateFormat
 import java.util.Date
 import java.util.TimeZone
@@ -97,6 +106,9 @@ internal fun WorkflowRuleRow(
     val editable = remember(rule, timezone) { rule.editableRule(timezone) }
     val uriHandler = LocalUriHandler.current
     var couldNotOpen by remember(rule.id) { mutableStateOf(false) }
+    fun viewConnections() {
+        couldNotOpen = !openWorkflowConnections(uriHandler)
+    }
     Column(
         Modifier.fillMaxWidth().padding(vertical = 12.dp).testTag("workflow_rule_${rule.id}"),
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -133,28 +145,28 @@ internal fun WorkflowRuleRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (connectionRequired)
+                if (connectionRequired && rule.enabled)
                     WorkflowAction(
                         stringResource(R.string.workflow_view_connection),
-                        {
-                            couldNotOpen =
-                                try {
-                                    uriHandler.openUri("${BuildConfig.WEB_ORIGIN}/connectors")
-                                    false
-                                } catch (_: IllegalArgumentException) {
-                                    true
-                                }
-                        },
+                        ::viewConnections,
                     )
-                if (rule.enabled || !connectionRequired)
-                    WorkflowAction(
-                        stringResource(
-                            if (rule.enabled) R.string.workflow_pause else R.string.workflow_enable
-                        ),
-                        { if (!state.writing) onToggle(rule) },
-                        enabled = !state.offline,
-                        modifier = Modifier.testTag("workflow_toggle_${rule.id}"),
-                    )
+                val needsRecovery = connectionRequired && !rule.enabled
+                WorkflowAction(
+                    stringResource(
+                        when {
+                            rule.enabled -> R.string.workflow_pause
+                            needsRecovery -> R.string.workflow_view_connection
+                            else -> R.string.workflow_enable
+                        }
+                    ),
+                    {
+                        if (needsRecovery) viewConnections() else if (!state.writing) onToggle(rule)
+                    },
+                    enabled = needsRecovery || !state.offline,
+                    modifier =
+                        if (needsRecovery) Modifier
+                        else Modifier.testTag("workflow_toggle_${rule.id}"),
+                )
                 if (editable != null)
                     WorkflowAction(
                         stringResource(R.string.workflow_edit),
@@ -278,9 +290,21 @@ internal fun WorkflowEditor(
     editor: WorkflowEdit,
     state: WorkflowState,
     model: WorkflowModel,
+    wide: Boolean,
     onCancel: () -> Unit,
 ) {
+    val horizontalPadding = if (wide) 32.dp else 20.dp
     val available = !state.writing && detail.canManage
+    val uriHandler = LocalUriHandler.current
+    var couldNotOpen by remember { mutableStateOf(false) }
+    val connectionRequired =
+        (editor as? WorkflowEdit.Rule)?.let { rule ->
+            val existing = detail.automations.firstOrNull { it.id == rule.id }
+            rule.value.trigger.source.takeIf {
+                it.needsConnection(state.connections) ||
+                    existing?.needsConnection(state.connections) == true
+            }
+        }
     val canSave =
         when (editor) {
             is WorkflowEdit.Instructions -> editor.changed && editor.value.valid
@@ -292,7 +316,7 @@ internal fun WorkflowEditor(
                 .fillMaxWidth()
                 .weight(1f)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 16.dp),
+                .padding(horizontal = horizontalPadding, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             val heading =
@@ -332,7 +356,7 @@ internal fun WorkflowEditor(
         Column(
             Modifier.widthIn(max = 730.dp)
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 8.dp),
+                .padding(horizontal = horizontalPadding, vertical = 8.dp),
             horizontalAlignment = Alignment.End,
         ) {
             when {
@@ -341,10 +365,27 @@ internal fun WorkflowEditor(
                     WorkflowNotice(R.string.workflow_create_uncertain)
                 state.issue != null -> WorkflowNotice(R.string.workflow_write_failed)
             }
+            if (connectionRequired != null && !state.offline) {
+                WorkflowStatus(
+                    stringResource(
+                        R.string.workflow_status_connection,
+                        stringResource(connectionRequired.label),
+                    ),
+                    MaterialTheme.colorScheme.error,
+                )
+            }
+            if (couldNotOpen) WorkflowNotice(R.string.workflow_connection_unavailable)
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                if (connectionRequired != null && !state.offline) {
+                    WorkflowAction(
+                        stringResource(R.string.workflow_view_connection),
+                        { couldNotOpen = !openWorkflowConnections(uriHandler) },
+                        enabled = !state.writing,
+                    )
+                }
                 WorkflowAction(
                     stringResource(R.string.workflow_cancel),
                     onCancel,
@@ -367,6 +408,7 @@ internal fun WorkflowEditor(
                         available &&
                             canSave &&
                             !state.offline &&
+                            connectionRequired == null &&
                             state.issue != WorkflowWriteIssue.UncertainCreate,
                     modifier = Modifier.testTag("workflow_save"),
                 )
@@ -374,6 +416,14 @@ internal fun WorkflowEditor(
         }
     }
 }
+
+private fun openWorkflowConnections(uriHandler: UriHandler): Boolean =
+    try {
+        uriHandler.openUri("${BuildConfig.WEB_ORIGIN}/connectors")
+        true
+    } catch (_: IllegalArgumentException) {
+        false
+    }
 
 @Composable
 private fun WorkflowRuleFields(
@@ -447,17 +497,54 @@ private fun WorkflowField(
     singleLine: Boolean = true,
     onChange: (String) -> Unit,
 ) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
-        modifier = Modifier.fillMaxWidth(),
-        enabled = enabled,
-        singleLine = singleLine,
-        minLines = if (singleLine) 1 else 4,
-        textStyle = workflowBodyStyle(),
-        shape = RoundedCornerShape(12.dp),
-        label = { Text(stringResource(label)) },
-    )
+    val title = stringResource(label)
+    val input = rememberJournalEditor(value, target = label)
+    val interactions = remember { MutableInteractionSource() }
+    val colors = MaterialTheme.colorScheme
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        WorkflowFieldLabel(title)
+        BasicTextField(
+            value = input.value,
+            onValueChange = {
+                input.edit(it)
+                if (it.text != value) onChange(it.text)
+            },
+            modifier =
+                Modifier.fillMaxWidth()
+                    .heightIn(min = if (singleLine) 56.dp else 112.dp)
+                    .semantics { contentDescription = title },
+            readOnly = !enabled,
+            singleLine = singleLine,
+            maxLines = if (singleLine) 1 else 8,
+            textStyle = workflowBodyStyle().copy(color = colors.onBackground),
+            cursorBrush = SolidColor(colors.onBackground),
+            interactionSource = interactions,
+            decorationBox = { inner ->
+                OutlinedTextFieldDefaults.DecorationBox(
+                    value = value,
+                    innerTextField = inner,
+                    enabled = true,
+                    singleLine = singleLine,
+                    visualTransformation = VisualTransformation.None,
+                    interactionSource = interactions,
+                    contentPadding = PaddingValues(12.dp),
+                    container = {
+                        OutlinedTextFieldDefaults.Container(
+                            enabled = true,
+                            isError = false,
+                            interactionSource = interactions,
+                            shape = RoundedCornerShape(12.dp),
+                        )
+                    },
+                )
+            },
+        )
+    }
+}
+
+@Composable
+private fun WorkflowFieldLabel(title: String) {
+    Text(title, style = workflowBodyStyle().copy(fontSize = 14.sp, lineHeight = 20.sp))
 }
 
 @Composable
@@ -470,10 +557,15 @@ private fun WorkflowChoice(
 ) {
     var expanded by remember { mutableStateOf(false) }
     Column {
-        Text(stringResource(label), style = workflowSmallStyle())
+        WorkflowFieldLabel(stringResource(label))
         Spacer(Modifier.height(8.dp))
         Box {
-            WorkflowAction(current, { expanded = true }, Modifier.fillMaxWidth(), enabled)
+            WorkflowAction(
+                current,
+                { expanded = true },
+                Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                enabled,
+            )
             DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
                 options.forEachIndexed { index, option ->
                     DropdownMenuItem(
@@ -494,12 +586,12 @@ private fun WorkflowTimezone(current: String, enabled: Boolean, pick: (String) -
     var expanded by remember { mutableStateOf(false) }
     val title = stringResource(R.string.workflow_timezone)
     Column {
-        Text(title, style = workflowSmallStyle())
+        WorkflowFieldLabel(title)
         Spacer(Modifier.height(8.dp))
         WorkflowAction(
             timezoneLabel(current),
             { expanded = true },
-            Modifier.fillMaxWidth(),
+            Modifier.fillMaxWidth().heightIn(min = 56.dp),
             enabled,
         )
     }

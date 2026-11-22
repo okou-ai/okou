@@ -171,6 +171,7 @@ internal fun OkouApp(
     val editing =
         searchActive ||
             settings == SettingsDestination.Instructions ||
+            (showWorkflows && workflowState?.editor != null) ||
             (settings == null && (target is WorkspaceTarget.NewChat || composerFocused))
     DisposableEffect(editing) {
         onUpdateEditingChanged(editing)
@@ -234,6 +235,12 @@ internal fun OkouApp(
         handoff = null
         workflowRoute = WorkflowsRoute()
         workflows?.select(null)
+    }
+
+    fun leaveWorkflowChat() {
+        if (!chatFromWorkflows) return
+        restoreWorkflowFocus = false
+        closeWorkflows()
     }
 
     fun returnToList() {
@@ -330,6 +337,7 @@ internal fun OkouApp(
     }
 
     fun openProvisionalChat(chat: ProvisionalChat) {
+        leaveWorkflowChat()
         val draft = composer?.uiState?.value?.entry(ComposerTarget(projectId = chat.projectId))
         val destination =
             if (
@@ -342,6 +350,7 @@ internal fun OkouApp(
 
     fun startNewChat(projectId: String?) {
         val activeComposer = composer?.takeIf { workspaceReady } ?: return
+        leaveWorkflowChat()
         activeComposer.beginNew(projectId)
         conversations.open(ComposerTarget(projectId = projectId).key)
         val search =
@@ -430,12 +439,19 @@ internal fun OkouApp(
     val provisionalId = pendingId ?: createdId
     val provisionalChat =
         provisionalId?.let { id -> list.threads.firstOrNull { it.id == id && it.hidden != true } }
+    val needsWorkflowSourceChats =
+        showWorkflows &&
+            workflowRoute.tab == WorkflowTab.History &&
+            workflowState?.detail?.automations?.any {
+                it.lastRunAt != null && it.chatThreadId != null
+            } == true
     val needsChatList =
-        settings == null &&
-            !showWorkflows &&
-            (showList ||
-                (provisionalId != null && provisionalChat == null) ||
-                (target is WorkspaceTarget.Chat && thread == null))
+        needsWorkflowSourceChats ||
+            (settings == null &&
+                !showWorkflows &&
+                (showList ||
+                    (provisionalId != null && provisionalChat == null) ||
+                    (target is WorkspaceTarget.Chat && thread == null)))
     DisposableEffect(chats, needsChatList, showChatList) {
         chats?.listVisibilityChanged(needsChatList, showingFilter = showChatList)
         onDispose { chats?.listVisibilityChanged(false) }
@@ -451,16 +467,19 @@ internal fun OkouApp(
     }
 
     fun back() {
-        if (chatFromWorkflows) {
-            navigation = workflowOrigin
-            workflowRoute = workflowRoute.copy(mode = WorkflowsMode.Directory)
-            return
-        }
         when (settings) {
             SettingsDestination.Instructions ->
                 navigation = navigation.copy(settings = SettingsDestination.Overview)
             SettingsDestination.Overview -> navigation = navigation.copy(settings = null)
-            null -> if (navigation.search == SearchRoute.Open) closeSearch() else returnToList()
+            null ->
+                when {
+                    navigation.search == SearchRoute.Open -> closeSearch()
+                    chatFromWorkflows -> {
+                        navigation = workflowOrigin
+                        workflowRoute = workflowRoute.copy(mode = WorkflowsMode.Directory)
+                    }
+                    else -> returnToList()
+                }
         }
     }
 
@@ -616,12 +635,17 @@ internal fun OkouApp(
                         onWorkflowsFocusChanged = { workflowEntryFocused = it },
                     )
             }
-            LaunchedEffect(Unit) {
+            LaunchedEffect(chatFromWorkflows) {
                 if (restoreSearchFocus) {
                     restoreSearchFocus = false
                     searchEntryFocus.requestFocus()
                 }
-                if (restoreWorkflowFocus && workflows != null && workflowState?.enabled != false) {
+                if (
+                    restoreWorkflowFocus &&
+                        !chatFromWorkflows &&
+                        workflows != null &&
+                        workflowState?.enabled != false
+                ) {
                     restoreWorkflowFocus = false
                     workflowsFocus.requestFocus()
                 }
@@ -712,7 +736,10 @@ internal fun OkouApp(
                                     onFocused = { focusSearch = false },
                                     onClose = ::closeSearch,
                                     retry = chats::retryList,
-                                    onOpen = { openChat(it, fromSearch = true) },
+                                    onOpen = {
+                                        leaveWorkflowChat()
+                                        openChat(it, fromSearch = true)
+                                    },
                                 )
                             } else {
                                 if (listWidth != null) listToolbar()
@@ -721,7 +748,11 @@ internal fun OkouApp(
                                     { chats?.retryList() },
                                     { chats?.refreshMetadata() },
                                     { chats?.refreshIndicators() },
-                                    ::openChat,
+                                    {
+                                        if (target != WorkspaceTarget.Chat(it.id))
+                                            leaveWorkflowChat()
+                                        openChat(it)
+                                    },
                                     provisionalChats,
                                     ::openProvisionalChat,
                                     { id, action ->
