@@ -259,12 +259,22 @@ class ChatReplayTest {
         assertTrue(ChatRowAction.Unpin in actions)
         assertFalse(ChatRowAction.MovePinUp in actions)
         assertFalse(ChatRowAction.MovePinDown in actions)
-        val visible = projectGroup.copy(threads = listOf(member, hidden.copy(hidden = false)))
-        assertTrue(ChatRowAction.MovePinDown in state.rowActions(member, visible, 0))
-        assertFalse(
-            ChatRowAction.MovePinDown in
-                state.copy(filter = ChatListFilter.Muted).rowActions(member, visible, 0)
+
+        val mutedMember = member.copy(muted = true)
+        val mutedPeer = hidden.copy(id = "muted-peer", hidden = false, muted = true)
+        val mutedState =
+            state.copy(
+                threads = listOf(mutedMember, hidden, archived, mutedPeer, outside),
+                filter = ChatListFilter.Muted,
+            )
+        val mutedGroup = chatListGroups(mutedState).single { it.projectId == CHAT_PROJECT }
+        assertEquals(listOf(mutedMember, mutedPeer), mutedGroup.threads)
+        assertEquals(
+            listOf(mutedMember, hidden, archived, mutedPeer),
+            mutedGroup.rankScope(mutedState),
         )
+        assertTrue(ChatRowAction.MovePinDown in mutedState.rowActions(mutedMember, mutedGroup, 0))
+        assertTrue(ChatRowAction.MovePinUp in mutedState.rowActions(mutedPeer, mutedGroup, 1))
     }
 
     @Test
