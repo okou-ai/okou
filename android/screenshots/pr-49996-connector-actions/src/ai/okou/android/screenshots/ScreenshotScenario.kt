@@ -21,6 +21,7 @@ import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.Direction
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -58,9 +59,29 @@ class ScreenshotScenario {
 
         fun text(label: String) = find(By.pkg(app.packageName).text(label), label)
         fun description(label: String) = find(By.pkg(app.packageName).desc(label), label)
-        fun enabled(label: String) = find(By.pkg(app.packageName).text(label).enabled(true), label)
-        fun touchTarget(node: UiObject2): UiObject2 =
-            generateSequence(node) { it.parent }.first { it.isClickable }
+        fun touchTarget(node: UiObject2): UiObject2? =
+            generateSequence(node) { it.parent }.firstOrNull { it.isClickable }
+
+        fun action(label: String, enabled: Boolean = true): UiObject2 =
+            checkNotNull(
+                device.wait(
+                    object : Condition<UiDevice, UiObject2?> {
+                        override fun apply(device: UiDevice): UiObject2? =
+                            device
+                                .findObjects(By.pkg(app.packageName).text(label))
+                                .firstNotNullOfOrNull { text ->
+                                    try {
+                                        touchTarget(text)?.takeIf { it.isEnabled == enabled }
+                                    } catch (_: StaleObjectException) {
+                                        null
+                                    }
+                                }
+                    },
+                    12_000,
+                )
+            ) {
+                "Missing action $label with enabled=$enabled"
+            }
 
         fun capture(name: String) {
             device.waitForIdle()
@@ -87,10 +108,7 @@ class ScreenshotScenario {
             )
         }
         fun edit(label: String, value: String) {
-            val input =
-                By.pkg(app.packageName)
-                    .clazz("android.widget.EditText")
-                    .hasDescendant(By.desc(label))
+            val input = By.pkg(app.packageName).clazz("android.widget.EditText")
             find(input, label).click()
             find(input.focused(true), "focused $label").text = value
             find(input.text(value), "entered $label")
@@ -136,45 +154,45 @@ class ScreenshotScenario {
                             text("Google Calendar")
                             val filterIcon = description("筛选服务类别")
                             assertEquals(24, filterIcon.visibleBounds.width())
-                            val filter = touchTarget(filterIcon).visibleBounds
+                            val filter = checkNotNull(touchTarget(filterIcon)).visibleBounds
                             assertEquals(48, filter.width())
                             assertEquals(48, filter.height())
                             capture("discover-phone.png")
 
                             text("Google Calendar").click()
-                            enabled("添加账号")
+                            action("添加账号")
                             setOnline(false)
                             text("calendar@example.com").click()
                             switch(true)
-                            enabled("重命名").click()
+                            action("重命名").click()
                             edit("账号名称", "会议日历")
-                            val ready = enabled("保存")
-                            assertTrue(touchTarget(ready).visibleBounds.height() >= 48)
+                            val ready = action("保存")
+                            assertTrue(ready.visibleBounds.height() >= 48)
                             assertFalse(device.hasObject(By.text(networkFailure)))
                             capture("rename-ready-phone.png")
                             fixture.rejectConnection = true
-                            enabled("保存").click()
+                            action("保存").click()
                             text(networkFailure)
                             text("会议日历")
-                            enabled("保存")
+                            action("保存")
                             assertEquals(0, fixture.renameRequests.get())
                             capture("rename-network-failure-phone.png")
 
                             fixture.rejectConnection = false
                             fixture.loseRenameReply = true
-                            enabled("保存").click()
+                            action("保存").click()
                             text(pending)
-                            find(By.pkg(app.packageName).text("保存").enabled(false), "pending Save")
+                            action("保存", enabled = false)
                             assertEquals(1, fixture.renameRequests.get())
                             capture("rename-unconfirmed-phone.png")
                             setOnline(true)
-                            enabled("重命名")
+                            action("重命名")
                             text("会议日历")
                             assertEquals(1, fixture.renameRequests.get())
 
                             setOnline(false)
                             fixture.rejectConnection = true
-                            enabled("断开账号").click()
+                            action("断开账号").click()
                             text("断开此账号？")
                             text(networkFailure)
                             capture("disconnect-impact-network-failure-phone.png")
@@ -182,33 +200,33 @@ class ScreenshotScenario {
                             setOnline(true)
                             text("2 个聊天明确选择了此账号。")
                             capture("disconnect-confirmation-phone.png")
-                            enabled("取消").click()
+                            action("取消").click()
                             switch(true)
                             device.pressBack()
-                            enabled("添加账号")
+                            action("添加账号")
                             description("返回").click()
 
                             description("筛选服务类别").click()
-                            enabled("开发者工具").click()
+                            action("开发者工具").click()
                             text("Device authorization sample").click()
-                            enabled("连接账号").click()
-                            enabled("前往服务方").click()
+                            action("连接账号").click()
+                            action("前往服务方").click()
                             text(CONNECTOR_EXAMPLE_DEVICE_CODE)
-                            val provider = enabled("前往服务方")
-                            assertTrue(touchTarget(provider).visibleBounds.height() >= 48)
+                            val provider = action("前往服务方")
+                            assertTrue(provider.visibleBounds.height() >= 48)
                             capture("device-authorization-phone.png")
-                            enabled("取消").click()
-                            enabled("连接账号")
+                            action("取消").click()
+                            action("连接账号")
                             description("返回").click()
 
                             device.executeShellCommand("wm size 820x380")
                             device.executeShellCommand("settings put system font_scale 2.0")
                             waitForWindow(820, 380, 2f)
                             text("Manual setup sample").click()
-                            enabled("连接账号").click()
+                            action("连接账号").click()
                             val titleLabel = "连接账号 · Manual setup sample"
                             val titleBounds = text(titleLabel).visibleBounds
-                            val cancelBounds = touchTarget(enabled("取消")).visibleBounds
+                            val cancelBounds = action("取消").visibleBounds
                             val scrollBody =
                                 find(
                                     By.pkg(app.packageName)
@@ -223,19 +241,19 @@ class ScreenshotScenario {
                                 )
                             )
                             assertEquals(titleBounds, text(titleLabel).visibleBounds)
-                            assertEquals(cancelBounds, touchTarget(enabled("取消")).visibleBounds)
+                            assertEquals(cancelBounds, action("取消").visibleBounds)
                             capture("authorization-short-large-text.png")
-                            enabled("取消").click()
-                            enabled("连接账号")
+                            action("取消").click()
+                            action("连接账号")
                             description("返回").click()
                             description("筛选服务类别").click()
-                            enabled("不限类别").click()
+                            action("不限类别").click()
 
                             device.executeShellCommand("settings put system font_scale 1.0")
                             device.executeShellCommand("wm size 1180x820")
                             waitForWindow(1180, 820, 1f)
                             text("Google Calendar").click()
-                            enabled("添加账号")
+                            action("添加账号")
                             assertTrue(
                                 text("推荐").visibleBounds.right < text("服务可申请的权限").visibleBounds.left
                             )
