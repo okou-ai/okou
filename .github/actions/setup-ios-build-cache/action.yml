@@ -51,8 +51,9 @@ runs:
         case "$IOS_CACHE_TARGET" in
           simulator)
             cache_root="$RUNNER_TEMP/okou-ios-ci"
-            dependencies_namespace=ios-swiftpm-v1
-            compilation_namespace=ios-compilation-v1
+            # Use run-scoped read keys only on this cold-path verification branch.
+            dependencies_namespace="ios-cold-verify-spm-$GITHUB_RUN_ID"
+            compilation_namespace="ios-cold-verify-compiler-$GITHUB_RUN_ID"
             ;;
           archive)
             cache_root="$RUNNER_TEMP/okou-ios-promotion"
