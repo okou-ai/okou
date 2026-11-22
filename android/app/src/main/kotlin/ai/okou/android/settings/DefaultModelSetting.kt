@@ -77,16 +77,16 @@ import java.text.NumberFormat
 @Composable
 internal fun DefaultModelFeedback(model: DefaultModelSettings, snackbar: SnackbarHostState) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val syncFailed by rememberUpdatedState(stringResource(R.string.settings_model_sync_retained))
-    val localSaveFailed by
-        rememberUpdatedState(stringResource(R.string.settings_model_save_unavailable))
+    val rolledBack by rememberUpdatedState(stringResource(R.string.settings_model_save_rolled_back))
+    val unconfirmed by
+        rememberUpdatedState(stringResource(R.string.settings_model_save_unconfirmed))
     LaunchedEffect(model, lifecycle, snackbar) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             model.notices.collect { notice ->
                 val message =
                     when (notice) {
-                        DefaultModelNotice.SyncFailed -> syncFailed
-                        DefaultModelNotice.LocalSaveFailed -> localSaveFailed
+                        DefaultModelNotice.SaveRolledBack -> rolledBack
+                        DefaultModelNotice.SaveUnconfirmed -> unconfirmed
                     }
                 snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
             }
@@ -116,7 +116,9 @@ internal fun DefaultModelSetting(
                 else -> null
             }
         val value =
-            state.record?.let { if (isAutoDefaultModel(it.selectedModel)) auto else it.label }
+            state.record?.let {
+                if (isAutoDefaultModel(it.confirmed.selectedModel)) auto else it.confirmedLabel
+            }
         DefaultModelUnavailableRow(title, value, status)
         return
     }

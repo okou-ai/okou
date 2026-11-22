@@ -61,8 +61,8 @@
     <string name="settings_model_fast">Mode cepat</string>
     <string name="settings_model_fast_usage">Menggunakan sekitar %1$s kali kuota langganan</string>
     <string name="settings_model_load_when_online">Konten akan dimuat saat Anda kembali online.</string>
-    <string name="settings_model_save_unavailable">Model default tidak dapat disimpan di perangkat ini.</string>
-    <string name="settings_model_sync_retained">Model default tidak dapat disinkronkan. Perubahan Anda tersimpan di perangkat ini.</string>
+    <string name="settings_model_save_rolled_back">Model default tidak dapat disimpan. Setelan sebelumnya telah dipulihkan.</string>
+    <string name="settings_model_save_unconfirmed">Penyimpanan model default belum dikonfirmasi.</string>
     <string name="settings_model_effort">Tingkat penalaran</string>
     <string name="settings_model_effort_low">Rendah</string>
     <string name="settings_model_effort_medium">Sedang</string>
