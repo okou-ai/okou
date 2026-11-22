@@ -83,14 +83,12 @@ async function visit(
   return { trigger, started, authorized };
 }
 function phoneSwitch(name: string) {
-  return screen.findByRole("switch", {
-    name: (label) => label === name || label === name + " Offline",
-  });
+  return screen.findByRole("switch", { name });
 }
 test("chat-capability-phone-use-004 disabling the selected offline phone clears chat access", async () => {
   const old = device("Travel phone", false);
   await visit([old], { selected: old });
-  const switcher = await phoneSwitch(old.displayName);
+  const switcher = await phoneSwitch(old.displayName + " Offline");
   expect(switcher).toBeChecked();
   expect(switcher).toBeEnabled();
   expect(switcher.closest("label")).toHaveTextContent("Offline");
