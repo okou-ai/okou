@@ -1914,3 +1914,278 @@ The original 30 distinct paths below have 115 retained IDs at opening head eabfe
 - `turbo/apps/platform/src/views/okou-page/__tests__/chat-runless-delivery.test.tsx` · 001, 003.
 
 Main d9f5bb7159 includes #49936 (Chats is active on a project page) and #49924 (reader-initiated scroll and two-frame alignment). Four withdrawn files keep their BDD and three independently rewritten files keep their implementations. The attachment history regression now waits for the rendered bottom, then scrolls upward with wheel input. First probe: an isolated wheel with no directional offset did not load Question 5. Restored user gesture: 19/19 rows across four complete suites, shuffled seed 76001. New upstream scroll scenarios (layout/tap, both render frames and reader motion between frames) and project rail coverage remain attributed to upstream. Historical and current counts at intake are 1,495 and 1,471.
+
+## Batch 76 evidence
+
+30 frozen files held 115 pending retained selections. 81 earned first acceptance. 12 files closed, 16 are partial and 2 are blocked. 33 selected scenarios remain open. #49556 explicitly retired one additional selection in a partial file. The 18 partial or blocked files retain the full BDD.
+
+[Fixed intake](#batch-76-intake-and-main-synchronization). [All 115 GWT records and exact Vitest rows](https://app.okou.ai/artifacts/c1lrse409m.tsv) · [Probe sources, control runs, ownership and post-write comparisons](https://app.okou.ai/artifacts/gaqyhu2e0a.zip) · [Next 30 open files and their 160 IDs](https://app.okou.ai/artifacts/2q73q2h9br.md).
+
+The opening head was `eabfe3b5fd8c1580d0b12e6573324bcaed7e905b`. [Conflict resolution and intake](https://github.com/okou-ai/okou/commit/bb37eccae21fe605a061d3abcd4557693647a44d) preserved the open BDD on four modify/delete paths and retained three independent implementations. [Batch tests and file closures](https://github.com/okou-ai/okou/commit/80a75d3c7a06758c5d49970025c1c600f1d5f5b0) were verified after synchronizing [main](https://github.com/okou-ai/okou/commit/415b071c0d59356639a0e09f43b0fa55095d2946).
+
+### File outcomes
+
+Each source link opens the implementation at the tested revision or the intact BDD for a wholly blocked file. One source with parameter rows can provide several different stable IDs. Each accepted ID has exactly one passing expanded title in the linked TSV.
+
+| Frozen file                                                                                                          | Outcome                      | First accepted                    | Open or retired              |
+| -------------------------------------------------------------------------------------------------------------------- | ---------------------------- | --------------------------------- | ---------------------------- |
+| [chat-browser-shutdown.test.tsx](src/views/okou-page/__tests__/chat-browser-shutdown.test.tsx)                       | Partial                      | 004                               | 001, 003                     |
+| [chat-capability-phone-use.test.tsx](src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx)               | Partial                      | 002, 004, 006, 009, 011           | 007                          |
+| [chat-capability-voice-forwarding.test.tsx](src/views/okou-page/__tests__/chat-capability-voice-forwarding.test.tsx) | Partial                      | 003, 004                          | 002                          |
+| [chat-capability-voice-isolation.test.tsx](src/views/okou-page/__tests__/chat-capability-voice-isolation.bdd.md)     | Blocked                      | —                                 | 001, 002                     |
+| [chat-codex-execution.test.tsx](src/views/okou-page/__tests__/chat-codex-execution.test.tsx)                         | Partial                      | 001, 004                          | 003                          |
+| [chat-composer-account-selection.test.tsx](src/views/okou-page/__tests__/chat-composer-account-selection.test.tsx)   | Partial                      | 004                               | 003                          |
+| [chat-composer-connector-accounts.test.tsx](src/views/okou-page/__tests__/chat-composer-connector-accounts.bdd.md)   | Blocked                      | —                                 | 005, 006, 007, 008, 010      |
+| [chat-composer-connector-overview.test.tsx](src/views/okou-page/__tests__/chat-composer-connector-overview.test.tsx) | Partial                      | 008                               | 001, 003, 007, 009           |
+| [chat-composer-create.test.tsx](src/views/okou-page/__tests__/chat-composer-create.test.tsx)                         | Partial                      | 001, 003, 005, 008, 009           | 002                          |
+| [chat-composer-ime.test.tsx](src/views/okou-page/__tests__/chat-composer-ime.test.tsx)                               | Closed                       | 002                               | —                            |
+| [chat-composer-keyboard.test.tsx](src/views/okou-page/__tests__/chat-composer-keyboard.test.tsx)                     | Partial                      | 002, 003                          | 005                          |
+| [chat-composer-model-panel.test.tsx](src/views/okou-page/__tests__/chat-composer-model-panel.test.tsx)               | Closed                       | 003, 005, 006, 007, 010           | —                            |
+| [chat-composer-model-resolution.test.tsx](src/views/okou-page/__tests__/chat-composer-model-resolution.test.tsx)     | Closed                       | 001, 003, 004, 005, 007           | —                            |
+| [chat-composer-model-selection.test.tsx](src/views/okou-page/__tests__/chat-composer-model-selection.test.tsx)       | Closed                       | 001, 002, 003, 004, 007, 010, 011 | —                            |
+| [chat-composer-slash-hint.test.tsx](src/views/okou-page/__tests__/chat-composer-slash-hint.test.tsx)                 | Partial                      | 002                               | 001, 003, 007, 010, 012, 013 |
+| [chat-continuity-clipboard.test.tsx](src/views/okou-page/__tests__/chat-continuity-clipboard.test.tsx)               | Closed                       | 001, 002, 004                     | —                            |
+| [chat-continuity-drafts.test.tsx](src/views/okou-page/__tests__/chat-continuity-drafts.test.tsx)                     | Partial                      | 003, 004, 007                     | 002                          |
+| [chat-continuity-history.test.tsx](src/views/okou-page/__tests__/chat-continuity-history.test.tsx)                   | Closed                       | 001, 003, 006                     | —                            |
+| [chat-continuity-uploads.test.tsx](src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx)                   | Partial                      | 001, 004, 006, 013, 014           | 003, 011                     |
+| [chat-conversation-locator.test.tsx](src/views/okou-page/__tests__/chat-conversation-locator.test.tsx)               | Partial                      | 001, 005                          | 002                          |
+| [chat-emoji.test.tsx](src/views/okou-page/__tests__/chat-emoji.test.tsx)                                             | Closed                       | 003, 004, 005, 006, 007, 010      | —                            |
+| [chat-engagement-telemetry.test.tsx](src/views/okou-page/__tests__/chat-engagement-telemetry.test.tsx)               | Closed                       | 002, 003                          | —                            |
+| [chat-expected-failures.test.tsx](src/views/okou-page/__tests__/chat-expected-failures.test.tsx)                     | Partial                      | 001                               | 003                          |
+| [chat-fork.test.tsx](src/views/okou-page/__tests__/chat-fork.test.tsx)                                               | Partial, explicit retirement | 001, 004, 006                     | 007 (retired)                |
+| [chat-image-navigation-shortcuts.test.tsx](src/views/okou-page/__tests__/chat-image-navigation-shortcuts.test.tsx)   | Partial                      | 001, 007                          | 002, 004                     |
+| [chat-member-model-route.test.tsx](src/views/okou-page/__tests__/chat-member-model-route.test.tsx)                   | Closed                       | 003, 004, 005                     | —                            |
+| [chat-model-projection-refresh.test.tsx](src/views/okou-page/__tests__/chat-model-projection-refresh.test.tsx)       | Closed                       | 002, 003, 004                     | —                            |
+| [chat-offline-cache.test.tsx](src/views/okou-page/__tests__/chat-offline-cache.test.tsx)                             | Partial                      | 003                               | 004                          |
+| [chat-rename-focus.test.tsx](src/views/okou-page/__tests__/chat-rename-focus.test.tsx)                               | Closed                       | 001, 002, 005, 007                | —                            |
+| [chat-runless-delivery.test.tsx](src/views/okou-page/__tests__/chat-runless-delivery.test.tsx)                       | Closed                       | 001, 003                          | —                            |
+
+### Case evidence
+
+All 30 files were assessed using probes written from the frozen GWT, any recorded amendments, current production entry points and the repository’s testing guidance. Routes, editor input, browser transport and projected account identities were exercised through their user or external boundary.
+
+#### chat-browser-shutdown
+
+- [001](src/views/okou-page/__tests__/chat-browser-shutdown.bdd.md#chat-browser-shutdown-001). Open. Closing with Shift held disabled the reopened input until key-up. Typing reached example-page, but the native fixture observed two connections after reopening, up from one.
+- [003](src/views/okou-page/__tests__/chat-browser-shutdown.bdd.md#chat-browser-shutdown-003). Open. Native key release rejected with -32001. The connection closed and Message was enabled. The Sentry boundary had no report carrying the rejection code and message.
+- [004](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-browser-shutdown.test.tsx#L46). Original target received mousePressed then mouseReleased. Closing hid the panel while its native connection stayed open; releasing the held acknowledgment let it close.
+
+#### chat-capability-phone-use
+
+- [002](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx#L150). Kitchen appeared alone, closing produced no list read during the close, and reopening after disconnection showed No phones online.
+- [004](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx#L88). Switched off the checked offline Travel phone. Its row disappeared and No phones online appeared.
+- [006](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx#L99). All three Phone setup instructions appeared; Escape dismissed the dialog and restored focus to Connectors.
+- [007](src/views/okou-page/__tests__/chat-capability-phone-use.bdd.md#chat-capability-phone-use-007). Open. With both named phones online and the first grant visible in a fresh chat-grant read, clicking the second did not establish the complete replacement/deselection sequence. A switch was still checked at the negative assertion.
+- [009](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx#L118). Held consent at the grant boundary, observed no start, then released it and received Use my phone as the Run prompt.
+- [011](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-phone-use.test.tsx#L133). Rejected consent produced its error on /, preserved Use my phone without starting a Run, and reopened with Kitchen checked.
+
+#### chat-capability-voice-forwarding
+
+- [002](src/views/okou-page/__tests__/chat-capability-voice-forwarding.bdd.md#chat-capability-voice-forwarding-002). Open. The selected feedback note accepted Forward draft / and opened the slash menu. After ArrowUp the menu offered Workflow and Create, with no Document button for the original hover/pressed assertion.
+- [003](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-forwarding.test.tsx#L66). Composition Enter left the slash menu, original passage dialog and Forward draft / intact with editor focus and unchanged source notes.
+- [004](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-voice-forwarding.test.tsx#L74). Escape closed the slash menu alone; the focused dialog draft and original notes remained visible.
+
+#### chat-capability-voice-isolation
+
+- [001](src/views/okou-page/__tests__/chat-capability-voice-isolation.bdd.md#chat-capability-voice-isolation-001). Open. The first recording stopped with the VAD model held. The old runtime disposed, then the second routed bootstrap raised AbortError before its composer was available. Original-session release after the new user mounted could not be verified.
+- [002](src/views/okou-page/__tests__/chat-capability-voice-isolation.bdd.md#chat-capability-voice-isolation-002). Open. The failed recording exposed Use recording in the first runtime. Opening a fresh child runtime for the second identity raised AbortError before Voice input and absence of the old recording could be checked.
+
+#### chat-codex-execution
+
+- [001](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-codex-execution.test.tsx#L15). The saved Ultra thread displayed Max; the effort slider stayed at Max at its upper boundary.
+- [003](src/views/okou-page/__tests__/chat-codex-execution.bdd.md#chat-codex-execution-003). Open. The saved Ultra setting fell back to Max, and the Lab switch was operable. After returning through browser history, the probe did not observe GPT 6.1 Sol, Ultra even with Ultra in the subscription catalog.
+- [004](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-codex-execution.test.tsx#L15). Removing Ultra from the enabled catalog left Max at the end of the slider and no Ultra option.
+
+#### chat-composer-account-selection
+
+- [003](src/views/okou-page/__tests__/chat-composer-account-selection.bdd.md#chat-composer-account-selection-003). Open. The GitHub account group exposes per-account access switches. It did not expose the selected-but-falling-back Personal option or the separate unselected default option required by the original Then.
+- [004](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-account-selection.test.tsx#L43). Work appeared in GitHub, closing restored trigger focus, and a fresh opening displayed Renamed account without Work.
+
+#### chat-composer-connector-accounts
+
+- [005](src/views/okou-page/__tests__/chat-composer-connector-accounts.bdd.md#chat-composer-connector-accounts-005). Open. The fixture supplied Work and Personal. The current GitHub group exposed access switches and no original current-account selector. The probe stopped before carrying Personal into creation.
+- [006](src/views/okou-page/__tests__/chat-composer-connector-accounts.bdd.md#chat-composer-connector-accounts-006). Open. The fixture supplied Work and Personal. The current GitHub group exposed access switches and no original current-account selector. The probe stopped before a rejected creation preserving the original message and attachment.
+- [007](src/views/okou-page/__tests__/chat-composer-connector-accounts.bdd.md#chat-composer-connector-accounts-007). Open. The fixture supplied Work and Personal. The current GitHub group exposed access switches and no original current-account selector. The probe stopped before an older failure preserving the newer draft and attachment.
+- [008](src/views/okou-page/__tests__/chat-composer-connector-accounts.bdd.md#chat-composer-connector-accounts-008). Open. The fixture supplied Work and Personal. The current GitHub group exposed access switches and no original current-account selector. The probe stopped before retrying under the original client chat ID.
+- [010](src/views/okou-page/__tests__/chat-composer-connector-accounts.bdd.md#chat-composer-connector-accounts-010). Open. The fixture supplied Work and Personal. The current GitHub group exposed access switches and no original current-account selector. The probe stopped before explicitly clearing the named selection with Use default.
+
+#### chat-composer-connector-overview
+
+- [001](src/views/okou-page/__tests__/chat-composer-connector-overview.bdd.md#chat-composer-connector-overview-001). Open. All 20 distinct connector labels appeared on both openings. The selected Then also specifies exact overview/target/legacy reads. Reopening alone could not distinguish those clauses.
+- [003](src/views/okou-page/__tests__/chat-composer-connector-overview.bdd.md#chat-composer-connector-overview-003). Open. The correctly addressed connector:changed event made Probe 1 access off. The subsequent removal/reconnect sequence did not provide the required full refreshed overview with Probe 2.
+- [007](src/views/okou-page/__tests__/chat-composer-connector-overview.bdd.md#chat-composer-connector-overview-007). Open. Try again, independent Probe 2 update, retry and the later off state were observed. The original Then also requires exactly two overview and three target reads; those quantities are not established by the UI.
+- [008](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connector-overview.test.tsx#L35). Details were untouched while the top panel was open. Opening GitHub resolved the exact off-page Personal ID and displayed its checked switch and Reconnect required.
+- [009](src/views/okou-page/__tests__/chat-composer-connector-overview.bdd.md#chat-composer-connector-overview-009). Open. The New chat link reached / and history returned to the original thread with the connector visible. Releasing the subscription while away and the exact request mix on return were not established.
+
+#### chat-composer-create
+
+- [001](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-create.test.tsx#L49). The rendered user bubble omitted Create and slide settings. Its copied text/plain was exactly Our launch brief.
+- [002](src/views/okou-page/__tests__/chat-composer-create.bdd.md#chat-composer-create-002). Open. On an active run the Create action and a Presentation choice could be reached. The probe could not reach the Remove Presentation chip and slide options, so it did not prove the two distinct queued message parts.
+- [003](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-create.test.tsx#L113). Starting with Our launch, the first selected template closed the picker, left one matching chip, kept Image and displayed Claude Fable 5.1.
+- [005](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-create.test.tsx#L129). The sent document carried Image intent, replacement style, Our launch, second style and final text in order. The old style was absent.
+- [008](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-create.test.tsx#L107). Add style opened the catalog with the Image tab selected.
+- [009](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-create.test.tsx#L185). Removing Presentation kept the text and template. The captured ordinary send carried both and no additional_info part.
+
+#### chat-composer-ime
+
+- [002](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-ime.test.tsx#L32). The visible weekly workflow dropped during p r123 preedit and returned after cancellation with the draft still /. Committed /pr123 details closed the menu.
+
+#### chat-composer-keyboard
+
+- [002](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-keyboard.test.tsx#L15). The active-run draft retained focus and an actual line break between the two fragments, with neither send nor queue observing a prompt.
+- [003](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-keyboard.test.tsx#L52). Linux plain Enter retained the focused unsent draft. Control Enter delivered its exact two-line text, rendered the user turn and exposed Stop.
+- [005](src/views/okou-page/__tests__/chat-composer-keyboard.bdd.md#chat-composer-keyboard-005). Open. On Android the viewport and keyboard-open indicator changed as expected. After closing the keyboard, Enter did not yield the combined two-line prompt at the send boundary. The subsequent hardware shortcut remains unproved.
+
+#### chat-composer-model-panel
+
+- [003](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-panel.test.tsx#L118). Loading, both plan groups and the model were visible before the quota reply. Delivery showed 88% left, kept the original plan and model, and removed loading.
+- [005](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-panel.test.tsx#L21). Both model options were selectable. Effort was outside their scroll viewport; the usage endpoints and 2.5× Fast hint were visible.
+- [006](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-panel.test.tsx#L42). The same panel survived Low, Fast and Sonnet selection. The trigger and slider reflected each value and Fast disappeared for Claude.
+- [007](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-panel.test.tsx#L62). The temporary notice appeared for Sol with Effort and Fast enabled, disappeared when Astra was reselected, and close restored trigger focus.
+- [010](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-panel.test.tsx#L85). Selecting Ultrafast checked its radio and displayed the Codex allowance explanation.
+
+#### chat-composer-model-resolution
+
+- [001](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-resolution.test.tsx#L24). Selecting Sonnet checked its option, relabeled the thread trigger and left the obsolete group absent.
+- [003](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-resolution.test.tsx#L38). The picker offered GPT 6 Sol without DeepSeek; the repaired selection was null and the outgoing send omitted an explicit model.
+- [004](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-resolution.test.tsx#L64). With stored null, Auto sent the message visibly with no repair observed at the model-update boundary.
+- [005](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-resolution.test.tsx#L64). With stored auto, the rendered user turn appeared and the repair boundary stayed untouched.
+- [007](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-resolution.test.tsx#L91). The outgoing send identified the original Opus thread and omitted an explicit model override.
+
+#### chat-composer-model-selection
+
+- [001](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-selection.test.tsx#L155). Future chats stayed unchanged during temporary selection. The update sent Sonnet/high, and the preference notification removed the temporary notice.
+- [002](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-selection.test.tsx#L27). A remote preference with an extra kind changed the composer from Fable to Opus.
+- [003](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-selection.test.tsx#L47). Luna selection updated the trigger and usage message. Fast enabled xHigh, and reselecting the same option kept it checked.
+- [004](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-selection.test.tsx#L67). The slider visited Low through Max, Fast preserved Max and creation carried max/priority.
+- [007](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-selection.test.tsx#L99). The sequence through Sol, Luna and back to Sonnet preserved Max, xHigh and Extra respectively.
+- [010](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-selection.test.tsx#L120). The panel showed Max; neither the thread nor native preference update boundary received a write on opening.
+- [011](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-model-selection.test.tsx#L155). Sol displayed Max while its future-chat preference patch carried the original Ultra value.
+
+#### chat-composer-slash-hint
+
+- [001](src/views/okou-page/__tests__/chat-composer-slash-hint.bdd.md#chat-composer-slash-hint-001). Open. The frozen /agents/e0000000-0000-4000-a000-000000000010/chat path rendered the missing-page surface. The agent-chat composer prerequisite is unavailable for this ID. Existing-thread 002 is counted separately.
+- [002](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-slash-hint.test.tsx#L33). The bare slash displayed the hint; querying and accepting weekly-recap removed it and inserted the workflow. Escape on reopening preserved the draft and focus.
+- [003](src/views/okou-page/__tests__/chat-composer-slash-hint.bdd.md#chat-composer-slash-hint-003). Open. The frozen /agents/e0000000-0000-4000-a000-000000000010/chat path rendered the missing-page surface. The agent-chat composer prerequisite is unavailable for this ID. Existing-thread 002 is counted separately.
+- [007](src/views/okou-page/__tests__/chat-composer-slash-hint.bdd.md#chat-composer-slash-hint-007). Open. The frozen /agents/e0000000-0000-4000-a000-000000000010/chat path rendered the missing-page surface. The agent-chat composer prerequisite is unavailable for this ID. Existing-thread 002 is counted separately.
+- [010](src/views/okou-page/__tests__/chat-composer-slash-hint.bdd.md#chat-composer-slash-hint-010). Open. The frozen /agents/e0000000-0000-4000-a000-000000000010/chat path rendered the missing-page surface. The agent-chat composer prerequisite is unavailable for this ID. Existing-thread 002 is counted separately.
+- [012](src/views/okou-page/__tests__/chat-composer-slash-hint.bdd.md#chat-composer-slash-hint-012). Open. The frozen /agents/e0000000-0000-4000-a000-000000000010/chat path rendered the missing-page surface. The agent-chat composer prerequisite is unavailable for this ID. Existing-thread 002 is counted separately.
+- [013](src/views/okou-page/__tests__/chat-composer-slash-hint.bdd.md#chat-composer-slash-hint-013). Open. The frozen /agents/e0000000-0000-4000-a000-000000000010/chat path rendered the missing-page surface. The agent-chat composer prerequisite is unavailable for this ID. Existing-thread 002 is counted separately.
+
+#### chat-continuity-clipboard
+
+- [001](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-clipboard.test.tsx#L44). The first paste inserted both lines at the caret and attached revenue.txt. A later missing-file paste retained its text and the available file.
+- [002](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-clipboard.test.tsx#L75). Pending resolution showed the text and Cancel upload. Delivering availability changed it to Remove, persisted the correct file ID and text, and enabled Send.
+- [004](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-clipboard.test.tsx#L107). The first paste landed between Alpha and omega. The structured second paste rendered the referenced chat as a chip between its two text lines.
+
+#### chat-continuity-drafts
+
+- [002](src/views/okou-page/__tests__/chat-continuity-drafts.bdd.md#chat-continuity-drafts-002). Open. An immutable older draft and file were held during local typing. Delivering them and indefinitely withholding them both preserved the local text and saved it. The checked patch did not establish that the app processed the old response.
+- [003](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-drafts.test.tsx#L54). After removing the restored file, the ordered text, chat reference, template and feedback remained; the saved patch preserved the required parts.
+- [004](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-drafts.test.tsx#L23). The neighboring route and title changed; returning to the first conversation restored its unsent checklist.
+- [007](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-drafts.test.tsx#L104). The sent message contained the revised brief and new file only. Its visible user turn and the stored empty draft followed the send.
+
+#### chat-continuity-history
+
+- [001](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-history.test.tsx#L71). The final and latest answers were rendered, the answer before the repeated group was absent, and the final repeated answer had one anchor with Message available.
+- [003](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-history.test.tsx#L31). The six-turn viewport moved to bottom with its control hidden, then Control+Up reached zero and restored the bottom control.
+- [006](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-history.test.tsx#L114). Active main and side panes had separate IDs. The pending steer appeared in the main user turn only. Confirmation reused its client event ID, left one anchor/turn, cleared the queue copy and displayed the main answer alongside Side answer.
+
+#### chat-continuity-uploads
+
+- [001](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx#L40). Both MIME types reached prepare. The two distinct storage PUTs omitted credentials and sensitive headers, and both files became removable.
+- [003](src/views/okou-page/__tests__/chat-continuity-uploads.bdd.md#chat-continuity-uploads-003). Open. A valid absolute private Artifact URL reached storage, its ID reached completion, and private.txt became removable. The once-only completion clause has no distinguishing evidence in this probe.
+- [004](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx#L88). The 503 filename appeared once; only ready.txt remained attached and reached the outgoing message.
+- [006](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx#L237). At the XHR boundary half of part one produced 12%; completing part two started the one-byte fifth part and produced 37%. The bar stayed at 99% until finalization then was replaced by the attachment.
+- [011](src/views/okou-page/__tests__/chat-continuity-uploads.bdd.md#chat-continuity-uploads-011). Open. After the finalization 404 the server message appeared once and the generic error was absent. The UI does not distinguish one completion request from a duplicate with the same outcome.
+- [013](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx#L132). Preparing the exact five-GiB File exposed the full byte size, progress and Cancel. Cancelling removed the control.
+- [014](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-uploads.test.tsx#L273). Four specific active transfers received native abort. Progress disappeared and the fifth never started; no failure notice appeared.
+
+#### chat-conversation-locator
+
+- [001](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-conversation-locator.test.tsx#L35). With the first turn unmounted and 24 markers, the hover preview exposed Aug 1, 10:00 AM and its exact ISO datetime.
+- [002](src/views/okou-page/__tests__/chat-conversation-locator.bdd.md#chat-conversation-locator-002). Open. The upstream amendment requires 30 turns. After clicking the first marker, a late answer required to be unmounted was still present. The original eight-turn fixture cannot close the amended Then.
+- [005](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-conversation-locator.test.tsx#L41). Leaving the first marker in the eight-turn fixture dismissed the displayed timestamp.
+
+#### chat-emoji
+
+- [003](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-emoji.test.tsx#L31). After resizing to desktop, the header retained the grinning icon and a single Emoji planning title, alongside More actions.
+- [004](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-emoji.test.tsx#L111). A held rename left the new emoji visible while the picker stayed open. Delivering it dismissed the picker.
+- [005](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-emoji.test.tsx#L77). Closing through Change icon returned focus inside the original chat pane.
+- [006](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-emoji.test.tsx#L46). The mobile-to-desktop move retained one focused eye query, both matching emoji, and one title.
+- [007](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-emoji.test.tsx#L46). The desktop-to-mobile move retained one focused eye query, both matching emoji, and one title.
+- [010](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-emoji.test.tsx#L89). ArrowRight kept the search and current category while moving focus. Enter cleared the search and displayed the newly current Smileys section with focus.
+
+#### chat-engagement-telemetry
+
+- [002](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-engagement-telemetry.test.tsx#L14). Expanding the completed 20-second work history revealed the hidden activity and emitted its completed-status event.
+- [003](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-engagement-telemetry.test.tsx#L58). The analytics fixture recorded the three ordered impression kinds and every selected index/kind/generation type across four clicks.
+
+#### chat-expected-failures
+
+- [001](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-expected-failures.test.tsx#L14). Direct routed bootstrap rejected with status 426 from the headerless local error and displayed Update required.
+- [003](src/views/okou-page/__tests__/chat-expected-failures.bdd.md#chat-expected-failures-003). Open. The local media boundary rejected getUserMedia. With expected console output captured, the denial guidance appeared and the notes remained, but the matching Sentry exception assertion failed before retry could be certified.
+
+#### chat-fork
+
+- [001](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-fork.test.tsx#L100). The created chat carried the Launch project ID; the source remained under Launch with the same route and unfinished notes after confirmation.
+- [004](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-fork.test.tsx#L40). F opened a dialog carrying the selected source passage and accepted the typed follow-up.
+- [006](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-fork.test.tsx#L51). The new destination received the exact feedback quote, note and source run ID without the unrelated answer; the original composer notes remained.
+- [007](src/views/okou-page/__tests__/chat-fork.bdd.md#chat-fork-007). Retired. The BDD explicitly records removal of the Forward target picker and chosen-agent path in #49556. The personal Fork behavior has its own ID 006. The complete amendment remains in the BDD.
+
+#### chat-image-navigation-shortcuts
+
+- [001](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-image-navigation-shortcuts.test.tsx#L24). At the third image Next was absent; Right stayed there and Left returned to the second image.
+- [002](src/views/okou-page/__tests__/chat-image-navigation-shortcuts.bdd.md#chat-image-navigation-shortcuts-002). Open. Both the authenticated web-file and the valid private Artifact reference returned a fixture 404. The middle gallery image did not display the required unavailable-artifact text.
+- [004](src/views/okou-page/__tests__/chat-image-navigation-shortcuts.bdd.md#chat-image-navigation-shortcuts-004). Open. The sidebar navigation owner kept focus and the second image was hidden during private URL/decode. Releasing the actual HTMLImageElement.decode gate did not make the currently rendered image visible to the assertion.
+- [007](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-image-navigation-shortcuts.test.tsx#L37). Modifier keys and menus left the stage in place. Focused lightbox and sidebar navigation changed the matching gallery, including after fullscreen exit.
+
+#### chat-member-model-route
+
+- [003](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-member-model-route.test.tsx#L17). Max and checked Fast appeared together with Lower usage, Higher usage and 2.5×.
+- [004](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-member-model-route.test.tsx#L38). Sending stayed disabled and the draft was preserved. The device flow showed C342-4000 and requested the existing personal provider ID.
+- [005](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-member-model-route.test.tsx#L38). After the remote switch and explicit Configure, NEXT-3424 appeared and the captured reconnect named the new provider ID while preserving the draft.
+
+#### chat-model-projection-refresh
+
+- [002](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-model-projection-refresh.test.tsx#L50). The local draft remained during the held read and after the app displayed the exact Routing refresh unavailable error.
+- [003](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-model-projection-refresh.test.tsx#L59). The Low model trigger remained before and after the error was displayed by the page.
+- [004](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-model-projection-refresh.test.tsx#L66). Once the page displayed its refresh error, the original Low/Fast trigger still opened a panel with Fast checked.
+
+#### chat-offline-cache
+
+- [003](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-offline-cache.test.tsx#L15). The remembered title and enabled composer appeared with confirmation pending. Absence produced Chat thread not found and removed Message with the skeleton hidden.
+- [004](src/views/okou-page/__tests__/chat-offline-cache.bdd.md#chat-offline-cache-004). Open. The saved response was visible on a first real visit, and that child runtime disposed. With remote history held on the second visit, direct and message-port bootstrap encountered AbortError before cached history could be observed. No private cache entries were injected.
+
+#### chat-rename-focus
+
+- [001](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-rename-focus.test.tsx#L47). Committing the renamed side chat with Enter closed its dialog, left focus on body, and a further Enter did not open emoji search.
+- [002](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-rename-focus.test.tsx#L47). Escape closed the side-pane dialog, left focus on body, and Enter did not open emoji search.
+- [005](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-rename-focus.test.tsx#L16). F2 from the main editor followed by Escape closed Rename and left body focused.
+- [007](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-rename-focus.test.tsx#L16). Double-clicking the main title opened Rename; Escape dismissed it with body focus.
+
+#### chat-runless-delivery
+
+- [001](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-runless-delivery.test.tsx#L11). A standalone assistant message with no Run rendered its exact text.
+- [003](https://github.com/okou-ai/okou/blob/80a75d3c7a06758c5d49970025c1c600f1d5f5b0/turbo/apps/platform/src/views/okou-page/__tests__/chat-runless-delivery.test.tsx#L27). DOM order and distinct response elements placed the unassociated delivery after the completed Run; only the earlier response owned a work-history control.
+
+### Negative controls and attribution
+
+- Holding the native mouse release kept its original connection open in browser-shutdown-004. Holding the clipboard file lookup prevented Remove notes.txt in clipboard-002. Holding the rename left the emoji picker open in emoji-004.
+- Providing the old personal provider ID in production device-auth dispatch passed member-model-route-004 but failed 005 on its exact target. Restoring the original dispatch passed all three member-model-route cases.
+- Removing IME cancellation kept weekly-recap unavailable. Giving the acknowledged steer a different event ID left duplicate main text. Reporting a quarter of a part instead of half failed the 12% progress assertion. Each original input passed after restoration.
+- In the first projection-refresh probe, unchanged text or the trigger could pass with the response withheld. The final three cases wait for the page to display Routing refresh unavailable. All three failed on that marker with delivery suppressed. The older server draft in continuity-drafts-002 still lacks an equivalent completion signal. Chat-activity-summary-002 retains its prior timing gap.
+
+The affected whole-file and shuffled runs contained 81 new rows and 44 pre-existing rows. 41 historical regression, 1 partial timing regression, 1 partial regression for an invalidated historical ID, 1 upstream replacement for an invalidated historical ID. The three batch 65 corrections retain their existing IDs. The whole-file and shuffled verification covered 37 suites and 125 rows at the default deadlines. Two earlier member regressions timed out together and their entire 15-case file passed on isolated rerun. The archive records all expanded titles and the earlier attempts.
+
+### Main and post-write review
+
+[Reader scroll and two-frame alignment](https://github.com/okou-ai/okou/pull/49924) changed input ownership, invalidated the old pointerdown-only reader trigger, and added [layout/tap and two render-frame scenarios](https://github.com/okou-ai/okou/blob/415b071c0d59356639a0e09f43b0fa55095d2946/turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx#L1439). [Project rail behavior](https://github.com/okou-ai/okou/pull/49936) adds a [Chats active-state assertion](https://github.com/okou-ai/okou/blob/415b071c0d59356639a0e09f43b0fa55095d2946/turbo/apps/platform/src/views/okou-page/__tests__/projects.test.tsx#L971). These upstream changes are recorded independently of the 115 intake selections and the previous 68-item upstream backlog. The later main sync also included Android and Rust changes. The active chat history resource probe now waits for the rendered bottom before a real upward scroll.
+
+The write-first audit compared frozen b0a10287, both pre-withdrawal revisions 5310dbb9 and a445586e, restored b666cd05, the zero-page rename pair, opening head, latest main and current test/helper paths. The archive contains per-ID operation comparisons and cross-path lexical and action windows for shipped code and unsuccessful probe drafts. A common pointer/mouse sequence was replaced with one user pointer press. Matching slider queries, paired enablement assertions and held rename operations were checked against the specific Then. The quota/loading sequence and storage header exclusions share generic operations or literals with other files. No earlier scenario implementation was moved into a helper.
+
+### Accounting and handoff
+
+Historical first acceptances total 1,576/2,681 (+81). Current complete coverage totals 1,552/2,681 (+81). The withdrawal cohort is 422 historical / 413 current of 506. The outside group is 1,154 / 1,139 of 2,175. The original 86 withdrawals, earlier 17 invalidated historical IDs, seven batch 75 invalidations and independent upstream backlog of 68 keep their prior ownership.
+
+262 closed files contain 1,656 frozen rows and 895 retained selections including four historical retirements. The 223 open files contain 3,455 frozen rows and 1,786 retained selections, with 661 currently covered. Fork-007 is documented within an open file. [Batch 77 file and ID register](https://app.okou.ai/artifacts/2q73q2h9br.md).

@@ -2931,3 +2931,5 @@ The initial file-size check flagged table padding in this checkpoint. The regist
 ## Batch 75 evidence
 
 [30-file intake, dispositions, controls, main synchronization and next files](test-rebuild-rework-checkpoint-continued.md#batch-75-evidence).
+
+Batch 76 reconciled 30 files and 115 retained IDs. [File outcomes, cases, upstream ownership and next intake](test-rebuild-rework-checkpoint-continued.md#batch-76-evidence).
