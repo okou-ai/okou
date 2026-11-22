@@ -35,7 +35,7 @@ import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/
 
 import { MAX_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/storages";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it, onTestFinished, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
@@ -1960,7 +1960,7 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
   });
 });
 
-it.each([
+test.each([
   { namespace: "run", contract: runWebhookContract },
   {
     namespace: "agent",
@@ -2001,7 +2001,7 @@ it.each([
         }),
         [200],
       );
-      expect(events.body).toEqual({
+      expect(events.body).toStrictEqual({
         received: 1,
         firstSequence: 1,
         lastSequence: 1,
@@ -2018,7 +2018,7 @@ it.each([
         }),
         [200],
       );
-      expect(complete.body).toEqual({ success: true, status: "failed" });
+      expect(complete.body).toStrictEqual({ success: true, status: "failed" });
     });
   },
 );
