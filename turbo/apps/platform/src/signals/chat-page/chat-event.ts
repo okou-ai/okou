@@ -29,6 +29,7 @@ import {
   registerOptimisticChatThreadEvent$,
 } from "./chat-thread-event-sourcing.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
+import type { VoicePlayer } from "./voice-player.ts";
 import type { ArtifactSignals } from "./artifact-card-signals.ts";
 import type { VisualizationPreferences } from "../okou-page/composer-visualization.ts";
 
@@ -121,6 +122,7 @@ export type UserMessageRenderPart =
     };
 
 export interface UserMessageRenderDocument {
+  readonly voicePlayer?: VoicePlayer;
   readonly document: UserMessageDocument;
   readonly parts: readonly UserMessageRenderPart[];
   readonly visualizationPreferences?: VisualizationPreferences;

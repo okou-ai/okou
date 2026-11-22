@@ -3,9 +3,9 @@ import type {
   ChatThreadArtifactFile,
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import {
   click,
@@ -646,7 +646,7 @@ test("A user's Markdown image syntax stays literal", async () => {
   ).toBeNull();
 });
 
-test("Voice message clips open the selected recording in playback order", async () => {
+test("One inline voice player pauses, resumes, and advances through the message", async () => {
   const first = "aaaaaaaa-1111-4000-8000-111111111111";
   const second = "aaaaaaaa-2222-4000-8000-222222222222";
   mockAttachmentChat(context, {
@@ -664,21 +664,69 @@ test("Voice message clips open the selected recording in playback order", async 
     [second]: [secondUrl],
   });
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-  const firstClip = await findNamedButton(
-    "Open audio preview for Voice clip 1",
+  const button = await findNamedButton("Play voice message");
+  const [audio, firstTrack, secondTrack] = Array.from(
+    button.querySelectorAll("audio"),
   );
-  const secondClip = await findNamedButton(
-    "Open audio preview for Voice clip 2",
-  );
-  expect(
-    firstClip.compareDocumentPosition(secondClip) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  click(secondClip);
+  if (!audio || !firstTrack || !secondTrack) {
+    throw new Error("Missing voice tracks");
+  }
   await waitFor(() => {
-    return expect(document.querySelector("audio")).toHaveAttribute(
+    expect(secondTrack).toHaveAttribute("src", secondUrl);
+  });
+  expect(queryNamedButtons("Play voice message")).toStrictEqual([button]);
+  expect(button).not.toHaveTextContent(/Voice|clip/i);
+
+  // happy-dom has no media decoder. Drive its native media boundary.
+  const play = vi.spyOn(audio, "play").mockResolvedValue();
+  vi.spyOn(audio, "pause").mockImplementation(() => {});
+  for (const [track, duration] of [
+    [firstTrack, 10],
+    [secondTrack, 18],
+  ] as const) {
+    Object.defineProperty(track, "duration", {
+      configurable: true,
+      value: duration,
+    });
+    fireEvent.durationChange(track);
+  }
+  await waitFor(() => {
+    expect(button).toHaveTextContent("0:28");
+  });
+  click(button);
+  await findNamedButton("Pause voice message");
+  await waitFor(() => {
+    expect(audio).toHaveAttribute(
       "src",
-      secondUrl,
+      "https://private-files.example/first.wav",
     );
+  });
+  audio.currentTime = 4;
+  fireEvent.timeUpdate(audio);
+  click(button);
+  await findNamedButton("Play voice message");
+  expect(button).toHaveTextContent("0:04");
+  click(button);
+  await waitFor(() => {
+    expect(play).toHaveBeenCalledTimes(2);
+  });
+  expect(audio.currentTime).toBe(4);
+  Object.defineProperty(audio, "duration", { configurable: true, value: 10 });
+  fireEvent.ended(audio);
+  await waitFor(() => {
+    expect(audio).toHaveAttribute("src", secondUrl);
+  });
+  audio.currentTime = 3;
+  fireEvent.timeUpdate(audio);
+  await waitFor(() => {
+    expect(button).toHaveTextContent("0:13");
+  });
+  Object.defineProperty(audio, "duration", { configurable: true, value: 18 });
+  fireEvent.ended(audio);
+  await expect(findNamedButton("Play voice message")).resolves.toBe(button);
+  expect(button).toHaveTextContent("0:28");
+  click(button);
+  await waitFor(() => {
+    expect(play).toHaveBeenCalledTimes(4);
   });
 });

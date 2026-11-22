@@ -394,6 +394,7 @@ import {
   CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS,
   CHAT_THREAD_USER_MESSAGE_ROW_CLASS,
 } from "./chat-message-surface.tsx";
+import { VoiceMessagePlayer } from "./voice-message-player.tsx";
 import { SCROLL_FADE_Y_END } from "./scroll-fade.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 
@@ -7487,6 +7488,9 @@ function UserMessageContent({
         attachments={elevatedAttachments}
         onImageClick={onImageClick}
       />
+      {document.voicePlayer ? (
+        <VoiceMessagePlayer player={document.voicePlayer} />
+      ) : null}
       {hasBody ? (
         // The bubble gets its own full-width row so `leading` can sit against
         // its left edge while the bubble's `max-w-[85%]` still resolves against
