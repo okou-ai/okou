@@ -1,5 +1,32 @@
 # Changelog
 
+## [10.36.2](https://github.com/okou-ai/okou/compare/cli-v10.36.1...cli-v10.36.2) (2026-11-22)
+
+
+### Refactoring
+
+* **app:** retire agent prerequisites from member flows ([#49854](https://github.com/okou-ai/okou/issues/49854)) ([6eea61b](https://github.com/okou-ai/okou/commit/6eea61b4a4f5c7a3e218bb027b148f10c3d4dab7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.100.1
+    * @okouai/core bumped to 8.859.2
+    * @okouai/pi-agent-runtime bumped to 1.52.32
+
+## [10.36.1](https://github.com/okou-ai/okou/compare/cli-v10.36.0...cli-v10.36.1) (2026-11-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.100.0
+    * @okouai/core bumped to 8.859.1
+    * @okouai/pi-agent-runtime bumped to 1.52.31
+
 ## [10.36.0](https://github.com/okou-ai/okou/compare/cli-v10.35.13...cli-v10.36.0) (2026-11-22)
 
 

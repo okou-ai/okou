@@ -482,9 +482,8 @@ test.each(["pro", "team"] as const)(
         });
       },
     );
-    const { proPlan, teamPlan } = await openUsagePackPlanSelection(
-      "/agents?settings=billing",
-    );
+    const { proPlan, teamPlan } =
+      await openUsagePackPlanSelection("/?settings=billing");
     const plan = tier === "pro" ? proPlan : teamPlan;
     click(
       buttonByText(tier === "pro" ? "Start with Pro" : "Start with Team", plan),

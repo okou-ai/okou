@@ -20,7 +20,6 @@ import {
 import { openTemplatePicker } from "./chat-composer-template-gallery-test-helpers.ts";
 import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
 import {
-  AGENT_ID,
   CLAUDE_SUBSCRIPTION_PROVIDER_ID,
   THREAD_ID,
   composerInlineTemplates,
@@ -32,11 +31,10 @@ import { buildRunModel } from "./chat-model-builders.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
-const { mockAgent, mockBillingCapabilities, mockPersonalModelRoutes } =
+const { mockBillingCapabilities, mockPersonalModelRoutes } =
   createChatComposerHelpers(context);
 
 function setupModels(): void {
-  mockAgent();
   mockPersonalModelRoutes();
   context.mocks.data.availableRunModels([
     buildRunModel({
@@ -71,7 +69,7 @@ function button(label: string, container: ParentNode = document): HTMLElement {
 async function setupComposer(): Promise<HTMLElement> {
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
   return await findComposerEditor();
 }

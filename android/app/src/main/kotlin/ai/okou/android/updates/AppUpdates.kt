@@ -11,6 +11,7 @@ import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.SocketException
 import java.net.UnknownHostException
+import kotlin.time.Duration.Companion.minutes
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -167,7 +168,7 @@ interface UpdateStore {
 }
 
 interface UpdateService : Closeable {
-    suspend fun initialize()
+    suspend fun initialize(retainedRelease: AndroidUpdatesRelease?)
 
     suspend fun check(): AndroidUpdates
 
@@ -233,8 +234,8 @@ class AppUpdates(
                             transfer = UpdateTransfer.Recovering(saved.target),
                         )
                 }
-                service.initialize()
-                val target = saved?.target
+                val target = saved?.target?.takeIf(mutable.value::isEligible)
+                service.initialize(target)
                 val file = target?.let { service.recover(it) }
                 mutable.update {
                     it.copy(
@@ -273,7 +274,7 @@ class AppUpdates(
                     if (
                         !snapshot.needsRequiredRelease &&
                             checkedAt > 0 &&
-                            time - checkedAt in 0 until 86_400_000
+                            time - checkedAt in 0 until 10.minutes.inWholeMilliseconds
                     )
                         return@launch
                 }

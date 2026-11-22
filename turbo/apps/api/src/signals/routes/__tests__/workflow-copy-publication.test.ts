@@ -23,7 +23,7 @@ function headers(actor: ApiTestUser) {
 test("rejects a prepared copy after the source Workflow changes", async () => {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
-  const namespace = await bdd.bootstrapLimitedFreeOnboarding(actor, {
+  await bdd.bootstrapLimitedFreeOnboarding(actor, {
     displayName: "Workflow member",
   });
   const copier = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
@@ -31,7 +31,6 @@ test("rejects a prepared copy after the source Workflow changes", async () => {
   const name = `changed-copy-${randomUUID().slice(0, 8)}`;
   const workflow = await misc.createWorkflow(
     actor,
-    namespace,
     name,
     {
       visibility: "public",
@@ -57,7 +56,7 @@ test("rejects a prepared copy after the source Workflow changes", async () => {
     ).copy({
       headers: copyHeaders,
       params: { workflowId: workflow.body.id },
-      body: { toAgentId: namespace },
+      body: {},
     }),
     [409],
   );
@@ -100,14 +99,13 @@ test("rejects a prepared member copy after its public source is deleted", async 
   const admin = bdd.user({ orgRole: "org:admin" });
   const owner = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
   bdd.acceptAgentStorageWrites();
-  const namespace = await bdd.bootstrapLimitedFreeOnboarding(admin, {
+  await bdd.bootstrapLimitedFreeOnboarding(admin, {
     displayName: "Workflow member",
   });
   const s3 = installWorkflowVolumeS3Fixture(context);
   const name = `revoked-copy-${randomUUID().slice(0, 8)}`;
   const workflow = await misc.createWorkflow(
     admin,
-    namespace,
     name,
     {
       visibility: "public",
@@ -133,7 +131,7 @@ test("rejects a prepared member copy after its public source is deleted", async 
     ).copy({
       headers: copyHeaders,
       params: { workflowId: workflow.body.id },
-      body: { toAgentId: namespace },
+      body: {},
     }),
     [409],
   );

@@ -51,8 +51,6 @@ describe("MISC-02: preferences, push subscription, user export, and empty logs",
       "USER_PREFERENCES_UNINITIALIZED",
     );
 
-    const firstPinnedAgentId = "00000000-0000-0000-0000-000000000001";
-    const secondPinnedAgentId = "00000000-0000-0000-0000-000000000002";
     const updatedPreferences = await api.updatePreferences(
       admin,
       {
@@ -62,11 +60,6 @@ describe("MISC-02: preferences, push subscription, user export, and empty logs",
         cloudBrowserEnabledByDefault: false,
         theme: "dark",
         colorTheme: "golden-hour",
-        pinnedAgentIds: [
-          secondPinnedAgentId,
-          firstPinnedAgentId,
-          secondPinnedAgentId,
-        ],
         captureNetworkBodiesRemaining: 3,
       },
       [200],
@@ -74,7 +67,6 @@ describe("MISC-02: preferences, push subscription, user export, and empty logs",
     expect(updatedPreferences.body).toMatchObject({
       timezone: "UTC",
       locale: "en-US",
-      pinnedAgentIds: [],
       sendMode: "cmd-enter",
       cloudBrowserEnabledByDefault: false,
       theme: "dark",
@@ -194,14 +186,13 @@ describe("MISC-03: workflows lifecycle through public API", () => {
 
     await base.completeOnboarding(admin);
     await base.completeOnboarding(member);
-    const { defaultAgentId } = await base.readOnboardingStatus(admin);
+    const defaultAgentId = await base.readDefaultAgentId(admin);
     if (!defaultAgentId) {
       throw new Error("Expected a workspace default executor");
     }
 
     const memberCreated = await api.createWorkflow(
       member,
-      defaultAgentId,
       memberWorkflowName,
       { content: "# Member private workflow" },
       [201],
@@ -219,16 +210,11 @@ describe("MISC-03: workflows lifecycle through public API", () => {
       }),
     ).toBeFalsy();
 
-    const invalidCreate = await api.requestCreateInvalidWorkflow(
-      admin,
-      defaultAgentId,
-      [400],
-    );
+    const invalidCreate = await api.requestCreateInvalidWorkflow(admin, [400]);
     expectApiError(invalidCreate.body);
 
     const created = await api.createWorkflow(
       admin,
-      defaultAgentId,
       workflowName,
       { content: "# BDD Workflow\n\nCreated through API." },
       [201],

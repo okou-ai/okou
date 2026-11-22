@@ -1,3 +1,7 @@
+import {
+  isChatRunReference,
+  type ChatRunReference,
+} from "@okouai/api-contracts/contracts/chat-run-reference";
 import { command, computed, state, type Computed } from "ccstate";
 import { chatRelationsContract } from "@okouai/api-contracts/client/chat-relations";
 import type {
@@ -35,7 +39,8 @@ function createMessages(
   return { data$ };
 }
 
-type SourcePart = Extract<UserMessagePart, { type: "source" }>;
+type SourcePart =
+  Extract<UserMessagePart, { type: "source" }> | ChatRunReference;
 type ChatOrigin =
   | { readonly kind: "not-started" | "unknown" }
   | { readonly kind: "source"; readonly part: SourcePart };
@@ -59,7 +64,7 @@ function chatOrigin(events: ChatEvent[]): ChatOrigin {
     return { kind: "unknown" };
   }
   const source = launch.userMessage?.parts.find((part): part is SourcePart => {
-    return part.type === "source";
+    return part.type === "source" || isChatRunReference(part);
   });
   return source ? { kind: "source", part: source } : { kind: "unknown" };
 }

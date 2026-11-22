@@ -94,8 +94,8 @@ describe("CHAT-02: default assistant identity", () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const { actor } = await entitledNativeChatActor();
     bdd.acceptAgentStorageWrites();
-    const onboarding = await bdd.readOnboardingStatus(actor);
-    const defaultAgentId = onboarding.defaultAgentId;
+    const onboardingAgentId = await bdd.readDefaultAgentId(actor);
+    const defaultAgentId = onboardingAgentId;
     if (!defaultAgentId) {
       throw new Error("Expected the system default agent to exist");
     }
@@ -271,8 +271,7 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
           userMessage: expect.objectContaining({
             parts: expect.arrayContaining([
               expect.objectContaining({
-                type: "source",
-                kind: "agent",
+                type: "chat_thread",
                 runId: caller.runId,
               }),
             ]),
@@ -328,8 +327,7 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       });
       expect(promoted.userMessage.parts).toContainEqual(
         expect.objectContaining({
-          type: "source",
-          kind: "agent",
+          type: "chat_thread",
           runId: caller.runId,
         }),
       );

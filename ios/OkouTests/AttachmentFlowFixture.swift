@@ -45,7 +45,7 @@ final class AttachmentFlowFixture: Sendable {
           id: Self.fileID, filename: "notes.txt", contentType: "text/plain", size: 5,
           url: "artifact://\(Self.fileID)")
       let metadata = try JSONEncoder().encodeString(file)
-      if path.hasPrefix("/api/agents/") && path.hasSuffix("/draft") {
+      if path == "/api/chat-drafts/composer" {
         return try Self.agentDraftResponse(request, path: path, state: state)
       }
       if let response = try await Self.settingsResponse(

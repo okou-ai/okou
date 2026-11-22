@@ -92,7 +92,7 @@ function MeLink({
 }: {
   readonly icon: LucideIcon;
   readonly children: ReactNode;
-  readonly pathname: "/agents" | "/workflows" | "/works" | "/export";
+  readonly pathname: "/workflows" | "/works" | "/export";
   readonly target?: "_blank";
   readonly trailing?: ReactNode;
 }) {

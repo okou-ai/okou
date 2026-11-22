@@ -1,4 +1,4 @@
-import { selectedExecutionAgent } from "./execution-agent";
+import { getMemberRoleAndUpdateCache$ } from "./auth.service";
 import {
   publishChatThreadMessageCreated$,
   projectCommittedChatThreadSearch$,
@@ -9,7 +9,6 @@ import {
 } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
-import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import {
   telegramMessages,
@@ -228,13 +227,6 @@ interface TelegramFileContext {
 
 interface TelegramInboundFileContext extends TelegramFileContext {
   readonly file_unique_id: string;
-}
-
-interface WorkspaceAgent {
-  readonly composeId: string;
-  readonly agentId: string;
-  readonly name: string;
-  readonly displayName: string | null;
 }
 
 interface TelegramUserInfoExtras {
@@ -1024,7 +1016,6 @@ interface TelegramAgentMessageArgs {
   readonly orgId: string;
   readonly userLink: OfficialTelegramUserLink;
   readonly userLinkKind: "official";
-  readonly composeId: string;
   readonly message: TelegramMessage;
   readonly isDM: boolean;
   readonly apiStartTime: number;
@@ -1163,7 +1154,6 @@ const persistTelegramChatMessage$ = command(
       ),
       userId: args.source.userLink.userId,
       orgId: args.source.orgId,
-      agentId: args.source.composeId,
       currentTime,
     };
     const binding =
@@ -1411,47 +1401,11 @@ const loadTelegramContext$ = command(
 
 const handleTelegramAgentMessage$ = command(
   async (
-    { get, set },
+    { set },
     args: TelegramAgentMessageArgs,
     signal: AbortSignal,
   ): Promise<void> => {
     const chatId = String(args.message.chat.id);
-    const agentDb = get(db$);
-    const agentComposeId = args.composeId;
-    const agent = await (async (): Promise<WorkspaceAgent | null> => {
-      const [row] = await agentDb
-        .select({
-          composeId: agents.id,
-          name: agents.name,
-          displayName: agents.displayName,
-        })
-        .from(agents)
-        .where(eq(agents.id, agentComposeId))
-        .limit(1);
-
-      if (!row) {
-        return null;
-      }
-
-      return {
-        composeId: row.composeId,
-        agentId: row.composeId,
-        name: row.name,
-        displayName: row.displayName,
-      };
-    })();
-    signal.throwIfAborted();
-    if (!agent) {
-      await postTelegramMessage({
-        botToken: args.botToken,
-        chatId,
-        text: `The workspace default agent is not configured. Please choose an agent in ${BRAND_PRESENTATION.brandName} first.`,
-        replyToMessageId: args.message.message_id,
-      });
-      signal.throwIfAborted();
-      return;
-    }
-
     await sendTypingActionSafely(args.botToken, chatId);
     signal.throwIfAborted();
     const scope = agentMessageScope({
@@ -1635,22 +1589,6 @@ function telegramConnectPromptData(
   };
 }
 
-function telegramMissingAgentNoticeData(
-  config: NonNullable<ReturnType<typeof getRunnableOfficialTelegramBotConfig>>,
-  chatId: string,
-  args: OfficialTelegramMessageData,
-) {
-  return {
-    botToken: config.botToken,
-    chatId,
-    text: `The workspace default agent is not configured. Please choose an agent in ${BRAND_PRESENTATION.brandName} first.`,
-    replyToMessageId:
-      args.message.chat.type === "private"
-        ? undefined
-        : args.message.message_id,
-  };
-}
-
 function getRunnableOfficialTelegramBotConfig() {
   const config = getOfficialTelegramBotConfig();
   if (!config.botToken || !config.botId) {
@@ -1747,24 +1685,19 @@ const processOfficialWebhookMessage$ = command(
       return;
     }
 
-    if (!userLink) {
+    if (
+      !userLink ||
+      (
+        await set(
+          getMemberRoleAndUpdateCache$,
+          userLink.orgId,
+          userLink.userId,
+          signal,
+        )
+      ).kind !== "member"
+    ) {
       await sendConnectPrompt(
         telegramConnectPromptData(config, chatId, args, displayName),
-      );
-      signal.throwIfAborted();
-      return;
-    }
-
-    const composeId = await (async () => {
-      const [metadata] = await db
-        .select()
-        .from(selectedExecutionAgent(userLink.orgId, userLink.userId));
-      return metadata?.id ?? null;
-    })();
-    signal.throwIfAborted();
-    if (!composeId) {
-      await postTelegramMessage(
-        telegramMissingAgentNoticeData(config, chatId, args),
       );
       signal.throwIfAborted();
       return;
@@ -1779,7 +1712,6 @@ const processOfficialWebhookMessage$ = command(
         orgId: userLink.orgId,
         userLink,
         userLinkKind: "official",
-        composeId,
         message: args.message,
         isDM: args.message.chat.type === "private",
         apiStartTime: args.apiStartTime,

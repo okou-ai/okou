@@ -16,7 +16,6 @@ import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 
 export { findButton, readyChat, RUN_PATH, RUN_THREAD_ID };
 
-export const CAPABILITY_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 export const FIRST_CAPABILITY_RUN_ID = "d0000000-0000-4000-a000-000000000811";
 export const SECOND_CAPABILITY_RUN_ID = "d0000000-0000-4000-a000-000000000812";
 

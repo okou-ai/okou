@@ -226,12 +226,6 @@ const categories: readonly Category[] = [
         connectorSlugs: ["apify", "google-sheets", "slack"],
       },
       {
-        id: "marketing-automation-system",
-        prompt:
-          "Set up a marketing automation system with three agents: a daily researcher for information collection, a weekly monitor for tracking, and an on-demand agent for ad-hoc tasks",
-        connectorSlugs: ["slack"],
-      },
-      {
         id: "discord-community-insights",
         prompt:
           "Set up a Discord community monitor that watches for feature requests and bug reports, categorizes them in Notion, and posts a weekly digest to Slack",

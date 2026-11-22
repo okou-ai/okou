@@ -19,7 +19,6 @@ function preferences(
     timezone,
     locale,
     supportedLocales: ["en-US"],
-    pinnedAgentIds: [],
     sendMode: "enter",
     cloudBrowserEnabledByDefault: true,
     chatResourcesEnabledByDefault: true,
@@ -138,7 +137,7 @@ test("A stored organization timezone is not replaced on a later visit", async ()
 
   await setupPage({
     context,
-    path: "/agents?settings=preference",
+    path: "/?settings=preference",
     host: "app.okou.ai",
   });
 

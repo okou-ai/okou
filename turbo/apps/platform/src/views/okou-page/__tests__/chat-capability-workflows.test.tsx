@@ -33,7 +33,6 @@ const { installCapabilityChat } = createChatCapabilityHelpers(context);
 
 const WORKFLOW_ID = "e0000000-0000-4000-a000-000000000861";
 const AUTOMATION_ID = "e0000000-0000-4000-a000-000000000862";
-const WORKFLOW_AGENT_ID = "e0000000-0000-4000-a000-000000000863";
 const OWNER_USER_ID = "test-user-123";
 type ScheduleAutomation = Extract<
   ChatThreadWorkflowAutomation,
@@ -45,7 +44,6 @@ type GmailMatchAutomation = Extract<
 >;
 const WORKFLOW = {
   id: WORKFLOW_ID,
-  agentId: WORKFLOW_AGENT_ID,
   name: "release-review",
   displayName: "Release review",
   description: "Review release readiness",

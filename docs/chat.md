@@ -217,8 +217,8 @@ for reserved artwork/preview geometry.
 
 Do not introduce `ResizeObserver`, mutation observers, or timer/frame loops to
 watch card/transcript content dimensions and repair scrolling afterward. Do not
-compensate for async height changes by restoring the scroll position on every
-render. Preserve geometry directly.
+compensate for async height changes with `withChatScrollLayout` or
+`restoreScrollPosition$` on every update. Preserve geometry directly.
 
 The transcript continues to own scrolling for new messages, navigation, folding,
 viewport changes, and composer layout. These causes do not relax the card

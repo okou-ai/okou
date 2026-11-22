@@ -19,7 +19,7 @@ const emailPreference: EmailSubscriptionResponse = Object.freeze({
 async function openPreferences() {
   await setupPage({
     context,
-    path: "/agents?settings=preference",
+    path: "/?settings=preference",
     auth: {
       user: {
         id: "test-user-123",

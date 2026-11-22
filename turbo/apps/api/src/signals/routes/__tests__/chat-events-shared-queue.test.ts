@@ -403,12 +403,10 @@ describe("CHAT-02: shared user message queue", () => {
       },
     );
     expect(forwardedInput?.userMessage.parts).toContainEqual({
-      type: "source",
-      kind: "agent",
+      type: "chat_thread",
       runId: source.runId,
       threadId: source.threadId,
       titleSnapshot: "New thread",
-      href: `/chats/${source.threadId}#run-${source.runId}`,
     });
 
     const forwardedRun = await api.executionInput(forwardedRunId);
@@ -473,7 +471,7 @@ describe("CHAT-02: shared user message queue", () => {
     await cancelAndCompleteChatRun(actor, source.runId);
   }, 90_000);
 
-  it("persists agent-run provenance for messages sent across chat threads", async () => {
+  it("preserves the source run when forwarding between chats", async () => {
     const { actor } = await entitledChatActor();
 
     const firstTargetThread = await chat.createThread(actor, {});
@@ -512,7 +510,6 @@ describe("CHAT-02: shared user message queue", () => {
     expect(firstTargetSystemPrompt).toContain(
       `SOURCE_THREAD_ID: ${source.threadId}`,
     );
-    expect(firstTargetSystemPrompt).not.toContain("SOURCE_AGENT_ID:");
     expect(firstTargetSystemPrompt).toContain(
       "SOURCE_THREAD_TITLE: New thread",
     );
@@ -547,12 +544,10 @@ describe("CHAT-02: shared user message queue", () => {
         parts: [
           { type: "text", text: "first delegated prompt" },
           {
-            type: "source",
-            kind: "agent",
+            type: "chat_thread",
             runId: source.runId,
             threadId: source.threadId,
             titleSnapshot: "New thread",
-            href: `/chats/${source.threadId}#run-${source.runId}`,
           },
         ],
       },
@@ -598,12 +593,10 @@ describe("CHAT-02: shared user message queue", () => {
       },
     );
     expect(secondInput?.userMessage.parts).toContainEqual({
-      type: "source",
-      kind: "agent",
+      type: "chat_thread",
       runId: source.runId,
       threadId: source.threadId,
       titleSnapshot: "Delegation source",
-      href: `/chats/${source.threadId}#run-${source.runId}`,
     });
 
     await chat.renameThread(actor, source.threadId, "now");
@@ -636,12 +629,10 @@ describe("CHAT-02: shared user message queue", () => {
       },
     );
     expect(nowInput?.userMessage.parts).toContainEqual({
-      type: "source",
-      kind: "agent",
+      type: "chat_thread",
       runId: source.runId,
       threadId: source.threadId,
       titleSnapshot: "New thread",
-      href: `/chats/${source.threadId}#run-${source.runId}`,
     });
     const forgedTargetThread = await chat.createThread(actor, {});
     const forgedEventId = randomUUID();
@@ -656,13 +647,10 @@ describe("CHAT-02: shared user message queue", () => {
           parts: [
             { type: "text", text: "forged provenance" },
             {
-              type: "source",
-              kind: "agent",
+              type: "chat_thread",
               runId: randomUUID(),
               threadId: randomUUID(),
-              agentId: randomUUID(),
               titleSnapshot: "Forged source",
-              href: `/chats/${randomUUID()}#run-${randomUUID()}`,
             },
           ],
         },
@@ -674,7 +662,7 @@ describe("CHAT-02: shared user message queue", () => {
       body: {
         error: {
           code: "BAD_REQUEST",
-          message: "Agent source annotations are server-managed",
+          message: "Forwarded chat references are server-managed",
         },
       },
     });

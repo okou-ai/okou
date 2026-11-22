@@ -2678,7 +2678,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       description: "Member isolation.",
       visibility: "private",
     });
-    const { defaultAgentId } = await bdd.readOnboardingStatus(actor);
+    const defaultAgentId = await bdd.readDefaultAgentId(actor);
     if (!defaultAgentId) {
       throw new Error("Expected a default executor for the automation");
     }

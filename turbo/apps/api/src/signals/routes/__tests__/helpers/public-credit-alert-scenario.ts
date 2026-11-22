@@ -656,13 +656,12 @@ export async function createPublicCreditAlertScenario(context: TestContext) {
   bdd.acceptAgentStorageWrites();
   await owner.run(async () => {
     await bdd.completeOnboarding(admin);
+    await bdd.provisionWorkspace(admin);
     const initialized = await bdd.readOnboardingStatus(admin);
     expect(initialized).toMatchObject({
       hasOrg: true,
       isAdmin: true,
-      hasDefaultAgent: true,
     });
-    expect(initialized.defaultAgentId).toBeTruthy();
     await flushWaitUntilForTest();
   });
   const runs = createRunsApi(context);

@@ -101,9 +101,6 @@ function automation(
 function workflow(): WorkflowDetailResponse {
   return {
     id: WORKFLOW_ID,
-    agentId: "c0000000-0000-4000-a000-000000000001",
-    agentName: "research-bot",
-    agentDisplayName: "Research Bot",
     name: "daily-summary",
     displayName: "Daily summary workflow",
     description: "Prepare a summary",

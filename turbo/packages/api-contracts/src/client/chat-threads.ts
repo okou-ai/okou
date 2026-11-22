@@ -10,7 +10,7 @@ import type {
   chatThreadConnectorSelectionContract as OriginalChatThreadConnectorSelectionContract,
   chatThreadDraftContract as OriginalChatThreadDraftContract,
   chatThreadEventsContract as OriginalChatThreadEventsContract,
-  chatThreadMarkAgentReadContract as OriginalChatThreadMarkAgentReadContract,
+  chatThreadMarkAllReadContract as OriginalChatThreadMarkAllReadContract,
   chatThreadMarkReadContract as OriginalChatThreadMarkReadContract,
   chatThreadMarkUnreadContract as OriginalChatThreadMarkUnreadContract,
   chatThreadMetadataContract as OriginalChatThreadMetadataContract,
@@ -227,10 +227,10 @@ export const chatThreadEventsContract: ClientDescriptor<
   },
 };
 
-export const chatThreadMarkAgentReadContract: ClientDescriptor<
-  typeof OriginalChatThreadMarkAgentReadContract
+export const chatThreadMarkAllReadContract: ClientDescriptor<
+  typeof OriginalChatThreadMarkAllReadContract
 > = {
-  markAgentRead: {
+  markAllRead: {
     method: "POST",
     path: "/api/chat-thread-unreads/mark-read",
     statuses: {

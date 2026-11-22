@@ -33,6 +33,8 @@ final class PermissionActionRegistry {
     cards.values.contains { $0.isBusy } || batches.values.contains { $0.isSaving }
   }
 
+  var member: WorkspaceMemberID? { commands.approvalClient.member }
+
   func card(_ action: ChatPermissionBatchAction) -> PermissionBatchStore {
     if let existing = batches[action] { return existing }
     let card = PermissionBatchStore(
@@ -230,12 +232,12 @@ final class PermissionActionStore {
           }
           if !delivered {
             let thread = ChatThread(
-              id: action.threadID, agentID: action.agentID, title: "", createdAt: .now,
+              id: action.threadID, agentID: nil, title: "", createdAt: .now,
               updatedAt: .now, sortAt: .now, pinnedAt: nil, pinOrder: nil)
             continuationUncertain = true
             _ = try await commands.send(
               thread: thread, text: prompt, clientEventID: clientEventID,
-              chatThreadSortEventID: sortEventID, expectedAgentID: action.agentID)
+              chatThreadSortEventID: sortEventID)
           }
           try Task.checkCancellation()
           guard !closed, self.generation == generation else { return }

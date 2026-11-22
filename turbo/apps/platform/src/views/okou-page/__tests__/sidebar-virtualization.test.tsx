@@ -31,7 +31,6 @@ import { pathname } from "../../../signals/location.ts";
 import { buttonByText } from "./sidebar-test-helpers.tsx";
 
 const context = testContext();
-const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const ROW_HEIGHT = 36;
 
 function threadId(index: number): string {
@@ -44,18 +43,6 @@ function mockThreads(
   projectMemberCount = 2,
   archived = false,
 ): void {
-  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
-  context.mocks.data.agents([
-    {
-      agentId: AGENT_ID,
-      ownerId: "test-user-123",
-      displayName: "Nova",
-      description: null,
-      sound: null,
-      avatarUrl: null,
-      visibility: "public",
-    },
-  ]);
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
     return respond(
       200,
@@ -63,7 +50,7 @@ function mockThreads(
         chatThreads: Array.from({ length: count }, (_, index) => {
           return {
             id: threadId(index),
-            agentId: AGENT_ID,
+
             title: `History ${index + 1}`,
             sortAt: new Date(
               Date.parse("2026-03-10T00:00:00Z") + (count - index) * 1000,
@@ -168,7 +155,7 @@ test("Keep the chat viewport keyboard-focusable only while a conversation is ope
   mockViewportHeight(() => {
     return 5 * ROW_HEIGHT;
   }, threadCount);
-  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
   const sidebar = await screen.findByTestId("chat-list-column");
   const viewport = await within(sidebar).findByTestId("sidebar-scroll-area");
   const first = await within(viewport).findByText("History 1");
@@ -249,7 +236,7 @@ test("Collapse and expand a Project inside a scrolled virtual window", async () 
   }, projects.length + 32);
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
   const sidebar = await screen.findByTestId("chat-list-column");
   const viewport = await within(sidebar).findByTestId("sidebar-scroll-area");
@@ -363,7 +350,7 @@ async function openFoldList({
   );
   await setupPage({
     context,
-    path: activeChat ? `/chats/${threadId(0)}` : `/agents/${AGENT_ID}/chat`,
+    path: activeChat ? `/chats/${threadId(0)}` : `/`,
   });
   if (unread || archived) {
     await screen.findByLabelText("Open chat list menu");
@@ -990,7 +977,7 @@ async function setupUnreadHistoryBeyondCurrentWindow() {
       unreadAt: {},
     });
   });
-  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
   const sidebar = screen.getByTestId("chat-list-column");
   await within(sidebar).findByText("History 1");
   expect(within(sidebar).queryByText("History 41")).not.toBeInTheDocument();
@@ -1049,7 +1036,7 @@ test("Follow full-list wave positions across scrolling and pinning", async () =>
   });
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
   const sidebar = screen.getByTestId("chat-list-column");
   const rows = () => {
@@ -1139,7 +1126,7 @@ test("Measure the mobile chat list only after the main stylesheet bounds it", as
 
   const page = await startPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
   await screen.findByRole("navigation", { name: "Main navigation" });
   // Workspace search lists the same chats outside the chat list, so finding
@@ -1187,7 +1174,7 @@ test("Show all chats from the tail of a scrolled mobile unread list", async () =
   mockPwaViewportHeight(() => {
     return 5 * PWA_ROW_HEIGHT;
   }, unreadIndexes.length + 1);
-  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
   const list = await screen.findByRole("region", { name: "Chat threads" });
   await within(list).findByText("History 1");
 
@@ -1223,7 +1210,7 @@ test("Restore the mobile chat-list scroll position after returning from a conver
   mockPwaViewportHeight(() => {
     return 5 * PWA_ROW_HEIGHT;
   }, threadCount);
-  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupPage({ context, path: `/` });
   const list = await screen.findByRole("region", { name: "Chat threads" });
   await within(list).findByText("History 1");
   fireEvent.scroll(list, { target: { scrollTop: 16 * PWA_ROW_HEIGHT } });
@@ -1262,7 +1249,7 @@ test("Remeasure the mobile chat list when a service notice arrives and is dismis
   await setupPage({
     context,
     host: "app.okou.ai",
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
   const list = await screen.findByRole("region", { name: "Chat threads" });
   const rows = () => {

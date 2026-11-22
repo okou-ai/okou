@@ -16,8 +16,7 @@ import {
 } from "./sidebar-test-helpers.tsx";
 
 const context = testContext();
-const { mockSidebarThreadStory, prepareDefaultAgent } =
-  createSidebarHelpers(context);
+const { mockSidebarThreadStory } = createSidebarHelpers(context);
 
 const MAC_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/152.0.0.0 Safari/537.36";
@@ -49,7 +48,6 @@ function unreadOnlyMenuItem(): HTMLElement {
 
 function preparePage(): Promise<void> {
   context.mocks.browser.userAgent(MAC_USER_AGENT);
-  prepareDefaultAgent();
   mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
   return setupSidebarPage({
     context,
@@ -111,7 +109,6 @@ test("Show all chats from the empty unread state", async () => {
 
 test("Open the first unread chat from the shortcut", async () => {
   context.mocks.browser.userAgent(MAC_USER_AGENT);
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(INCIDENT_THREAD_ID, "Incident follow-up"),
@@ -141,7 +138,6 @@ test("Open the first unread chat from the shortcut", async () => {
 
 test("Only the latest shortcut toggle navigates", async () => {
   context.mocks.browser.userAgent(MAC_USER_AGENT);
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(INCIDENT_THREAD_ID, "Incident follow-up"),
@@ -173,7 +169,6 @@ test("Only the latest shortcut toggle navigates", async () => {
 
 test("Keep the current chat when the selected filter lists it", async () => {
   context.mocks.browser.userAgent(MAC_USER_AGENT);
-  prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(INCIDENT_THREAD_ID, "Incident follow-up"),

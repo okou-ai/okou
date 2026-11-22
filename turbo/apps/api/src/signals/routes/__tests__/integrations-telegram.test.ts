@@ -208,7 +208,6 @@ describe("GET /api/integrations/telegram", () => {
       tokenStatus: "valid",
       official: {
         configured: true,
-        usesDefaultAgent: true,
         linkedTelegramUserId: null,
       },
     });
@@ -331,52 +330,6 @@ describe("POST /api/integrations/telegram/link", () => {
     );
 
     expectUnauthorized(response.body);
-  });
-
-  it("returns 409 when connecting the official bot before onboarding creates a default agent", async () => {
-    const fixture = seedLinkContext();
-    await fixture.run(async () => {
-      const { token } = fixture;
-      const telegramUserId = Number(newTelegramBotId());
-      const client = setupApp({
-        context,
-        routes: integrationsTelegramRoutes,
-      })(integrationsTelegramContract);
-      server.use(telegramOauthHead("0"));
-
-      const response = await accept(
-        fixture.run(async () => {
-          return await client.link({
-            headers: { authorization: `Bearer ${token}` },
-            body: {
-              telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
-              telegramAuth: makeTelegramAuth(
-                telegramUserId,
-                "official_tg",
-                OFFICIAL_BOT_TOKEN,
-              ),
-            },
-          });
-        }),
-        [409],
-      );
-
-      expect(response.body.error.code).toBe("CONFLICT");
-      expect(response.body.error.message).toBe(
-        "Finish onboarding before connecting Telegram. Telegram needs a default agent for this workspace.",
-      );
-
-      const status = await accept(
-        fixture.run(async () => {
-          return await client.getLinkStatus({
-            query: { botId: OFFICIAL_TELEGRAM_BOT_ID },
-            headers: { authorization: `Bearer ${token}` },
-          });
-        }),
-        [200],
-      );
-      expect(status.body.linked).toBeFalsy();
-    });
   });
 
   it.each([200, 403])(
@@ -925,7 +878,7 @@ describe("GET /api/integrations/telegram/download-file", () => {
     const bdd = createBddApi(context);
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
-    await bdd.readOnboardingStatus(actor);
+    await bdd.provisionWorkspace(actor);
     await bdd.completeOnboarding(actor);
     const userId = newTelegramBotId();
     const chatId = previousPrivateAccount ? Number(userId) : -Number(userId);

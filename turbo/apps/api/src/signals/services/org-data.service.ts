@@ -20,7 +20,7 @@ import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { usagePackAllocations } from "@okouai/db/schema/usage-pack-subscription";
 import { command } from "ccstate";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { object, string } from "zod";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
@@ -213,7 +213,7 @@ export const orgDetail$ = command(
     signal.throwIfAborted();
 
     let identity: OrgIdentity | undefined = cached[0];
-    if (!identity) {
+    if (!identity?.name) {
       const client = get(clerk$);
       const clerkOrgSettled = await settle(
         client.organizations.getOrganization({
@@ -247,11 +247,13 @@ export const orgDetail$ = command(
           cachedAt: now,
         })
         // Preserve a profile update or fill that won during the Clerk read.
-        // A no-op update returns that identity atomically without refreshing
-        // its timestamp or copying fields from this potentially older snapshot.
+        // A creation webhook can record the creator before a name is available.
         .onConflictDoUpdate({
           target: orgCache.orgId,
-          set: { name: orgCache.name },
+          set: {
+            name: sql`coalesce(nullif(${orgCache.name}, ''), excluded.name)`,
+            createdBy: sql`coalesce(${orgCache.createdBy}, excluded.created_by)`,
+          },
         })
         .returning({
           name: orgCache.name,

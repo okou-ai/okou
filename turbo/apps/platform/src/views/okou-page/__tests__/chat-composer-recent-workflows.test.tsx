@@ -14,7 +14,6 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
-  AGENT_ID,
   composerWorkflow,
   findComposerEditor,
   createChatComposerHelpers,
@@ -22,13 +21,12 @@ import {
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
-const { mockAgent, mockBillingCapabilities, mockPersonalModelRoutes } =
+const { mockBillingCapabilities, mockPersonalModelRoutes } =
   createChatComposerHelpers(context);
 
 const THREAD_ID = "b0000000-0000-4000-a000-000000000920";
 
 function mockWorkflows(prefix = "") {
-  mockAgent();
   mockPersonalModelRoutes();
   mockBillingCapabilities({ restrictedBuiltInModels: false });
   context.mocks.data.userModelPreference({
@@ -121,7 +119,7 @@ test("The overview fills from the alphabet and expanding preserves the visible w
   expect(workflowNames()).toStrictEqual([...overview, "/echo", "/zulu"]);
 });
 
-test.each([`/chats/${THREAD_ID}`, `/agents/${AGENT_ID}/chat`])(
+test.each([`/chats/${THREAD_ID}`, `/`])(
   "An abandoned workflow selection at %s does not change recency",
   async (path) => {
     mockWorkflows();
@@ -143,7 +141,7 @@ test.each([`/chats/${THREAD_ID}`, `/agents/${AGENT_ID}/chat`])(
 
 test.each([
   {
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     history: [],
     name: "zulu",
     expected: ["/zulu", "/alpha", "/beta", "/charlie"],

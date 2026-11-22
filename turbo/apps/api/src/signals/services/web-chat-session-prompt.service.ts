@@ -1,7 +1,7 @@
 import { buildCurrentThreadContext } from "./chat-thread-prompt";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
 import type {
-  ChatAgentRunSourceAnnotation,
+  ChatRunSourceAnnotation,
   UserMessageReferences,
 } from "./chat-user-message.service";
 
@@ -11,7 +11,7 @@ export interface WebChatSessionPromptContext {
   readonly generationTemplatePrompt: string;
   readonly computerUseHostDisplayName: string | null;
   readonly triggerSource: "web" | "agent";
-  readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
+  readonly chatRunSource: ChatRunSourceAnnotation | null;
   readonly references: UserMessageReferences;
   readonly integrationNote: string;
 }
@@ -38,20 +38,13 @@ function buildReferencesContext(
   references: UserMessageReferences,
   singleAgent: boolean,
 ): string {
-  if (references.agents.length === 0 && references.chatThreads.length === 0) {
+  if (references.chatThreads.length === 0) {
     return "";
   }
   return [
-    singleAgent
-      ? "# Referenced conversations"
-      : "# Referenced Agents and Threads",
+    "# Referenced conversations",
     "",
     "The current message links:",
-    ...references.agents.map((agent) => {
-      return singleAgent
-        ? `- Retained configuration reference ${JSON.stringify(agent.nameSnapshot)}: ${agent.agentId}. This reference does not select an executor or authorize shared configuration changes.`
-        : `- Agent ${JSON.stringify(agent.nameSnapshot)}: AGENT_ID=${agent.agentId}`;
-    }),
     ...references.chatThreads.map((thread) => {
       return `- Chat thread ${JSON.stringify(thread.titleSnapshot)}: CHAT_THREAD_ID=${thread.threadId}`;
     }),
@@ -71,8 +64,8 @@ function buildReferencesContext(
  * to do with them. What the run needs from the source thread depends on the
  * message, so the commands are listed and the choice is left to the run.
  */
-function buildAgentRunSourceContext(
-  source: ChatAgentRunSourceAnnotation,
+function buildChatRunSourceContext(
+  source: ChatRunSourceAnnotation,
   triggerSource: "web" | "agent",
   singleAgent: boolean,
 ): string {
@@ -91,7 +84,6 @@ function buildAgentRunSourceContext(
     "",
     `- SOURCE_RUN_ID: ${source.runId}`,
     `- SOURCE_THREAD_ID: ${source.threadId}`,
-    ...(source.agentId ? [`- SOURCE_AGENT_ID: ${source.agentId}`] : []),
     `- SOURCE_THREAD_TITLE: ${source.titleSnapshot}`,
     "",
     carriedContextDescription,
@@ -125,9 +117,9 @@ export function buildWebChatAppendSystemPrompt(args: {
     buildCurrentThreadContext(args.threadId),
     args.context.projectContext,
     buildReferencesContext(args.context.references, args.context.singleAgent),
-    args.context.agentRunSource
-      ? buildAgentRunSourceContext(
-          args.context.agentRunSource,
+    args.context.chatRunSource
+      ? buildChatRunSourceContext(
+          args.context.chatRunSource,
           args.context.triggerSource,
           args.context.singleAgent,
         )

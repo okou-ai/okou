@@ -54,7 +54,7 @@ async function setAdminSession(): Promise<SessionFixture> {
     orgId: `org_${randomUUID()}`,
     email: `${userId}@example.test`,
   };
-  await createBddApi(context).readOnboardingStatus({
+  await createBddApi(context).provisionWorkspace({
     ...fixture,
     orgRole: "org:admin",
   });

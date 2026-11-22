@@ -113,7 +113,6 @@ async function setup(): Promise<Scenario> {
     model: "claude-fable-5-1",
   });
   const workflowId = await wf.createWorkflow(actor, {
-    agentId,
     name: WORKFLOW_NAME,
   });
   mocks.clerk.session(actor.userId, actor.orgId);

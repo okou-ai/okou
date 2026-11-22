@@ -10,7 +10,6 @@ import {
 export const ROUTES = {
   home: "/",
   forYou: "/for-you",
-  agents: "/agents",
   workflows: "/workflows",
   workflowDetail: "/workflows/:workflowId",
   workflowDetailAutomations: "/workflows/:workflowId/automations",

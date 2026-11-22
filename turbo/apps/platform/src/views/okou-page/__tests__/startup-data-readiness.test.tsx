@@ -1,4 +1,3 @@
-import { CHAT_LIST_AGENT_ID } from "./chat-list-test-helpers.ts";
 import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
@@ -39,7 +38,6 @@ function fixture() {
       }),
     ],
   });
-  context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
   let projectName: string | null = null;
   let projectSequence = 1;
   let recoveryPending = true;

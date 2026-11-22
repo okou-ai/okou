@@ -104,8 +104,7 @@ export function ChatThreadStateText({
 /**
  * Whether the default artwork gives way to the animated design-system avatar.
  *
- * The organization default agent is Okou, and its stored avatar is the flat
- * default drawing. The avatar slot uses the brand artwork for this URL.
+ * The avatar slot uses the brand artwork for the default drawing.
  */
 function useOkouAvatarFor(rawAvatarUrl: string | null | undefined): boolean {
   const animatedAvatar =

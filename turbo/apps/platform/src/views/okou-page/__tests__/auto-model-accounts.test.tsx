@@ -78,7 +78,7 @@ function mockAutoMode(): void {
 async function openSettings(): Promise<HTMLElement> {
   await setupPage({
     context,
-    path: "/agents?settings=model",
+    path: "/?settings=model",
   });
   const settings = await screen.findByRole("dialog", { name: "Settings" });
   await within(settings).findByRole("heading", { name: "Use more models" });
@@ -297,7 +297,7 @@ test("Show loading rather than a connect prompt before the first account read co
       return respond(200, { subscriptions: [] });
     },
   );
-  const page = await startPage({ context, path: "/agents?settings=model" });
+  const page = await startPage({ context, path: "/?settings=model" });
   await page.content;
   await started.promise;
   const settings = await screen.findByRole("dialog", { name: "Settings" });

@@ -330,7 +330,7 @@ export interface KotlinTypeBinding {
   readonly name: string;
   readonly schema: ZodType;
   readonly direction: "input" | "output";
-  /** Fields consumed by the Android reader when the server also serves older clients. */
+  /** Native response projection. Route validation still uses the full schema. */
   readonly readSchema?: ZodType;
   /** Raw transport/cache envelopes retain all JSON members; their consumer owns decoding. */
   readonly representation?: "raw-object";
@@ -512,11 +512,6 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   {
     name: "OnboardingStatus",
     schema: onboardingStatusContract.getStatus.responses[200],
-    readSchema: onboardingStatusContract.getStatus.responses[200].omit({
-      hasDefaultAgent: true,
-      defaultAgentId: true,
-      defaultAgentMetadata: true,
-    }),
     direction: "output",
   },
   {
@@ -537,9 +532,6 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   {
     name: "UserPreferences",
     schema: userPreferencesContract.get.responses[200],
-    readSchema: userPreferencesContract.get.responses[200].omit({
-      pinnedAgentIds: true,
-    }),
     direction: "output",
   },
   {

@@ -73,7 +73,7 @@ async function carrier(existingActor?: ApiTestUser, unattended = false) {
     visibility: "private",
   });
   const workflowAgentId = unattended
-    ? (await bdd.readOnboardingStatus(actor)).defaultAgentId
+    ? await bdd.readDefaultAgentId(actor)
     : undefined;
   if (unattended && !workflowAgentId) {
     throw new Error("Expected the personal workflow namespace");

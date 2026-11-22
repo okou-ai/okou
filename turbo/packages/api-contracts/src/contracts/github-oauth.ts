@@ -17,7 +17,6 @@ const jsonErrorSchema = object({ error: string() });
 export const githubOauthInstallQuerySchema = object({
   userId: string().optional(),
   orgId: string().optional(),
-  composeId: string().optional(),
 });
 
 export const githubOauthConnectQuerySchema = object({

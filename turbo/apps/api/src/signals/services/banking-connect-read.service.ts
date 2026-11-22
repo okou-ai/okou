@@ -1,5 +1,5 @@
-import type { BankingAccessRequestStatusResponse } from "@okouai/api-contracts/contracts/banking";
-import { agents } from "@okouai/db/schema/agent";
+import type { BankingWorkspaceStatus } from "@okouai/api-contracts/contracts/banking";
+import { legacyAgentApiProfiles } from "@okouai/db/schema/legacy-agent-api-profile";
 import {
   bankingAccounts,
   bankingAgentEnablements,
@@ -48,7 +48,7 @@ export function bankingConnectionCondition(owner: BankingOwner) {
   );
 }
 
-export const findBankingAgent$ = command(
+export const findLegacyBankingAgent$ = command(
   async (
     { get },
     owner: BankingOwner,
@@ -57,12 +57,17 @@ export const findBankingAgent$ = command(
     const db = get(db$);
     const [agent] = await db
       .select({
-        id: agents.id,
-        name: agents.name,
-        displayName: agents.displayName,
+        id: legacyAgentApiProfiles.id,
+        name: legacyAgentApiProfiles.name,
+        displayName: legacyAgentApiProfiles.displayName,
       })
-      .from(agents)
-      .where(and(eq(agents.id, agentId), eq(agents.orgId, owner.orgId)))
+      .from(legacyAgentApiProfiles)
+      .where(
+        and(
+          eq(legacyAgentApiProfiles.id, agentId),
+          eq(legacyAgentApiProfiles.orgId, owner.orgId),
+        ),
+      )
       .limit(1);
 
     return agent
@@ -114,22 +119,12 @@ export const bankingManagementStatusBody$ = command(
   async (
     { get, set },
     owner: BankingOwner,
-    agentId: string,
-  ): Promise<BankingAccessRequestStatusResponse | UserErrorResponse> => {
+  ): Promise<BankingWorkspaceStatus> => {
     const db = get(db$);
-    const agent = await set(findBankingAgent$, owner, agentId);
-    if (!agent) {
-      return {
-        status: 404,
-        body: {
-          error: { code: "AGENT_NOT_FOUND", message: "Agent not found" },
-        },
-      };
-    }
 
     const connection = await set(findBankingConnection$, owner);
     if (!connection) {
-      return { agent, connection: null, session: null, grant: null };
+      return { connection: null, session: null, grant: null };
     }
 
     const [accountRows, session, grantRows] = await Promise.all([
@@ -188,7 +183,6 @@ export const bankingManagementStatusBody$ = command(
     }
 
     return {
-      agent,
       connection: {
         id: connection.id,
         status: repairInstitutions.size > 0 ? "repair_required" : "active",

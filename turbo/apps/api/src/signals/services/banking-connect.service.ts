@@ -6,8 +6,8 @@ import {
 } from "node:crypto";
 
 import type {
-  BankingAgentGrantRequest,
-  BankingConnectSessionRequest,
+  WorkspaceBankingGrantRequest,
+  WorkspaceBankingConnectSessionRequest,
   BankingGrantDuration,
 } from "@okouai/api-contracts/contracts/banking";
 import { prepareBankingConnectSessionReplacement } from "@okouai/db/operations/banking-connect-session-replacement";
@@ -46,7 +46,6 @@ import {
 import {
   bankingManagementStatusBody$,
   bankingConnectionCondition,
-  findBankingAgent$,
   findBankingConnection$,
   type BankingOwner,
   type UserErrorResponse,
@@ -230,19 +229,12 @@ const ensureConnection$ = command(
 );
 
 export const bankingAccessRequestStatus$ = command(
-  async (
-    { set },
-    args: { readonly owner: BankingOwner; readonly agentId: string },
-  ) => {
+  async ({ set }, args: { readonly owner: BankingOwner }) => {
     set(writeDb$);
-    const status = await set(
-      bankingManagementStatusBody$,
-      args.owner,
-      args.agentId,
-    );
-    return isUserErrorResponse(status)
-      ? status
-      : { status: 200 as const, body: status };
+    return {
+      status: 200 as const,
+      body: await set(bankingManagementStatusBody$, args.owner),
+    };
   },
 );
 
@@ -288,7 +280,7 @@ const replacePendingConnectSession$ = command(
     args: {
       readonly owner: BankingOwner;
       readonly connectionId: string;
-      readonly body: BankingConnectSessionRequest;
+      readonly body: WorkspaceBankingConnectSessionRequest;
     },
   ) => {
     const db = set(writeDb$);
@@ -325,18 +317,13 @@ export const startBankingConnectSession$ = command(
     { set },
     args: {
       readonly owner: BankingOwner;
-      readonly body: BankingConnectSessionRequest;
+      readonly body: WorkspaceBankingConnectSessionRequest;
       readonly redirectOrigin: string;
       readonly webhookOrigin: string;
     },
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
-    const agent = await set(findBankingAgent$, args.owner, args.body.agentId);
-    signal.throwIfAborted();
-    if (!agent) {
-      return userError(404, "AGENT_NOT_FOUND", "Agent not found");
-    }
 
     const connection = await set(ensureConnection$, args.owner, signal);
     signal.throwIfAborted();
@@ -450,19 +437,15 @@ const DURATION_MS: Readonly<Record<BankingGrantDuration, number>> = {
   "30d": 30 * 24 * 60 * 60 * 1000,
 };
 
-export const saveBankingAgentGrant$ = command(
+export const saveBankingGrant$ = command(
   async (
     { set },
     args: {
       readonly owner: BankingOwner;
-      readonly body: BankingAgentGrantRequest;
+      readonly body: WorkspaceBankingGrantRequest;
     },
   ) => {
     const db = set(writeDb$);
-    const agent = await set(findBankingAgent$, args.owner, args.body.agentId);
-    if (!agent) {
-      return userError(404, "AGENT_NOT_FOUND", "Agent not found");
-    }
     const connection = await set(findBankingConnection$, args.owner);
     if (!connection) {
       return userError(
@@ -535,22 +518,15 @@ export const saveBankingAgentGrant$ = command(
       });
 
     await publishUserSignal([args.owner.userId], "bankingAccessChanged");
-    const status = await set(
-      bankingManagementStatusBody$,
-      args.owner,
-      args.body.agentId,
-    );
-    return isUserErrorResponse(status)
-      ? status
-      : { status: 200 as const, body: status };
+    return {
+      status: 200 as const,
+      body: await set(bankingManagementStatusBody$, args.owner),
+    };
   },
 );
 
-export const revokeBankingAgentGrant$ = command(
-  async (
-    { set },
-    args: { readonly owner: BankingOwner; readonly agentId: string },
-  ) => {
+export const revokeBankingGrant$ = command(
+  async ({ set }, args: { readonly owner: BankingOwner }) => {
     const db = set(writeDb$);
     const connection = await set(findBankingConnection$, args.owner);
     if (connection) {
@@ -570,14 +546,10 @@ export const revokeBankingAgentGrant$ = command(
         await publishUserSignal([args.owner.userId], "bankingAccessChanged");
       }
     }
-    const status = await set(
-      bankingManagementStatusBody$,
-      args.owner,
-      args.agentId,
-    );
-    return isUserErrorResponse(status)
-      ? status
-      : { status: 200 as const, body: status };
+    return {
+      status: 200 as const,
+      body: await set(bankingManagementStatusBody$, args.owner),
+    };
   },
 );
 

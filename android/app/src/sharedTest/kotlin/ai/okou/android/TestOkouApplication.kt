@@ -50,8 +50,8 @@ open class TestOkouApplication : OkouApplication() {
     private val testUpdates by lazy {
         val service =
             object : UpdateService {
-                override suspend fun initialize() {
-                    updateService?.initialize()
+                override suspend fun initialize(retainedRelease: AndroidUpdatesRelease?) {
+                    updateService?.initialize(retainedRelease)
                 }
 
                 override suspend fun check() =

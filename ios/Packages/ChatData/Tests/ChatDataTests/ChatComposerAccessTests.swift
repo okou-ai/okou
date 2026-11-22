@@ -116,8 +116,6 @@ final class ChatComposerAccessTests: XCTestCase {
   func testDirectoryConnectionBeforeFirstMessageAddsAnAccountWithoutCreatingAChat() async throws {
     let fixture = ChatHTTPFixture { request in
       switch request.url!.path {
-      case "/api/agents/\(FixtureData.agentID)":
-        return ChatHTTPResponse(body: "{\"agentId\":\"\(FixtureData.agentID)\"}")
       case "/api/connectors/slack/no-auth":
         struct Account: Decodable {
           let intent: String
@@ -137,7 +135,7 @@ final class ChatComposerAccessTests: XCTestCase {
     }
     let service = ChatConnectorService(client: fixture.client)
     let action = ChatConnectorAction.configuration(
-      target: .builtin("slack"), agentID: FixtureData.agentID, threadID: nil)
+      target: .builtin("slack"), agentID: nil, threadID: nil)
     let loaded = try await service.status(action)
     let status = try XCTUnwrap(loaded)
     XCTAssertNil(status.account)
@@ -155,10 +153,6 @@ final class ChatComposerAccessTests: XCTestCase {
       ChatRemoteOverride(protocol: .vnc, connectionId: FixtureData.siblingID, enabled: true)
     ]
     let fixture = ChatHTTPFixture { request in
-      if request.url!.path == "/api/agents" {
-        return ChatHTTPResponse(
-          body: "[{\"agentId\":\"\(FixtureData.agentID)\",\"isDefaultAgent\":true}]")
-      }
       if request.url!.path == "/api/chat-threads" {
         struct Body: Decodable {
           let initialRemoteAccessOverrides: [ChatRemoteOverride]

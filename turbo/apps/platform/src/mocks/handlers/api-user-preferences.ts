@@ -21,7 +21,6 @@ let mockPreferences: UserPreferencesResponse = {
     "zh-Hans",
     "zh-Hant",
   ],
-  pinnedAgentIds: [],
   sendMode: "enter",
   cloudBrowserEnabledByDefault: true,
   chatResourcesEnabledByDefault: false,
@@ -30,10 +29,6 @@ let mockPreferences: UserPreferencesResponse = {
   captureNetworkBodiesRemaining: 0,
   memoryInitialized: true,
 };
-
-function normalizePinnedAgentIds(ids: readonly string[]): string[] {
-  return [...new Set(ids)];
-}
 
 export function resetMockUserPreferences(): void {
   mockPreferences = {
@@ -53,7 +48,6 @@ export function resetMockUserPreferences(): void {
       "zh-Hans",
       "zh-Hant",
     ],
-    pinnedAgentIds: [],
     sendMode: "enter",
     cloudBrowserEnabledByDefault: true,
     chatResourcesEnabledByDefault: false,
@@ -92,12 +86,7 @@ export const apiUserPreferencesHandlers = [
     return respond(200, mockPreferences);
   }),
   mockApi(userPreferencesContract.update, ({ body, respond }) => {
-    Object.assign(mockPreferences, {
-      ...body,
-      ...(body.pinnedAgentIds !== undefined && {
-        pinnedAgentIds: normalizePinnedAgentIds(body.pinnedAgentIds),
-      }),
-    });
+    Object.assign(mockPreferences, body);
     return respond(200, mockPreferences);
   }),
 ];

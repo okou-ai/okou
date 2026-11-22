@@ -122,16 +122,11 @@ public struct ChatConnectorService: Sendable {
   public init(client: APIClient) { self.client = client }
 
   public func status(_ action: ChatConnectorAction) async throws -> ChatConnectorStatus? {
-    // The thread's current Agent is authoritative, including after reassignment.
-    struct Metadata: Decodable, Sendable { let agentId: String }
     do {
       if let threadID = action.threadID {
         let metadata: ThreadMetadata = try await client.request(
           "/api/chat-threads/\(threadID)/metadata")
         guard metadata.id.lowercased() == threadID.lowercased() else { return nil }
-      } else if let agentID = action.agentID {
-        let agent: Metadata = try await client.request("/api/agents/\(agentID)")
-        guard agent.agentId.lowercased() == agentID.lowercased() else { return nil }
       }
       return try await readStatus(action)
     } catch let error as APIClientError where error.statusCode == 404 { return nil }

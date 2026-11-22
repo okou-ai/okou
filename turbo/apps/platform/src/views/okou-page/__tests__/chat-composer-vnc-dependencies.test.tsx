@@ -15,7 +15,6 @@ import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import {
-  SCOUT_AGENT_ID,
   SCOUT_THREAD_ID,
   createComposerConnectorHelpers,
 } from "./chat-composer-connectors-test-helpers.ts";
@@ -215,9 +214,7 @@ function installDependencyFixture({
 async function openRemoteAccess(newChat = false) {
   await setupPage({
     context,
-    path: newChat
-      ? `/agents/${SCOUT_AGENT_ID}/chat`
-      : `/chats/${SCOUT_THREAD_ID}`,
+    path: newChat ? `/` : `/chats/${SCOUT_THREAD_ID}`,
   });
   click(await findFastControl("button", "Connectors"));
   click(await screen.findByText("Remote access"));

@@ -124,10 +124,7 @@ const listWorkspaceAutomationsInner$ = command(
   async ({ set }, signal: AbortSignal) => {
     const entries = await set(workspaceWorkflowAutomationEntries$, signal);
     signal.throwIfAborted();
-    return {
-      status: 200 as const,
-      body: [...entries],
-    };
+    return { status: 200 as const, body: [...entries] };
   },
 );
 

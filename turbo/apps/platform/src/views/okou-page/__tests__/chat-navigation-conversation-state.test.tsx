@@ -295,12 +295,10 @@ test("Keep the work being read expanded as a later run arrives", async () => {
   const workHistory = fastButton("Collapse work history", container);
   expect(workHistory).toHaveAttribute("aria-expanded", "true");
   expect(screen.getByText("Response the reader is reviewing")).toBeVisible();
-  await waitFor(() => {
-    expect(
-      eventAnchor(container, responseBeingRead.id).getBoundingClientRect().top,
-    ).toBe(initialResponseTop);
-    expect(scroller.scrollTop).toBe(540);
-  });
+  expect(
+    eventAnchor(container, responseBeingRead.id).getBoundingClientRect().top,
+  ).toBe(initialResponseTop);
+  expect(scroller.scrollTop).toBe(540);
 
   rows = [...rows, completedRow(33, 6, thread.id, laterRunId)];
   workspace.setChatEventRows(rows);
@@ -316,10 +314,8 @@ test("Keep the work being read expanded as a later run arrives", async () => {
   const completedWork = fastButton("Collapse work history", container);
   expect(completedWork).toHaveAttribute("aria-expanded", "true");
   expect(screen.getByText("Response the reader is reviewing")).toBeVisible();
-  await waitFor(() => {
-    expect(
-      eventAnchor(container, responseBeingRead.id).getBoundingClientRect().top,
-    ).toBe(initialResponseTop);
-    expect(scroller.scrollTop).toBe(540);
-  });
+  expect(
+    eventAnchor(container, responseBeingRead.id).getBoundingClientRect().top,
+  ).toBe(initialResponseTop);
+  expect(scroller.scrollTop).toBe(540);
 });

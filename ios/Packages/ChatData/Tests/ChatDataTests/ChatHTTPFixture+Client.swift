@@ -15,7 +15,10 @@ extension ChatHTTPFixture {
 
   var client: APIClient {
     // The returned client owns its HTTP route and session for its complete lifetime.
-    APIClient(baseURL: baseURL, clientVersion: clientVersion, session: session) { [self] in
+    APIClient(
+      baseURL: baseURL, clientVersion: clientVersion, session: session,
+      member: WorkspaceMemberID(userID: Self.userID, workspaceID: Self.workspaceID)
+    ) { [self] in
       withExtendedLifetime(self) { "local-test-session" }
     }
   }

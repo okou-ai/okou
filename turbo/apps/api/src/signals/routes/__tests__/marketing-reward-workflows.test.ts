@@ -90,12 +90,11 @@ async function invoke(actor: ApiTestUser, workflowId: string) {
 
 test("retains the creator separately from the executor and the complete lineage after Workflow deletion", async () => {
   const received = capture();
-  const { actor, defaultAgentId: agentId } = await workflows.setupWorkflowOrg({
+  const { actor } = await workflows.setupWorkflowOrg({
     tier: "team",
   });
   installWorkflowVolumeS3Fixture(context);
   const workflowId = await workflows.createWorkflow(actor, {
-    agentId,
     name: `source-${randomUUID().slice(0, 8)}`,
     instruction: "Private instruction must not enter source events",
   });
@@ -213,10 +212,9 @@ test("continues publishing source facts after the creator has already earned the
   const received = capture();
   const settlementSecret = "workflow-lifetime-settlement-12345678901234567890";
   mockEnv("MARKETING_REWARDS_SETTLEMENT_SECRET", settlementSecret);
-  const { actor, defaultAgentId: agentId } = await workflows.setupWorkflowOrg();
+  const { actor } = await workflows.setupWorkflowOrg();
   installWorkflowVolumeS3Fixture(context);
   const workflowId = await workflows.createWorkflow(actor, {
-    agentId,
     name: `lifetime-${randomUUID().slice(0, 8)}`,
   });
   runs.acceptStorageDownloads();

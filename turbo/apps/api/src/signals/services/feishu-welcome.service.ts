@@ -1,9 +1,7 @@
-import { executionAgentId } from "./execution-agent";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
-import { agents } from "@okouai/db/schema/agent";
 
 import { buildFeishuWelcomeMessage } from "../../lib/feishu-message-card";
 import { deliverFeishuMessage$ } from "./feishu-message-delivery.service";
@@ -28,8 +26,6 @@ export const notifyFeishuConnect$ = command(
     const db = set(writeDb$);
     const [installation] = await get(db$)
       .select({
-        agentName: agents.name,
-        agentDisplayName: agents.displayName,
         botName: feishuOrgInstallations.botName,
         platform: feishuOrgInstallations.platform,
       })
@@ -37,16 +33,6 @@ export const notifyFeishuConnect$ = command(
       .innerJoin(
         feishuOrgInstallations,
         eq(feishuOrgInstallations.id, feishuOrgConnections.installationId),
-      )
-      .leftJoin(
-        agents,
-        eq(
-          agents.id,
-          executionAgentId(
-            feishuOrgInstallations.orgId,
-            feishuOrgConnections.userId,
-          ),
-        ),
       )
       .where(
         and(
@@ -69,7 +55,6 @@ export const notifyFeishuConnect$ = command(
         receiveId: args.openId,
         message: buildFeishuWelcomeMessage({
           platform: installation.platform,
-          agentName: installation.agentDisplayName ?? installation.agentName,
           botName: installation.botName,
         }),
         idempotencyKey: args.connectionId,

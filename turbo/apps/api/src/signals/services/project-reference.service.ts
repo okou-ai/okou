@@ -1,6 +1,9 @@
 import { computed } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
-import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import type {
+  UserMessageDocument,
+  UserMessagePart,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { projects } from "@okouai/db/schema/project";
 import type { AuthContext } from "../../types/auth";
 import { db$ } from "../external/db";
@@ -8,7 +11,7 @@ import type { ProjectReferenceRow } from "./chat-run-preparation-facts";
 
 function projectReferences(document: UserMessageDocument | null | undefined) {
   return (document?.parts ?? [])
-    .flatMap((part) => {
+    .flatMap<UserMessagePart>((part) => {
       return part.type === "feedback" ? part.note : [part];
     })
     .filter((part) => {

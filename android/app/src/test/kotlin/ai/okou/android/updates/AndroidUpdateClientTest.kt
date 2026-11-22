@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
@@ -283,6 +284,33 @@ class AndroidUpdateClientTest {
     }
 
     @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun startupAfterUpgradeRemovesTheDownloadedApk() = runTest {
+        val directory = files.newFolder()
+        val release = updateRelease()
+        val downloaded = File(directory, "${release.sha256}.apk").apply { writeText("APK") }
+        val unrelated = File(directory, "unmanaged.apk").apply { writeText("keep") }
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val store = FileUpdateStore(directory, dispatcher)
+        store.save(UpdateRecord("0.12.0", target = release))
+        val client =
+            AndroidUpdateClient(
+                ApplicationProvider.getApplicationContext(),
+                "https://api.okou.ai/".toHttpUrl(),
+                release.version,
+                directory,
+                dispatcher,
+            )
+
+        AppUpdates(client, store, release.version, 35, dispatcher).use { owner ->
+            advanceUntilIdle()
+            assertEquals(UpdateTransfer.Idle, owner.state.value.transfer)
+            assertFalse(downloaded.exists())
+            assertEquals("keep", unrelated.readText())
+        }
+    }
+
+    @Test
     @Suppress("DEPRECATION")
     fun cachedPackageRequiresTheInstalledSigningIdentityAndVersion() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
@@ -300,6 +328,7 @@ class AndroidUpdateClientTest {
                     url = "https://static.okou.io/android-updates/releases/0.13.0/$digest.apk",
                 )
         val file = File(directory, "$digest.apk").apply { writeBytes(bytes) }
+        val previous = File(directory, "${"f".repeat(64)}.apk").apply { writeText("old APK") }
         fun setSigners(info: PackageInfo, signature: String) {
             val signers = arrayOf(Signature(signature))
             if (Build.VERSION.SDK_INT >= 28) {
@@ -326,6 +355,8 @@ class AndroidUpdateClientTest {
         manager.setPackageArchiveInfo(file.path, archive)
         AndroidUpdateClient(context, "https://api.okou.ai/".toHttpUrl(), "0.12.0", directory).use {
             updater ->
+            updater.initialize(release)
+            assertFalse(previous.exists())
             assertEquals(file, updater.recover(release))
             archive.versionCode = installed.versionCode
             manager.setPackageArchiveInfo(file.path, archive)

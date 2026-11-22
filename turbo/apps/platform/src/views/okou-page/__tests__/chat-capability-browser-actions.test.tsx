@@ -223,14 +223,10 @@ function computerAuthorizationUrl(origin: string, token: string): string {
 }
 
 function connectorAuthorizationUrl(args: {
-  readonly agentId?: string;
   readonly threadId?: string;
   readonly callbackPrompt?: string;
 }): string {
   const url = new URL("/connectors/slack/authorize", "https://app.okou.ai");
-  if (args.agentId !== undefined) {
-    url.searchParams.set("agentId", args.agentId);
-  }
   if (args.threadId !== undefined) {
     url.searchParams.set("threadId", args.threadId);
   }

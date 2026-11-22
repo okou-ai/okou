@@ -151,7 +151,7 @@ test("A confirmed usage-pack purchase displays its confirmation", async () => {
 
   await setupPage({
     context,
-    path: "/agents?settings=billing&billingView=plans",
+    path: "/?settings=billing&billingView=plans",
     host: "app.okou.ai",
   });
 

@@ -2,7 +2,6 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import {
   chatThreadByIdContract,
   chatThreadsContract,
@@ -19,7 +18,7 @@ import {
   continuityThread,
   installContinuityWorkspace,
 } from "./chat-continuity-test-helpers.ts";
-import { CHAT_LIST_AGENT_ID, fastButton } from "./chat-list-test-helpers.ts";
+import { fastButton } from "./chat-list-test-helpers.ts";
 
 const context = testContext();
 const CHAT_LIST_PATH = "/";
@@ -214,18 +213,6 @@ test("Browse and filter mobile browser chats before opening a conversation and r
     caseId: 74,
     threads: [inbox, archived],
   });
-  context.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
-    return respond(200, {
-      agentId: params.id,
-      isDefaultAgent: false,
-      ownerId: "chat-list-owner",
-      displayName: "List agent",
-      description: null,
-      sound: null,
-      avatarUrl: null,
-      visibility: "private",
-    });
-  });
   context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
     return respond(200, {
       lastReadAt: null,
@@ -383,7 +370,6 @@ test("My Okou's chats tab is its chat list at / and composes a new chat there", 
     caseId: 84,
     threads: [thread],
   });
-  context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
   context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
     return respond(200, {
       lastReadAt: null,
@@ -628,9 +614,6 @@ test("Keep a PWA home prompt handoff in the prepared chat composer", async () =>
   const workspace = installContinuityWorkspace(context, {
     caseId: 76,
     threads: [],
-  });
-  context.mocks.data.onboardingStatus({
-    defaultAgentId: CHAT_LIST_AGENT_ID,
   });
 
   await setupPage({

@@ -315,7 +315,7 @@ private struct WorkspaceRootView: View {
       if let conversation = store.selectedConversation {
         ChatDetailView(
           conversation: conversation,
-          agents: store.list,
+          workspaceName: authentication.workspacePresentation(workspaceID)?.name,
           didSend: { await notifications.requestAfterSend() },
           topContentInset: topContentHeight,
           mentionSource: ComposerMentionSource(threads: store.list.threads),
@@ -369,46 +369,38 @@ private struct WorkspaceRootView: View {
   }
 
   @ViewBuilder private var newChatComposer: some View {
-    if store.defaultAgentID != nil {
-      @Bindable var composer = store.newComposer
-      ChatComposerView(
-        draft: $composer.text, isBusy: store.isCreating,
-        showsProgress: store.isCreating, canStop: false,
-        needsUpgrade: store.needsUpgrade,
-        error: store.error, attachmentURL: store.webURL,
-        attachments: composer.attachments,
-        draftState: composer,
-        submit: {
-          await store.sendNewChat(
-            sendTransition: ConversationSendTransition(), reduceMotion: reduceMotion)
-          await notifications.requestAfterSend()
-        },
-        refresh: nil,
-        modelSelection: store.newModelSelection,
-        connectorSelection: store.newModelSelection.connectors,
-        mentionSource: ComposerMentionSource(threads: store.list.threads),
-        workflowSource: store.composerWorkflows, agentID: store.defaultAgentID,
-        placeholder: String(localized: "Message \(store.currentAgentName)"),
-        project: store.newChatProject,
-        removeProject: store.removeNewChatProject
-      )
-      .transition(.identity)
-    } else {
-      // Reserve the compact input's space without mounting the provisional editor.
-      Color.clear
-        .frame(height: OkouControl.composerCompactHeight + OkouSpace.sm)
-        .accessibilityHidden(true)
-    }
+    @Bindable var composer = store.newComposer
+    ChatComposerView(
+      draft: $composer.text, isBusy: store.isCreating,
+      showsProgress: store.isCreating, canStop: false,
+      needsUpgrade: store.needsUpgrade,
+      error: store.error, attachmentURL: store.webURL,
+      attachments: composer.attachments,
+      draftState: composer,
+      submit: {
+        await store.sendNewChat(
+          sendTransition: ConversationSendTransition(), reduceMotion: reduceMotion)
+        await notifications.requestAfterSend()
+      },
+      refresh: nil,
+      modelSelection: store.newModelSelection,
+      connectorSelection: store.newModelSelection.connectors,
+      mentionSource: ComposerMentionSource(threads: store.list.threads),
+      workflowSource: store.composerWorkflows, agentID: nil,
+      placeholder: String(localized: "Message \(store.currentAgentName)"),
+      project: store.newChatProject,
+      removeProject: store.removeNewChatProject
+    )
+    .transition(.identity)
   }
 
   private var newChatHome: some View {
-    let agent = store.list.agents.first(where: { $0.agentId == store.defaultAgentID })
     return VStack(spacing: OkouSpace.xxl) {
       Spacer(minLength: 24)
       // Background restoration keeps the entrance; user navigation starts a fresh greeting.
       NewChatGreeting(
-        avatarURL: agent?.avatarUrl, agentName: agent?.displayName ?? "Okou",
-        isDefaultAgent: agent?.isDefaultAgent ?? true,
+        avatarURL: nil, agentName: "Okou",
+        isDefaultAgent: true,
         text: greetingText
       )
       .id(taglineIndex)

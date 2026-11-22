@@ -480,7 +480,7 @@ function SpotlightArtifactCommandItem({
 }
 
 function SpotlightSearchInput() {
-  const { t } = useTranslation("agents");
+  const { t } = useTranslation("common");
 
   return (
     // `p-5` all round: the 20px bottom padding is what balances the air above
@@ -514,7 +514,7 @@ function SpotlightSearchFilterBar({
   readonly resultCount: number;
   readonly onSelect: (filter: ThreeColumnSearchFilter) => void;
 }) {
-  const { t } = useTranslation("agents");
+  const { t } = useTranslation("common");
   const options: readonly {
     readonly value: ThreeColumnSearchFilter;
     readonly label: string;
@@ -697,7 +697,7 @@ function SpotlightSearchResults({
   onSelectWorkflow,
   onSelectArtifact,
 }: SpotlightSearchResultsProps) {
-  const { t } = useTranslation("agents");
+  const { t } = useTranslation("common");
   const numberShortcutsEnabled = useGet(threadNumberShortcutsEnabled$);
   const shortcutNumber = (index: number) => {
     return numberShortcutsEnabled && index < 9 ? index + 1 : undefined;
@@ -814,7 +814,7 @@ export function ThreeColumnSearchDialog({
   readonly onSelectWorkflow: (workflowId: string) => void;
   readonly onSelectArtifact: (artifact: ThreeColumnArtifactSearchItem) => void;
 }) {
-  const { t } = useTranslation("agents");
+  const { t } = useTranslation("common");
   const query = useGet(chatListQuery$);
   const setQuery = useSet(setChatListQuery$);
   const signal = useGet(pageSignal$);

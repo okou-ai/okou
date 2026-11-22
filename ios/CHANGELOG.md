@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.51.12](https://github.com/okou-ai/okou/compare/ios-v0.51.11...ios-v0.51.12) (2026-11-22)
+
+
+### Refactoring
+
+* **app:** retire agent prerequisites from member flows ([#49854](https://github.com/okou-ai/okou/issues/49854)) ([6eea61b](https://github.com/okou-ai/okou/commit/6eea61b4a4f5c7a3e218bb027b148f10c3d4dab7))
+
+## [0.51.11](https://github.com/okou-ai/okou/compare/ios-v0.51.10...ios-v0.51.11) (2026-11-22)
+
+
+### Bug Fixes
+
+* **ios:** render member-scoped connector permission cards ([#49914](https://github.com/okou-ai/okou/issues/49914)) ([8bc9d40](https://github.com/okou-ai/okou/commit/8bc9d4097ec91dac14bc33e3d5fe752b3a5c645b))
+
 ## [0.51.10](https://github.com/okou-ai/okou/compare/ios-v0.51.9...ios-v0.51.10) (2026-11-22)
 
 

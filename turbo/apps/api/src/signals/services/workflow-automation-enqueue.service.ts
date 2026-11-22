@@ -12,8 +12,8 @@ import { prepareChatEvent } from "./chat-event.service";
 import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
 import {
   createUserMessageDocument,
-  withAgentRunSourceAnnotation,
-  type ChatAgentRunSourceAnnotation,
+  withChatRunSourceAnnotation,
+  type ChatRunSourceAnnotation,
 } from "./chat-user-message.service";
 import type {
   WorkflowAutomationContext,
@@ -47,13 +47,12 @@ export type RunWorkflowAutomationResult = {
 
 export interface RunWorkflowAutomationNowArgs {
   readonly automation: AutomationRow;
-  readonly proactiveAgentId?: string;
   readonly chatThreadId: string;
   readonly automationContext: WorkflowAutomationContext;
   /** Stable ingress identity when a source callback may retry the same event. */
   readonly queueEventId?: string;
   readonly apiStartTime: number;
-  readonly agentRunSource?: ChatAgentRunSourceAnnotation;
+  readonly chatRunSource?: ChatRunSourceAnnotation;
   /** Exact member connector that durably delivered this provider event. */
   readonly connectorSourceId?: string;
   // Display-only trigger summary used by workflow annotations and run history.
@@ -138,7 +137,7 @@ interface WorkflowAutomationQueueEventArgs {
   readonly queueEventId?: string;
   readonly workflowName: string;
   readonly displayPrompt: string;
-  readonly agentRunSource?: ChatAgentRunSourceAnnotation;
+  readonly chatRunSource?: ChatRunSourceAnnotation;
   readonly workflowAutomationEventType?: WorkflowAutomationEventType;
   readonly workflowAutomationEventPayload?: WorkflowAutomationEventPayload;
   readonly connectorSourceId?: string;
@@ -163,8 +162,8 @@ export function workflowAutomationQueueEventPlan(
         : { automationBrief: args.triggerBrief }),
     },
   });
-  const userMessage = args.agentRunSource
-    ? withAgentRunSourceAnnotation(automationUserMessage, args.agentRunSource)
+  const userMessage = args.chatRunSource
+    ? withChatRunSourceAnnotation(automationUserMessage, args.chatRunSource)
     : automationUserMessage;
   const values = {
     id: args.queueEventId ?? randomUUID(),

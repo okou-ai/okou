@@ -1,3 +1,4 @@
+import { threadEventCursor } from "./helpers/api-bdd-chat-files";
 import { connectTeamsAccountForTest } from "./helpers/teams-account";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { publicRunOwner } from "./helpers/public-run-owner";
@@ -400,7 +401,7 @@ async function setupConnectedTeamsActor(
   runsApi.acceptTelemetryIngest();
   // The paid entitlement helper already bootstraps and completes onboarding.
   const subscription = await runsApi.grantProEntitlement(actor);
-  const { defaultAgentId } = await authOrgApi.readOnboardingStatus(actor);
+  const defaultAgentId = await authOrgApi.readDefaultAgentId(actor);
   if (!defaultAgentId) {
     throw new Error(
       "Expected paid onboarding to create a Teams callback agent",
@@ -1144,6 +1145,7 @@ describe("Teams chat callbacks", () => {
         "activity-completed-1",
       );
       const threadId = teamsFixtureExternalId(teams.fixture, "root-completed");
+      const sinceSeqId = await threadEventCursor(context, teams.actor);
       const runId = await dispatchTeamsRun({
         fixture: teams.fixture,
         activityId,
@@ -1161,7 +1163,7 @@ describe("Teams chat callbacks", () => {
           chatThreadsContract,
         ).events({
           headers: { authorization: "Bearer clerk-session" },
-          query: {},
+          query: { sinceSeqId },
         }),
         [200],
       );

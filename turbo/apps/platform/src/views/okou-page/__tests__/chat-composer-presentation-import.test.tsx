@@ -10,7 +10,6 @@ import { expect, test } from "vitest";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import {
-  AGENT_ID,
   THREAD_ID,
   openTemplatePicker,
   createTemplateGalleryHelpers,
@@ -126,7 +125,7 @@ test("Import a presentation deck from a new chat", async () => {
 
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     host: "app.okou.ai",
   });
 

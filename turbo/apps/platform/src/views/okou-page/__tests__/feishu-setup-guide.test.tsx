@@ -83,8 +83,6 @@ test.each(["feishu", "lark"] as const)(
       messageReceived: false,
       tenantKey: "review-tenant",
       tenantName: "Review bot",
-      defaultAgentId: null,
-      defaultAgentName: "Okou",
       setupCompleted: true,
     };
     mockFeishu(

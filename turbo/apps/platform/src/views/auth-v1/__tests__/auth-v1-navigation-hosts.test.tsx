@@ -8,7 +8,7 @@ const context = testContext();
 test.each(["sign-in", "sign-up"] as const)(
   "A nested %s route retains its state on the canonical Okou app",
   async (mode) => {
-    const returnUrl = "https://app.okou.ai/agents?source=auth-task";
+    const returnUrl = "https://app.okou.ai/?source=auth-task";
     const pathname = `/${mode}/tasks/choose-organization`;
     const search = `?session_id=session-test&redirect_url=${encodeURIComponent(returnUrl)}`;
     const hash = "#/tasks/choose-organization?attempt=1";

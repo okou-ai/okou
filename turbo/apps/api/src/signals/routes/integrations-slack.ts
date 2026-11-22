@@ -69,7 +69,6 @@ const getSlackStatusInner$ = computed(async (get) => {
   const statusFields = status.isConnected
     ? {
         workspaceName: status.workspaceName,
-        defaultAgentName: status.defaultAgentName,
       }
     : {
         installUrl: status.installUrl,

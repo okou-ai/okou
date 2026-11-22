@@ -33,7 +33,7 @@ public struct ChatPermissionBatchAction: Hashable, Sendable {
     }
   }
 
-  public let agentID: String
+  public let member: WorkspaceMemberID
   public let threadID: String
   public let items: [Item]
   public let duration: ChatPermissionAction.Duration
@@ -41,12 +41,12 @@ public struct ChatPermissionBatchAction: Hashable, Sendable {
 
   public static func trustedURL(_ value: String, webURL: URL) -> URL? {
     guard let url = ChatPermissionAction.trustedPlatformURL(value, webURL: webURL),
-      url.path.range(of: #"^/agents/[^/]+/permissions/batch$"#, options: .regularExpression) != nil
+      url.path == "/connectors/permissions/batch"
     else { return nil }
     return url
   }
 
-  public init?(value: String, webURL: URL, agentID: String, threadID: String) {
+  public init?(value: String, webURL: URL, threadID: String) {
     guard value.utf8.count <= 8192,
       value.trimmingCharacters(in: .whitespacesAndNewlines) == value,
       !value.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7f }),
@@ -54,18 +54,18 @@ public struct ChatPermissionBatchAction: Hashable, Sendable {
       let url = Self.trustedURL(value, webURL: webURL), url.absoluteString.utf8.count <= 8192,
       url.fragment == nil,
       var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-      UUID(uuidString: agentID) != nil, UUID(uuidString: threadID) != nil
-    else { return nil }
-    let segments = url.path.split(separator: "/", omittingEmptySubsequences: false)
-    guard segments.count == 5, UUID(uuidString: String(segments[2])) == UUID(uuidString: agentID)
+      UUID(uuidString: threadID) != nil
     else { return nil }
     // Batch links use URLSearchParams encoding, where "+" denotes a space.
     components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(
       of: "+", with: "%20")
     let query = components.queryItems ?? []
-    let allowed: Set<String> = ["items", "action", "expiresIn", "threadId", "callbackPrompt"]
+    let allowed: Set<String> = [
+      "orgId", "userId", "items", "action", "expiresIn", "threadId", "callbackPrompt"
+    ]
     guard Set(query.map(\.name)).count == query.count,
-      query.allSatisfy({ allowed.contains($0.name) })
+      query.allSatisfy({ allowed.contains($0.name) }),
+      let member = WorkspaceMemberID(permissionQuery: query)
     else { return nil }
     func field(_ name: String) -> String? { query.first { $0.name == name }?.value }
     guard field("action") == "allow", let json = field("items")?.data(using: .utf8),
@@ -84,7 +84,7 @@ public struct ChatPermissionBatchAction: Hashable, Sendable {
         let callbackThread, UUID(uuidString: callbackThread) == UUID(uuidString: threadID)
       else { return nil }
     }
-    self.agentID = agentID.lowercased()
+    self.member = member
     self.threadID = threadID.lowercased()
     items = Set(rows).sorted {
       $0.connectorSlug == $1.connectorSlug

@@ -9,7 +9,7 @@ import { setupPage, startPage } from "./page-helper.ts";
 const context = testContext();
 const pageOptions = {
   context,
-  path: "/agents",
+  path: "/",
   host: "app.okou.ai",
   sharedWorkerTestTransport: "browser",
 } as const;
@@ -112,7 +112,7 @@ test("Reuse the preloaded Worker when the preview URL carries its bypass", async
   const previewPage = {
     ...pageOptions,
     host: "pr-431-app.omby.ai",
-    path: "/agents?x-vercel-protection-bypass=preview-secret",
+    path: "/?x-vercel-protection-bypass=preview-secret",
   };
   const workers = installSharedWorker();
   preloadFromAppShell(

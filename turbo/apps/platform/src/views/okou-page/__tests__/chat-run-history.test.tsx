@@ -586,9 +586,6 @@ test("A retained conversation displays the workspace assistant name on its reply
     ],
   });
 
-  context.mocks.data.onboardingStatus({
-    defaultAgentId: "c0000000-0000-4000-a000-000000000009",
-  });
   await setupPage({
     context,
     path: RUN_PATH,
@@ -599,7 +596,6 @@ test("A retained conversation displays the workspace assistant name on its reply
   const reply = await screen.findByText("The launch notes are summarized.");
   const group = reply.closest('[data-role="assistant"]');
   expect(group).toHaveTextContent("Okou");
-  expect(group?.querySelector('a[href^="/agents/"]')).toBeNull();
   expect(myOkouAvatarButtons()).toHaveLength(0);
 });
 

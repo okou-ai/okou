@@ -8,25 +8,22 @@ import { platformOkouWordmarkLightImg } from "../../../lib/static-assets.ts";
 
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  AGENT_ID,
   createSidebarAccountHelpers,
   openAccountMenu,
 } from "./sidebar-account-test-helpers.ts";
 
 const context = testContext();
-const { prepareDefaultAgent, setupAddAccountPage } =
-  createSidebarAccountHelpers(context);
+const { setupAddAccountPage } = createSidebarAccountHelpers(context);
 
 test.each(["success", "failure", "pending task"])(
   "Switch accounts: %s",
   async (outcome) => {
-    prepareDefaultAgent();
     const sentry = context.mocks.sentry();
     initSentry();
 
     await setupPage({
       context,
-      path: `/agents/${AGENT_ID}/chat`,
+      path: `/`,
       auth: {
         user: {
           id: "test-user-123",
@@ -163,12 +160,10 @@ test("Add account opens the hosted Clerk account switcher with the shared appear
 });
 
 test("Sign out from the account menu", async () => {
-  prepareDefaultAgent();
-
   await setupPage({
     context,
     host: "app.okou.ai",
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     auth: {
       user: {
         id: "test-user-123",
@@ -194,10 +189,9 @@ test("Sign out from the account menu", async () => {
 });
 
 test("Help opens shortcuts and links to the docs", async () => {
-  prepareDefaultAgent();
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
     auth: {
       user: {
         id: "test-user-123",

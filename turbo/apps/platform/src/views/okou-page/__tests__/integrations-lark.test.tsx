@@ -103,8 +103,6 @@ test("the Lark settings page reads only Lark installations", async () => {
       messageReceived: false,
       tenantKey: null,
       tenantName: null,
-      defaultAgentId: null,
-      defaultAgentName: "Okou",
       installations: [],
     });
   });

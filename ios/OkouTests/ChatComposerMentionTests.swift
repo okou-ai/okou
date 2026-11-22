@@ -203,7 +203,7 @@ final class ChatComposerMentionTests: XCTestCase {
   {
     let fixture = AttachmentFlowFixture(failSend: true)
     let workspace = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
-    await workspace.refreshNavigation()
+    await workspace.prepareWorkspaceComposer()
     let navigation = MentionNavigationFixture()
     let candidates = try await navigation.workspace()
     defer {

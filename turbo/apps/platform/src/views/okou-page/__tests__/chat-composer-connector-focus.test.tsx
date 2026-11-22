@@ -10,7 +10,6 @@ import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
   builtinConnector,
   connectorAccount,
-  SCOUT_AGENT_ID,
   createComposerConnectorHelpers,
   chatConnectorOverviewFixture,
 } from "./chat-composer-connectors-test-helpers.ts";
@@ -60,7 +59,7 @@ async function openLoadingConnectors() {
   );
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat?compose=1`,
+    path: `/?compose=1`,
   });
   const trigger = await findFastControl("button", "Connectors");
   click(trigger);

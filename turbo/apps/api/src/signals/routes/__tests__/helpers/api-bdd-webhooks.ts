@@ -31,6 +31,7 @@ import { webhooksAgentEventsRoutes } from "../../webhooks-agent-events";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../webhooks-agent-health-usage-telemetry";
 import { webhooksAgentStorageRoutes } from "../../webhooks-agent-storage";
 import { webhooksBuiltInGenerationRoutes } from "../../webhooks-built-in-generations";
+import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { webhooksClerkRoutes } from "../../webhooks-clerk";
 import { webhooksGithubRoutes } from "../../webhooks-github";
 import { webhooksStripeRoutes } from "../../webhooks-stripe";
@@ -600,4 +601,21 @@ export function createWebhookCallbackApi(context: TestContext) {
       );
     },
   };
+}
+
+export async function deliverOrganizationCreated(
+  context: TestContext,
+  creator: { readonly orgId: string | null; readonly userId: string },
+): Promise<void> {
+  if (!creator.orgId) {
+    throw new Error("Expected a workspace creator");
+  }
+  const webhooks = createWebhookCallbackApi(context);
+  webhooks.configureClerkWebhookSecret();
+  webhooks.verifyNextClerkWebhook({
+    type: "organization.created",
+    data: { id: creator.orgId, created_by: creator.userId, created_at: now() },
+  });
+  await webhooks.requestClerkWebhook("{}", {}, [200]);
+  await flushWaitUntilForTest();
 }

@@ -2452,214 +2452,203 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant2(
     val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant2Type,
     val `threadId`: String,
     val `titleSnapshot`: String,
+    val `runId`: String? = null,
 ) : SaveWorkspaceDraftDraftUserMessagePartsItem
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Type {
-    @SerialName("agent") AGENT
-}
-
-@Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Type,
-    val `agentId`: String,
-    val `nameSnapshot`: String,
-) : SaveWorkspaceDraftDraftUserMessagePartsItem
-
-@Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4Type {
     @SerialName("template") TEMPLATE
 }
 
-@Serializable(with = SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateSerializer::class)
-sealed interface SaveWorkspaceDraftDraftUserMessagePartsItemVariant4Template
+@Serializable(with = SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateSerializer::class)
+sealed interface SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant1Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant1Type {
     @SerialName("presentation") PRESENTATION
 }
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant1SelectionOutputFormat {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant1SelectionOutputFormat {
     @SerialName("html") HTML,
     @SerialName("pptx") PPTX,
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant1Selection(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant1Selection(
     val `templateId`: String,
     val `outputFormat`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant1SelectionOutputFormat? =
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant1SelectionOutputFormat? =
         null,
     val `colorSystemId`: String? = null,
     val `previewUrl`: String? = null,
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant1(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant1Type,
-    val `selection`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant1Selection,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant4Template
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant1(
+    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant1Type,
+    val `selection`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant1Selection,
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant2Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant2Type {
     @SerialName("custom") CUSTOM
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant2Selection(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant2Selection(
     val `userTemplateId`: String
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant2(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant2Type,
-    val `selection`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant2Selection,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant4Template
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant2(
+    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant2Type,
+    val `selection`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant2Selection,
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant3Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant3Type {
     @SerialName("video") VIDEO
 }
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant3SelectionAvatarOptionsAspectRatio {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant3SelectionAvatarOptionsAspectRatio {
     @SerialName("portrait") PORTRAIT,
     @SerialName("landscape") LANDSCAPE,
     @SerialName("square") SQUARE,
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant3SelectionAvatarOptions(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant3SelectionAvatarOptions(
     val `titleSnapshot`: String? = null,
     val `previewUrl`: String? = null,
     val `voiceId`: String? = null,
     val `aspectRatio`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant3SelectionAvatarOptionsAspectRatio? =
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant3SelectionAvatarOptionsAspectRatio? =
         null,
 )
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant3SelectionAspectRatio {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant3SelectionAspectRatio {
     @SerialName("portrait") PORTRAIT,
     @SerialName("landscape") LANDSCAPE,
     @SerialName("square") SQUARE,
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant3Selection(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant3Selection(
     val `stylePresetId`: String,
     val `avatarOptions`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant3SelectionAvatarOptions? =
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant3SelectionAvatarOptions? =
         null,
     val `titleSnapshot`: String? = null,
     val `previewUrl`: String? = null,
     val `voiceId`: String? = null,
     val `aspectRatio`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant3SelectionAspectRatio? =
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant3SelectionAspectRatio? =
         null,
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant3(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant3Type,
-    val `selection`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant3Selection,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant4Template
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant3(
+    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant3Type,
+    val `selection`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant3Selection,
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant4Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant4Type {
     @SerialName("intro-video") INTRO_VIDEO
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant4(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant4Type,
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant4(
+    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant4Type,
     val `selection`: JsonElement,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant4Template
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant5Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant5Type {
     @SerialName("illustration") ILLUSTRATION
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant5Selection(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant5Selection(
     val `illustrationStyleId`: String
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant5(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant5Type,
-    val `selection`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant5Selection,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant4Template
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant5(
+    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant5Type,
+    val `selection`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant5Selection,
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant6Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant6Type {
     @SerialName("workflow") WORKFLOW
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant6Selection(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant6Selection(
     val `workflowTemplateId`: String
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant6(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant6Type,
-    val `selection`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant6Selection,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant4Template
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant6(
+    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant6Type,
+    val `selection`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant6Selection,
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant7Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant7Type {
     @SerialName("website") WEBSITE
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant7Selection(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant7Selection(
     val `websiteTemplateId`: String
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant7(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant7Type,
-    val `selection`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant7Selection,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant4Template
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant7(
+    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant7Type,
+    val `selection`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant7Selection,
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant8Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant8Type {
     @SerialName("document") DOCUMENT
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant8Selection(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant8Selection(
     val `documentTemplateId`: String
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant8(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant8Type,
-    val `selection`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant8Selection,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant4Template
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant8(
+    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant8Type,
+    val `selection`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant8Selection,
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template
 
-object SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateSerializer :
-    KSerializer<SaveWorkspaceDraftDraftUserMessagePartsItemVariant4Template> {
+object SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateSerializer :
+    KSerializer<SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SaveWorkspaceDraftDraftUserMessagePartsItemVariant4Template"
+            "ai.okou.android.api.generated.SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template"
         )
 
     override fun deserialize(
         decoder: Decoder
-    ): SaveWorkspaceDraftDraftUserMessagePartsItemVariant4Template {
+    ): SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant4Template"
+                    "Expected JSON object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template"
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant4Template"
+                    "Expected object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template"
                 )
         val matches =
             listOf(
@@ -2690,114 +2679,114 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SaveWorkspaceDraftDraftUserMessagePartsItemVariant4Template variant"
+                "Unknown or ambiguous SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template variant"
             )
         return when (matches.indexOf(true)) {
             0 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant1
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant1
                         .serializer(),
                     value,
                 )
             1 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant2
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant2
                         .serializer(),
                     value,
                 )
             2 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant3
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant3
                         .serializer(),
                     value,
                 )
             3 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant4
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant4
                         .serializer(),
                     value,
                 )
             4 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant5
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant5
                         .serializer(),
                     value,
                 )
             5 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant6
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant6
                         .serializer(),
                     value,
                 )
             6 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant7
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant7
                         .serializer(),
                     value,
                 )
             7 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant8
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant8
                         .serializer(),
                     value,
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SaveWorkspaceDraftDraftUserMessagePartsItemVariant4Template variant"
+                    "Unknown SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template variant"
                 )
         }
     }
 
     override fun serialize(
         encoder: Encoder,
-        value: SaveWorkspaceDraftDraftUserMessagePartsItemVariant4Template,
+        value: SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template,
     ) {
         when (value) {
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant1 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant1 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant1
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant1
                         .serializer(),
                     value,
                 )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant2 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant2 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant2
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant2
                         .serializer(),
                     value,
                 )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant3 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant3 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant3
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant3
                         .serializer(),
                     value,
                 )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant4 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant4 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant4
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant4
                         .serializer(),
                     value,
                 )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant5 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant5 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant5
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant5
                         .serializer(),
                     value,
                 )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant6 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant6 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant6
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant6
                         .serializer(),
                     value,
                 )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant7 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant7 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant7
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant7
                         .serializer(),
                     value,
                 )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant8 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant8 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateVariant8
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant8
                         .serializer(),
                     value,
                 )
@@ -2806,31 +2795,31 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant4TemplateSerializer :
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant4Type,
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3(
+    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Type,
     val `titleSnapshot`: String,
-    val `template`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant4Template,
+    val `template`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template,
 ) : SaveWorkspaceDraftDraftUserMessagePartsItem
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant5Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4Type {
     @SerialName("project") PROJECT
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant5(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant5Type,
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4(
+    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant4Type,
     val `projectId`: String,
     val `nameSnapshot`: String,
 ) : SaveWorkspaceDraftDraftUserMessagePartsItem
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant6Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant5Type {
     @SerialName("source") SOURCE
 }
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant6Kind {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant5Kind {
     @SerialName("slack") SLACK,
     @SerialName("discord") DISCORD,
     @SerialName("wechat") WECHAT,
@@ -2843,92 +2832,71 @@ enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant6Kind {
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant6(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant6Type,
-    val `kind`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant6Kind,
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant5(
+    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant5Type,
+    val `kind`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant5Kind,
     val `href`: String? = null,
 ) : SaveWorkspaceDraftDraftUserMessagePartsItem
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant7Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant6Type {
     @SerialName("source") SOURCE
 }
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant7Kind {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant6Kind {
     @SerialName("mcp") MCP
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant7(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant7Type,
-    val `kind`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant7Kind,
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant6(
+    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant6Type,
+    val `kind`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant6Kind,
     val `clientId`: String,
     val `clientName`: String? = null,
 ) : SaveWorkspaceDraftDraftUserMessagePartsItem
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant8Type {
-    @SerialName("source") SOURCE
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant7Type {
+    @SerialName("additional_info") ADDITIONAL_INFO
 }
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant8Kind {
-    @SerialName("agent") AGENT
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant7(
+    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant7Type,
+    val `text`: String,
+) : SaveWorkspaceDraftDraftUserMessagePartsItem
+
+@Serializable
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant8Type {
+    @SerialName("automation") AUTOMATION
 }
 
 @Serializable
 data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant8(
     val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant8Type,
-    val `kind`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant8Kind,
-    val `runId`: String,
-    val `threadId`: String,
-    val `agentId`: String? = null,
-    val `titleSnapshot`: String,
-    val `href`: String,
-) : SaveWorkspaceDraftDraftUserMessagePartsItem
-
-@Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9Type {
-    @SerialName("additional_info") ADDITIONAL_INFO
-}
-
-@Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant9Type,
-    val `text`: String,
-) : SaveWorkspaceDraftDraftUserMessagePartsItem
-
-@Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Type {
-    @SerialName("automation") AUTOMATION
-}
-
-@Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Type,
     val `workflowName`: String,
     val `workflowId`: String? = null,
     val `automationBrief`: String? = null,
 ) : SaveWorkspaceDraftDraftUserMessagePartsItem
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9Type {
     @SerialName("file") FILE
 }
 
 @Serializable(
-    with = SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemSerializer::class
+    with = SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemSerializer::class
 )
-sealed interface SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem
+sealed interface SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant1Shape {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant1Shape {
     @SerialName("box") BOX
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant1Rect(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant1Rect(
     val `x`: Double,
     val `y`: Double,
     val `width`: Double,
@@ -2936,102 +2904,100 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksI
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant1(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant1(
     val `id`: String,
     val `ordinal`: Long? = null,
     val `shape`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant1Shape,
-    val `rect`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant1Rect,
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant1Shape,
+    val `rect`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant1Rect,
     val `ink`: String,
     val `note`: String? = null,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant2Shape {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant2Shape {
     @SerialName("arrow") ARROW
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant2From(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant2From(
     val `x`: Double,
     val `y`: Double,
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant2To(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant2To(
     val `x`: Double,
     val `y`: Double,
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant2(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant2(
     val `id`: String,
     val `ordinal`: Long? = null,
     val `shape`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant2Shape,
-    val `from`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant2From,
-    val `to`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant2To,
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant2Shape,
+    val `from`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant2From,
+    val `to`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant2To,
     val `ink`: String,
     val `note`: String? = null,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant3Shape {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3Shape {
     @SerialName("pen") PEN
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant3PointsItem(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3PointsItem(
     val `x`: Double,
     val `y`: Double,
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant3(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3(
     val `id`: String,
     val `ordinal`: Long? = null,
     val `shape`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant3Shape,
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3Shape,
     val `points`:
         List<
-            SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant3PointsItem
+            SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3PointsItem
         >,
     val `ink`: String,
     val `note`: String? = null,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant4Shape {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant4Shape {
     @SerialName("text") TEXT
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant4At(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant4At(
     val `x`: Double,
     val `y`: Double,
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant4(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant4(
     val `id`: String,
     val `ordinal`: Long? = null,
     val `shape`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant4Shape,
-    val `at`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant4At,
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant4Shape,
+    val `at`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant4At,
     val `text`: String,
     val `ink`: String,
     val `scale`: Double? = null,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant5Shape {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant5Shape {
     @SerialName("highlight") HIGHLIGHT
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant5Rect(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant5Rect(
     val `x`: Double,
     val `y`: Double,
     val `width`: Double,
@@ -3039,23 +3005,22 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksI
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant5(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant5(
     val `id`: String,
     val `ordinal`: Long? = null,
     val `shape`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant5Shape,
-    val `rect`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant5Rect,
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant5Shape,
+    val `rect`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant5Rect,
     val `note`: String? = null,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant6Shape {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant6Shape {
     @SerialName("redact") REDACT
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant6Rect(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant6Rect(
     val `x`: Double,
     val `y`: Double,
     val `width`: Double,
@@ -3063,33 +3028,33 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksI
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant6(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant6(
     val `id`: String,
     val `ordinal`: Long? = null,
     val `shape`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant6Shape,
-    val `rect`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant6Rect,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant6Shape,
+    val `rect`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant6Rect,
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem
 
-object SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemSerializer :
-    KSerializer<SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem> {
+object SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemSerializer :
+    KSerializer<SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem"
+            "ai.okou.android.api.generated.SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem"
         )
 
     override fun deserialize(
         decoder: Decoder
-    ): SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem {
+    ): SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem"
+                    "Expected JSON object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem"
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem"
+                    "Expected object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem"
                 )
         val matches =
             listOf(
@@ -3114,90 +3079,90 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemS
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem variant"
+                "Unknown or ambiguous SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem variant"
             )
         return when (matches.indexOf(true)) {
             0 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant1
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant1
                         .serializer(),
                     value,
                 )
             1 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant2
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant2
                         .serializer(),
                     value,
                 )
             2 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant3
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3
                         .serializer(),
                     value,
                 )
             3 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant4
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant4
                         .serializer(),
                     value,
                 )
             4 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant5
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant5
                         .serializer(),
                     value,
                 )
             5 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant6
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant6
                         .serializer(),
                     value,
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem variant"
+                    "Unknown SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem variant"
                 )
         }
     }
 
     override fun serialize(
         encoder: Encoder,
-        value: SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem,
+        value: SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem,
     ) {
         when (value) {
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant1 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant1 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant1
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant1
                         .serializer(),
                     value,
                 )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant2 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant2 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant2
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant2
                         .serializer(),
                     value,
                 )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant3 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant3
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3
                         .serializer(),
                     value,
                 )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant4 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant4 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant4
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant4
                         .serializer(),
                     value,
                 )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant5 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant5 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant5
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant5
                         .serializer(),
                     value,
                 )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant6 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant6 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant6
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant6
                         .serializer(),
                     value,
                 )
@@ -3206,7 +3171,7 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemS
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsCrop(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsCrop(
     val `x`: Double,
     val `y`: Double,
     val `width`: Double,
@@ -3214,276 +3179,264 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsCrop(
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11Annotations(
-    val `marks`: List<SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem>,
-    val `crop`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant11AnnotationsCrop? = null,
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9Annotations(
+    val `marks`: List<SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem>,
+    val `crop`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsCrop? = null,
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant11Type,
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9(
+    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant9Type,
     val `fileId`: String,
     val `filenameSnapshot`: String,
     val `contentType`: String,
     val `annotatedFileId`: String? = null,
-    val `annotations`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant11Annotations? = null,
+    val `annotations`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant9Annotations? = null,
 ) : SaveWorkspaceDraftDraftUserMessagePartsItem
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Type {
     @SerialName("feedback") FEEDBACK
 }
 
-@Serializable(with = SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemSerializer::class)
-sealed interface SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItem
+@Serializable(with = SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemSerializer::class)
+sealed interface SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant1Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant1Type {
     @SerialName("text") TEXT
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant1(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant1Type,
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant1(
+    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant1Type,
     val `text`: String,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItem
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant2Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant2Type {
     @SerialName("chat_thread") CHAT_THREAD
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant2(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant2Type,
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant2(
+    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant2Type,
     val `threadId`: String,
     val `titleSnapshot`: String,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItem
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant3Type {
-    @SerialName("agent") AGENT
-}
-
-@Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant3(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant3Type,
-    val `agentId`: String,
-    val `nameSnapshot`: String,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItem
-
-@Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Type {
     @SerialName("template") TEMPLATE
 }
 
 @Serializable(
     with =
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateSerializer::class
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateSerializer::class
 )
-sealed interface SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template
+sealed interface SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1Type {
     @SerialName("presentation") PRESENTATION
 }
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1SelectionOutputFormat {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1SelectionOutputFormat {
     @SerialName("html") HTML,
     @SerialName("pptx") PPTX,
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1Selection(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1Selection(
     val `templateId`: String,
     val `outputFormat`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1SelectionOutputFormat? =
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1SelectionOutputFormat? =
         null,
     val `colorSystemId`: String? = null,
     val `previewUrl`: String? = null,
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1(
     val `type`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1Type,
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1Type,
     val `selection`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1Selection,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1Selection,
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2Type {
     @SerialName("custom") CUSTOM
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2Selection(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2Selection(
     val `userTemplateId`: String
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2(
     val `type`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2Type,
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2Type,
     val `selection`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2Selection,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2Selection,
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3Type {
     @SerialName("video") VIDEO
 }
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3SelectionAvatarOptionsAspectRatio {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3SelectionAvatarOptionsAspectRatio {
     @SerialName("portrait") PORTRAIT,
     @SerialName("landscape") LANDSCAPE,
     @SerialName("square") SQUARE,
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3SelectionAvatarOptions(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3SelectionAvatarOptions(
     val `titleSnapshot`: String? = null,
     val `previewUrl`: String? = null,
     val `voiceId`: String? = null,
     val `aspectRatio`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3SelectionAvatarOptionsAspectRatio? =
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3SelectionAvatarOptionsAspectRatio? =
         null,
 )
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3SelectionAspectRatio {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3SelectionAspectRatio {
     @SerialName("portrait") PORTRAIT,
     @SerialName("landscape") LANDSCAPE,
     @SerialName("square") SQUARE,
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3Selection(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3Selection(
     val `stylePresetId`: String,
     val `avatarOptions`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3SelectionAvatarOptions? =
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3SelectionAvatarOptions? =
         null,
     val `titleSnapshot`: String? = null,
     val `previewUrl`: String? = null,
     val `voiceId`: String? = null,
     val `aspectRatio`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3SelectionAspectRatio? =
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3SelectionAspectRatio? =
         null,
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3(
     val `type`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3Type,
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3Type,
     val `selection`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3Selection,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3Selection,
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant4Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant4Type {
     @SerialName("intro-video") INTRO_VIDEO
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant4(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant4(
     val `type`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant4Type,
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant4Type,
     val `selection`: JsonElement,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5Type {
     @SerialName("illustration") ILLUSTRATION
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5Selection(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5Selection(
     val `illustrationStyleId`: String
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5(
     val `type`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5Type,
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5Type,
     val `selection`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5Selection,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5Selection,
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6Type {
     @SerialName("workflow") WORKFLOW
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6Selection(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6Selection(
     val `workflowTemplateId`: String
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6(
     val `type`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6Type,
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6Type,
     val `selection`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6Selection,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6Selection,
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7Type {
     @SerialName("website") WEBSITE
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7Selection(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7Selection(
     val `websiteTemplateId`: String
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7(
     val `type`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7Type,
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7Type,
     val `selection`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7Selection,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7Selection,
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8Type {
     @SerialName("document") DOCUMENT
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8Selection(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8Selection(
     val `documentTemplateId`: String
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8(
     val `type`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8Type,
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8Type,
     val `selection`:
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8Selection,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8Selection,
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template
 
-object SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateSerializer :
-    KSerializer<SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template> {
+object SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateSerializer :
+    KSerializer<SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template"
+            "ai.okou.android.api.generated.SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template"
         )
 
     override fun deserialize(
         decoder: Decoder
-    ): SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template {
+    ): SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template"
+                    "Expected JSON object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template"
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template"
+                    "Expected object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template"
                 )
         val matches =
             listOf(
@@ -3514,114 +3467,114 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Templ
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template variant"
+                "Unknown or ambiguous SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template variant"
             )
         return when (matches.indexOf(true)) {
             0 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1
                         .serializer(),
                     value,
                 )
             1 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2
                         .serializer(),
                     value,
                 )
             2 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3
                         .serializer(),
                     value,
                 )
             3 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant4
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant4
                         .serializer(),
                     value,
                 )
             4 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5
                         .serializer(),
                     value,
                 )
             5 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6
                         .serializer(),
                     value,
                 )
             6 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7
                         .serializer(),
                     value,
                 )
             7 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8
                         .serializer(),
                     value,
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template variant"
+                    "Unknown SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template variant"
                 )
         }
     }
 
     override fun serialize(
         encoder: Encoder,
-        value: SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template,
+        value: SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template,
     ) {
         when (value) {
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1
                         .serializer(),
                     value,
                 )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2
                         .serializer(),
                     value,
                 )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3
                         .serializer(),
                     value,
                 )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant4 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant4 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant4
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant4
                         .serializer(),
                     value,
                 )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5
                         .serializer(),
                     value,
                 )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6
                         .serializer(),
                     value,
                 )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7
                         .serializer(),
                     value,
                 )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8
                         .serializer(),
                     value,
                 )
@@ -3630,43 +3583,43 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Templ
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Type,
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3(
+    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Type,
     val `titleSnapshot`: String,
-    val `template`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItem
+    val `template`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template,
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant5Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant4Type {
     @SerialName("project") PROJECT
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant5(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant5Type,
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant4(
+    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant4Type,
     val `projectId`: String,
     val `nameSnapshot`: String,
-) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItem
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem
 
-object SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemSerializer :
-    KSerializer<SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItem> {
+object SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemSerializer :
+    KSerializer<SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItem"
+            "ai.okou.android.api.generated.SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem"
         )
 
     override fun deserialize(
         decoder: Decoder
-    ): SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItem {
+    ): SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItem"
+                    "Expected JSON object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem"
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItem"
+                    "Expected object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem"
                 )
         val matches =
             listOf(
@@ -3677,9 +3630,6 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemSerializer :
                     it.isString && it.content in setOf("chat_thread")
                 } == true,
                 (value["type"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("agent")
-                } == true,
-                (value["type"] as? JsonPrimitive)?.let {
                     it.isString && it.content in setOf("template")
                 } == true,
                 (value["type"] as? JsonPrimitive)?.let {
@@ -3688,78 +3638,66 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItem variant"
+                "Unknown or ambiguous SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem variant"
             )
         return when (matches.indexOf(true)) {
             0 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant1
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant1
                         .serializer(),
                     value,
                 )
             1 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant2
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant2
                         .serializer(),
                     value,
                 )
             2 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant3
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3
                         .serializer(),
                     value,
                 )
             3 ->
                 input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4
-                        .serializer(),
-                    value,
-                )
-            4 ->
-                input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant5
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant4
                         .serializer(),
                     value,
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItem variant"
+                    "Unknown SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem variant"
                 )
         }
     }
 
     override fun serialize(
         encoder: Encoder,
-        value: SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItem,
+        value: SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem,
     ) {
         when (value) {
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant1 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant1 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant1
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant1
                         .serializer(),
                     value,
                 )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant2 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant2 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant2
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant2
                         .serializer(),
                     value,
                 )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant3 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant3
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3
                         .serializer(),
                     value,
                 )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4 ->
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant4 ->
                 encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant4
-                        .serializer(),
-                    value,
-                )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant5 ->
-                encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemVariant5
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant4
                         .serializer(),
                     value,
                 )
@@ -3768,52 +3706,52 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItemSerializer :
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12Range(
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Range(
     val `start`: Long,
     val `end`: Long,
 )
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12SourceType {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceType {
     @SerialName("mail") MAIL
 }
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12SourceStatus {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceStatus {
     @SerialName("draft") DRAFT,
     @SerialName("sent") SENT,
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12Source(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant12SourceType,
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source(
+    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceType,
     val `id`: String,
-    val `status`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant12SourceStatus,
+    val `status`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceStatus,
     val `sentId`: String? = null,
 )
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant12(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant12Type,
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10(
+    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Type,
     val `quote`: String,
-    val `note`: List<SaveWorkspaceDraftDraftUserMessagePartsItemVariant12NoteItem>,
+    val `note`: List<SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem>,
     val `eventId`: String? = null,
-    val `range`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant12Range? = null,
-    val `source`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant12Source? = null,
+    val `range`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Range? = null,
+    val `source`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source? = null,
 ) : SaveWorkspaceDraftDraftUserMessagePartsItem
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant13Type {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11Type {
     @SerialName("voice") VOICE
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant13ClipsItem(val `fileId`: String)
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11ClipsItem(val `fileId`: String)
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant13(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant13Type,
-    val `clips`: List<SaveWorkspaceDraftDraftUserMessagePartsItemVariant13ClipsItem>,
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11(
+    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant11Type,
+    val `clips`: List<SaveWorkspaceDraftDraftUserMessagePartsItemVariant11ClipsItem>,
 ) : SaveWorkspaceDraftDraftUserMessagePartsItem
 
 object SaveWorkspaceDraftDraftUserMessagePartsItemSerializer :
@@ -3847,12 +3785,6 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemSerializer :
                 } == true && value.containsKey("threadId") && value.containsKey("titleSnapshot")) &&
                     (value["type"].let { field ->
                         (field is JsonPrimitive && field.isString && field.content == "chat_thread")
-                    }),
-                ((value["type"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("agent")
-                } == true && value.containsKey("agentId") && value.containsKey("nameSnapshot")) &&
-                    (value["type"].let { field ->
-                        (field is JsonPrimitive && field.isString && field.content == "agent")
                     }),
                 ((value["type"] as? JsonPrimitive)?.let {
                     it.isString && it.content in setOf("template")
@@ -3899,22 +3831,6 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemSerializer :
                     }) &&
                     (value["kind"].let { field ->
                         (field is JsonPrimitive && field.isString && field.content == "mcp")
-                    }),
-                ((value["type"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("source")
-                } == true &&
-                    (value["kind"] as? JsonPrimitive)?.let {
-                        it.isString && it.content in setOf("agent")
-                    } == true &&
-                    value.containsKey("runId") &&
-                    value.containsKey("threadId") &&
-                    value.containsKey("titleSnapshot") &&
-                    value.containsKey("href")) &&
-                    (value["type"].let { field ->
-                        (field is JsonPrimitive && field.isString && field.content == "source")
-                    }) &&
-                    (value["kind"].let { field ->
-                        (field is JsonPrimitive && field.isString && field.content == "agent")
                     }),
                 ((value["type"] as? JsonPrimitive)?.let {
                     it.isString && it.content in setOf("additional_info")
@@ -4012,16 +3928,6 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemSerializer :
                     SaveWorkspaceDraftDraftUserMessagePartsItemVariant11.serializer(),
                     value,
                 )
-            11 ->
-                input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12.serializer(),
-                    value,
-                )
-            12 ->
-                input.json.decodeFromJsonElement(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant13.serializer(),
-                    value,
-                )
             else ->
                 throw SerializationException(
                     "Unknown SaveWorkspaceDraftDraftUserMessagePartsItem variant"
@@ -4084,16 +3990,6 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemSerializer :
             is SaveWorkspaceDraftDraftUserMessagePartsItemVariant11 ->
                 encoder.encodeSerializableValue(
                     SaveWorkspaceDraftDraftUserMessagePartsItemVariant11.serializer(),
-                    value,
-                )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant12 ->
-                encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant12.serializer(),
-                    value,
-                )
-            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant13 ->
-                encoder.encodeSerializableValue(
-                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant13.serializer(),
                     value,
                 )
         }
@@ -4168,214 +4064,203 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant2(
     val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant2Type,
     val `threadId`: String,
     val `titleSnapshot`: String,
+    val `runId`: String? = null,
 ) : SaveThreadDraftDraftUserMessagePartsItem
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant3Type {
-    @SerialName("agent") AGENT
-}
-
-@Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant3(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant3Type,
-    val `agentId`: String,
-    val `nameSnapshot`: String,
-) : SaveThreadDraftDraftUserMessagePartsItem
-
-@Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant4Type {
     @SerialName("template") TEMPLATE
 }
 
-@Serializable(with = SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateSerializer::class)
-sealed interface SaveThreadDraftDraftUserMessagePartsItemVariant4Template
+@Serializable(with = SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateSerializer::class)
+sealed interface SaveThreadDraftDraftUserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant1Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant1Type {
     @SerialName("presentation") PRESENTATION
 }
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant1SelectionOutputFormat {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant1SelectionOutputFormat {
     @SerialName("html") HTML,
     @SerialName("pptx") PPTX,
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant1Selection(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant1Selection(
     val `templateId`: String,
     val `outputFormat`:
-        SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant1SelectionOutputFormat? =
+        SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant1SelectionOutputFormat? =
         null,
     val `colorSystemId`: String? = null,
     val `previewUrl`: String? = null,
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant1(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant1Type,
-    val `selection`: SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant1Selection,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant4Template
+data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant1(
+    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant1Type,
+    val `selection`: SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant1Selection,
+) : SaveThreadDraftDraftUserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant2Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant2Type {
     @SerialName("custom") CUSTOM
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant2Selection(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant2Selection(
     val `userTemplateId`: String
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant2(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant2Type,
-    val `selection`: SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant2Selection,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant4Template
+data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant2(
+    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant2Type,
+    val `selection`: SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant2Selection,
+) : SaveThreadDraftDraftUserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant3Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant3Type {
     @SerialName("video") VIDEO
 }
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant3SelectionAvatarOptionsAspectRatio {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant3SelectionAvatarOptionsAspectRatio {
     @SerialName("portrait") PORTRAIT,
     @SerialName("landscape") LANDSCAPE,
     @SerialName("square") SQUARE,
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant3SelectionAvatarOptions(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant3SelectionAvatarOptions(
     val `titleSnapshot`: String? = null,
     val `previewUrl`: String? = null,
     val `voiceId`: String? = null,
     val `aspectRatio`:
-        SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant3SelectionAvatarOptionsAspectRatio? =
+        SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant3SelectionAvatarOptionsAspectRatio? =
         null,
 )
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant3SelectionAspectRatio {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant3SelectionAspectRatio {
     @SerialName("portrait") PORTRAIT,
     @SerialName("landscape") LANDSCAPE,
     @SerialName("square") SQUARE,
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant3Selection(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant3Selection(
     val `stylePresetId`: String,
     val `avatarOptions`:
-        SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant3SelectionAvatarOptions? =
+        SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant3SelectionAvatarOptions? =
         null,
     val `titleSnapshot`: String? = null,
     val `previewUrl`: String? = null,
     val `voiceId`: String? = null,
     val `aspectRatio`:
-        SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant3SelectionAspectRatio? =
+        SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant3SelectionAspectRatio? =
         null,
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant3(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant3Type,
-    val `selection`: SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant3Selection,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant4Template
+data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant3(
+    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant3Type,
+    val `selection`: SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant3Selection,
+) : SaveThreadDraftDraftUserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant4Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant4Type {
     @SerialName("intro-video") INTRO_VIDEO
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant4(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant4Type,
+data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant4(
+    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant4Type,
     val `selection`: JsonElement,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant4Template
+) : SaveThreadDraftDraftUserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant5Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant5Type {
     @SerialName("illustration") ILLUSTRATION
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant5Selection(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant5Selection(
     val `illustrationStyleId`: String
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant5(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant5Type,
-    val `selection`: SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant5Selection,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant4Template
+data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant5(
+    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant5Type,
+    val `selection`: SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant5Selection,
+) : SaveThreadDraftDraftUserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant6Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant6Type {
     @SerialName("workflow") WORKFLOW
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant6Selection(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant6Selection(
     val `workflowTemplateId`: String
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant6(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant6Type,
-    val `selection`: SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant6Selection,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant4Template
+data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant6(
+    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant6Type,
+    val `selection`: SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant6Selection,
+) : SaveThreadDraftDraftUserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant7Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant7Type {
     @SerialName("website") WEBSITE
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant7Selection(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant7Selection(
     val `websiteTemplateId`: String
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant7(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant7Type,
-    val `selection`: SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant7Selection,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant4Template
+data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant7(
+    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant7Type,
+    val `selection`: SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant7Selection,
+) : SaveThreadDraftDraftUserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant8Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant8Type {
     @SerialName("document") DOCUMENT
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant8Selection(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant8Selection(
     val `documentTemplateId`: String
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant8(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant8Type,
-    val `selection`: SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant8Selection,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant4Template
+data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant8(
+    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant8Type,
+    val `selection`: SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant8Selection,
+) : SaveThreadDraftDraftUserMessagePartsItemVariant3Template
 
-object SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateSerializer :
-    KSerializer<SaveThreadDraftDraftUserMessagePartsItemVariant4Template> {
+object SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateSerializer :
+    KSerializer<SaveThreadDraftDraftUserMessagePartsItemVariant3Template> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SaveThreadDraftDraftUserMessagePartsItemVariant4Template"
+            "ai.okou.android.api.generated.SaveThreadDraftDraftUserMessagePartsItemVariant3Template"
         )
 
     override fun deserialize(
         decoder: Decoder
-    ): SaveThreadDraftDraftUserMessagePartsItemVariant4Template {
+    ): SaveThreadDraftDraftUserMessagePartsItemVariant3Template {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SaveThreadDraftDraftUserMessagePartsItemVariant4Template"
+                    "Expected JSON object for SaveThreadDraftDraftUserMessagePartsItemVariant3Template"
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SaveThreadDraftDraftUserMessagePartsItemVariant4Template"
+                    "Expected object for SaveThreadDraftDraftUserMessagePartsItemVariant3Template"
                 )
         val matches =
             listOf(
@@ -4406,99 +4291,99 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SaveThreadDraftDraftUserMessagePartsItemVariant4Template variant"
+                "Unknown or ambiguous SaveThreadDraftDraftUserMessagePartsItemVariant3Template variant"
             )
         return when (matches.indexOf(true)) {
             0 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant1.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant1.serializer(),
                     value,
                 )
             1 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant2.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant2.serializer(),
                     value,
                 )
             2 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant3.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant3.serializer(),
                     value,
                 )
             3 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant4.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant4.serializer(),
                     value,
                 )
             4 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant5.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant5.serializer(),
                     value,
                 )
             5 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant6.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant6.serializer(),
                     value,
                 )
             6 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant7.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant7.serializer(),
                     value,
                 )
             7 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant8.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant8.serializer(),
                     value,
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SaveThreadDraftDraftUserMessagePartsItemVariant4Template variant"
+                    "Unknown SaveThreadDraftDraftUserMessagePartsItemVariant3Template variant"
                 )
         }
     }
 
     override fun serialize(
         encoder: Encoder,
-        value: SaveThreadDraftDraftUserMessagePartsItemVariant4Template,
+        value: SaveThreadDraftDraftUserMessagePartsItemVariant3Template,
     ) {
         when (value) {
-            is SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant1 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant1 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant1.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant1.serializer(),
                     value,
                 )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant2 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant2 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant2.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant2.serializer(),
                     value,
                 )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant3 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant3 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant3.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant3.serializer(),
                     value,
                 )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant4 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant4 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant4.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant4.serializer(),
                     value,
                 )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant5 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant5 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant5.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant5.serializer(),
                     value,
                 )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant6 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant6 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant6.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant6.serializer(),
                     value,
                 )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant7 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant7 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant7.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant7.serializer(),
                     value,
                 )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant8 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant8 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateVariant8.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant8.serializer(),
                     value,
                 )
         }
@@ -4506,31 +4391,31 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant4TemplateSerializer :
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant4(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant4Type,
+data class SaveThreadDraftDraftUserMessagePartsItemVariant3(
+    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant3Type,
     val `titleSnapshot`: String,
-    val `template`: SaveThreadDraftDraftUserMessagePartsItemVariant4Template,
+    val `template`: SaveThreadDraftDraftUserMessagePartsItemVariant3Template,
 ) : SaveThreadDraftDraftUserMessagePartsItem
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant5Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant4Type {
     @SerialName("project") PROJECT
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant5(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant5Type,
+data class SaveThreadDraftDraftUserMessagePartsItemVariant4(
+    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant4Type,
     val `projectId`: String,
     val `nameSnapshot`: String,
 ) : SaveThreadDraftDraftUserMessagePartsItem
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant6Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant5Type {
     @SerialName("source") SOURCE
 }
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant6Kind {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant5Kind {
     @SerialName("slack") SLACK,
     @SerialName("discord") DISCORD,
     @SerialName("wechat") WECHAT,
@@ -4543,92 +4428,71 @@ enum class SaveThreadDraftDraftUserMessagePartsItemVariant6Kind {
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant6(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant6Type,
-    val `kind`: SaveThreadDraftDraftUserMessagePartsItemVariant6Kind,
+data class SaveThreadDraftDraftUserMessagePartsItemVariant5(
+    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant5Type,
+    val `kind`: SaveThreadDraftDraftUserMessagePartsItemVariant5Kind,
     val `href`: String? = null,
 ) : SaveThreadDraftDraftUserMessagePartsItem
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant7Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant6Type {
     @SerialName("source") SOURCE
 }
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant7Kind {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant6Kind {
     @SerialName("mcp") MCP
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant7(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant7Type,
-    val `kind`: SaveThreadDraftDraftUserMessagePartsItemVariant7Kind,
+data class SaveThreadDraftDraftUserMessagePartsItemVariant6(
+    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant6Type,
+    val `kind`: SaveThreadDraftDraftUserMessagePartsItemVariant6Kind,
     val `clientId`: String,
     val `clientName`: String? = null,
 ) : SaveThreadDraftDraftUserMessagePartsItem
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant8Type {
-    @SerialName("source") SOURCE
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant7Type {
+    @SerialName("additional_info") ADDITIONAL_INFO
 }
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant8Kind {
-    @SerialName("agent") AGENT
+data class SaveThreadDraftDraftUserMessagePartsItemVariant7(
+    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant7Type,
+    val `text`: String,
+) : SaveThreadDraftDraftUserMessagePartsItem
+
+@Serializable
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant8Type {
+    @SerialName("automation") AUTOMATION
 }
 
 @Serializable
 data class SaveThreadDraftDraftUserMessagePartsItemVariant8(
     val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant8Type,
-    val `kind`: SaveThreadDraftDraftUserMessagePartsItemVariant8Kind,
-    val `runId`: String,
-    val `threadId`: String,
-    val `agentId`: String? = null,
-    val `titleSnapshot`: String,
-    val `href`: String,
-) : SaveThreadDraftDraftUserMessagePartsItem
-
-@Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant9Type {
-    @SerialName("additional_info") ADDITIONAL_INFO
-}
-
-@Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant9(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant9Type,
-    val `text`: String,
-) : SaveThreadDraftDraftUserMessagePartsItem
-
-@Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant10Type {
-    @SerialName("automation") AUTOMATION
-}
-
-@Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant10(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant10Type,
     val `workflowName`: String,
     val `workflowId`: String? = null,
     val `automationBrief`: String? = null,
 ) : SaveThreadDraftDraftUserMessagePartsItem
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant11Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant9Type {
     @SerialName("file") FILE
 }
 
 @Serializable(
-    with = SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemSerializer::class
+    with = SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemSerializer::class
 )
-sealed interface SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem
+sealed interface SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant1Shape {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant1Shape {
     @SerialName("box") BOX
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant1Rect(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant1Rect(
     val `x`: Double,
     val `y`: Double,
     val `width`: Double,
@@ -4636,96 +4500,96 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant1(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant1(
     val `id`: String,
     val `ordinal`: Long? = null,
-    val `shape`: SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant1Shape,
-    val `rect`: SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant1Rect,
+    val `shape`: SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant1Shape,
+    val `rect`: SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant1Rect,
     val `ink`: String,
     val `note`: String? = null,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem
+) : SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant2Shape {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant2Shape {
     @SerialName("arrow") ARROW
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant2From(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant2From(
     val `x`: Double,
     val `y`: Double,
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant2To(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant2To(
     val `x`: Double,
     val `y`: Double,
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant2(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant2(
     val `id`: String,
     val `ordinal`: Long? = null,
-    val `shape`: SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant2Shape,
-    val `from`: SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant2From,
-    val `to`: SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant2To,
+    val `shape`: SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant2Shape,
+    val `from`: SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant2From,
+    val `to`: SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant2To,
     val `ink`: String,
     val `note`: String? = null,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem
+) : SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant3Shape {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3Shape {
     @SerialName("pen") PEN
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant3PointsItem(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3PointsItem(
     val `x`: Double,
     val `y`: Double,
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant3(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3(
     val `id`: String,
     val `ordinal`: Long? = null,
-    val `shape`: SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant3Shape,
+    val `shape`: SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3Shape,
     val `points`:
         List<
-            SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant3PointsItem
+            SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3PointsItem
         >,
     val `ink`: String,
     val `note`: String? = null,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem
+) : SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant4Shape {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant4Shape {
     @SerialName("text") TEXT
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant4At(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant4At(
     val `x`: Double,
     val `y`: Double,
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant4(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant4(
     val `id`: String,
     val `ordinal`: Long? = null,
-    val `shape`: SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant4Shape,
-    val `at`: SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant4At,
+    val `shape`: SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant4Shape,
+    val `at`: SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant4At,
     val `text`: String,
     val `ink`: String,
     val `scale`: Double? = null,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem
+) : SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant5Shape {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant5Shape {
     @SerialName("highlight") HIGHLIGHT
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant5Rect(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant5Rect(
     val `x`: Double,
     val `y`: Double,
     val `width`: Double,
@@ -4733,21 +4597,21 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant5(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant5(
     val `id`: String,
     val `ordinal`: Long? = null,
-    val `shape`: SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant5Shape,
-    val `rect`: SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant5Rect,
+    val `shape`: SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant5Shape,
+    val `rect`: SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant5Rect,
     val `note`: String? = null,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem
+) : SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant6Shape {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant6Shape {
     @SerialName("redact") REDACT
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant6Rect(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant6Rect(
     val `x`: Double,
     val `y`: Double,
     val `width`: Double,
@@ -4755,32 +4619,32 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant6(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant6(
     val `id`: String,
     val `ordinal`: Long? = null,
-    val `shape`: SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant6Shape,
-    val `rect`: SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant6Rect,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem
+    val `shape`: SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant6Shape,
+    val `rect`: SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant6Rect,
+) : SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem
 
-object SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemSerializer :
-    KSerializer<SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem> {
+object SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemSerializer :
+    KSerializer<SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem"
+            "ai.okou.android.api.generated.SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem"
         )
 
     override fun deserialize(
         decoder: Decoder
-    ): SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem {
+    ): SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem"
+                    "Expected JSON object for SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem"
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem"
+                    "Expected object for SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem"
                 )
         val matches =
             listOf(
@@ -4805,90 +4669,90 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemSeri
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem variant"
+                "Unknown or ambiguous SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem variant"
             )
         return when (matches.indexOf(true)) {
             0 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant1
+                    SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant1
                         .serializer(),
                     value,
                 )
             1 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant2
+                    SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant2
                         .serializer(),
                     value,
                 )
             2 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant3
+                    SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3
                         .serializer(),
                     value,
                 )
             3 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant4
+                    SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant4
                         .serializer(),
                     value,
                 )
             4 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant5
+                    SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant5
                         .serializer(),
                     value,
                 )
             5 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant6
+                    SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant6
                         .serializer(),
                     value,
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem variant"
+                    "Unknown SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem variant"
                 )
         }
     }
 
     override fun serialize(
         encoder: Encoder,
-        value: SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem,
+        value: SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem,
     ) {
         when (value) {
-            is SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant1 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant1 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant1
+                    SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant1
                         .serializer(),
                     value,
                 )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant2 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant2 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant2
+                    SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant2
                         .serializer(),
                     value,
                 )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant3 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant3
+                    SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3
                         .serializer(),
                     value,
                 )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant4 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant4 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant4
+                    SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant4
                         .serializer(),
                     value,
                 )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant5 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant5 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant5
+                    SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant5
                         .serializer(),
                     value,
                 )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant6 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant6 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemVariant6
+                    SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant6
                         .serializer(),
                     value,
                 )
@@ -4897,7 +4761,7 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItemSeri
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsCrop(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsCrop(
     val `x`: Double,
     val `y`: Double,
     val `width`: Double,
@@ -4905,276 +4769,264 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsCrop(
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant11Annotations(
-    val `marks`: List<SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsMarksItem>,
-    val `crop`: SaveThreadDraftDraftUserMessagePartsItemVariant11AnnotationsCrop? = null,
+data class SaveThreadDraftDraftUserMessagePartsItemVariant9Annotations(
+    val `marks`: List<SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem>,
+    val `crop`: SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsCrop? = null,
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant11(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant11Type,
+data class SaveThreadDraftDraftUserMessagePartsItemVariant9(
+    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant9Type,
     val `fileId`: String,
     val `filenameSnapshot`: String,
     val `contentType`: String,
     val `annotatedFileId`: String? = null,
-    val `annotations`: SaveThreadDraftDraftUserMessagePartsItemVariant11Annotations? = null,
+    val `annotations`: SaveThreadDraftDraftUserMessagePartsItemVariant9Annotations? = null,
 ) : SaveThreadDraftDraftUserMessagePartsItem
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant12Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant10Type {
     @SerialName("feedback") FEEDBACK
 }
 
-@Serializable(with = SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemSerializer::class)
-sealed interface SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItem
+@Serializable(with = SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemSerializer::class)
+sealed interface SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant1Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant1Type {
     @SerialName("text") TEXT
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant1(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant1Type,
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant1(
+    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant1Type,
     val `text`: String,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItem
+) : SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant2Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant2Type {
     @SerialName("chat_thread") CHAT_THREAD
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant2(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant2Type,
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant2(
+    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant2Type,
     val `threadId`: String,
     val `titleSnapshot`: String,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItem
+) : SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant3Type {
-    @SerialName("agent") AGENT
-}
-
-@Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant3(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant3Type,
-    val `agentId`: String,
-    val `nameSnapshot`: String,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItem
-
-@Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Type {
     @SerialName("template") TEMPLATE
 }
 
 @Serializable(
     with =
-        SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateSerializer::class
+        SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateSerializer::class
 )
-sealed interface SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template
+sealed interface SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1Type {
     @SerialName("presentation") PRESENTATION
 }
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1SelectionOutputFormat {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1SelectionOutputFormat {
     @SerialName("html") HTML,
     @SerialName("pptx") PPTX,
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1Selection(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1Selection(
     val `templateId`: String,
     val `outputFormat`:
-        SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1SelectionOutputFormat? =
+        SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1SelectionOutputFormat? =
         null,
     val `colorSystemId`: String? = null,
     val `previewUrl`: String? = null,
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1(
     val `type`:
-        SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1Type,
+        SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1Type,
     val `selection`:
-        SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1Selection,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template
+        SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1Selection,
+) : SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2Type {
     @SerialName("custom") CUSTOM
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2Selection(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2Selection(
     val `userTemplateId`: String
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2(
     val `type`:
-        SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2Type,
+        SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2Type,
     val `selection`:
-        SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2Selection,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template
+        SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2Selection,
+) : SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3Type {
     @SerialName("video") VIDEO
 }
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3SelectionAvatarOptionsAspectRatio {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3SelectionAvatarOptionsAspectRatio {
     @SerialName("portrait") PORTRAIT,
     @SerialName("landscape") LANDSCAPE,
     @SerialName("square") SQUARE,
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3SelectionAvatarOptions(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3SelectionAvatarOptions(
     val `titleSnapshot`: String? = null,
     val `previewUrl`: String? = null,
     val `voiceId`: String? = null,
     val `aspectRatio`:
-        SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3SelectionAvatarOptionsAspectRatio? =
+        SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3SelectionAvatarOptionsAspectRatio? =
         null,
 )
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3SelectionAspectRatio {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3SelectionAspectRatio {
     @SerialName("portrait") PORTRAIT,
     @SerialName("landscape") LANDSCAPE,
     @SerialName("square") SQUARE,
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3Selection(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3Selection(
     val `stylePresetId`: String,
     val `avatarOptions`:
-        SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3SelectionAvatarOptions? =
+        SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3SelectionAvatarOptions? =
         null,
     val `titleSnapshot`: String? = null,
     val `previewUrl`: String? = null,
     val `voiceId`: String? = null,
     val `aspectRatio`:
-        SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3SelectionAspectRatio? =
+        SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3SelectionAspectRatio? =
         null,
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3(
     val `type`:
-        SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3Type,
+        SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3Type,
     val `selection`:
-        SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3Selection,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template
+        SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3Selection,
+) : SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant4Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant4Type {
     @SerialName("intro-video") INTRO_VIDEO
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant4(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant4(
     val `type`:
-        SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant4Type,
+        SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant4Type,
     val `selection`: JsonElement,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template
+) : SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5Type {
     @SerialName("illustration") ILLUSTRATION
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5Selection(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5Selection(
     val `illustrationStyleId`: String
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5(
     val `type`:
-        SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5Type,
+        SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5Type,
     val `selection`:
-        SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5Selection,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template
+        SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5Selection,
+) : SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6Type {
     @SerialName("workflow") WORKFLOW
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6Selection(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6Selection(
     val `workflowTemplateId`: String
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6(
     val `type`:
-        SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6Type,
+        SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6Type,
     val `selection`:
-        SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6Selection,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template
+        SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6Selection,
+) : SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7Type {
     @SerialName("website") WEBSITE
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7Selection(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7Selection(
     val `websiteTemplateId`: String
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7(
     val `type`:
-        SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7Type,
+        SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7Type,
     val `selection`:
-        SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7Selection,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template
+        SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7Selection,
+) : SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8Type {
     @SerialName("document") DOCUMENT
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8Selection(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8Selection(
     val `documentTemplateId`: String
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8(
     val `type`:
-        SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8Type,
+        SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8Type,
     val `selection`:
-        SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8Selection,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template
+        SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8Selection,
+) : SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template
 
-object SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateSerializer :
-    KSerializer<SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template> {
+object SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateSerializer :
+    KSerializer<SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template"
+            "ai.okou.android.api.generated.SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template"
         )
 
     override fun deserialize(
         decoder: Decoder
-    ): SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template {
+    ): SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template"
+                    "Expected JSON object for SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template"
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template"
+                    "Expected object for SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template"
                 )
         val matches =
             listOf(
@@ -5205,114 +5057,114 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template variant"
+                "Unknown or ambiguous SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template variant"
             )
         return when (matches.indexOf(true)) {
             0 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1
                         .serializer(),
                     value,
                 )
             1 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2
                         .serializer(),
                     value,
                 )
             2 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3
                         .serializer(),
                     value,
                 )
             3 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant4
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant4
                         .serializer(),
                     value,
                 )
             4 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5
                         .serializer(),
                     value,
                 )
             5 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6
                         .serializer(),
                     value,
                 )
             6 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7
                         .serializer(),
                     value,
                 )
             7 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8
                         .serializer(),
                     value,
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template variant"
+                    "Unknown SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template variant"
                 )
         }
     }
 
     override fun serialize(
         encoder: Encoder,
-        value: SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template,
+        value: SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template,
     ) {
         when (value) {
-            is SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1
                         .serializer(),
                     value,
                 )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2
                         .serializer(),
                     value,
                 )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3
                         .serializer(),
                     value,
                 )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant4 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant4 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant4
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant4
                         .serializer(),
                     value,
                 )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5
                         .serializer(),
                     value,
                 )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6
                         .serializer(),
                     value,
                 )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7
                         .serializer(),
                     value,
                 )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8
                         .serializer(),
                     value,
                 )
@@ -5321,43 +5173,43 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Type,
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3(
+    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Type,
     val `titleSnapshot`: String,
-    val `template`: SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4Template,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItem
+    val `template`: SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template,
+) : SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant5Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant4Type {
     @SerialName("project") PROJECT
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant5(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant5Type,
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant4(
+    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant4Type,
     val `projectId`: String,
     val `nameSnapshot`: String,
-) : SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItem
+) : SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem
 
-object SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemSerializer :
-    KSerializer<SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItem> {
+object SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemSerializer :
+    KSerializer<SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItem"
+            "ai.okou.android.api.generated.SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem"
         )
 
     override fun deserialize(
         decoder: Decoder
-    ): SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItem {
+    ): SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItem"
+                    "Expected JSON object for SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem"
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItem"
+                    "Expected object for SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem"
                 )
         val matches =
             listOf(
@@ -5368,9 +5220,6 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemSerializer :
                     it.isString && it.content in setOf("chat_thread")
                 } == true,
                 (value["type"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("agent")
-                } == true,
-                (value["type"] as? JsonPrimitive)?.let {
                     it.isString && it.content in setOf("template")
                 } == true,
                 (value["type"] as? JsonPrimitive)?.let {
@@ -5379,69 +5228,59 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItem variant"
+                "Unknown or ambiguous SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem variant"
             )
         return when (matches.indexOf(true)) {
             0 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant1.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant1.serializer(),
                     value,
                 )
             1 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant2.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant2.serializer(),
                     value,
                 )
             2 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant3.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3.serializer(),
                     value,
                 )
             3 ->
                 input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4.serializer(),
-                    value,
-                )
-            4 ->
-                input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant5.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant4.serializer(),
                     value,
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItem variant"
+                    "Unknown SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem variant"
                 )
         }
     }
 
     override fun serialize(
         encoder: Encoder,
-        value: SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItem,
+        value: SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem,
     ) {
         when (value) {
-            is SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant1 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant1 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant1.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant1.serializer(),
                     value,
                 )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant2 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant2 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant2.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant2.serializer(),
                     value,
                 )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant3 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant3.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3.serializer(),
                     value,
                 )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4 ->
+            is SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant4 ->
                 encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant4.serializer(),
-                    value,
-                )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant5 ->
-                encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemVariant5.serializer(),
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant4.serializer(),
                     value,
                 )
         }
@@ -5449,52 +5288,52 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItemSerializer :
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12Range(
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10Range(
     val `start`: Long,
     val `end`: Long,
 )
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant12SourceType {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant10SourceType {
     @SerialName("mail") MAIL
 }
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant12SourceStatus {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant10SourceStatus {
     @SerialName("draft") DRAFT,
     @SerialName("sent") SENT,
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12Source(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant12SourceType,
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10Source(
+    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant10SourceType,
     val `id`: String,
-    val `status`: SaveThreadDraftDraftUserMessagePartsItemVariant12SourceStatus,
+    val `status`: SaveThreadDraftDraftUserMessagePartsItemVariant10SourceStatus,
     val `sentId`: String? = null,
 )
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant12(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant12Type,
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10(
+    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant10Type,
     val `quote`: String,
-    val `note`: List<SaveThreadDraftDraftUserMessagePartsItemVariant12NoteItem>,
+    val `note`: List<SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem>,
     val `eventId`: String? = null,
-    val `range`: SaveThreadDraftDraftUserMessagePartsItemVariant12Range? = null,
-    val `source`: SaveThreadDraftDraftUserMessagePartsItemVariant12Source? = null,
+    val `range`: SaveThreadDraftDraftUserMessagePartsItemVariant10Range? = null,
+    val `source`: SaveThreadDraftDraftUserMessagePartsItemVariant10Source? = null,
 ) : SaveThreadDraftDraftUserMessagePartsItem
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant13Type {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant11Type {
     @SerialName("voice") VOICE
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant13ClipsItem(val `fileId`: String)
+data class SaveThreadDraftDraftUserMessagePartsItemVariant11ClipsItem(val `fileId`: String)
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant13(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant13Type,
-    val `clips`: List<SaveThreadDraftDraftUserMessagePartsItemVariant13ClipsItem>,
+data class SaveThreadDraftDraftUserMessagePartsItemVariant11(
+    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant11Type,
+    val `clips`: List<SaveThreadDraftDraftUserMessagePartsItemVariant11ClipsItem>,
 ) : SaveThreadDraftDraftUserMessagePartsItem
 
 object SaveThreadDraftDraftUserMessagePartsItemSerializer :
@@ -5528,12 +5367,6 @@ object SaveThreadDraftDraftUserMessagePartsItemSerializer :
                 } == true && value.containsKey("threadId") && value.containsKey("titleSnapshot")) &&
                     (value["type"].let { field ->
                         (field is JsonPrimitive && field.isString && field.content == "chat_thread")
-                    }),
-                ((value["type"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("agent")
-                } == true && value.containsKey("agentId") && value.containsKey("nameSnapshot")) &&
-                    (value["type"].let { field ->
-                        (field is JsonPrimitive && field.isString && field.content == "agent")
                     }),
                 ((value["type"] as? JsonPrimitive)?.let {
                     it.isString && it.content in setOf("template")
@@ -5580,22 +5413,6 @@ object SaveThreadDraftDraftUserMessagePartsItemSerializer :
                     }) &&
                     (value["kind"].let { field ->
                         (field is JsonPrimitive && field.isString && field.content == "mcp")
-                    }),
-                ((value["type"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("source")
-                } == true &&
-                    (value["kind"] as? JsonPrimitive)?.let {
-                        it.isString && it.content in setOf("agent")
-                    } == true &&
-                    value.containsKey("runId") &&
-                    value.containsKey("threadId") &&
-                    value.containsKey("titleSnapshot") &&
-                    value.containsKey("href")) &&
-                    (value["type"].let { field ->
-                        (field is JsonPrimitive && field.isString && field.content == "source")
-                    }) &&
-                    (value["kind"].let { field ->
-                        (field is JsonPrimitive && field.isString && field.content == "agent")
                     }),
                 ((value["type"] as? JsonPrimitive)?.let {
                     it.isString && it.content in setOf("additional_info")
@@ -5693,16 +5510,6 @@ object SaveThreadDraftDraftUserMessagePartsItemSerializer :
                     SaveThreadDraftDraftUserMessagePartsItemVariant11.serializer(),
                     value,
                 )
-            11 ->
-                input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12.serializer(),
-                    value,
-                )
-            12 ->
-                input.json.decodeFromJsonElement(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant13.serializer(),
-                    value,
-                )
             else ->
                 throw SerializationException(
                     "Unknown SaveThreadDraftDraftUserMessagePartsItem variant"
@@ -5765,16 +5572,6 @@ object SaveThreadDraftDraftUserMessagePartsItemSerializer :
             is SaveThreadDraftDraftUserMessagePartsItemVariant11 ->
                 encoder.encodeSerializableValue(
                     SaveThreadDraftDraftUserMessagePartsItemVariant11.serializer(),
-                    value,
-                )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant12 ->
-                encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant12.serializer(),
-                    value,
-                )
-            is SaveThreadDraftDraftUserMessagePartsItemVariant13 ->
-                encoder.encodeSerializableValue(
-                    SaveThreadDraftDraftUserMessagePartsItemVariant13.serializer(),
                     value,
                 )
         }
@@ -6325,214 +6122,203 @@ data class SendRequestVariant1UserMessagePartsItemVariant2(
     val `type`: SendRequestVariant1UserMessagePartsItemVariant2Type,
     val `threadId`: String,
     val `titleSnapshot`: String,
+    val `runId`: String? = null,
 ) : SendRequestVariant1UserMessagePartsItem
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant3Type {
-    @SerialName("agent") AGENT
-}
-
-@Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant3(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant3Type,
-    val `agentId`: String,
-    val `nameSnapshot`: String,
-) : SendRequestVariant1UserMessagePartsItem
-
-@Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant4Type {
     @SerialName("template") TEMPLATE
 }
 
-@Serializable(with = SendRequestVariant1UserMessagePartsItemVariant4TemplateSerializer::class)
-sealed interface SendRequestVariant1UserMessagePartsItemVariant4Template
+@Serializable(with = SendRequestVariant1UserMessagePartsItemVariant3TemplateSerializer::class)
+sealed interface SendRequestVariant1UserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant1Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant1Type {
     @SerialName("presentation") PRESENTATION
 }
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant1SelectionOutputFormat {
+enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant1SelectionOutputFormat {
     @SerialName("html") HTML,
     @SerialName("pptx") PPTX,
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant1Selection(
+data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant1Selection(
     val `templateId`: String,
     val `outputFormat`:
-        SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant1SelectionOutputFormat? =
+        SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant1SelectionOutputFormat? =
         null,
     val `colorSystemId`: String? = null,
     val `previewUrl`: String? = null,
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant1(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant1Type,
-    val `selection`: SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant1Selection,
-) : SendRequestVariant1UserMessagePartsItemVariant4Template
+data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant1(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant1Type,
+    val `selection`: SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant1Selection,
+) : SendRequestVariant1UserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant2Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant2Type {
     @SerialName("custom") CUSTOM
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant2Selection(
+data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant2Selection(
     val `userTemplateId`: String
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant2(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant2Type,
-    val `selection`: SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant2Selection,
-) : SendRequestVariant1UserMessagePartsItemVariant4Template
+data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant2(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant2Type,
+    val `selection`: SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant2Selection,
+) : SendRequestVariant1UserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant3Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant3Type {
     @SerialName("video") VIDEO
 }
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant3SelectionAvatarOptionsAspectRatio {
+enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant3SelectionAvatarOptionsAspectRatio {
     @SerialName("portrait") PORTRAIT,
     @SerialName("landscape") LANDSCAPE,
     @SerialName("square") SQUARE,
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant3SelectionAvatarOptions(
+data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant3SelectionAvatarOptions(
     val `titleSnapshot`: String? = null,
     val `previewUrl`: String? = null,
     val `voiceId`: String? = null,
     val `aspectRatio`:
-        SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant3SelectionAvatarOptionsAspectRatio? =
+        SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant3SelectionAvatarOptionsAspectRatio? =
         null,
 )
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant3SelectionAspectRatio {
+enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant3SelectionAspectRatio {
     @SerialName("portrait") PORTRAIT,
     @SerialName("landscape") LANDSCAPE,
     @SerialName("square") SQUARE,
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant3Selection(
+data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant3Selection(
     val `stylePresetId`: String,
     val `avatarOptions`:
-        SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant3SelectionAvatarOptions? =
+        SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant3SelectionAvatarOptions? =
         null,
     val `titleSnapshot`: String? = null,
     val `previewUrl`: String? = null,
     val `voiceId`: String? = null,
     val `aspectRatio`:
-        SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant3SelectionAspectRatio? =
+        SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant3SelectionAspectRatio? =
         null,
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant3(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant3Type,
-    val `selection`: SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant3Selection,
-) : SendRequestVariant1UserMessagePartsItemVariant4Template
+data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant3(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant3Type,
+    val `selection`: SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant3Selection,
+) : SendRequestVariant1UserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant4Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant4Type {
     @SerialName("intro-video") INTRO_VIDEO
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant4(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant4Type,
+data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant4(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant4Type,
     val `selection`: JsonElement,
-) : SendRequestVariant1UserMessagePartsItemVariant4Template
+) : SendRequestVariant1UserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant5Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant5Type {
     @SerialName("illustration") ILLUSTRATION
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant5Selection(
+data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant5Selection(
     val `illustrationStyleId`: String
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant5(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant5Type,
-    val `selection`: SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant5Selection,
-) : SendRequestVariant1UserMessagePartsItemVariant4Template
+data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant5(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant5Type,
+    val `selection`: SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant5Selection,
+) : SendRequestVariant1UserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant6Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant6Type {
     @SerialName("workflow") WORKFLOW
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant6Selection(
+data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant6Selection(
     val `workflowTemplateId`: String
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant6(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant6Type,
-    val `selection`: SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant6Selection,
-) : SendRequestVariant1UserMessagePartsItemVariant4Template
+data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant6(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant6Type,
+    val `selection`: SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant6Selection,
+) : SendRequestVariant1UserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant7Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant7Type {
     @SerialName("website") WEBSITE
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant7Selection(
+data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant7Selection(
     val `websiteTemplateId`: String
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant7(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant7Type,
-    val `selection`: SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant7Selection,
-) : SendRequestVariant1UserMessagePartsItemVariant4Template
+data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant7(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant7Type,
+    val `selection`: SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant7Selection,
+) : SendRequestVariant1UserMessagePartsItemVariant3Template
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant8Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant8Type {
     @SerialName("document") DOCUMENT
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant8Selection(
+data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant8Selection(
     val `documentTemplateId`: String
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant8(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant8Type,
-    val `selection`: SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant8Selection,
-) : SendRequestVariant1UserMessagePartsItemVariant4Template
+data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant8(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant8Type,
+    val `selection`: SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant8Selection,
+) : SendRequestVariant1UserMessagePartsItemVariant3Template
 
-object SendRequestVariant1UserMessagePartsItemVariant4TemplateSerializer :
-    KSerializer<SendRequestVariant1UserMessagePartsItemVariant4Template> {
+object SendRequestVariant1UserMessagePartsItemVariant3TemplateSerializer :
+    KSerializer<SendRequestVariant1UserMessagePartsItemVariant3Template> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant4Template"
+            "ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant3Template"
         )
 
     override fun deserialize(
         decoder: Decoder
-    ): SendRequestVariant1UserMessagePartsItemVariant4Template {
+    ): SendRequestVariant1UserMessagePartsItemVariant3Template {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant4Template"
+                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant3Template"
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant4Template"
+                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant3Template"
                 )
         val matches =
             listOf(
@@ -6563,99 +6349,99 @@ object SendRequestVariant1UserMessagePartsItemVariant4TemplateSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant4Template variant"
+                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant3Template variant"
             )
         return when (matches.indexOf(true)) {
             0 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant1.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant1.serializer(),
                     value,
                 )
             1 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant2.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant2.serializer(),
                     value,
                 )
             2 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant3.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant3.serializer(),
                     value,
                 )
             3 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant4.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant4.serializer(),
                     value,
                 )
             4 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant5.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant5.serializer(),
                     value,
                 )
             5 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant6.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant6.serializer(),
                     value,
                 )
             6 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant7.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant7.serializer(),
                     value,
                 )
             7 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant8.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant8.serializer(),
                     value,
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SendRequestVariant1UserMessagePartsItemVariant4Template variant"
+                    "Unknown SendRequestVariant1UserMessagePartsItemVariant3Template variant"
                 )
         }
     }
 
     override fun serialize(
         encoder: Encoder,
-        value: SendRequestVariant1UserMessagePartsItemVariant4Template,
+        value: SendRequestVariant1UserMessagePartsItemVariant3Template,
     ) {
         when (value) {
-            is SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant1 ->
+            is SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant1 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant1.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant1.serializer(),
                     value,
                 )
-            is SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant2 ->
+            is SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant2 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant2.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant2.serializer(),
                     value,
                 )
-            is SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant3 ->
+            is SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant3 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant3.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant3.serializer(),
                     value,
                 )
-            is SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant4 ->
+            is SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant4 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant4.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant4.serializer(),
                     value,
                 )
-            is SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant5 ->
+            is SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant5 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant5.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant5.serializer(),
                     value,
                 )
-            is SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant6 ->
+            is SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant6 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant6.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant6.serializer(),
                     value,
                 )
-            is SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant7 ->
+            is SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant7 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant7.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant7.serializer(),
                     value,
                 )
-            is SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant8 ->
+            is SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant8 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant8.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant8.serializer(),
                     value,
                 )
         }
@@ -6663,31 +6449,31 @@ object SendRequestVariant1UserMessagePartsItemVariant4TemplateSerializer :
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant4(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant4Type,
+data class SendRequestVariant1UserMessagePartsItemVariant3(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant3Type,
     val `titleSnapshot`: String,
-    val `template`: SendRequestVariant1UserMessagePartsItemVariant4Template,
+    val `template`: SendRequestVariant1UserMessagePartsItemVariant3Template,
 ) : SendRequestVariant1UserMessagePartsItem
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant5Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant4Type {
     @SerialName("project") PROJECT
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant5(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant5Type,
+data class SendRequestVariant1UserMessagePartsItemVariant4(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant4Type,
     val `projectId`: String,
     val `nameSnapshot`: String,
 ) : SendRequestVariant1UserMessagePartsItem
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant6Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant5Type {
     @SerialName("source") SOURCE
 }
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant6Kind {
+enum class SendRequestVariant1UserMessagePartsItemVariant5Kind {
     @SerialName("slack") SLACK,
     @SerialName("discord") DISCORD,
     @SerialName("wechat") WECHAT,
@@ -6700,92 +6486,71 @@ enum class SendRequestVariant1UserMessagePartsItemVariant6Kind {
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant6(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant6Type,
-    val `kind`: SendRequestVariant1UserMessagePartsItemVariant6Kind,
+data class SendRequestVariant1UserMessagePartsItemVariant5(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant5Type,
+    val `kind`: SendRequestVariant1UserMessagePartsItemVariant5Kind,
     val `href`: String? = null,
 ) : SendRequestVariant1UserMessagePartsItem
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant7Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant6Type {
     @SerialName("source") SOURCE
 }
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant7Kind {
+enum class SendRequestVariant1UserMessagePartsItemVariant6Kind {
     @SerialName("mcp") MCP
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant7(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant7Type,
-    val `kind`: SendRequestVariant1UserMessagePartsItemVariant7Kind,
+data class SendRequestVariant1UserMessagePartsItemVariant6(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant6Type,
+    val `kind`: SendRequestVariant1UserMessagePartsItemVariant6Kind,
     val `clientId`: String,
     val `clientName`: String? = null,
 ) : SendRequestVariant1UserMessagePartsItem
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant8Type {
-    @SerialName("source") SOURCE
+enum class SendRequestVariant1UserMessagePartsItemVariant7Type {
+    @SerialName("additional_info") ADDITIONAL_INFO
 }
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant8Kind {
-    @SerialName("agent") AGENT
+data class SendRequestVariant1UserMessagePartsItemVariant7(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant7Type,
+    val `text`: String,
+) : SendRequestVariant1UserMessagePartsItem
+
+@Serializable
+enum class SendRequestVariant1UserMessagePartsItemVariant8Type {
+    @SerialName("automation") AUTOMATION
 }
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant8(
     val `type`: SendRequestVariant1UserMessagePartsItemVariant8Type,
-    val `kind`: SendRequestVariant1UserMessagePartsItemVariant8Kind,
-    val `runId`: String,
-    val `threadId`: String,
-    val `agentId`: String? = null,
-    val `titleSnapshot`: String,
-    val `href`: String,
-) : SendRequestVariant1UserMessagePartsItem
-
-@Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant9Type {
-    @SerialName("additional_info") ADDITIONAL_INFO
-}
-
-@Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant9(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant9Type,
-    val `text`: String,
-) : SendRequestVariant1UserMessagePartsItem
-
-@Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant10Type {
-    @SerialName("automation") AUTOMATION
-}
-
-@Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant10(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant10Type,
     val `workflowName`: String,
     val `workflowId`: String? = null,
     val `automationBrief`: String? = null,
 ) : SendRequestVariant1UserMessagePartsItem
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant11Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant9Type {
     @SerialName("file") FILE
 }
 
 @Serializable(
-    with = SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemSerializer::class
+    with = SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemSerializer::class
 )
-sealed interface SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItem
+sealed interface SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant1Shape {
+enum class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant1Shape {
     @SerialName("box") BOX
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant1Rect(
+data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant1Rect(
     val `x`: Double,
     val `y`: Double,
     val `width`: Double,
@@ -6793,96 +6558,94 @@ data class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemV
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant1(
+data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant1(
     val `id`: String,
     val `ordinal`: Long? = null,
-    val `shape`: SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant1Shape,
-    val `rect`: SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant1Rect,
+    val `shape`: SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant1Shape,
+    val `rect`: SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant1Rect,
     val `ink`: String,
     val `note`: String? = null,
-) : SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItem
+) : SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant2Shape {
+enum class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant2Shape {
     @SerialName("arrow") ARROW
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant2From(
+data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant2From(
     val `x`: Double,
     val `y`: Double,
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant2To(
+data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant2To(
     val `x`: Double,
     val `y`: Double,
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant2(
+data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant2(
     val `id`: String,
     val `ordinal`: Long? = null,
-    val `shape`: SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant2Shape,
-    val `from`: SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant2From,
-    val `to`: SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant2To,
+    val `shape`: SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant2Shape,
+    val `from`: SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant2From,
+    val `to`: SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant2To,
     val `ink`: String,
     val `note`: String? = null,
-) : SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItem
+) : SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant3Shape {
+enum class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant3Shape {
     @SerialName("pen") PEN
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant3PointsItem(
+data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant3PointsItem(
     val `x`: Double,
     val `y`: Double,
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant3(
+data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant3(
     val `id`: String,
     val `ordinal`: Long? = null,
-    val `shape`: SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant3Shape,
+    val `shape`: SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant3Shape,
     val `points`:
-        List<
-            SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant3PointsItem
-        >,
+        List<SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant3PointsItem>,
     val `ink`: String,
     val `note`: String? = null,
-) : SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItem
+) : SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant4Shape {
+enum class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant4Shape {
     @SerialName("text") TEXT
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant4At(
+data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant4At(
     val `x`: Double,
     val `y`: Double,
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant4(
+data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant4(
     val `id`: String,
     val `ordinal`: Long? = null,
-    val `shape`: SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant4Shape,
-    val `at`: SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant4At,
+    val `shape`: SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant4Shape,
+    val `at`: SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant4At,
     val `text`: String,
     val `ink`: String,
     val `scale`: Double? = null,
-) : SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItem
+) : SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant5Shape {
+enum class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant5Shape {
     @SerialName("highlight") HIGHLIGHT
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant5Rect(
+data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant5Rect(
     val `x`: Double,
     val `y`: Double,
     val `width`: Double,
@@ -6890,21 +6653,21 @@ data class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemV
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant5(
+data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant5(
     val `id`: String,
     val `ordinal`: Long? = null,
-    val `shape`: SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant5Shape,
-    val `rect`: SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant5Rect,
+    val `shape`: SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant5Shape,
+    val `rect`: SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant5Rect,
     val `note`: String? = null,
-) : SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItem
+) : SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant6Shape {
+enum class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant6Shape {
     @SerialName("redact") REDACT
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant6Rect(
+data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant6Rect(
     val `x`: Double,
     val `y`: Double,
     val `width`: Double,
@@ -6912,32 +6675,32 @@ data class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemV
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant6(
+data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant6(
     val `id`: String,
     val `ordinal`: Long? = null,
-    val `shape`: SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant6Shape,
-    val `rect`: SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant6Rect,
-) : SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItem
+    val `shape`: SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant6Shape,
+    val `rect`: SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant6Rect,
+) : SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem
 
-object SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemSerializer :
-    KSerializer<SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItem> {
+object SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemSerializer :
+    KSerializer<SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItem"
+            "ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem"
         )
 
     override fun deserialize(
         decoder: Decoder
-    ): SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItem {
+    ): SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItem"
+                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem"
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItem"
+                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem"
                 )
         val matches =
             listOf(
@@ -6962,90 +6725,90 @@ object SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemSeria
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItem variant"
+                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem variant"
             )
         return when (matches.indexOf(true)) {
             0 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant1
+                    SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant1
                         .serializer(),
                     value,
                 )
             1 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant2
+                    SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant2
                         .serializer(),
                     value,
                 )
             2 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant3
+                    SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant3
                         .serializer(),
                     value,
                 )
             3 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant4
+                    SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant4
                         .serializer(),
                     value,
                 )
             4 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant5
+                    SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant5
                         .serializer(),
                     value,
                 )
             5 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant6
+                    SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant6
                         .serializer(),
                     value,
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItem variant"
+                    "Unknown SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem variant"
                 )
         }
     }
 
     override fun serialize(
         encoder: Encoder,
-        value: SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItem,
+        value: SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem,
     ) {
         when (value) {
-            is SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant1 ->
+            is SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant1 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant1
+                    SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant1
                         .serializer(),
                     value,
                 )
-            is SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant2 ->
+            is SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant2 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant2
+                    SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant2
                         .serializer(),
                     value,
                 )
-            is SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant3 ->
+            is SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant3 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant3
+                    SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant3
                         .serializer(),
                     value,
                 )
-            is SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant4 ->
+            is SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant4 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant4
+                    SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant4
                         .serializer(),
                     value,
                 )
-            is SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant5 ->
+            is SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant5 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant5
+                    SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant5
                         .serializer(),
                     value,
                 )
-            is SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant6 ->
+            is SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant6 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemVariant6
+                    SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant6
                         .serializer(),
                     value,
                 )
@@ -7054,7 +6817,7 @@ object SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItemSeria
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsCrop(
+data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsCrop(
     val `x`: Double,
     val `y`: Double,
     val `width`: Double,
@@ -7062,275 +6825,263 @@ data class SendRequestVariant1UserMessagePartsItemVariant11AnnotationsCrop(
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant11Annotations(
-    val `marks`: List<SendRequestVariant1UserMessagePartsItemVariant11AnnotationsMarksItem>,
-    val `crop`: SendRequestVariant1UserMessagePartsItemVariant11AnnotationsCrop? = null,
+data class SendRequestVariant1UserMessagePartsItemVariant9Annotations(
+    val `marks`: List<SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem>,
+    val `crop`: SendRequestVariant1UserMessagePartsItemVariant9AnnotationsCrop? = null,
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant11(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant11Type,
+data class SendRequestVariant1UserMessagePartsItemVariant9(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant9Type,
     val `fileId`: String,
     val `filenameSnapshot`: String,
     val `contentType`: String,
     val `annotatedFileId`: String? = null,
-    val `annotations`: SendRequestVariant1UserMessagePartsItemVariant11Annotations? = null,
+    val `annotations`: SendRequestVariant1UserMessagePartsItemVariant9Annotations? = null,
 ) : SendRequestVariant1UserMessagePartsItem
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant12Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant10Type {
     @SerialName("feedback") FEEDBACK
 }
 
-@Serializable(with = SendRequestVariant1UserMessagePartsItemVariant12NoteItemSerializer::class)
-sealed interface SendRequestVariant1UserMessagePartsItemVariant12NoteItem
+@Serializable(with = SendRequestVariant1UserMessagePartsItemVariant10NoteItemSerializer::class)
+sealed interface SendRequestVariant1UserMessagePartsItemVariant10NoteItem
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant1Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant1Type {
     @SerialName("text") TEXT
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant1(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant1Type,
+data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant1(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant1Type,
     val `text`: String,
-) : SendRequestVariant1UserMessagePartsItemVariant12NoteItem
+) : SendRequestVariant1UserMessagePartsItemVariant10NoteItem
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant2Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant2Type {
     @SerialName("chat_thread") CHAT_THREAD
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant2(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant2Type,
+data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant2(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant2Type,
     val `threadId`: String,
     val `titleSnapshot`: String,
-) : SendRequestVariant1UserMessagePartsItemVariant12NoteItem
+) : SendRequestVariant1UserMessagePartsItemVariant10NoteItem
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant3Type {
-    @SerialName("agent") AGENT
-}
-
-@Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant3(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant3Type,
-    val `agentId`: String,
-    val `nameSnapshot`: String,
-) : SendRequestVariant1UserMessagePartsItemVariant12NoteItem
-
-@Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Type {
     @SerialName("template") TEMPLATE
 }
 
 @Serializable(
-    with = SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateSerializer::class
+    with = SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateSerializer::class
 )
-sealed interface SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4Template
+sealed interface SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1Type {
     @SerialName("presentation") PRESENTATION
 }
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1SelectionOutputFormat {
+enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1SelectionOutputFormat {
     @SerialName("html") HTML,
     @SerialName("pptx") PPTX,
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1Selection(
+data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1Selection(
     val `templateId`: String,
     val `outputFormat`:
-        SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1SelectionOutputFormat? =
+        SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1SelectionOutputFormat? =
         null,
     val `colorSystemId`: String? = null,
     val `previewUrl`: String? = null,
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1(
+data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1(
     val `type`:
-        SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1Type,
+        SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1Type,
     val `selection`:
-        SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1Selection,
-) : SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4Template
+        SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1Selection,
+) : SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2Type {
     @SerialName("custom") CUSTOM
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2Selection(
+data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2Selection(
     val `userTemplateId`: String
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2(
+data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2(
     val `type`:
-        SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2Type,
+        SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2Type,
     val `selection`:
-        SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2Selection,
-) : SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4Template
+        SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2Selection,
+) : SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3Type {
     @SerialName("video") VIDEO
 }
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3SelectionAvatarOptionsAspectRatio {
+enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3SelectionAvatarOptionsAspectRatio {
     @SerialName("portrait") PORTRAIT,
     @SerialName("landscape") LANDSCAPE,
     @SerialName("square") SQUARE,
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3SelectionAvatarOptions(
+data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3SelectionAvatarOptions(
     val `titleSnapshot`: String? = null,
     val `previewUrl`: String? = null,
     val `voiceId`: String? = null,
     val `aspectRatio`:
-        SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3SelectionAvatarOptionsAspectRatio? =
+        SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3SelectionAvatarOptionsAspectRatio? =
         null,
 )
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3SelectionAspectRatio {
+enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3SelectionAspectRatio {
     @SerialName("portrait") PORTRAIT,
     @SerialName("landscape") LANDSCAPE,
     @SerialName("square") SQUARE,
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3Selection(
+data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3Selection(
     val `stylePresetId`: String,
     val `avatarOptions`:
-        SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3SelectionAvatarOptions? =
+        SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3SelectionAvatarOptions? =
         null,
     val `titleSnapshot`: String? = null,
     val `previewUrl`: String? = null,
     val `voiceId`: String? = null,
     val `aspectRatio`:
-        SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3SelectionAspectRatio? =
+        SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3SelectionAspectRatio? =
         null,
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3(
+data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3(
     val `type`:
-        SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3Type,
+        SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3Type,
     val `selection`:
-        SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3Selection,
-) : SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4Template
+        SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3Selection,
+) : SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant4Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant4Type {
     @SerialName("intro-video") INTRO_VIDEO
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant4(
+data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant4(
     val `type`:
-        SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant4Type,
+        SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant4Type,
     val `selection`: JsonElement,
-) : SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4Template
+) : SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5Type {
     @SerialName("illustration") ILLUSTRATION
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5Selection(
+data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5Selection(
     val `illustrationStyleId`: String
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5(
+data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5(
     val `type`:
-        SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5Type,
+        SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5Type,
     val `selection`:
-        SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5Selection,
-) : SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4Template
+        SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5Selection,
+) : SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6Type {
     @SerialName("workflow") WORKFLOW
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6Selection(
+data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6Selection(
     val `workflowTemplateId`: String
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6(
+data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6(
     val `type`:
-        SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6Type,
+        SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6Type,
     val `selection`:
-        SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6Selection,
-) : SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4Template
+        SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6Selection,
+) : SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7Type {
     @SerialName("website") WEBSITE
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7Selection(
+data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7Selection(
     val `websiteTemplateId`: String
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7(
+data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7(
     val `type`:
-        SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7Type,
+        SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7Type,
     val `selection`:
-        SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7Selection,
-) : SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4Template
+        SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7Selection,
+) : SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8Type {
     @SerialName("document") DOCUMENT
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8Selection(
+data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8Selection(
     val `documentTemplateId`: String
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8(
+data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8(
     val `type`:
-        SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8Type,
+        SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8Type,
     val `selection`:
-        SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8Selection,
-) : SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4Template
+        SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8Selection,
+) : SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template
 
-object SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateSerializer :
-    KSerializer<SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4Template> {
+object SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateSerializer :
+    KSerializer<SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4Template"
+            "ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template"
         )
 
     override fun deserialize(
         decoder: Decoder
-    ): SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4Template {
+    ): SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4Template"
+                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template"
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4Template"
+                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template"
                 )
         val matches =
             listOf(
@@ -7361,114 +7112,114 @@ object SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateS
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4Template variant"
+                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template variant"
             )
         return when (matches.indexOf(true)) {
             0 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1
                         .serializer(),
                     value,
                 )
             1 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2
                         .serializer(),
                     value,
                 )
             2 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3
                         .serializer(),
                     value,
                 )
             3 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant4
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant4
                         .serializer(),
                     value,
                 )
             4 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5
                         .serializer(),
                     value,
                 )
             5 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6
                         .serializer(),
                     value,
                 )
             6 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7
                         .serializer(),
                     value,
                 )
             7 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8
                         .serializer(),
                     value,
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4Template variant"
+                    "Unknown SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template variant"
                 )
         }
     }
 
     override fun serialize(
         encoder: Encoder,
-        value: SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4Template,
+        value: SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template,
     ) {
         when (value) {
-            is SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1 ->
+            is SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1
                         .serializer(),
                     value,
                 )
-            is SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2 ->
+            is SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant2
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2
                         .serializer(),
                     value,
                 )
-            is SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3 ->
+            is SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant3
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3
                         .serializer(),
                     value,
                 )
-            is SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant4 ->
+            is SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant4 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant4
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant4
                         .serializer(),
                     value,
                 )
-            is SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5 ->
+            is SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant5
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5
                         .serializer(),
                     value,
                 )
-            is SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6 ->
+            is SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant6
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6
                         .serializer(),
                     value,
                 )
-            is SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7 ->
+            is SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant7
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7
                         .serializer(),
                     value,
                 )
-            is SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8 ->
+            is SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant8
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8
                         .serializer(),
                     value,
                 )
@@ -7477,43 +7228,43 @@ object SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateS
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4Type,
+data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Type,
     val `titleSnapshot`: String,
-    val `template`: SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4Template,
-) : SendRequestVariant1UserMessagePartsItemVariant12NoteItem
+    val `template`: SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template,
+) : SendRequestVariant1UserMessagePartsItemVariant10NoteItem
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant5Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant4Type {
     @SerialName("project") PROJECT
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant5(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant5Type,
+data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant4(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant4Type,
     val `projectId`: String,
     val `nameSnapshot`: String,
-) : SendRequestVariant1UserMessagePartsItemVariant12NoteItem
+) : SendRequestVariant1UserMessagePartsItemVariant10NoteItem
 
-object SendRequestVariant1UserMessagePartsItemVariant12NoteItemSerializer :
-    KSerializer<SendRequestVariant1UserMessagePartsItemVariant12NoteItem> {
+object SendRequestVariant1UserMessagePartsItemVariant10NoteItemSerializer :
+    KSerializer<SendRequestVariant1UserMessagePartsItemVariant10NoteItem> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant12NoteItem"
+            "ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant10NoteItem"
         )
 
     override fun deserialize(
         decoder: Decoder
-    ): SendRequestVariant1UserMessagePartsItemVariant12NoteItem {
+    ): SendRequestVariant1UserMessagePartsItemVariant10NoteItem {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant12NoteItem"
+                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant10NoteItem"
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant12NoteItem"
+                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant10NoteItem"
                 )
         val matches =
             listOf(
@@ -7524,9 +7275,6 @@ object SendRequestVariant1UserMessagePartsItemVariant12NoteItemSerializer :
                     it.isString && it.content in setOf("chat_thread")
                 } == true,
                 (value["type"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("agent")
-                } == true,
-                (value["type"] as? JsonPrimitive)?.let {
                     it.isString && it.content in setOf("template")
                 } == true,
                 (value["type"] as? JsonPrimitive)?.let {
@@ -7535,69 +7283,59 @@ object SendRequestVariant1UserMessagePartsItemVariant12NoteItemSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant12NoteItem variant"
+                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant10NoteItem variant"
             )
         return when (matches.indexOf(true)) {
             0 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant1.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant1.serializer(),
                     value,
                 )
             1 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant2.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant2.serializer(),
                     value,
                 )
             2 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant3.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3.serializer(),
                     value,
                 )
             3 ->
                 input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4.serializer(),
-                    value,
-                )
-            4 ->
-                input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant5.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant4.serializer(),
                     value,
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SendRequestVariant1UserMessagePartsItemVariant12NoteItem variant"
+                    "Unknown SendRequestVariant1UserMessagePartsItemVariant10NoteItem variant"
                 )
         }
     }
 
     override fun serialize(
         encoder: Encoder,
-        value: SendRequestVariant1UserMessagePartsItemVariant12NoteItem,
+        value: SendRequestVariant1UserMessagePartsItemVariant10NoteItem,
     ) {
         when (value) {
-            is SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant1 ->
+            is SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant1 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant1.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant1.serializer(),
                     value,
                 )
-            is SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant2 ->
+            is SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant2 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant2.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant2.serializer(),
                     value,
                 )
-            is SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant3 ->
+            is SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant3.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3.serializer(),
                     value,
                 )
-            is SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4 ->
+            is SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant4 ->
                 encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4.serializer(),
-                    value,
-                )
-            is SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant5 ->
-                encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant5.serializer(),
+                    SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant4.serializer(),
                     value,
                 )
         }
@@ -7605,70 +7343,70 @@ object SendRequestVariant1UserMessagePartsItemVariant12NoteItemSerializer :
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12Range(
+data class SendRequestVariant1UserMessagePartsItemVariant10Range(
     val `start`: Long,
     val `end`: Long,
 )
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant12SourceType {
+enum class SendRequestVariant1UserMessagePartsItemVariant10SourceType {
     @SerialName("mail") MAIL
 }
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant12SourceStatus {
+enum class SendRequestVariant1UserMessagePartsItemVariant10SourceStatus {
     @SerialName("draft") DRAFT,
     @SerialName("sent") SENT,
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12Source(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant12SourceType,
+data class SendRequestVariant1UserMessagePartsItemVariant10Source(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant10SourceType,
     val `id`: String,
-    val `status`: SendRequestVariant1UserMessagePartsItemVariant12SourceStatus,
+    val `status`: SendRequestVariant1UserMessagePartsItemVariant10SourceStatus,
     val `sentId`: String? = null,
 )
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant12(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant12Type,
+data class SendRequestVariant1UserMessagePartsItemVariant10(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant10Type,
     val `quote`: String,
-    val `note`: List<SendRequestVariant1UserMessagePartsItemVariant12NoteItem>,
+    val `note`: List<SendRequestVariant1UserMessagePartsItemVariant10NoteItem>,
     val `eventId`: String? = null,
-    val `range`: SendRequestVariant1UserMessagePartsItemVariant12Range? = null,
-    val `source`: SendRequestVariant1UserMessagePartsItemVariant12Source? = null,
+    val `range`: SendRequestVariant1UserMessagePartsItemVariant10Range? = null,
+    val `source`: SendRequestVariant1UserMessagePartsItemVariant10Source? = null,
 ) : SendRequestVariant1UserMessagePartsItem
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant13Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant11Type {
     @SerialName("voice") VOICE
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant13ClipsItem(val `fileId`: String)
+data class SendRequestVariant1UserMessagePartsItemVariant11ClipsItem(val `fileId`: String)
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant13(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant13Type,
-    val `clips`: List<SendRequestVariant1UserMessagePartsItemVariant13ClipsItem>,
+data class SendRequestVariant1UserMessagePartsItemVariant11(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant11Type,
+    val `clips`: List<SendRequestVariant1UserMessagePartsItemVariant11ClipsItem>,
 ) : SendRequestVariant1UserMessagePartsItem
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant14Type {
+enum class SendRequestVariant1UserMessagePartsItemVariant12Type {
     @SerialName("model") MODEL
 }
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant14ServiceTier {
+enum class SendRequestVariant1UserMessagePartsItemVariant12ServiceTier {
     @SerialName("priority") PRIORITY,
     @SerialName("ultrafast") ULTRAFAST,
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant14(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant14Type,
+data class SendRequestVariant1UserMessagePartsItemVariant12(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant12Type,
     val `selectedModel`: String,
-    val `serviceTier`: SendRequestVariant1UserMessagePartsItemVariant14ServiceTier? = null,
+    val `serviceTier`: SendRequestVariant1UserMessagePartsItemVariant12ServiceTier? = null,
 ) : SendRequestVariant1UserMessagePartsItem
 
 object SendRequestVariant1UserMessagePartsItemSerializer :
@@ -7702,12 +7440,6 @@ object SendRequestVariant1UserMessagePartsItemSerializer :
                 } == true && value.containsKey("threadId") && value.containsKey("titleSnapshot")) &&
                     (value["type"].let { field ->
                         (field is JsonPrimitive && field.isString && field.content == "chat_thread")
-                    }),
-                ((value["type"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("agent")
-                } == true && value.containsKey("agentId") && value.containsKey("nameSnapshot")) &&
-                    (value["type"].let { field ->
-                        (field is JsonPrimitive && field.isString && field.content == "agent")
                     }),
                 ((value["type"] as? JsonPrimitive)?.let {
                     it.isString && it.content in setOf("template")
@@ -7754,22 +7486,6 @@ object SendRequestVariant1UserMessagePartsItemSerializer :
                     }) &&
                     (value["kind"].let { field ->
                         (field is JsonPrimitive && field.isString && field.content == "mcp")
-                    }),
-                ((value["type"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("source")
-                } == true &&
-                    (value["kind"] as? JsonPrimitive)?.let {
-                        it.isString && it.content in setOf("agent")
-                    } == true &&
-                    value.containsKey("runId") &&
-                    value.containsKey("threadId") &&
-                    value.containsKey("titleSnapshot") &&
-                    value.containsKey("href")) &&
-                    (value["type"].let { field ->
-                        (field is JsonPrimitive && field.isString && field.content == "source")
-                    }) &&
-                    (value["kind"].let { field ->
-                        (field is JsonPrimitive && field.isString && field.content == "agent")
                     }),
                 ((value["type"] as? JsonPrimitive)?.let {
                     it.isString && it.content in setOf("additional_info")
@@ -7878,16 +7594,6 @@ object SendRequestVariant1UserMessagePartsItemSerializer :
                     SendRequestVariant1UserMessagePartsItemVariant12.serializer(),
                     value,
                 )
-            12 ->
-                input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant13.serializer(),
-                    value,
-                )
-            13 ->
-                input.json.decodeFromJsonElement(
-                    SendRequestVariant1UserMessagePartsItemVariant14.serializer(),
-                    value,
-                )
             else ->
                 throw SerializationException(
                     "Unknown SendRequestVariant1UserMessagePartsItem variant"
@@ -7955,16 +7661,6 @@ object SendRequestVariant1UserMessagePartsItemSerializer :
             is SendRequestVariant1UserMessagePartsItemVariant12 ->
                 encoder.encodeSerializableValue(
                     SendRequestVariant1UserMessagePartsItemVariant12.serializer(),
-                    value,
-                )
-            is SendRequestVariant1UserMessagePartsItemVariant13 ->
-                encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant13.serializer(),
-                    value,
-                )
-            is SendRequestVariant1UserMessagePartsItemVariant14 ->
-                encoder.encodeSerializableValue(
-                    SendRequestVariant1UserMessagePartsItemVariant14.serializer(),
                     value,
                 )
         }
@@ -8403,7 +8099,6 @@ enum class UpdatePreferencesRequestColorTheme {
 data class UpdatePreferencesRequest(
     val `timezone`: String? = null,
     val `locale`: UpdatePreferencesRequestLocale? = null,
-    val `pinnedAgentIds`: List<String>? = null,
     val `sendMode`: UpdatePreferencesRequestSendMode? = null,
     val `cloudBrowserEnabledByDefault`: Boolean? = null,
     val `theme`: UpdatePreferencesRequestTheme? = null,

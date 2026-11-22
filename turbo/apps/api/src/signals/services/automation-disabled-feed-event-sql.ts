@@ -28,9 +28,9 @@ export function automationDisabledFeedEventInsertSql(
     return sql`SELECT ${feedItems.id} FROM ${feedItems} WHERE false`;
   }
   return sql`INSERT INTO ${feedItems}
-      (org_id, user_id, id, type, source_type, content, state, created_at, updated_at)
+      (org_id, user_id, id, type, content, state, created_at, updated_at)
     SELECT feed_transition.org_id, feed_transition.owner_user_id,
-      ${event.id}::uuid, 'event', 'platform-event',
+      ${event.id}::uuid, 'event',
       jsonb_build_object(
         'eventType', 'automation-disabled',
         'automationId', feed_transition.id,

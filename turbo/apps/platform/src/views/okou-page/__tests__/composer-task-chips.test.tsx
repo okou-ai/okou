@@ -19,10 +19,7 @@ import {
   tabByText,
   composerModelTrigger,
 } from "./chat-composer-test-helpers.ts";
-import {
-  AGENT_ID,
-  createTemplateGalleryHelpers,
-} from "./chat-composer-template-gallery-test-helpers.ts";
+import { createTemplateGalleryHelpers } from "./chat-composer-template-gallery-test-helpers.ts";
 
 const context = testContext();
 const { mockTemplateChat } = createTemplateGalleryHelpers(context);
@@ -45,7 +42,7 @@ function button(
 async function setupChips(): Promise<HTMLElement> {
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/`,
   });
   return await findComposerEditor();
 }

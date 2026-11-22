@@ -24,7 +24,6 @@ import {
 } from "../../../signals/__tests__/test-helpers.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
-const GROWTH_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const context = testContext();
 
 type GrowthActionRole = "button" | "link" | "menuitem";
@@ -61,7 +60,7 @@ function menuItemContaining(menu: ParentNode, text: string): HTMLElement {
 }
 
 function growthChatPath(): string {
-  return `/agents/${GROWTH_AGENT_ID}/chat`;
+  return `/`;
 }
 
 function slackStatus(options: {
@@ -129,17 +128,6 @@ function configureGrowthPage(
     name: "Growth Workspace",
     role: options.role,
   });
-  context.mocks.data.agents([
-    {
-      agentId: GROWTH_AGENT_ID,
-      ownerId: "test-user-123",
-      displayName: null,
-      description: null,
-      sound: null,
-      avatarUrl: null,
-      visibility: "private",
-    },
-  ]);
   context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
     return respond(200, options.slack);
   });

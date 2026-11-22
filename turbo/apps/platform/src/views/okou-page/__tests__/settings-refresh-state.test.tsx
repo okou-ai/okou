@@ -23,7 +23,6 @@ function initialPreferences(): UserPreferencesResponse {
     timezone: "Etc/UTC",
     locale: "en-US",
     supportedLocales: ["en-US", "pt-BR"],
-    pinnedAgentIds: [],
     sendMode: "cmd-enter",
     cloudBrowserEnabledByDefault: false,
     chatResourcesEnabledByDefault: true,
@@ -85,7 +84,7 @@ function delayPreferenceSaves() {
 
 test("saving send mode updates the setting from the write response", async () => {
   const saves = delayPreferenceSaves();
-  await setupPage({ context, path: "/agents?settings=chat" });
+  await setupPage({ context, path: "/?settings=chat" });
   const browser = await screen.findByRole("switch", { name: "Cloud browser" });
   await waitFor(() => {
     expect(browser).toBeEnabled();
@@ -108,7 +107,7 @@ test("saving send mode updates the setting from the write response", async () =>
 
 test("overlapping saves preserve each confirmed preference", async () => {
   const saves = delayPreferenceSaves();
-  await setupPage({ context, path: "/agents?settings=chat" });
+  await setupPage({ context, path: "/?settings=chat" });
   const browser = await screen.findByRole("switch", { name: "Cloud browser" });
   await waitFor(() => {
     expect(browser).toBeEnabled();
@@ -164,7 +163,7 @@ test("overlapping saves to one preference read back the committed value", async 
       return respond(200, saved);
     },
   );
-  await setupPage({ context, path: "/agents?settings=chat" });
+  await setupPage({ context, path: "/?settings=chat" });
   const browser = await screen.findByRole("switch", { name: "Cloud browser" });
   await waitFor(() => {
     expect(browser).toBeEnabled();
@@ -288,7 +287,7 @@ test("saving time zone keeps enabled Morning brief unchanged", async () => {
       unavailableReason: null,
     });
   });
-  await setupPage({ context, path: "/agents?settings=preference" });
+  await setupPage({ context, path: "/?settings=preference" });
   const morning = await screen.findByRole("switch", { name: "Morning brief" });
   await waitFor(() => {
     expect(morning).toBeChecked();
@@ -443,7 +442,7 @@ test("a Morning brief refresh failure after returning to Preference reports the 
       });
     },
   );
-  await setupPage({ context, path: "/agents?settings=preference" });
+  await setupPage({ context, path: "/?settings=preference" });
   const card = await screen.findByTestId("morning-brief-preference");
   const toggle = within(card).getByRole("switch", { name: "Morning brief" });
   await waitFor(() => {

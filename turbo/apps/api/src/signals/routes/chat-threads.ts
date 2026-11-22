@@ -61,7 +61,7 @@ import { chatThreadCreateRoutes } from "./chat-threads-create";
 import { chatThreadDeleteRoutes } from "./chat-threads-delete";
 import { chatThreadDraftGetRoutes } from "./chat-threads-draft-get";
 import { chatThreadGetRoutes } from "./chat-threads-get";
-import { chatThreadMarkAgentReadRoutes } from "./chat-threads-mark-agent-read";
+import { chatThreadMarkAllReadRoutes } from "./chat-threads-mark-all-read";
 import { chatThreadMarkReadRoutes } from "./chat-threads-mark-read";
 import { chatThreadMarkUnreadRoutes } from "./chat-threads-mark-unread";
 import { chatThreadModelSelectionRoutes } from "./chat-threads-model-selection";
@@ -513,7 +513,7 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   ...chatThreadDeleteRoutes,
   ...chatThreadDraftGetRoutes,
   ...chatThreadGetRoutes,
-  ...chatThreadMarkAgentReadRoutes,
+  ...chatThreadMarkAllReadRoutes,
   ...chatThreadMarkReadRoutes,
   ...chatThreadMarkUnreadRoutes,
   ...chatThreadModelSelectionRoutes,

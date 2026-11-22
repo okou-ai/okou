@@ -418,7 +418,7 @@ test("Configure a member’s package from People", async () => {
 
   await setupPage({
     context,
-    path: "/agents?settings=people",
+    path: "/?settings=people",
   });
   await expect(screen.findByText("Usage pack")).resolves.toBeInTheDocument();
 
@@ -654,7 +654,7 @@ test.each([
     }
     mockUsagePackCatalog();
 
-    await setupPage({ context, path: "/agents?settings=people" });
+    await setupPage({ context, path: "/?settings=people" });
     await screen.findByRole("heading", { name: "People" });
     click(buttonByText("Add member"));
     const inviteDialog = await screen.findByRole("dialog", {

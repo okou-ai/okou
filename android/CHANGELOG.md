@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.39.1](https://github.com/okou-ai/okou/compare/android-v0.39.0...android-v0.39.1) (2026-11-22)
+
+
+### Refactoring
+
+* **app:** retire agent prerequisites from member flows ([#49854](https://github.com/okou-ai/okou/issues/49854)) ([6eea61b](https://github.com/okou-ai/okou/commit/6eea61b4a4f5c7a3e218bb027b148f10c3d4dab7))
+
+## [0.39.0](https://github.com/okou-ai/okou/compare/android-v0.38.0...android-v0.39.0) (2026-11-22)
+
+
+### Features
+
+* **android:** add the workspace artifacts page ([#49864](https://github.com/okou-ai/okou/issues/49864)) ([f0babd9](https://github.com/okou-ai/okou/commit/f0babd9a5b1d68fef595bc35d6944d3859e593f2))
+* **android:** show workspace tool entries on the chat list ([#49853](https://github.com/okou-ai/okou/issues/49853)) ([61df008](https://github.com/okou-ai/okou/commit/61df0086f9d6672a46ceaf8ec4eaaf70009a7fdf))
+
 ## [0.38.0](https://github.com/okou-ai/okou/compare/android-v0.37.2...android-v0.38.0) (2026-11-22)
 
 
