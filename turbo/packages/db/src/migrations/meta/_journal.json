@@ -3774,6 +3774,13 @@
       "when": 1795337263972,
       "tag": "1617_retire_legacy_storage_registry",
       "breakpoints": true
+    },
+    {
+      "idx": 1618,
+      "version": "7",
+      "when": 1795356195930,
+      "tag": "1618_drop_legacy_agent_api_profiles",
+      "breakpoints": true
     }
   ]
 }
