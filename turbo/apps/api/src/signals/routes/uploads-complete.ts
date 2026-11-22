@@ -1,6 +1,8 @@
 import { command } from "ccstate";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 
+import { badRequestMessage } from "../../lib/error";
+import { MAX_TOTAL_AUDIO_BYTES } from "../services/voice-clips.service";
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
@@ -49,6 +51,16 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         error: { message: "Uploaded file not found", code: "NOT_FOUND" },
       },
     };
+  }
+
+  if (
+    auth.tokenType === "oauth" &&
+    (!s3Object.isPrivate ||
+      s3Object.contentType !== "audio/wav" ||
+      s3Object.size <= 44 ||
+      s3Object.size > MAX_TOTAL_AUDIO_BYTES)
+  ) {
+    return badRequestMessage("Expected a private WAV recording up to 25 MiB");
   }
 
   const filename = s3Object.filename;
@@ -107,6 +119,9 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 export const uploadsCompleteRoutes: readonly RouteEntry[] = [
   {
     route: uploadsContract.complete,
-    handler: authRoute({ requiredCapability: "file:write" }, completeInner$),
+    handler: authRoute(
+      { requiredCapability: "file:write", oauthScope: "okou:chat:send" },
+      completeInner$,
+    ),
   },
 ];

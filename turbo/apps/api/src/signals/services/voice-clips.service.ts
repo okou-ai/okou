@@ -14,7 +14,7 @@ import { db$ } from "../external/db";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { privateArtifactFromRow } from "./private-artifact-storage.service";
 
-const MAX_TOTAL_AUDIO_BYTES = 25 * 1024 * 1024;
+export const MAX_TOTAL_AUDIO_BYTES = 25 * 1024 * 1024;
 const audioTypes = zEnum([
   "audio/wav",
   "audio/mpeg",
