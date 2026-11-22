@@ -580,6 +580,30 @@ class ChatListRootTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w960dp-h800dp")
+    fun openingTheCurrentChatFromWorkspaceSearchReturnsToTheConversation() {
+        val app = compose.activity.application as ChatListApplication
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithText("Personal chat").performClick()
+        compose.waitUntilExactlyOneExists(hasText("Native history reply"), 10_000)
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Find messages").performClick()
+        val find = compose.onNodeWithTag("conversation_find")
+        find.assertIsDisplayed()
+
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        compose.onNodeWithTag("chat_search_query").performTextInput("personal")
+        compose
+            .onNode(hasText("Personal chat") and hasAnyAncestor(hasTestTag("chat_search_results")))
+            .performClick()
+
+        compose.onNodeWithTag("chat_search").assertDoesNotExist()
+        find.assertDoesNotExist()
+        compose.onNodeWithText("Native history reply").assertIsDisplayed()
+    }
+
+    @Test
     fun findKeepsItsSnapshotDuringSyncAndClosesWhenTheConversationBecomesUnavailable() {
         val app = compose.activity.application as ChatListApplication
         val fixture = app.fixture

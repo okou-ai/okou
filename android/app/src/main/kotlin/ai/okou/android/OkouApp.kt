@@ -396,6 +396,7 @@ internal fun OkouApp(
                 else -> SearchRoute.Closed
             }
         if (fromSearch) releaseSearchFocus()
+        closeFind()
         when (search) {
             SearchRoute.Closed -> searchState.reset()
             SearchRoute.ReturnOnBack -> searchState.edit(searchState.query.copy(composition = null))
