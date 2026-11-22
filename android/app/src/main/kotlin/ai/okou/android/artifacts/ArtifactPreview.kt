@@ -204,14 +204,12 @@ internal fun ArtifactPreview(
                 }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PreviewContent(preview, offline)
+                if (!offline && preview?.hasReadableContent == true) {
+                    preview.problem?.let { PreviewFeedback(it.label()) }
+                }
                 if (feedback != null) {
                     KeepSpaceWhenHidden(visible = saveResult != null || open != null) {
-                        Text(
-                            stringResource(feedback),
-                            Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = colors.onSurfaceVariant,
-                        )
+                        PreviewFeedback(feedback)
                     }
                 }
             }
@@ -236,6 +234,16 @@ internal fun ArtifactPreview(
             }
         }
     }
+}
+
+@Composable
+private fun PreviewFeedback(@StringRes label: Int) {
+    Text(
+        stringResource(label),
+        Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 /** Keep the scroll range stable when browser controls disappear on disconnect. */

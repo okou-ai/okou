@@ -39,6 +39,9 @@ internal data class ArtifactPreviewState(
         get() =
             info?.resource !is ArtifactResource.File &&
                 (item?.kind == ArtifactKind.Website || item?.kind == ArtifactKind.Presentation)
+
+    val hasReadableContent: Boolean
+        get() = content is ArtifactContent.Text || content is ArtifactContent.Image
 }
 
 internal enum class ArtifactSaveResult {
@@ -186,19 +189,26 @@ internal constructor(
         val cached = current.preview?.takeIf { it.id == id }?.access?.save
         mutable.update { it.copy(saveResult = id to ArtifactSaveResult.Saving) }
         viewModelScope.launch {
+            var destinationStarted = false
             val result =
                 try {
-                    val file =
-                        cached
-                            ?: service.info(id).let { info ->
-                                (info.resource as? ArtifactResource.File)?.let {
-                                    (info.resolvedAccess ?: service.fileAccess(it)).save
+                    retryArtifactOperation(canRetry = { !destinationStarted }) {
+                        val file =
+                            cached
+                                ?: service.info(id).let { info ->
+                                    (info.resource as? ArtifactResource.File)?.let {
+                                        (info.resolvedAccess ?: service.fileAccess(it)).save
+                                    }
                                 }
+                        if (file == null) ArtifactSaveResult.Denied
+                        else {
+                            service.save(file) {
+                                // The provider may have changed the file even if opening it fails.
+                                destinationStarted = true
+                                destination()
                             }
-                    if (file == null) ArtifactSaveResult.Denied
-                    else {
-                        service.save(file, destination)
-                        ArtifactSaveResult.Saved
+                            ArtifactSaveResult.Saved
+                        }
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -340,16 +350,27 @@ internal constructor(
         previewJob?.cancel()
         previewJob =
             viewModelScope.launch {
-                retryRead {
-                    var detailAuthorized = false
-                    try {
+                var detailAuthorized = false
+                var fileAccessAuthorized = false
+                try {
+                    updatePreview(id) { copy(problem = null) }
+                    retryArtifactOperation {
+                        detailAuthorized = false
+                        fileAccessAuthorized = false
                         val info = service.info(id)
                         detailAuthorized = true
-                        updatePreview(id) { copy(item = info.item, info = info, problem = null) }
+                        updatePreview(id) {
+                            copy(
+                                item = info.item,
+                                info = info,
+                                access = access.takeIf { this.info?.resource == info.resource },
+                            )
+                        }
                         val content =
                             when (val resource = info.resource) {
                                 is ArtifactResource.File -> {
                                     val access = info.resolvedAccess ?: service.fileAccess(resource)
+                                    fileAccessAuthorized = true
                                     updatePreview(id) { copy(access = access) }
                                     service.fileContent(resource, access)
                                 }
@@ -366,35 +387,28 @@ internal constructor(
                                     problem = null,
                                 )
                                 .also {
-                                    if (
-                                        content is ArtifactContent.Text ||
-                                            content is ArtifactContent.Image
-                                    ) {
-                                        previews.remember(id, it, 3)
-                                    }
+                                    if (it.hasReadableContent) previews.remember(id, it, 3)
+                                    else previews.remove(id)
                                 }
                         }
-                        false
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (error: Exception) {
-                        val errorType = problem(error)
-                        val revoked =
-                            errorType == ArtifactProblem.Denied ||
-                                errorType == ArtifactProblem.Missing
-                        updatePreview(id) {
-                            if (revoked) previews.remove(id)
-                            val hosted = detailAuthorized && info?.resource is ArtifactResource.Site
-                            copy(
-                                info = if (revoked && !hosted) null else info,
-                                content =
-                                    if (revoked || errorType == ArtifactProblem.Unsupported) null
-                                    else content,
-                                access = if (revoked) null else access,
-                                problem = errorType,
-                            )
-                        }
-                        errorType == ArtifactProblem.Temporary
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    val errorType = problem(error)
+                    val revoked =
+                        errorType == ArtifactProblem.Denied || errorType == ArtifactProblem.Missing
+                    val discardContent = revoked || errorType == ArtifactProblem.Unsupported
+                    updatePreview(id) {
+                        if (discardContent) previews.remove(id)
+                        copy(
+                            info = info.takeUnless { revoked && !detailAuthorized },
+                            content = content.takeIf { hasReadableContent && !discardContent },
+                            access = access.takeUnless { revoked && !fileAccessAuthorized },
+                            problem =
+                                if (revoked && fileAccessAuthorized) ArtifactProblem.Unavailable
+                                else errorType,
+                        )
                     }
                 }
             }
@@ -412,30 +426,54 @@ internal constructor(
 
     private fun problem(error: Exception): ArtifactProblem {
         handleSessionFailure(error)
-        return when (error) {
-            is ApiFailure.Http ->
-                when (error.status) {
-                    401,
-                    402,
-                    403 -> ArtifactProblem.Denied
-                    404,
-                    410 -> ArtifactProblem.Missing
-                    408,
-                    429,
-                    in 500..599 -> ArtifactProblem.Temporary
-                    else -> ArtifactProblem.Unavailable
-                }
-            is ResponseLimitExceeded -> ArtifactProblem.Unsupported
-            is ApiFailure.Network,
-            is IOException -> ArtifactProblem.Temporary
-            else -> ArtifactProblem.Unavailable
-        }
+        return artifactProblem(error)
     }
 
     private fun handleSessionFailure(error: Exception) {
         if (error is ApiFailure.Unauthenticated || error is ApiFailure.UpdateRequired)
             sessionFailure(error)
     }
+}
+
+private fun artifactProblem(error: Exception): ArtifactProblem =
+    when (error) {
+        is ApiFailure.Http ->
+            when (error.status) {
+                401,
+                402,
+                403 -> ArtifactProblem.Denied
+                404,
+                410 -> ArtifactProblem.Missing
+                408,
+                429,
+                in 500..599 -> ArtifactProblem.Temporary
+                else -> ArtifactProblem.Unavailable
+            }
+        is ResponseLimitExceeded -> ArtifactProblem.Unsupported
+        is ApiFailure.Network,
+        is IOException -> ArtifactProblem.Temporary
+        else -> ArtifactProblem.Unavailable
+    }
+
+private suspend fun <T> retryArtifactOperation(
+    canRetry: () -> Boolean = { true },
+    operation: suspend () -> T,
+): T {
+    repeat(2) {
+        try {
+            return operation()
+        } catch (error: Exception) {
+            if (
+                error is CancellationException ||
+                    !canRetry() ||
+                    artifactProblem(error) != ArtifactProblem.Temporary
+            ) {
+                throw error
+            }
+            delay(3_000)
+        }
+    }
+    return operation()
 }
 
 private fun ArtifactPreviewState.withoutSave(): ArtifactPreviewState =
