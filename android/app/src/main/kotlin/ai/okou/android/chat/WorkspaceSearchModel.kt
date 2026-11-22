@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -85,6 +86,8 @@ interface WorkspaceSearchService {
 internal sealed interface SearchRead<out T> {
     data object Loading : SearchRead<Nothing>
 
+    data object Retrying : SearchRead<Nothing>
+
     data object Failed : SearchRead<Nothing>
 
     data class Ready<T>(val rows: List<T>, val nextCursor: String? = null) : SearchRead<T>
@@ -113,6 +116,7 @@ internal constructor(
             .catch { error -> if (error !is IOException) throw error }
             .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
     private val searches = mutableMapOf<WorkspaceSearchType, Job>()
+    private val visibleType = MutableStateFlow<WorkspaceSearchType?>(null)
     private var artifactPageJob: Job? = null
     private var workflowCatalog: List<SearchWorkflowHit>? = null
     private var online = false
@@ -135,6 +139,7 @@ internal constructor(
         connected: Boolean,
         workflowsAvailable: Boolean = false,
         artifactsAvailable: Boolean = false,
+        visible: Boolean = true,
     ) {
         if (!authorized()) return
         if (online != connected || keyword.isEmpty() || !workflowsAvailable) workflowCatalog = null
@@ -145,11 +150,20 @@ internal constructor(
             searches.values.forEach { it.cancel() }
             searches.clear()
             mutable.value = WorkspaceSearchResults(keyword)
-        } else if (!workflowsAvailable) {
+        }
+        if (!workflowsAvailable) {
             searches.remove(WorkspaceSearchType.Workflows)?.cancel()
             mutable.value = mutable.value.copy(workflows = SearchRead.Loading)
         }
-        if (!connected || keyword.isEmpty()) return
+        if (!artifactsAvailable) {
+            searches.remove(WorkspaceSearchType.Artifacts)?.cancel()
+            artifactPageJob?.cancel()
+            artifactPageJob = null
+            mutable.value =
+                mutable.value.copy(artifacts = SearchRead.Loading, moreArtifactsFailed = false)
+        }
+        visibleType.value = type.takeIf { visible && connected && keyword.isNotEmpty() }
+        if (visibleType.value == null) return
         if (type.includes(WorkspaceSearchType.Messages)) {
             request(
                 WorkspaceSearchType.Messages,
@@ -172,13 +186,17 @@ internal constructor(
         }
     }
 
-    internal fun refreshWorkflows(catalog: List<SearchWorkflowHit>?) {
+    internal fun pauseReads() {
+        visibleType.value = null
+    }
+
+    internal fun refreshWorkflows(catalog: List<SearchWorkflowHit>?, retainConfirmed: Boolean) {
         val state = mutable.value
         if (!authorized() || !online || state.keyword.isEmpty()) return
         searches.remove(WorkspaceSearchType.Workflows)?.cancel()
         workflowCatalog = catalog
         if (catalog == null) {
-            mutable.value = state.copy(workflows = SearchRead.Loading)
+            if (!retainConfirmed) mutable.value = state.copy(workflows = SearchRead.Loading)
             requestWorkflows(state.keyword)
         } else {
             mutable.value =
@@ -202,19 +220,21 @@ internal constructor(
             return
         artifactPageJob =
             viewModelScope.launch {
-                val next = readSearch { artifactPage(keyword, cursor) }
-                currentCoroutineContext().ensureActive()
-                if (!authorized()) return@launch
-                val latest = mutable.value
-                val merged =
-                    (next as? SearchRead.Ready)?.let { page ->
-                        val rows = (loaded.rows + page.rows).distinctBy { it.id }
-                        if (rows.size == loaded.rows.size && page.nextCursor != null) null
-                        else SearchRead.Ready(rows, page.nextCursor)
-                    }
-                mutable.value =
-                    if (merged == null) latest.copy(moreArtifactsFailed = true)
-                    else latest.copy(artifacts = merged)
+                readSearch(
+                    { it == WorkspaceSearchType.Artifacts },
+                    { artifactPage(keyword, cursor) },
+                ) { next ->
+                    val latest = mutable.value
+                    val merged =
+                        (next as? SearchRead.Ready)?.let { page ->
+                            val rows = (loaded.rows + page.rows).distinctBy { it.id }
+                            if (rows.size == loaded.rows.size && page.nextCursor != null) null
+                            else SearchRead.Ready(rows, page.nextCursor)
+                        }
+                    mutable.value =
+                        if (merged == null) latest.copy(moreArtifactsFailed = true)
+                        else latest.copy(artifacts = merged, moreArtifactsFailed = false)
+                }
             }
     }
 
@@ -230,7 +250,8 @@ internal constructor(
         request(WorkspaceSearchType.Workflows, { SearchRead.Ready(findWorkflows(keyword)) }) {
             state,
             read ->
-            state.copy(workflows = read)
+            if (read == SearchRead.Retrying && state.workflows is SearchRead.Ready) state
+            else state.copy(workflows = read)
         }
 
     private suspend fun findWorkflows(keyword: String): List<SearchWorkflowHit> {
@@ -252,26 +273,49 @@ internal constructor(
         searches[type] =
             viewModelScope.launch {
                 delay(SearchDebounceMillis)
-                val result = readSearch(read)
-                currentCoroutineContext().ensureActive()
-                if (authorized()) mutable.value = publish(mutable.value, result)
+                readSearch({ it.includes(type) }, read) { result ->
+                    mutable.value = publish(mutable.value, result)
+                }
             }
     }
 
-    private suspend fun <T> readSearch(read: suspend () -> SearchRead.Ready<T>): SearchRead<T> =
-        try {
-            read()
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
-            currentCoroutineContext().ensureActive()
-            if (
-                authorized() &&
-                    (error is ApiFailure.Unauthenticated ||
-                        error is ApiFailure.UpdateRequired ||
-                        error is ApiFailure.Http && error.status == 401)
-            )
-                onFailure(error)
-            SearchRead.Failed
+    private suspend fun <T> readSearch(
+        inScope: (WorkspaceSearchType) -> Boolean,
+        read: suspend () -> SearchRead.Ready<T>,
+        publish: (SearchRead<T>) -> Unit,
+    ) {
+        val context = currentCoroutineContext()
+        var failures = 0
+        while (true) {
+            visibleType.first { it != null && inScope(it) }
+            context.ensureActive()
+            if (!authorized()) return
+            val result =
+                try {
+                    read()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    context.ensureActive()
+                    if (!authorized()) return
+                    if (
+                        error is ApiFailure.Unauthenticated ||
+                            error is ApiFailure.UpdateRequired ||
+                            error is ApiFailure.Http && error.status == 401
+                    ) {
+                        onFailure(error)
+                    }
+                    val retryAfter = workspaceReadRetryAfterMillis(error)
+                    if (authorized())
+                        publish(if (retryAfter == null) SearchRead.Failed else SearchRead.Retrying)
+                    if (retryAfter == null) return
+                    delay(maxOf(retryAfter, workspaceReadRetryDelays[failures]))
+                    failures = (failures + 1).coerceAtMost(workspaceReadRetryDelays.lastIndex)
+                    continue
+                }
+            context.ensureActive()
+            if (authorized()) publish(result)
+            return
         }
+    }
 }

@@ -32,7 +32,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-private val listRefreshRetryDelays = listOf(5_000L, 10_000L, 20_000L, 40_000L, 60_000L)
+internal val workspaceReadRetryDelays = listOf(5_000L, 10_000L, 20_000L, 40_000L, 60_000L)
 private const val unreadSnapshotLifetimeMillis = 120_000L
 private const val unreadSnapshotRenewalMillis = 30_000L
 
@@ -43,15 +43,15 @@ private fun CachedUnread.remainingMillis(now: Long): Long {
     } else 0
 }
 
-private fun listRetryAfterMillis(error: Exception): Long? {
+internal fun workspaceReadRetryAfterMillis(error: Exception): Long? {
     val seconds =
         when (error) {
             is ApiFailure.Network -> 0L
             is ApiFailure.Http ->
-                if (retryableListReadStatus(error.status)) error.retryAfterSeconds ?: 0L else null
+                if (retryableReadStatus(error.status)) error.retryAfterSeconds ?: 0L else null
             // A fresh descriptor can replace an expired signed URL on the next read.
             is ChatSnapshotUnavailable ->
-                if (error.status == 403 || retryableListReadStatus(error.status))
+                if (error.status == 403 || retryableReadStatus(error.status))
                     error.retryAfterSeconds ?: 0L
                 else null
             else -> null
@@ -59,8 +59,7 @@ private fun listRetryAfterMillis(error: Exception): Long? {
     return seconds?.coerceIn(0, Long.MAX_VALUE / 1_000)?.times(1_000)
 }
 
-private fun retryableListReadStatus(status: Int) =
-    status == 408 || status == 429 || status in 500..599
+private fun retryableReadStatus(status: Int) = status == 408 || status == 429 || status in 500..599
 
 enum class ChatReadPhase {
     Idle,
@@ -1399,7 +1398,7 @@ class ChatListModel(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            val retryAfter = listRetryAfterMillis(error)
+            val retryAfter = workspaceReadRetryAfterMillis(error)
             fail(error) {
                 it.copy(
                     listPhase = ChatReadPhase.Failed,
@@ -1447,8 +1446,8 @@ class ChatListModel(
             }
         }
         if (retryAfter == null) return
-        listFailures = (listFailures + 1).coerceAtMost(listRefreshRetryDelays.size)
-        val delay = maxOf(listRefreshRetryDelays[listFailures - 1], retryAfter)
+        listFailures = (listFailures + 1).coerceAtMost(workspaceReadRetryDelays.size)
+        val delay = maxOf(workspaceReadRetryDelays[listFailures - 1], retryAfter)
         val nextRetry = now + minOf(delay, Long.MAX_VALUE - now.coerceAtLeast(0L))
         listRetryAt = maxOf(nextRetry, listRetryAt ?: nextRetry)
         listRetry?.cancel()

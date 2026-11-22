@@ -2,6 +2,7 @@ package ai.okou.android.chat
 
 import ai.okou.android.CHAT_DATE
 import ai.okou.android.EmptyWorkspaceSearchService
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.artifacts.ArtifactKind
 import ai.okou.android.auth.WorkspaceIdentity
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
@@ -27,6 +28,8 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -98,12 +101,72 @@ class WorkspaceSearchModelTest {
     }
 
     @Test
-    fun artifactContinuationKeepsRowsAndIgnoresObsoleteCursors() = runTest {
+    fun temporaryMessageReadRecoversForTheSameQueryWithServerBackoff() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val store = ViewModelStore()
+        val requests = mutableListOf<String>()
+        val hit = SearchMessageHit("thread", 23, "launch", listOf(0..5))
+        val service =
+            object : WorkspaceSearchService by EmptyWorkspaceSearchService {
+                override suspend fun searchMessages(keyword: String): List<SearchMessageHit> {
+                    requests.add(keyword)
+                    return when (requests.size) {
+                        1 -> throw ApiFailure.Http(503, null, null, null)
+                        2 -> throw ApiFailure.Http(429, null, null, 12L)
+                        else -> listOf(hit)
+                    }
+                }
+            }
+        val model =
+            ViewModelProvider(
+                store,
+                viewModelFactory {
+                    initializer {
+                        WorkspaceSearchModel(service, identity, null, { true }, { throw it })
+                    }
+                },
+            )[WorkspaceSearchModel::class.java]
+        try {
+            model.update("launch", WorkspaceSearchType.Messages, connected = true)
+            advanceTimeBy(300)
+            runCurrent()
+            assertEquals(listOf("launch"), requests)
+            assertEquals(SearchRead.Retrying, model.results.value.messages)
+            advanceTimeBy(4_999)
+            runCurrent()
+            assertEquals(1, requests.size)
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(2, requests.size)
+            assertEquals(SearchRead.Retrying, model.results.value.messages)
+            advanceTimeBy(11_999)
+            runCurrent()
+            assertEquals(2, requests.size)
+
+            model.update("launch", WorkspaceSearchType.Messages, connected = true, visible = false)
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(2, requests.size)
+            assertEquals(SearchRead.Retrying, model.results.value.messages)
+
+            model.update("launch", WorkspaceSearchType.Messages, connected = true)
+            runCurrent()
+            assertEquals(listOf("launch", "launch", "launch"), requests)
+            assertEquals(SearchRead.Ready(listOf(hit)), model.results.value.messages)
+        } finally {
+            store.clear()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun artifactContinuationKeepsRowsWhileWaitingToRetryInItsScope() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val store = ViewModelStore()
         val first = SearchArtifactHit("first", "Release plan", ArtifactKind.File)
         val second = SearchArtifactHit("second", "Release site", ArtifactKind.Website)
         val calls = mutableListOf<Pair<String, String?>>()
+        var continuationAttempts = 0
         val service =
             object : WorkspaceSearchService by EmptyWorkspaceSearchService {
                 override suspend fun searchArtifacts(
@@ -114,7 +177,12 @@ class WorkspaceSearchModelTest {
                     return when {
                         keyword != "release" -> SearchArtifactPage(emptyList(), null)
                         cursor == null -> SearchArtifactPage(listOf(first), "page-two")
-                        else -> SearchArtifactPage(listOf(first, second), null)
+                        else -> {
+                            continuationAttempts++
+                            if (continuationAttempts == 1)
+                                throw ApiFailure.Http(503, null, null, null)
+                            SearchArtifactPage(listOf(first, second), null)
+                        }
                     }
                 }
             }
@@ -146,7 +214,28 @@ class WorkspaceSearchModelTest {
             model.nextArtifacts("release", "page-two")
             model.nextArtifacts("release", "page-two")
             runCurrent()
+            assertEquals(SearchRead.Ready(listOf(first), "page-two"), model.results.value.artifacts)
+            assertTrue(model.results.value.moreArtifactsFailed)
+
+            model.update(
+                "release",
+                WorkspaceSearchType.All,
+                connected = true,
+                artifactsAvailable = true,
+            )
+            advanceTimeBy(5_000)
+            runCurrent()
+            assertEquals(1, continuationAttempts)
+
+            model.update(
+                "release",
+                WorkspaceSearchType.Artifacts,
+                connected = true,
+                artifactsAvailable = true,
+            )
+            runCurrent()
             assertEquals(SearchRead.Ready(listOf(first, second)), model.results.value.artifacts)
+            assertFalse(model.results.value.moreArtifactsFailed)
 
             model.update(
                 "history",
@@ -162,7 +251,12 @@ class WorkspaceSearchModelTest {
                 model.results.value.artifacts,
             )
             assertEquals(
-                listOf("release" to null, "release" to "page-two", "history" to null),
+                listOf(
+                    "release" to null,
+                    "release" to "page-two",
+                    "release" to "page-two",
+                    "history" to null,
+                ),
                 calls,
             )
         } finally {

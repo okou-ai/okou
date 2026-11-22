@@ -494,7 +494,8 @@ private fun SearchResults(
     val waitingForList =
         needsChatList && list.confirmedAt == null && !list.offline && listFailure == null ||
             needsMessageChats && list.listPhase == ChatReadPhase.Loading
-    val pending = waitingForList || SearchRead.Loading in reads
+    val retrying = SearchRead.Retrying in reads
+    val pending = waitingForList || SearchRead.Loading in reads || retrying
     val unavailableType =
         type == WorkspaceSearchType.Artifacts && onOpenArtifact == null ||
             type == WorkspaceSearchType.Workflows && onOpenWorkflow == null
@@ -507,7 +508,8 @@ private fun SearchResults(
                 R.string.chat_list_load_when_online
             needsChatList && list.confirmedAt == null && listFailure != null ->
                 R.string.chat_list_first_load_failed
-            SearchRead.Failed in reads ||
+            retrying ||
+                SearchRead.Failed in reads ||
                 moreArtifactsFailed && type == WorkspaceSearchType.Artifacts ->
                 R.string.chat_search_unavailable
             needsChatList && (list.sustainedRefreshFailure || canRetryList) ->

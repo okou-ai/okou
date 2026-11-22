@@ -45,6 +45,7 @@ import ai.okou.android.state.rememberSearchWorkflowId
 import ai.okou.android.state.rememberWorkflowsRoute
 import ai.okou.android.state.rememberWorkspaceNavigation
 import ai.okou.android.updates.UpdateToolbarAction
+import ai.okou.android.workflows.WorkflowDetailFailure
 import ai.okou.android.workflows.WorkflowModel
 import ai.okou.android.workflows.WorkflowScreen
 import androidx.activity.compose.BackHandler
@@ -103,7 +104,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.currentStateAsState
 import java.util.TimeZone
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -197,13 +201,22 @@ internal fun OkouApp(
         searchState.keyword.takeIf { navigation.search != SearchRoute.Closed }.orEmpty()
     val searchWorkflowsAvailable = workflows != null && workflowState?.enabled != false
     val searchArtifactsAvailable = artifacts != null
-    LaunchedEffect(
+    val searchVisible =
+        workspaceSearch != null &&
+            searchActive &&
+            settings == null &&
+            LocalLifecycleOwner.current.lifecycle
+                .currentStateAsState()
+                .value
+                .isAtLeast(Lifecycle.State.RESUMED)
+    DisposableEffect(
         workspaceSearch,
         searchKeyword,
         searchState.type,
         list.offline,
         searchWorkflowsAvailable,
         searchArtifactsAvailable,
+        searchVisible,
     ) {
         workspaceSearch?.update(
             searchKeyword,
@@ -211,7 +224,9 @@ internal fun OkouApp(
             connected = !list.offline,
             workflowsAvailable = searchWorkflowsAvailable,
             artifactsAvailable = searchArtifactsAvailable,
+            visible = searchVisible,
         )
+        onDispose { workspaceSearch?.pauseReads() }
     }
     var composerFocused by
         remember(target, settings, searchActive, showArtifacts) { mutableStateOf(false) }
@@ -313,7 +328,10 @@ internal fun OkouApp(
         if (workflowOrigin.search == SearchRoute.Open) {
             val state = workflows?.state?.value
             if (state?.enabled != false) {
-                workspaceSearch?.refreshWorkflows(state?.catalog?.map { it.toSearchHit() })
+                workspaceSearch?.refreshWorkflows(
+                    state?.catalog?.map { it.toSearchHit() },
+                    retainConfirmed = state?.detailFailure != WorkflowDetailFailure.Unavailable,
+                )
             }
         }
         workflowRoute = WorkflowsRoute()
