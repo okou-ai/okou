@@ -13,6 +13,7 @@ import ai.okou.android.state.SettingsDestination
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import java.net.NoRouteToHostException
 import java.net.UnknownHostException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -692,7 +693,7 @@ class DefaultModelSettingsTest {
                         update: UpdateDefaultModelPreference
                     ): DefaultModelPreference {
                         writes += currentTime
-                        throw ApiFailure.Network(UnknownHostException())
+                        throw ApiFailure.Network(NoRouteToHostException())
                     }
                 }
             val store = store(backgroundScope)

@@ -13,8 +13,6 @@ import ai.okou.android.api.generated.UpdateDefaultModelPreferenceServiceTier
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.state.SettingsDestination
-import java.net.ConnectException
-import java.net.UnknownHostException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -498,7 +496,7 @@ internal class DefaultModelSettings(
 
     private fun handleSaveFailure(save: DefaultModelSave, readback: Boolean, error: Exception) {
         val rejected = !readback && error.definitivelyRejectedWrite()
-        val undelivered = !readback && error.failedBeforeDelivery()
+        val undelivered = !readback && error is ApiFailure.Network && error.connectionFailed
         if (rejected || undelivered) unconfirmedWrite = null
         val current = mutable.value
         if (current.save !== save) return
@@ -620,9 +618,6 @@ private val DefaultModelState.canApplyScheduledRead: Boolean
 private fun Exception.retryable(): Boolean =
     this is ApiFailure.Network ||
         this is ApiFailure.Http && (status >= 500 || status == 408 || status == 429)
-
-private fun Exception.failedBeforeDelivery(): Boolean =
-    this is ApiFailure.Network && (cause is UnknownHostException || cause is ConnectException)
 
 private fun Exception.definitivelyRejectedWrite(): Boolean =
     this is ApiFailure.Unauthenticated ||
