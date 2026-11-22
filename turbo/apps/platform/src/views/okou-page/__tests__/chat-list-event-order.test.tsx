@@ -10,7 +10,6 @@ import {
   cachedChatListEvents,
   chatListEvent,
   chatListThread,
-  installChatListAgent,
   installChatListStream,
   sidebarThreadTitles,
   sidebarThreadLinks,
@@ -22,7 +21,6 @@ async function openCachedList(
   threads: ChatThreadSnapshotProjection[],
 ) {
   const remote = context.mocks.deferred<void>();
-  installChatListAgent(context);
   const stream = installChatListStream(context, {
     caseId,
     snapshot: threads,

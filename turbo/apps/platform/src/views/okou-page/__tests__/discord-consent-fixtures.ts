@@ -52,8 +52,7 @@ export function statusService(
         guildId: null,
         guildName: null,
         discordUserId: null,
-        defaultAgentId: null,
-        defaultAgentName: null,
+
         contextMode: "mentions_only",
         onboarding: "oauth",
         dmSelectionConnectionId: null,

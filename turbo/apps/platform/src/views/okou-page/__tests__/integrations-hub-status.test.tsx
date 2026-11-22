@@ -186,14 +186,14 @@ test("integrations-hub-status-005 Telegram accepts Alice through the official bo
         id,
         username,
         avatarUrl: null,
-        agent: null,
+
         isOwner: true,
         isConnected: false,
         connectedUser: null,
         tokenStatus: "valid",
         official: {
           configured: true,
-          usesDefaultAgent: true,
+
           linkedTelegramUserId: null,
         },
         domainConfigured: true,

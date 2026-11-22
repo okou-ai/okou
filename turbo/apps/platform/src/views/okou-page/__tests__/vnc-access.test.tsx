@@ -3,10 +3,7 @@ import { expect, test } from "vitest";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  createComposerConnectorHelpers,
-  SCOUT_AGENT_ID,
-} from "./chat-composer-connectors-test-helpers.ts";
+import { createComposerConnectorHelpers } from "./chat-composer-connectors-test-helpers.ts";
 import {
   findFastControl,
   queryFastControl,
@@ -21,7 +18,7 @@ test("Chat VNC setup appears and filters", async () => {
   installComposerConnectorFixture();
   // No SSH or VNC connections are configured yet.
   mockRemoteInventory(context);
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({ context, path: "/" });
   click(await findFastControl("button", "Connectors"));
   click(await findFastControl("button", "Add connectors"));
   const search = await screen.findByPlaceholderText("Find connectors...");

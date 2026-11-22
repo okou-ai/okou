@@ -9,10 +9,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  createComposerConnectorHelpers,
-  SCOUT_AGENT_ID,
-} from "./chat-composer-connectors-test-helpers.ts";
+import { createComposerConnectorHelpers } from "./chat-composer-connectors-test-helpers.ts";
 import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import {
   mockRemoteInventory,
@@ -104,7 +101,7 @@ test("A chat keeps remote choices in natural name order across access states wit
       }),
     });
   });
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  await setupPage({ context, path: "/" });
 
   click(await findFastControl("button", "Connectors"));
 

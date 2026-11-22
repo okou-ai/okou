@@ -17,7 +17,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { AGENT_ID } from "./chat-lifecycle-test-helpers.ts";
+
 import {
   assistantEvent,
   completedEvent,
@@ -419,7 +419,6 @@ test("The workspace banking card identifies its purpose and read-only data scope
     bankingWorkspaceContract.accessRequestStatus,
     ({ respond }) => {
       return respond(200, {
-        agent: { id: AGENT_ID, name: "Finance Assistant" },
         connection: null,
         session: null,
         grant: null,
@@ -483,7 +482,6 @@ test("A standalone workspace bank review names the requested purpose and its rea
     bankingWorkspaceContract.accessRequestStatus,
     ({ respond }) => {
       return respond(200, {
-        agent: { id: AGENT_ID, name: "Okou" },
         grant: null,
         connection: null,
         session: null,

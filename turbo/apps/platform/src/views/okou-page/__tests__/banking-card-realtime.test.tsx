@@ -4,7 +4,7 @@ import { expect, test } from "vitest";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { AGENT_ID } from "./chat-lifecycle-test-helpers.ts";
+
 import { createMessageExperienceHelpers } from "./chat-message-experience-test-helpers.ts";
 
 const context = testContext();
@@ -40,11 +40,10 @@ test("Duplicate banking cards update together on events and recover after a cont
     bankingWorkspaceContract.accessRequestStatus,
     ({ respond }) => {
       return respond(200, {
-        agent: { id: AGENT_ID, name: "Okou" },
         connection: null,
         session: pending
           ? {
-              id: AGENT_ID,
+              id: "c0000000-0000-4000-a000-000000000001",
               mode: "connect",
               status: "pending",
               institutionLoginId: null,

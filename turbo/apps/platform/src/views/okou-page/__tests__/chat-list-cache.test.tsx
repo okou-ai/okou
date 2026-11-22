@@ -6,20 +6,18 @@ import {
   cachedChatListEvents,
   chatListEvent,
   chatListThread,
-  installChatListAgent,
   installChatListStream,
   sidebarThreadLinks,
 } from "./chat-list-test-helpers.ts";
 
 const context = testContext();
 
-test("chat-list-cache-001 displays the cached rename while both remote sources are pending", async () => {
+test("A cached rename appears while member chat synchronization is pending", async () => {
   const old = chatListThread(6, "Unreviewed budget");
   const revision = chatListEvent(281, 2, "renamed", old.id, {
     title: "Approved autumn budget",
   });
   const hold = context.mocks.deferred<void>();
-  installChatListAgent(context, hold.promise);
   installChatListStream(context, {
     caseId: 281,
     snapshot: [],
@@ -50,7 +48,6 @@ test("chat-list-cache-002 exposes a chat destination for every cached conversati
     return chatListThread(i + 1, `Planning session ${i + 1}`);
   });
   const sync = context.mocks.deferred<void>();
-  installChatListAgent(context);
   installChatListStream(context, {
     caseId: 282,
     snapshot: [],

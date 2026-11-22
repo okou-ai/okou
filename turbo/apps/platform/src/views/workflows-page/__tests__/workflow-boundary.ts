@@ -13,9 +13,7 @@ export function salesWorkflow(
   const date = "2026-09-12T08:00:00Z";
   return {
     id: context.resourceId,
-    agentId: crypto.randomUUID(),
-    agentName: "research",
-    agentDisplayName: "Research Bot",
+
     name: "sales-research",
     displayName: "Sales Research",
     description: "Collect leads",

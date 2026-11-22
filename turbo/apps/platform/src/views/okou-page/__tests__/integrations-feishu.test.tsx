@@ -101,18 +101,18 @@ test("integrations-feishu-002 Enter holds credentials while availability is chec
 });
 
 test.each([
-  ["integrations-feishu-005", "feishu", "Feishu"],
-  ["integrations-feishu-018", "lark", "Lark"],
+  ["feishu", "Feishu"],
+  ["lark", "Lark"],
 ] as const)(
   "%s shows the workspace bot and connected account from Works",
-  async (_id, provider, brand) => {
+  async (provider, brand) => {
     const bot = installation(provider, true);
     botWorkspace(context, provider, true, () => {
       return [bot];
     });
     await visitProvider(context, provider, "/works");
     const card = await screen.findByTestId(provider + "-setup-button");
-    expect(card).toHaveTextContent("Route " + brand + " messages to agents");
+    expect(card).toHaveTextContent(brand);
     click(card);
     await expect(
       screen.findByAltText("Harbor dispatch bot icon"),

@@ -21,7 +21,7 @@ import {
   mockChatEventRows,
   normalizeMockChatEvents,
 } from "./chat-event-test-helpers.ts";
-import { AGENT_ID } from "./chat-lifecycle-test-helpers.ts";
+
 import {
   createChatRunFixtures,
   promptEvent,
@@ -59,13 +59,11 @@ function contact(title: string): ChatCommunication & { title: string } {
 function origin(peer: ChatCommunication & { title: string }) {
   const runId = crypto.randomUUID();
   return {
-    type: "source",
-    kind: "agent",
+    type: "chat_thread",
     threadId: peer.threadId,
     runId,
-    agentId: AGENT_ID,
+
     titleSnapshot: peer.title,
-    href: path(peer.threadId) + "#run-" + runId,
   } as const;
 }
 function message(
@@ -148,7 +146,7 @@ function install(
           return {
             id,
             title,
-            agent: { id: AGENT_ID, avatarUrl: null },
+
             createdAt: date(1),
             updatedAt: date(5),
           };
@@ -290,32 +288,28 @@ test("chat-relations-009 the origin leads the three-chat preview and expanding a
       child("Third update", 3),
     ];
   const directory = install({ contacts: [parent], children }, origin(parent));
-  directory.setThreadList(
-    [
-      {
-        id: RUN_THREAD_ID,
-        title: "Origin review",
-        createdAt: date(2),
-        updatedAt: date(2),
-      },
-      {
-        id: parent.threadId,
-        title: parent.title,
-        createdAt: date(1),
-        updatedAt: parent.lastMessageAt,
-      },
-      ...children.map((item) => {
-        return {
-          id: item.threadId,
-          title: item.title,
-          createdAt: item.createdAt,
-          updatedAt: item.createdAt,
-        };
-      }),
-    ].map((item) => {
-      return { ...item, agent: { id: AGENT_ID, avatarUrl: null } };
+  directory.setThreadList([
+    {
+      id: RUN_THREAD_ID,
+      title: "Origin review",
+      createdAt: date(2),
+      updatedAt: date(2),
+    },
+    {
+      id: parent.threadId,
+      title: parent.title,
+      createdAt: date(1),
+      updatedAt: parent.lastMessageAt,
+    },
+    ...children.map((item) => {
+      return {
+        id: item.threadId,
+        title: item.title,
+        createdAt: item.createdAt,
+        updatedAt: item.createdAt,
+      };
     }),
-  );
+  ]);
   await openChat();
   const section = await chats(await openPanel());
   const list = within(section);

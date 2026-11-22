@@ -10,7 +10,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { AGENT_ID } from "./chat-lifecycle-test-helpers.ts";
+
 import {
   createChatRunFixtures,
   findButton,
@@ -36,7 +36,7 @@ test("chat-capability-workflows-001 editing the audit schedule replaces the five
       official: null,
       workflow: {
         id: workflowId,
-        agentId: AGENT_ID,
+
         name: "audit-receipts",
         description: null,
         displayName: "Receipt audit",

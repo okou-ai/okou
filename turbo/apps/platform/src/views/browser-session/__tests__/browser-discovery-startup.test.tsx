@@ -230,7 +230,7 @@ test("browser-discovery-startup-047 An unsupported membership check disables the
   await expectStreamingAt(first.url);
   await inventory.releaseFailure(
     "Browser.getWindowForTarget not supported",
-    -32601,
+    -32_601,
   );
   await screen.findByText("The browser does not support this operation.");
   expect(input()).toBeDisabled();
@@ -279,7 +279,7 @@ test("browser-discovery-startup-033 Closing First waits for the background survi
       .map((page) => {
         return page.targetId;
       }),
-  ).toEqual(["created-1"]);
+  ).toStrictEqual(["created-1"]);
 });
 test("browser-discovery-startup-046 Moving Later during its lookup leaves First selected", async () => {
   const { cdp, openPage } = inventoryScan();
@@ -297,18 +297,18 @@ test("browser-discovery-startup-046 Moving Later during its lookup leaves First 
   expect(screen.queryByLabelText(later.title)).toBeNull();
 });
 test.each([
-  ["009", "input-proof-frame"],
-  ["015", ""],
-  ["017", "retained static picture"],
+  ["009", "after membership", "input-proof-frame"],
+  ["015", "before membership", ""],
+  ["017", "during membership", "retained static picture"],
 ])(
   "browser-discovery-startup-%s Readiness joins the first picture, input and membership",
-  async (id, typed) => {
+  async (_id, pictureTiming, typed) => {
     const { cdp, openPage } = arrange();
     const setup = cdp.holdNext("Page.getLayoutMetrics");
     const picture = cdp.holdTargetFrames(first.targetId);
     await openPage();
     await Promise.all([setup.received, picture.received]);
-    if (id === "015") {
+    if (pictureTiming === "before membership") {
       picture.release();
       cdp.holdTargetFrames(first.targetId);
     }
@@ -317,7 +317,7 @@ test.each([
     cdp.duplicate(first.targetId);
     await membership.received;
     expect(input()).toBeDisabled();
-    if (id === "017") {
+    if (pictureTiming === "during membership") {
       picture.release();
       cdp.holdTargetFrames(first.targetId);
     }
@@ -326,12 +326,19 @@ test.each([
     await membership.release();
     await nextMembership.received;
     await nextMembership.release();
-    if (id === "009") {
-      expect(input()).toBeDisabled();
+    await waitFor(() => {
+      expect(input()).toHaveProperty(
+        "disabled",
+        pictureTiming === "after membership",
+      );
+    });
+    if (pictureTiming === "after membership") {
       picture.release();
     }
     await expectStreamingAt(first.url);
-    if (typed) await textTo(cdp, first.targetId, typed);
+    if (typed) {
+      await textTo(cdp, first.targetId, typed);
+    }
   },
 );
 test("browser-discovery-startup-049 Leaving the viewer cancels the close awaiting Later's inventory", async () => {
@@ -352,7 +359,7 @@ test("browser-discovery-startup-049 Leaving the viewer cancels the close awaitin
     cdp.targets.filter((page) => {
       return page.windowId === first.windowId;
     }),
-  ).toEqual([first, later]);
+  ).toStrictEqual([first, later]);
 });
 test("browser-discovery-startup-056 A reopened viewer selects the tab still in its window", async () => {
   const visibility = context.mocks.browser.visibilityState("visible");
@@ -510,7 +517,7 @@ test.each([
         .map((t) => {
           return t.url;
         }),
-    ).toEqual([survives ? later.url : "about:blank"]);
+    ).toStrictEqual([survives ? later.url : "about:blank"]);
   },
 );
 test("browser-discovery-startup-030 The recovered quality setting survives a second membership check", async () => {

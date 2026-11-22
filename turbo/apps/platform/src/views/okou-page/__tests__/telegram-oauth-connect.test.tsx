@@ -124,7 +124,9 @@ test("telegram-oauth-connect-003 Works shows the identity supplied by the opened
   let linked: typeof bot.connectedUser = null;
   context.mocks.api(integrationsTelegramContract.link, ({ body, respond }) => {
     const auth = body.telegramAuth;
-    if (!auth) throw new Error("Expected a provider identity");
+    if (!auth) {
+      throw new Error("Expected a provider identity");
+    }
     linked = {
       telegramUserId: String(auth.id),
       telegramUsername: auth.username ?? null,
@@ -165,7 +167,7 @@ test("telegram-oauth-connect-003 Works shows the identity supplied by the opened
           id,
           username,
           first_name: username,
-          auth_date: 1795000000,
+          auth_date: 1_795_000_000,
           hash: "bc".repeat(32),
         },
       },
@@ -176,9 +178,9 @@ test("telegram-oauth-connect-003 Works shows the identity supplied by the opened
   deliver(tab, "https://unrelated.example.test", 7102, "another_origin");
   deliver(tab, "https://oauth.telegram.org", 7103, "chosen_identity");
   await screen.findByText("Connected to Telegram!");
-  expect(
-    await screen.findByTestId("telegram-connected-indicator"),
-  ).toHaveTextContent("chosen_identity");
+  await expect(
+    screen.findByTestId("telegram-connected-indicator"),
+  ).resolves.toHaveTextContent("chosen_identity");
   expect(screen.queryByTestId("telegram-connect-button")).toBeNull();
   expect(location.pathname).toBe("/works");
 });

@@ -9,10 +9,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
-import {
-  ADA_AGENT_ID,
-  createMessageExperienceHelpers,
-} from "./chat-message-experience-test-helpers.ts";
+import { createMessageExperienceHelpers } from "./chat-message-experience-test-helpers.ts";
 
 const context = testContext();
 const { installMessageExperienceChat } =
@@ -57,11 +54,6 @@ function conversation(): MockChatEventInput[] {
                       contentType: "image/png",
                     };
                   }),
-                  {
-                    type: "agent" as const,
-                    agentId: ADA_AGENT_ID,
-                    nameSnapshot: "Ada",
-                  },
                   { type: "text" as const, text: question },
                 ],
               },
@@ -89,7 +81,7 @@ function conversation(): MockChatEventInput[] {
   }).flat();
 }
 
-test("A restored historical turn displays the saved mention name and both resolved attachments", async () => {
+test("A restored historical turn opens both saved attachments", async () => {
   installMessageExperienceChat({
     threadId: THREAD_ID,
     chatEvents: conversation(),
@@ -137,12 +129,6 @@ test("A restored historical turn displays the saved mention name and both resolv
   const turn = question.closest<HTMLElement>(
     "[data-role='user']",
   ) as HTMLElement;
-  expect(within(turn).getByText("Ada")).toBeVisible();
-  expect(
-    queryAllByRoleFast("link", turn).find((link) => {
-      return link.getAttribute("aria-label") === "Open agent Ada";
-    }),
-  ).toBeUndefined();
   const [before, after] = IMAGES;
 
   click(

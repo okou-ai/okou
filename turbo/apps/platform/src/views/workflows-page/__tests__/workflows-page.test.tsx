@@ -44,11 +44,9 @@ import { salesWorkflow, serveWorkflows } from "./workflow-boundary.ts";
 const context = testContext();
 
 function directory() {
-  const executorId = crypto.randomUUID();
-  const sales = salesWorkflow(context, { agentId: executorId }),
+  const sales = salesWorkflow(context),
     ops = salesWorkflow(context, {
       id: crypto.randomUUID(),
-      agentId: executorId,
       name: "ops-playbook",
       displayName: "Ops Playbook",
     });
@@ -56,7 +54,7 @@ function directory() {
   serveWorkflows(context, () => {
     return entries;
   });
-  return { sales, entries, executorId, base: "/workflows/" + sales.id };
+  return { sales, entries, base: "/workflows/" + sales.id };
 }
 
 function weekday(): Extract<WorkflowAutomationSummary, { kind: "schedule" }> {
@@ -759,13 +757,9 @@ test("workflows-page-036 a different owner's paused Calendar rule stays enabled 
 });
 
 test("workflows-page-037 a directory warning opens and centers its precise Calendar rule", async () => {
-  const { base, sales, executorId } = directory();
+  const { base, sales } = directory();
   const rule = calendarIssue();
   sales.automations = [weekday(), rule];
-  context.mocks.data.onboardingStatus({ defaultAgentId: executorId });
-  context.mocks.data.agents([
-    { agentId: executorId, displayName: "Research Bot" },
-  ]);
   context.mocks.api(
     workflowAutomationsContract.listWorkspace,
     ({ respond }) => {
@@ -875,10 +869,9 @@ function copies() {
   return { shared, sales, entries };
 }
 
-test("workflows-page-072 a stale agent filter leaves both Sales Research definitions accessible", async () => {
-  const { shared, sales, entries } = copies();
-  entries[1].agentId = crypto.randomUUID();
-  await setupPage({ context, path: "/workflows?agent=" + entries[1].agentId });
+test("A member sees the shared workflow and the private definition that overrides it", async () => {
+  const { shared, sales } = copies();
+  await setupPage({ context, path: "/workflows" });
   const badge = await screen.findByText("Overridden for you");
   expect(badge.closest("a")).toHaveAttribute(
     "href",
@@ -906,7 +899,7 @@ test("workflows-page-073 an existing private copy opens with its retained instru
   expect(sales.instruction).toBe("Keep the regional handbook");
 });
 
-test("workflows-page-075 create in chat opens the default Okou composer", async () => {
+test("Creating a workspace workflow opens the member’s chat composer", async () => {
   directory();
   createChatRunFixtures(context).installRunChat();
   await setupPage({ context, path: "/workflows" });

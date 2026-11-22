@@ -17,7 +17,7 @@ import {
   mockChatThreadSnapshotResponse,
   testContext,
 } from "../../../signals/__tests__/test-helpers.ts";
-import { AGENT_ID } from "./chat-lifecycle-test-helpers.ts";
+
 import {
   findLink,
   findButton,
@@ -56,7 +56,7 @@ function mailbox(desktop = true, cached = true) {
     ].map((t) => {
       return {
         ...t,
-        agent: { id: AGENT_ID, avatarUrl: null },
+
         createdAt: "2026-10-01T09:00:00Z",
         updatedAt: "2026-10-02T09:00:00Z",
       };
@@ -136,7 +136,7 @@ test("chat-header-loading-005 the previous header keeps all actions focusable wh
   const opened = await findLink("Continue to worksheet");
   const details = {
     id: next,
-    agentId: AGENT_ID,
+
     title: nextTitle,
     archived: false,
     muted: false,

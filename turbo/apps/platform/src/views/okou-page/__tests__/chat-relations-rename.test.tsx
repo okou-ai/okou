@@ -10,7 +10,6 @@ import {
   chatListThread,
   chatListEvent,
   installChatListStream,
-  installChatListAgent,
 } from "./chat-list-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { openResources } from "./chat-resources-test-helpers.ts";
@@ -21,7 +20,6 @@ const child = chatListThread(12, "Release notes");
 const launchId = "2cfed9db-f2ee-4180-9722-b0e72ee6c740";
 function relatedChats(respondToRelationship?: () => Promise<void> | undefined) {
   context.mocks.browser.matchMedia(true);
-  installChatListAgent(context);
   mockChatLifecycle(context, {
     threadId: child.id,
     threadTitle: child.title,
@@ -36,12 +34,10 @@ function relatedChats(respondToRelationship?: () => Promise<void> | undefined) {
           version: 1,
           parts: [
             {
-              type: "source",
-              kind: "agent",
+              type: "chat_thread",
               runId: launchId,
               threadId: parent.id,
               titleSnapshot: "Release draft",
-              href: `/chats/${parent.id}`,
             },
             { type: "text", text: "Prepare release notes" },
           ],

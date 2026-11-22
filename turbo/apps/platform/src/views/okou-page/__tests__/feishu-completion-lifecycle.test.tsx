@@ -35,8 +35,6 @@ function serveBot(): { installation: FeishuInstallationStatus } {
       messageReceived: false,
       tenantKey: "tenant-support",
       tenantName: "Support tenant",
-      defaultAgentId: null,
-      defaultAgentName: "Okou",
     } satisfies FeishuInstallationStatus,
   };
   context.mocks.api(feishuConnectContract.getStatus, ({ respond }) => {
@@ -51,8 +49,7 @@ function serveBot(): { installation: FeishuInstallationStatus } {
       messageReceived: installation.messageReceived,
       tenantKey: installation.tenantKey,
       tenantName: installation.tenantName,
-      defaultAgentId: installation.defaultAgentId,
-      defaultAgentName: installation.defaultAgentName,
+
       installationId: installation.id,
       installations: [installation],
     };

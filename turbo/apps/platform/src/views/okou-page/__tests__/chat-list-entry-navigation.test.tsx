@@ -7,7 +7,6 @@ import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   chatListThread,
-  installChatListAgent,
   installChatListStream,
   installActiveChatBoundaries,
   sidebarThreadLinks,
@@ -23,7 +22,6 @@ async function openHistory(path: string, forYou: boolean) {
   context.mocks.browser.matchMedia((query) => {
     return query === "(min-width: 48rem)";
   });
-  installChatListAgent(context);
   installActiveChatBoundaries(context);
   context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
     const row = history.find((item) => {

@@ -10,14 +10,13 @@ import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 import {
-  AGENT_ID,
   createTemplateGalleryHelpers,
   expectInlineTemplate,
   THREAD_ID,
 } from "./chat-composer-template-gallery-test-helpers.ts";
 
 const context = testContext();
-const agentChat = `/agents/${AGENT_ID}/chat`;
+const agentChat = "/";
 
 function published(
   kind: UserTemplateCatalogEntry["kind"],

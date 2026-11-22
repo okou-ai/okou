@@ -19,7 +19,6 @@ import {
 
 const context = testContext();
 const sourceChat = "fafdf133-ca5d-4ed7-8b5b-1e170a99c239";
-const author = "cc255d19-87df-42fc-9f12-f7df818a2445";
 const reference = {
   type: "chat_thread",
   threadId: sourceChat,
@@ -102,13 +101,11 @@ test("chat-message-structured-content-003 gives the delegated prompt a run ancho
     entry(
       [
         {
-          type: "source",
-          kind: "agent",
-          agentId: author,
+          type: "chat_thread",
+
           threadId: sourceChat,
           runId: sourceRun,
           titleSnapshot: "Source thread",
-          href: destination,
         },
         { type: "text", text: "Verify the supplier balance" },
       ],
@@ -169,13 +166,11 @@ test("chat-message-structured-content-008 keeps the original file and source in 
     entry([
       { type: "text", text: "Reconcile these receipts" },
       {
-        type: "source",
-        kind: "agent",
-        agentId: author,
+        type: "chat_thread",
+
         threadId: sourceChat,
         runId: sourceRun,
         titleSnapshot: "Receipts intake",
-        href,
       },
       {
         type: "file",

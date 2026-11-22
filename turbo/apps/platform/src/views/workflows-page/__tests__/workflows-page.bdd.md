@@ -584,6 +584,7 @@ Original test `Workspace Workflows ignore stale Agent filters and identify the c
 - **Given** The workspace has a shared Sales Research workflow shadowed by the caller's private copy, plus a workflow for another agent. The workspace is opened with a stale filter for the other agent while the single-agent feature is enabled.
 - **When** The workflow list loads.
 - **Then** Both the shared and private Sales Research entries appear, and the shared entry is identified as overridden for the caller and links to the shared definition. The page also shows that /sales-research is used, despite the stale agent filter.
+- **Batch 75 main synchronization** [Member-flow change #49854](https://github.com/okou-ai/okou/pull/49854). A workflow has no executor-agent association. The member still sees both the shared workflow and its private override, but the fixture can no longer assign the other workflow to the agent in the stale filter.
 
 ## workflows-page-073
 
@@ -608,3 +609,4 @@ Original test `creates a workspace Workflow with the default Okou without choosi
 - **Given** A workspace has a default Okou, and the workflow list is open with the single-agent feature enabled.
 - **When** The user chooses Create in chat and confirms Create workflow without choosing an agent.
 - **Then** The app navigates to the chat home page.
+- **Batch 75 main synchronization** [Member-flow change #49854](https://github.com/okou-ai/okou/pull/49854). Create in chat still opens the member composer. The default-agent record required by the original Given is no longer supplied or stored.

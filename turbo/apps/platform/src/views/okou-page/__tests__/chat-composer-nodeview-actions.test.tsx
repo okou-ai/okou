@@ -9,10 +9,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { findComposerEditor } from "./chat-composer-test-helpers.ts";
-import {
-  AGENT_ID,
-  createTemplateGalleryHelpers,
-} from "./chat-composer-template-gallery-test-helpers.ts";
+import { createTemplateGalleryHelpers } from "./chat-composer-template-gallery-test-helpers.ts";
 
 const context = testContext();
 const { mockTemplateChat } = createTemplateGalleryHelpers(context);
@@ -33,7 +30,7 @@ async function findChipControl(label: string): Promise<HTMLElement> {
 
 test("A template attachment keeps clipboard metadata without native hover hints", async () => {
   mockTemplateChat();
-  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupPage({ context, path: "/" });
   const editor = await findComposerEditor();
   const user = userEvent.setup({ delay: null });
   await user.click(editor);

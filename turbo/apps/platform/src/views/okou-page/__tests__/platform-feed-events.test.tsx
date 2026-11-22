@@ -85,9 +85,7 @@ function workflow(item: PlatformEvent, official = false) {
     id: item.content.workflowId,
     name: "warehouse-report",
     displayName: "Warehouse report",
-    agentId: crypto.randomUUID(),
-    agentName: "warehouse",
-    agentDisplayName: "Warehouse assistant",
+
     description: "Review shipments",
     visibility: "private",
     ownerUserId: "user_default",

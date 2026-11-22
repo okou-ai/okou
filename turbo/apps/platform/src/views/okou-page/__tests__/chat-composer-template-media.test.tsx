@@ -7,7 +7,6 @@ import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  AGENT_ID,
   createTemplateGalleryHelpers,
   expectInlineTemplate,
   sendComposerMessage,
@@ -28,7 +27,7 @@ test("Select and send a website template", async () => {
   }
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat?templatePicker=website`,
+    path: "/?templatePicker=website",
   });
   const picker = await screen.findByRole("dialog");
   const user = userEvent.setup({ delay: null });

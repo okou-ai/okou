@@ -10,6 +10,7 @@ Original test `Cached conversations appear before remote synchronization`. [Regi
 - **Given** An authenticated user opens the chat page with a cached conversation and a cached rename event; remote conversation synchronization and agent loading have not completed.
 - **When** The page starts displaying the conversation list.
 - **Then** The latest cached title appears before remote synchronization or agent loading completes.
+- **Batch 75 main synchronization** [Member-flow change #49854](https://github.com/okou-ai/okou/pull/49854). The remote agent-loading service was removed. The cached rename and chat link are observable while member chat synchronization is held. The second pending source required by the frozen Given no longer exists.
 
 ## chat-list-cache-002
 

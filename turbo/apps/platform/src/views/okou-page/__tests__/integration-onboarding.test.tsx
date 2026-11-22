@@ -16,9 +16,6 @@ const incomplete = Object.freeze({
   onboardingComplete: false,
   isAdmin: true,
   hasOrg: true,
-  hasDefaultAgent: true,
-  defaultAgentId: "21cf3244-cffc-4b21-8c82-f13dbaa231e7",
-  defaultAgentMetadata: { displayName: "Harbor assistant" },
 });
 const onboardingPrompt = "Onboarding prompt";
 

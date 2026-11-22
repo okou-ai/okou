@@ -35,8 +35,6 @@ export function installation(
     setupCompleted: true,
     tenantKey: "harbor-ops",
     tenantName: "Harbor operations",
-    defaultAgentId: null,
-    defaultAgentName: "Harbor assistant",
   };
 }
 
@@ -71,8 +69,6 @@ export function botWorkspace(
         messageReceived: first?.messageReceived ?? false,
         tenantKey: first?.tenantKey ?? null,
         tenantName: first?.tenantName ?? null,
-        defaultAgentId: first?.defaultAgentId ?? null,
-        defaultAgentName: first?.defaultAgentName ?? null,
       });
     },
   );

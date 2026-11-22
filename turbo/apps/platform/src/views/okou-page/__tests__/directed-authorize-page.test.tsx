@@ -151,7 +151,6 @@ async function findEnabledButton(name: string): Promise<HTMLElement> {
 }
 
 async function openAuthorization(connectorSlug: string): Promise<void> {
-  context.mocks.data.agents([{ agentId: AGENT_ID, displayName: "Okou" }]);
   await setupPage({ context, path: authorizationPath(connectorSlug) });
 }
 

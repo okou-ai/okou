@@ -7,7 +7,6 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
 import { tabByText } from "./chat-composer-test-helpers.ts";
 import {
-  AGENT_ID,
   createTemplateGalleryHelpers,
   expectInlineTemplate,
 } from "./chat-composer-template-gallery-test-helpers.ts";
@@ -25,7 +24,7 @@ test("chat-composer-template-tabs-001 picks a built-in deck while the custom cat
     return respond(200, []);
   });
   try {
-    await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+    await setupPage({ context, path: "/" });
     await clickComposerAddMenuItem("Template");
     const picker = within(await screen.findByRole("dialog"));
     await started.promise;
@@ -47,7 +46,7 @@ test("chat-composer-template-tabs-002 moves focus and the active panel together 
   mockTemplateChat();
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat?templatePicker=slides`,
+    path: "/?templatePicker=slides",
   });
   const picker = within(await screen.findByRole("dialog"));
   const presentation = tabByText("Presentation");

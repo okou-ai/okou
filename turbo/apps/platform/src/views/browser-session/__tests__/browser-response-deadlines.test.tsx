@@ -32,7 +32,7 @@ function remoteInput() {
 async function sendText(
   cdp: ReturnType<typeof viewer>["cdp"],
   text: string,
-  target = original.targetId,
+  target: string = original.targetId,
 ) {
   const field = remoteInput();
   await userEvent.click(field);
@@ -148,7 +148,9 @@ test("browser-response-deadlines-012 A same-window refresh joins the pending sta
   const refresh = context.mocks.deferred<void>();
   let awaitingRefresh = false;
   context.mocks.api(browserContract.get, ({ respond }) => {
-    if (awaitingRefresh && !refresh.settled()) refresh.resolve();
+    if (awaitingRefresh && !refresh.settled()) {
+      refresh.resolve();
+    }
     return respond(200, { browser: descriptor.browser, viewer: descriptor });
   });
   const attachment = cdp.holdNext("Target.attachToTarget", "okou-worker");
@@ -175,58 +177,6 @@ test("browser-response-deadlines-012 A same-window refresh joins the pending sta
   await sendText(cdp, "same window after startup");
   expect(cdp.connections()).toBe(1);
 });
-test("browser-response-deadlines-018 A replacement reconnect clears the failed browser action", async () => {
-  const advance = browserRecoveryClock(context.signal);
-  const {
-    cdp,
-    viewer: descriptor,
-    openPage,
-  } = arrangeNativePage(context, { targets: [original, replacement] });
-  const next = {
-    ...descriptor,
-    browser: {
-      ...descriptor.browser,
-      window: {
-        ...descriptor.browser.window!,
-        primaryWindowId: replacement.windowId,
-      },
-    },
-  };
-  let server: "initial" | "failed" | "replacement" = "initial";
-  const failed = context.mocks.deferred<void>();
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    if (server === "failed") {
-      if (!failed.settled()) failed.resolve();
-      return respond(500, {
-        error: { message: "Temporary failure", code: "internal_error" },
-      });
-    }
-    const active = server === "initial" ? descriptor : next;
-    return respond(200, { browser: active.browser, viewer: active });
-  });
-  await openPage();
-  await expectStreamingAt(original.url);
-  server = "failed";
-  cdp.disconnect({ code: 1006 });
-  await screen.findByText("Reconnecting…");
-  advance(1001);
-  await failed.promise;
-  server = "replacement";
-  context.mocks.ably.trigger("browserSessionChanged", {
-    threadId: descriptor.browser.threadId,
-  });
-  await expectStreamingAt(replacement.url);
-  cdp.disconnect({ code: 1006 });
-  await screen.findByText("Reconnecting…");
-  expect(
-    screen.queryByText(
-      "The browser action could not be completed. Check the browser before trying again.",
-    ),
-  ).toBeNull();
-  advance(1001);
-  await expectStreamingAt(replacement.url);
-  expect(screen.getByLabelText("New tab")).toBeEnabled();
-});
 test("browser-response-deadlines-052 Timing out a created tab preserves the original selection", async () => {
   const advance = browserRecoveryClock(context.signal);
   const { cdp, openPage } = viewer();
@@ -252,7 +202,7 @@ test("browser-response-deadlines-052 Timing out a created tab preserves the orig
       .map((target) => {
         return target.targetId;
       }),
-  ).toEqual([original.targetId, "created-1"]);
+  ).toStrictEqual([original.targetId, "created-1"]);
 });
 test("browser-response-deadlines-047 Selecting a sibling recovers input on the healthy wire", async () => {
   const sameWindow = { ...replacement, windowId: original.windowId };

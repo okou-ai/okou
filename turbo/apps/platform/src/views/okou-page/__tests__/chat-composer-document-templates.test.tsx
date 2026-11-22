@@ -7,7 +7,6 @@ import { getNamedButton } from "./chat-attachment-test-helpers.ts";
 import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
 import { findComposerEditor, tabByText } from "./chat-composer-test-helpers.ts";
 import {
-  AGENT_ID,
   createTemplateGalleryHelpers,
   expectInlineTemplate,
 } from "./chat-composer-template-gallery-test-helpers.ts";
@@ -15,7 +14,7 @@ import {
 const context = testContext();
 const { mockTemplateChat } = createTemplateGalleryHelpers(context);
 
-async function draft(text: string, path = `/agents/${AGENT_ID}/chat`) {
+async function draft(text: string, path = "/") {
   const chat = mockTemplateChat();
   await setupPage({ context, path });
   const editor = await findComposerEditor();

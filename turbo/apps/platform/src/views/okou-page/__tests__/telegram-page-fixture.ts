@@ -19,7 +19,7 @@ export function botState(context: TestContext, id?: string, configured = true) {
     kind: "official",
     username: "support_bot",
     avatarUrl: null,
-    agent: { id: "telegram-assistant", name: "Marin" },
+
     isOwner: true,
     isConnected: !!id,
     connectedUser: id
@@ -32,7 +32,7 @@ export function botState(context: TestContext, id?: string, configured = true) {
     tokenStatus: "valid",
     official: {
       configured,
-      usesDefaultAgent: true,
+
       linkedTelegramUserId: id ?? null,
     },
     domainConfigured: configured,

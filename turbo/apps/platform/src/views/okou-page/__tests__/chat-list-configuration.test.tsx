@@ -6,8 +6,6 @@ import {
   cachedChatListEvents,
   chatListEvent,
   chatListThread,
-  CHAT_LIST_AGENT_ID,
-  installChatListAgent,
   installChatListStream,
   installActiveChatBoundaries,
   installChatListRunModels,
@@ -27,11 +25,10 @@ async function openHostSettings() {
   return await within(menu).findByRole("switch", { name: "Studio Mac" });
 }
 
-test("chat-list-configuration-002 replays the model, fast tier and computer selection when the missing chat arrives", async () => {
+test("Selecting the newly arrived conversation from member Home restores its model, fast tier and computer", async () => {
   const record = chatListThread(8, "Prepared workspace", {
     selectedModel: "deepseek-v4-flash",
   });
-  installChatListAgent(context);
   installChatListRunModels(context);
   installActiveChatBoundaries(context, {
     metadata: record,
@@ -59,7 +56,7 @@ test("chat-list-configuration-002 replays the model, fast tier and computer sele
   });
   await setupPage({
     context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    path: "/",
   });
   const sidebar = within(await screen.findByTestId("chat-list-column"));
   click(await sidebar.findByText("Prepared workspace"));
@@ -79,7 +76,6 @@ test("chat-list-configuration-003 applies tier and host changes without moving t
   const recent = chatListThread(22, "Newer conversation");
   const remote = context.mocks.deferred<void>();
   const records = [configured, recent];
-  installChatListAgent(context);
   installChatListRunModels(context);
   installActiveChatBoundaries(context, {
     metadata: configured,

@@ -23,7 +23,7 @@ function workspace(
     timezone: "UTC",
     locale: "en-US",
     supportedLocales: ["en-US"],
-    pinnedAgentIds: [],
+
     sendMode: "enter",
     cloudBrowserEnabledByDefault: true,
     chatResourcesEnabledByDefault: false,

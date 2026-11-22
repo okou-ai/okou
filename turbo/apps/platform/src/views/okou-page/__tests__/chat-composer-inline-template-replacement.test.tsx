@@ -21,7 +21,7 @@ import { expectInlineTemplate } from "./chat-composer-template-gallery-test-help
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
-const { mockAgent, mockBillingCapabilities, mockPersonalModelRoutes } =
+const { mockBillingCapabilities, mockPersonalModelRoutes } =
   createChatComposerHelpers(context);
 
 function presentationTemplate(
@@ -53,7 +53,6 @@ test("Replacing an inline template preserves a previously sent reference", async
   if (!first || !third) {
     throw new Error("Expected built-in presentation templates");
   }
-  mockAgent();
   mockPersonalModelRoutes();
   mockBillingCapabilities({ restrictedBuiltInModels: false }, "pro");
   context.mocks.api(browserContract.get, ({ respond }) => {

@@ -2,7 +2,6 @@ import {
   findFastControl,
   queryFastControl,
   createMessageExperienceHelpers,
-  MESSAGE_EXPERIENCE_AGENT_ID,
 } from "./chat-message-experience-test-helpers.ts";
 import userEvent from "@testing-library/user-event";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
@@ -194,16 +193,11 @@ test("pwa-navigation-009 A browser edge swipe restores Chats without a second sl
   expect(location.pathname).toBe("/");
   expect(transition.startedTypes).toStrictEqual([["push"]]);
 });
-test("pwa-navigation-014 An unread conversation elsewhere in the workspace marks Chats alone", async () => {
+test("An unread member conversation marks Chats alone", async () => {
   mobile(false);
   const other = chatListThread(17, "Independent report");
-  const secondAgent = "c9000000-0000-4000-a000-000000000069";
   const server =
     createMessageExperienceHelpers(context).installMessageExperienceChat();
-  context.mocks.data.agents([
-    { agentId: MESSAGE_EXPERIENCE_AGENT_ID, displayName: "River agent" },
-    { agentId: secondAgent, displayName: "Harbor agent" },
-  ]);
   server.setThreadList(
     [current, other].map((thread) => {
       return {
@@ -211,11 +205,6 @@ test("pwa-navigation-014 An unread conversation elsewhere in the workspace marks
         title: thread.title,
         createdAt: thread.createdAt,
         updatedAt: thread.updatedAt,
-        agent: {
-          id:
-            thread.id === other.id ? secondAgent : MESSAGE_EXPERIENCE_AGENT_ID,
-          avatarUrl: null,
-        },
       };
     }),
   );

@@ -49,8 +49,7 @@ function configuredBot(appId: string): FeishuConnectStatus {
     messageReceived: false,
     tenantKey: null,
     tenantName: null,
-    defaultAgentId: null,
-    defaultAgentName: "Okou",
+
     installationId: FIRST_INSTALLATION_ID,
   };
 }

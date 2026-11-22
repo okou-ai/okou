@@ -41,7 +41,7 @@ test("telegram-connect-routes-003 Sign-in carries the complete signed member des
 test("telegram-connect-routes-005 Setup opens onboarding in a new page and preserves the signed request", async () => {
   botState(context);
   context.mocks.data.onboardingStatus({
-    hasDefaultAgent: false,
+    hasOrg: false,
     needsOnboarding: true,
   });
   const path =

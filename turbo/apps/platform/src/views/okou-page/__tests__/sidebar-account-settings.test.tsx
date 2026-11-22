@@ -63,7 +63,7 @@ test("sidebar-account-settings-002 Debug saves the capture allowance selected by
     timezone: "UTC",
     locale: "en-US",
     supportedLocales: ["en-US"],
-    pinnedAgentIds: [],
+
     sendMode: "enter",
     cloudBrowserEnabledByDefault: true,
     chatResourcesEnabledByDefault: false,
