@@ -2332,7 +2332,7 @@ function createEventChangeEffects({
       // A background tab may suspend RAF. Receiving the next batch must not
       // wait for the viewport; a newer scroll request supersedes this one.
       detach(
-        set(scroll.autoScroll$, scrollPosition, signal),
+        set(scroll.autoScroll$, scrollPosition, "instant", signal),
         Reason.Deferred,
         "align the updated transcript after paint",
       );
@@ -2439,7 +2439,7 @@ function createLoadEarlierGroupsAfterScroll(
       const didPrepend = await set(loadMoreGroups$, signal);
       signal.throwIfAborted();
       if (didPrepend) {
-        await set(scroll.autoScroll$, scrollPosition, signal);
+        await set(scroll.autoScroll$, scrollPosition, "instant", signal);
         signal.throwIfAborted();
       }
       return didPrepend;

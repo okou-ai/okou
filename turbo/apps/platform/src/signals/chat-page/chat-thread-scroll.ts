@@ -52,7 +52,7 @@ export interface ChatThreadScrollSignals {
   >;
   readonly autoScroll$: Command<
     Promise<void>,
-    [ThreadScrollPosition | null, AbortSignal]
+    [ThreadScrollPosition | null, "instant" | "preserve-layout", AbortSignal]
   >;
   readonly scrollToEvent$: Command<
     Promise<void>,
@@ -299,7 +299,7 @@ interface ScrollRuntime {
   hiddenLayout: HiddenScrollLayout | null;
   initialized: boolean;
   hasMeasuredPosition: boolean;
-  pendingScroll: symbol | null;
+  pendingScroll: { readonly preserveThroughLayout: boolean } | null;
   // Offset this module last wrote to the container, cleared once the container
   // reports a different one. Scroll events are delivered asynchronously, so
   // content rendered in between (an async diagram, a late image) can make that
@@ -637,13 +637,25 @@ function createRenderScrollSignals(
     async (
       { get, set },
       position: ThreadScrollPosition | null,
-      behavior: ScrollBehavior,
+      alignment: ScrollBehavior | "preserve-layout",
       signal: AbortSignal,
     ) => {
       signal.throwIfAborted();
-      const request = Symbol();
+      const request = {
+        preserveThroughLayout: alignment === "preserve-layout",
+      };
+      const behavior = alignment === "preserve-layout" ? "instant" : alignment;
       runtime.pendingScroll = request;
       runtime.hasMeasuredPosition = false;
+      const inputRoot = get(scroll.scrollContainer$)?.parentElement;
+      const releaseInput =
+        request.preserveThroughLayout && inputRoot
+          ? onReaderInput(inputRoot, () => {
+              if (runtime.pendingScroll === request) {
+                runtime.pendingScroll = null;
+              }
+            })
+          : undefined;
       async function alignAfterPaint() {
         if (position) {
           await set(scroll.setThreadScrollPosition$, position, signal);
@@ -695,6 +707,7 @@ function createRenderScrollSignals(
         } while (await set(loadEarlierGroups$, signal));
       }
       await alignAfterPaint().finally(() => {
+        releaseInput?.();
         if (runtime.pendingScroll === request) {
           runtime.pendingScroll = null;
         }
@@ -705,6 +718,7 @@ function createRenderScrollSignals(
     (
       { set },
       position: ThreadScrollPosition | null,
+      alignment: "instant" | "preserve-layout",
       signal: AbortSignal,
     ): Promise<void> => {
       // A new sent message requests the tail even while the chat is covered;
@@ -712,7 +726,7 @@ function createRenderScrollSignals(
       if (runtime.hiddenLayout && position === null) {
         runtime.hiddenLayout.position = null;
       }
-      return set(requestScrollAfterRender$, position, "instant", signal);
+      return set(requestScrollAfterRender$, position, alignment, signal);
     },
   );
 
@@ -736,8 +750,12 @@ function createAttachScrollContainer(
     });
 
     const handleScroll = onDomEventFn((event: Event) => {
-      // Zero/intermediate reveal geometry is not a new reader position.
-      if (runtime.hiddenLayout) {
+      // Native anchoring may scroll the viewport before sharing's two-frame
+      // restore. Only reader input supersedes the captured message or tail.
+      if (
+        runtime.hiddenLayout ||
+        runtime.pendingScroll?.preserveThroughLayout
+      ) {
         return;
       }
       if (
@@ -870,6 +888,44 @@ function createScrollContentOnRef(
   );
 }
 
+function onReaderInput(inputRoot: HTMLElement, cancel: () => void): () => void {
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      [
+        "ArrowUp",
+        "ArrowDown",
+        "PageUp",
+        "PageDown",
+        "Home",
+        "End",
+        " ",
+      ].includes(event.key) &&
+      !(
+        event.target instanceof HTMLElement &&
+        event.target.closest("input, textarea, [contenteditable]")
+      )
+    ) {
+      cancel();
+    }
+  };
+  inputRoot.addEventListener("wheel", cancel, { passive: true });
+  inputRoot.addEventListener("touchmove", cancel, { passive: true });
+  inputRoot.addEventListener("pointerdown", cancel, {
+    passive: true,
+    capture: true,
+  });
+  inputRoot.addEventListener("keydown", onKeyDown);
+  return () => {
+    inputRoot.removeEventListener("wheel", cancel);
+    inputRoot.removeEventListener("touchmove", cancel);
+    inputRoot.removeEventListener("pointerdown", cancel, true);
+    inputRoot.removeEventListener("keydown", onKeyDown);
+  };
+}
+
 function createHiddenScrollLayoutSignals(
   scroll: InternalScrollSignals,
   navigation: ScrollNavigationSignals,
@@ -901,48 +957,14 @@ function createHiddenScrollLayoutSignals(
         releaseHiddenLayout(runtime);
       }
     };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (
-        !event.altKey &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        [
-          "ArrowUp",
-          "ArrowDown",
-          "PageUp",
-          "PageDown",
-          "Home",
-          "End",
-          " ",
-        ].includes(event.key) &&
-        !(
-          event.target instanceof HTMLElement &&
-          event.target.closest("input, textarea, [contenteditable]")
-        )
-      ) {
-        cancel();
-      }
-    };
     const snapshot: HiddenScrollLayout = {
       container,
       position,
-      release: () => {
-        inputRoot.removeEventListener("wheel", cancel);
-        inputRoot.removeEventListener("touchmove", cancel);
-        inputRoot.removeEventListener("pointerdown", cancel, true);
-        inputRoot.removeEventListener("keydown", onKeyDown);
-      },
+      release: onReaderInput(inputRoot, cancel),
     };
     runtime.hiddenLayout = snapshot;
     // Reader input after reveal wins over the pending one-shot restore. These
     // listeners never prevent native scrolling or change focus behavior.
-    inputRoot.addEventListener("wheel", cancel, { passive: true });
-    inputRoot.addEventListener("touchmove", cancel, { passive: true });
-    inputRoot.addEventListener("pointerdown", cancel, {
-      passive: true,
-      capture: true,
-    });
-    inputRoot.addEventListener("keydown", onKeyDown);
     // Publish the live intent to the existing window authority before hiding.
     // Incoming rows must retain this anchor even if their resource preparation
     // is still pending when the reader reveals the transcript.
