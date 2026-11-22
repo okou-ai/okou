@@ -75,4 +75,17 @@
     <string name="chat_project_rename_rejected">プロジェクトの名前を変更できませんでした。</string>
     <string name="chat_project_rename_save">保存</string>
     <string name="chat_project_rename_pending">プロジェクト名を変更中…</string>
+    <string name="chat_move_project">チャットを移動</string>
+    <string name="chat_move_project_outside">プロジェクト外に移動</string>
+    <string name="chat_move_project_named">%1$s に移動</string>
+    <string name="chat_project_outside">プロジェクト外</string>
+    <string name="chat_project_moved_named">%1$s に移動しました</string>
+    <string name="chat_project_moved_outside">プロジェクト外に移動しました</string>
+    <string name="chat_project_delete">プロジェクトを削除</string>
+    <string name="chat_project_delete_title">「%1$s」を削除しますか？</string>
+    <string name="chat_project_delete_description">このプロジェクト内のチャットはプロジェクト外に移動します。実行中のタスクは続行されます。</string>
+    <string name="chat_project_delete_pending">プロジェクトを削除しています…</string>
+    <string name="chat_project_deleted">プロジェクトを削除し、チャットをプロジェクト外に移動しました。</string>
+    <string name="chat_project_delete_rejected">プロジェクトを削除できませんでした。</string>
+    <string name="chat_project_delete_unconfirmed">プロジェクトの削除を確認できませんでした。</string>
 </resources>

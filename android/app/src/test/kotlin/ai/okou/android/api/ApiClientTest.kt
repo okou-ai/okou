@@ -43,6 +43,36 @@ class ApiClientTest {
     ) = ApiClient(server.url("/"), tokens, version = "0.1.0")
 
     @Test
+    fun projectCommandsSendANullableMembershipAndADeleteBody() = runTest {
+        val thread = "11111111-1111-4111-8111-111111111111"
+        val project = "22222222-2222-4222-8222-222222222222"
+        val move = "0196ec2e-55b0-7000-8000-000000000000"
+        val delete = "0196ec2e-55b0-7000-8000-000000000001"
+        client().use { api ->
+            server.enqueue(MockResponse().setBody("""{"threadId":"$thread","projectId":null}"""))
+            server.enqueue(MockResponse().setResponseCode(204))
+            api.moveThreadToProject(thread, null, move)
+            api.deleteProject(project, delete)
+            val membership = server.takeRequest()
+            assertEquals("PUT", membership.method)
+            assertEquals("/api/chat-threads/$thread/project", membership.path)
+            assertEquals("Bearer workspace-token", membership.getHeader("Authorization"))
+            assertEquals(
+                Json.parseToJsonElement("""{"eventId":"$move","projectId":null}"""),
+                Json.parseToJsonElement(membership.body.readUtf8()),
+            )
+            val deletion = server.takeRequest()
+            assertEquals("DELETE", deletion.method)
+            assertEquals("/api/projects/$project", deletion.path)
+            assertEquals("Bearer workspace-token", deletion.getHeader("Authorization"))
+            assertEquals(
+                Json.parseToJsonElement("""{"eventId":"$delete"}"""),
+                Json.parseToJsonElement(deletion.body.readUtf8()),
+            )
+        }
+    }
+
+    @Test
     fun lazyTransportUsesFreshTokensAndDistinctRequestIdentity() = runTest {
         val resolved = AtomicInteger()
         client { "token-${resolved.incrementAndGet()}" }
