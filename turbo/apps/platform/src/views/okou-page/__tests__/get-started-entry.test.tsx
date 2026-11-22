@@ -1,3 +1,9 @@
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { connectorCatalogConnectItem } from "../../../mocks/handlers/api-connectors.ts";
+import {
+  onboardingOAuth,
+  onboardingSourceItem,
+} from "../../onboarding-sources-first/__tests__/onboarding-catalog-test-helpers.ts";
 import { DetachedBrowserContext } from "happy-dom";
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import {
@@ -518,4 +524,32 @@ test("get-started-entry-038 a check-in awaiting financial confirmation shows its
     "role",
     "menuitem",
   );
+});
+
+test("get-started-entry-022 selecting Gmail starts its authorization on the local browser boundary and preserves chat", async () => {
+  const auth = onboardingOAuth(context, "gmail", "Gmail");
+  const item = onboardingSourceItem({
+    slug: "gmail",
+    label: "Gmail",
+    description: "Local mail access",
+    hasAccount: false,
+  });
+  context.mocks.api(connectorCatalogContract.oneClick, ({ respond }) => {
+    return respond(200, { connectors: [connectorCatalogConnectItem(item)] });
+  });
+  serve(rewards());
+  await home();
+  const editor = await findComposerEditor();
+  await fill(editor, "Keep the release checklist");
+  await open();
+  const picker = await intro("connector");
+  click(await findFastControl("button", /Gmail/, picker));
+  await expect(auth.started).resolves.toMatchObject({ slug: "gmail" });
+  await waitFor(() => {
+    return expect(auth.popup.location.href).toBe(auth.url);
+  });
+  expect(location.pathname).toBe("/");
+  expect(editor.textContent).toBe("Keep the release checklist");
+  expect(screen.queryByRole("dialog", { name: "Gmail" })).toBeNull();
+  auth.popup.close();
 });
