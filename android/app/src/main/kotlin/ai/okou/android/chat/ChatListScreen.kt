@@ -552,32 +552,38 @@ internal fun ChatListScreen(
                     }
                 }
                 if (
-                    groups.all { it.threads.isEmpty() } &&
+                    groups.all { it.project == null && it.threads.isEmpty() } &&
                         pendingByProject.isEmpty() &&
                         metadataUsable &&
                         (state.filter != ChatListFilter.Unread || unreadAt != null)
                 ) {
-                    item {
-                        Column(
-                            Modifier.padding(start = 12.dp, end = 12.dp, top = 24.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text(
-                                stringResource(R.string.chat_empty),
-                                Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                                style = chatListTitleStyle().copy(fontWeight = FontWeight.SemiBold),
-                            )
-                            if (state.filter != ChatListFilter.Inbox) {
-                                ChatListTextAction(
-                                    R.string.chat_back_to_inbox,
-                                    R.drawable.ic_arrow_back,
-                                    onClick = showInbox,
-                                )
-                            }
-                        }
-                    }
+                    item { ChatListEmptyState(state.filter, showInbox) }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ChatListEmptyState(filter: ChatListFilter, showInbox: () -> Unit) {
+    val title =
+        when (filter) {
+            ChatListFilter.Inbox -> R.string.chat_empty
+            ChatListFilter.Unread -> R.string.chat_empty_unread
+            ChatListFilter.Archived -> R.string.chat_empty_archived
+            ChatListFilter.Muted -> R.string.chat_empty_muted
+        }
+    Column(Modifier.padding(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            stringResource(title),
+            Modifier.padding(horizontal = 12.dp).semantics {
+                heading()
+                liveRegion = LiveRegionMode.Polite
+            },
+            style = chatListTitleStyle().copy(fontWeight = FontWeight.SemiBold),
+        )
+        if (filter != ChatListFilter.Inbox) {
+            ChatListTextAction(R.string.chat_back_to_inbox, onClick = showInbox)
         }
     }
 }
@@ -880,6 +886,7 @@ private fun ChatRow(
 ) {
     var menuOpen by remember(actions) { mutableStateOf(false) }
     val rowFocus = remember { FocusRequester() }
+    var rowFocused by remember { mutableStateOf(false) }
     var restoreMenuFocus by remember { mutableStateOf(false) }
     LaunchedEffect(menuOpen) {
         if (!menuOpen && restoreMenuFocus) {
@@ -888,7 +895,12 @@ private fun ChatRow(
         }
     }
     val openMenu: (() -> Unit)? =
-        if (actions.isNotEmpty() && pendingAction == null) ({ menuOpen = true }) else null
+        if (actions.isNotEmpty() && pendingAction == null) {
+            {
+                restoreMenuFocus = rowFocused
+                menuOpen = true
+            }
+        } else null
     val labels =
         listOfNotNull(
             status.label(),
@@ -920,6 +932,7 @@ private fun ChatRow(
                 .background(if (isSelected) colors.secondaryContainer else colors.background)
                 .contextMenuInput(openMenu)
                 .focusRequester(rowFocus)
+                .onFocusChanged { rowFocused = it.isFocused }
                 .combinedClickable(
                     onClick = open,
                     onLongClick = openMenu,
@@ -954,14 +967,14 @@ private fun ChatRow(
                             action.icon(),
                             destructive = action == ChatRowAction.Delete,
                         ) {
+                            if (action == ChatRowAction.Rename || action == ChatRowAction.Delete) {
+                                restoreMenuFocus = false
+                            }
                             menuOpen = false
                             performAction(action)
                         }
                     },
-                close = {
-                    restoreMenuFocus = true
-                    menuOpen = false
-                },
+                close = { menuOpen = false },
             )
         }
     }
@@ -1050,8 +1063,8 @@ private fun ChatAction(label: Int, action: () -> Unit, enabled: Boolean = true) 
 
 @Composable
 private fun ChatListTextAction(
-    label: Int,
-    @DrawableRes icon: Int,
+    @StringRes label: Int,
+    @DrawableRes icon: Int? = null,
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
@@ -1059,12 +1072,14 @@ private fun ChatListTextAction(
         onClick = onClick,
         enabled = enabled,
         modifier = Modifier.heightIn(min = 48.dp),
-        shape = RoundedCornerShape(9.dp),
-        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(12.dp),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
-        Icon(painterResource(icon), null, Modifier.size(16.dp))
-        Spacer(Modifier.width(6.dp))
+        if (icon != null) {
+            Icon(painterResource(icon), null, Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+        }
         Text(
             stringResource(label),
             style =
@@ -1072,6 +1087,7 @@ private fun ChatListTextAction(
                     fontSize = 13.sp,
                     lineHeight = 20.sp,
                     letterSpacing = 0.sp,
+                    fontWeight = FontWeight(550),
                 ),
         )
     }

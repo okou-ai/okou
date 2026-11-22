@@ -37,6 +37,98 @@ import org.junit.runners.model.MultipleFailureException
 @RunWith(AndroidJUnit4::class)
 class NativeChatListTest {
     @Test
+    fun emptyProjectKeepsItsOwnActionAndFilteredEmptyReturnsToInbox() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val app = instrumentation.targetContext.applicationContext as TestOkouApplication
+        val device = UiDevice.getInstance(instrumentation)
+        val auth = app.authentication as TestAuthentication
+        val previousAuth = auth.state.value
+        val previousService = app.chatService
+        val savedPreferences = app.snapshotApiPreferences()
+        val savedCache = ChatCacheSnapshot(app.noBackupFilesDir.resolve("chat-list"), app.chatCache)
+        val fixture = ChatListApiFixture()
+        fixture.events = { jsonResponse("""{"events":[],"hasMore":false}""") }
+        fixture.indicators = { jsonResponse("""{"threads":{},"unreadAt":{}}""") }
+        app.chatService = fixture.service
+        auth.state.value = testAuthenticationState(user = "empty-list-${UUID.randomUUID()}")
+        val failures = mutableListOf<Throwable>()
+        var scenario: ActivityScenario<MainActivity>? = null
+        var chatJob: Job? = null
+        try {
+            scenario = ActivityScenario.launch(MainActivity::class.java)
+            device.awaitChatList(app)
+            scenario.onActivity { activity ->
+                chatJob =
+                    ViewModelProvider(activity)[SessionModel::class.java]
+                        .uiState
+                        .value
+                        .ready
+                        ?.chats
+                        ?.viewModelScope
+                        ?.coroutineContext
+                        ?.get(Job)
+            }
+            fun text(value: String) =
+                checkNotNull(
+                    device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000)
+                ) {
+                    "Missing $value"
+                }
+            val projectAction = app.getString(R.string.composer_new_project)
+            text("Research").click()
+            text(projectAction)
+            assertFalse(
+                device.hasObject(By.pkg(app.packageName).text(app.getString(R.string.chat_empty)))
+            )
+            takeScreenshot().writeToTestStorage("android-list-empty-project")
+            for ((filter, title) in
+                listOf(
+                    R.string.chat_unread to R.string.chat_empty_unread,
+                    R.string.chat_archived to R.string.chat_empty_archived,
+                    R.string.chat_muted to R.string.chat_empty_muted,
+                )) {
+                checkNotNull(
+                        device.wait(
+                            Until.findObject(
+                                By.pkg(app.packageName).desc(app.getString(R.string.chat_filter))
+                            ),
+                            10_000,
+                        )
+                    )
+                    .click()
+                text(app.getString(filter)).click()
+                text(app.getString(title))
+                assertFalse(device.hasObject(By.pkg(app.packageName).text("Research")))
+                if (filter == R.string.chat_archived) {
+                    takeScreenshot().writeToTestStorage("android-list-empty-archived")
+                }
+                text(app.getString(R.string.chat_back_to_inbox)).click()
+                text(projectAction)
+            }
+        } catch (error: Throwable) {
+            failures.add(error)
+        } finally {
+            for (cleanup in
+                listOf<() -> Unit>(
+                    { scenario?.close() },
+                    { runBlocking { withTimeout(10_000) { chatJob?.join() } } },
+                    { fixture.close() },
+                    { savedCache.restore() },
+                    { app.restoreApiPreferences(savedPreferences) },
+                    { app.chatService = previousService },
+                    { auth.state.value = previousAuth },
+                )) {
+                try {
+                    cleanup()
+                } catch (error: Throwable) {
+                    failures.add(error)
+                }
+            }
+        }
+        MultipleFailureException.assertEmpty(failures)
+    }
+
+    @Test
     fun cachedUnreadFilterOpensBeforeIndicatorsAndRemainsUsableAfterFailure() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext.applicationContext as TestOkouApplication
@@ -135,7 +227,7 @@ class NativeChatListTest {
             text("Research")
             fail.set(false)
             text(app.getString(R.string.retry)).click()
-            text(app.getString(R.string.chat_empty))
+            text(app.getString(R.string.chat_empty_unread))
         } catch (error: Throwable) {
             failures.add(error)
             try {
@@ -428,7 +520,7 @@ class NativeChatListTest {
                 assertTrue(device.pressDPadUp())
                 device.awaitKeyboardFocus(By.pkg(app.packageName).text(archived))
                 assertTrue(device.pressDPadCenter())
-                text(app.getString(R.string.chat_empty))
+                text(app.getString(R.string.chat_empty_archived))
                 device.awaitKeyboardFocus(By.pkg(app.packageName).desc(filter))
                 assertTrue(
                     device.wait(
