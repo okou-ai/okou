@@ -152,6 +152,7 @@ readonly TEMPLATE_GUIDANCE_BUNDLE_READER_PATH=.github/rollback-floors/template-g
 readonly TEMPLATE_GUIDANCE_BUNDLE_WRITER_PATH=.github/rollback-floors/template-guidance-bundle-writer
 readonly OFFICIAL_WORKFLOW_ARTIFACT_READER_PATH=turbo/packages/core/src/official-workflow-artifact.ts
 readonly CONTENT_BUNDLE_ARCHIVE_READER_PATH=.github/rollback-floors/content-bundle-archive-reader
+readonly RUN_WEBHOOK_PATHS_PATH=.github/rollback-floors/run-webhook-paths
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
 readonly HOSTED_SITE_URL_ROUTING_PATH=.github/rollback-floors/hosted-site-url-routing
 readonly DESKTOP_MIGRATION_HOP_PATH=turbo/apps/api/src/signals/services/desktop-electron-migration-release.ts
@@ -795,6 +796,16 @@ if [[ ! "$browser_session_mutations_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$browser_session_mutations_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Browser session mutation contract: ${browser_session_mutations_commit}."
+fi
+
+# Paired rollback can promote the API before all outgoing Runners exit.
+run_webhook_paths_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$RUN_WEBHOOK_PATHS_PATH" | sed -n '1p')
+if [[ ! "$run_webhook_paths_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Run webhook paths on main."
+fi
+if ! git merge-base --is-ancestor "$run_webhook_paths_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Run webhook paths: ${run_webhook_paths_commit}."
 fi
 
 # Host Worker aliases resolve through the API even while URL editing is disabled.

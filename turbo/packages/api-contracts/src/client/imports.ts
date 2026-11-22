@@ -2186,6 +2186,7 @@ export const clientContractImportManifest = [
   {
     module: "webhooks",
     contracts: [
+      "runWebhookContract",
       "webhookBuiltInGenerationFalContract",
       "webhookClerkContract",
       "webhookCompleteContract",
