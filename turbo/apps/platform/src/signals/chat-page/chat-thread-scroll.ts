@@ -657,7 +657,10 @@ function createRenderScrollSignals(
             await set(scroll.setThreadScrollPosition$, null, signal);
           }
           if (
-            !transcriptViewportNeedsContent(aligned.container, aligned.atTail) ||
+            !transcriptViewportNeedsContent(
+              aligned.container,
+              aligned.atTail,
+            ) ||
             runtime.pendingScroll !== request
           ) {
             return;
@@ -910,44 +913,6 @@ function createScrollContentOnRef(
       }
     }),
   );
-}
-
-function onReaderInput(inputRoot: HTMLElement, cancel: () => void): () => void {
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (
-      !event.altKey &&
-      !event.ctrlKey &&
-      !event.metaKey &&
-      [
-        "ArrowUp",
-        "ArrowDown",
-        "PageUp",
-        "PageDown",
-        "Home",
-        "End",
-        " ",
-      ].includes(event.key) &&
-      !(
-        event.target instanceof HTMLElement &&
-        event.target.closest("input, textarea, [contenteditable]")
-      )
-    ) {
-      cancel();
-    }
-  };
-  inputRoot.addEventListener("wheel", cancel, { passive: true });
-  inputRoot.addEventListener("touchmove", cancel, { passive: true });
-  inputRoot.addEventListener("pointerdown", cancel, {
-    passive: true,
-    capture: true,
-  });
-  inputRoot.addEventListener("keydown", onKeyDown);
-  return () => {
-    inputRoot.removeEventListener("wheel", cancel);
-    inputRoot.removeEventListener("touchmove", cancel);
-    inputRoot.removeEventListener("pointerdown", cancel, true);
-    inputRoot.removeEventListener("keydown", onKeyDown);
-  };
 }
 
 function createHiddenScrollLayoutSignals(
