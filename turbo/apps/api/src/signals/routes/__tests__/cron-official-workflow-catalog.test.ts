@@ -993,21 +993,20 @@ test.each(scenarios)(
     if (learning) {
       expectLearningSchedule(automation);
     }
-    await withMockNowForTest(
-      new Date(automation.nextRunAt).getTime(),
-      async () => {
-        await createRunsApi(context).registerDirectRunner(owned.runnerGroup);
-        await owned.run(() => {
-          return accept(
-            app(cronExecuteWorkflowAutomationsContract).execute({
-              headers: cronHeaders,
-            }),
-            [200],
-          );
-        });
-        await owned.run(flushWaitUntilForTest);
-      },
-    );
+    // Feedback setup may finish after this occurrence becomes due.
+    const dispatchedAt = Math.max(now(), Date.parse(automation.nextRunAt));
+    await withMockNowForTest(dispatchedAt, async () => {
+      await createRunsApi(context).registerDirectRunner(owned.runnerGroup);
+      await owned.run(() => {
+        return accept(
+          app(cronExecuteWorkflowAutomationsContract).execute({
+            headers: cronHeaders,
+          }),
+          [200],
+        );
+      });
+      await owned.run(flushWaitUntilForTest);
+    });
     const current = await owned.run(() => {
       return accept(
         app(workflowAutomationsContract).get({
@@ -1066,7 +1065,7 @@ test.each(scenarios)(
       detail.body.fileContents,
       !curatesSuggestions,
     );
-    await withMockNowForTest(Date.parse(automation.nextRunAt), async () => {
+    await withMockNowForTest(dispatchedAt, async () => {
       await owned.run(() => {
         return fixture.failChatRun(
           runId,
