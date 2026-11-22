@@ -7,6 +7,17 @@ import type { ClientDescriptor } from "./types";
 export const transcribeContract: ClientDescriptor<
   typeof OriginalTranscribeContract
 > = {
+  playback: {
+    method: "GET",
+    path: "/api/voice/clips/:fileId/playback",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+    },
+  },
   transcribe: {
     method: "POST",
     path: "/api/voice/transcribe",
