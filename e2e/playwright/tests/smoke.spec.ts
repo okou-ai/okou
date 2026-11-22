@@ -1,6 +1,3 @@
-import { randomUUID } from "node:crypto";
-import { Webhook } from "standardwebhooks";
-
 import { resolveApiBackendUrl } from "../api-backend-url";
 import { expect, test } from "../fixtures";
 import { signInWithClerkEmailCode } from "../lib/auth";
@@ -26,47 +23,6 @@ test("receive a reply and compose with an IME", async ({ page }) => {
   const apiUrl = resolveApiBackendUrl();
   const appUrl = deriveAppUrl(apiUrl);
 
-  // Clerk sends this event to its standing endpoint. An isolated PR preview
-  // needs the same delivery for its newly created test organization.
-  const signingSecret = process.env.E2E_CLERK_WEBHOOK_SIGNING_SECRET;
-  if (signingSecret) {
-    const id = randomUUID();
-    const created = new Date();
-    const payload = JSON.stringify({
-      object: "event",
-      type: "organization.created",
-      data: {
-        id: orgId,
-        name: "E2E Test Org",
-        created_by: userId,
-        created_at: created.getTime(),
-      },
-    });
-    const delivery = await page.request.post(
-      new URL("/api/webhooks/clerk", apiUrl).href,
-      {
-        headers: {
-          "content-type": "application/json",
-          "svix-id": id,
-          "svix-timestamp": String(Math.floor(created.getTime() / 1000)),
-          "svix-signature": new Webhook(signingSecret).sign(
-            id,
-            created,
-            payload,
-          ),
-          ...(process.env.VERCEL_AUTOMATION_BYPASS_SECRET
-            ? {
-                "x-vercel-protection-bypass":
-                  process.env.VERCEL_AUTOMATION_BYPASS_SECRET,
-              }
-            : {}),
-        },
-        data: payload,
-        maxRedirects: 0,
-      },
-    );
-    expect(delivery.status()).toBe(200);
-  }
   const token = await signInWithClerkEmailCode(page, email, appUrl, {
     activeOrganizationId: orgId,
   });
@@ -75,22 +31,22 @@ test("receive a reply and compose with an IME", async ({ page }) => {
     .poll(
       async () => {
         const billing = await page.request.get(
-          new URL("/api/billing/status", apiUrl).href,
+          new URL("/api/billing/usage-pack-credits", apiUrl).href,
           {
             headers: authHeadersForToken(token),
           },
         );
         if (!billing.ok()) {
           throw new Error(
-            `Read workspace billing status returned HTTP ${billing.status()}`,
+            `Read creator credit balance returned HTTP ${billing.status()}`,
           );
         }
-        const status = await billing.json();
-        return status.credits;
+        const balance = await billing.json();
+        return balance.bonusCredits;
       },
       {
         timeout: 60_000,
-        message: "The workspace's onboarding credits must be available",
+        message: "The workspace creator must receive the onboarding bonus",
       },
     )
     .toBeGreaterThan(0);

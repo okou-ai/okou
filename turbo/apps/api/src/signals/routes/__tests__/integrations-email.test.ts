@@ -38,7 +38,10 @@ import {
 } from "./helpers/api-bdd-chat-files";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { mockGoogleText } from "./helpers/google-text";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import {
+  createWebhookCallbackApi,
+  deliverOrganizationCreated,
+} from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   mockClerkUsers,
@@ -332,6 +335,11 @@ describe("email-native signup", () => {
       text: "\n cOnFiRm \t\r\n\nOn Tuesday, Okou wrote:\n> CONFIRM",
       to: [pending.replyTo],
     });
+    await expect(confirmation.send(true)).rejects.toThrow(
+      "Email workspace initialization is pending",
+    );
+    await deliverOrganizationCreated(context, actor);
+    const emailSinceSeqId = await threadEventCursor(context, actor);
     await confirmation.send();
     expect(
       context.mocks.clerk.users.createUser,
@@ -360,7 +368,7 @@ describe("email-native signup", () => {
       needsOnboarding: false,
       onboardingComplete: true,
     });
-    const snapshot = await createdThreads(actor);
+    const snapshot = await createdThreads({ ...actor, emailSinceSeqId });
     expect(snapshot.chatThreads).toHaveLength(1);
     const { events } = await files.listThreadEvents(
       actor,
@@ -2485,6 +2493,8 @@ describe("Email integration", () => {
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     const group = await runs.configureRunnerGroup();
+    await deliverOrganizationCreated(context, actor);
+    const emailSinceSeqId = await threadEventCursor(context, actor);
     verifiedDirectory(actor);
     await accept(
       emailClient().connect({
@@ -2507,7 +2517,7 @@ describe("Email integration", () => {
       onboardingComplete: true,
     });
     verifiedDirectory(actor);
-    const snapshot = await createdThreads(actor);
+    const snapshot = await createdThreads({ ...actor, emailSinceSeqId });
     expect(snapshot.chatThreads).toHaveLength(1);
     const { events } = await files.listThreadEvents(
       actor,

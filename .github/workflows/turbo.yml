@@ -2086,7 +2086,6 @@ jobs:
           OKOU_API_BACKEND_URL: ${{ needs.deploy-api.outputs.preview-url }}
           OKOU_APP_URL: ${{ needs.deploy-app.outputs.preview-url }}
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
-          E2E_CLERK_WEBHOOK_SIGNING_SECRET: ${{ github.event_name != 'push' && secrets.CLERK_WEBHOOK_SIGNING_SECRET || '' }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           JOB_REF: ${{ needs.prepare.outputs.job-ref }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}

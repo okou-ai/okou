@@ -16,6 +16,7 @@ import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { settle, tapError } from "../utils";
 import { ensureOrgLimitedFreeBootstrap$ } from "../services/org-limited-free-bootstrap.service";
+import { ensureSharedExecutor$ } from "../services/workspace-executor.service";
 import {
   cleanupClerkBannedUser$,
   cleanupClerkDeletedOrgBilling$,
@@ -70,8 +71,6 @@ function organizationMembershipIdentity(data: unknown):
   | {
       readonly orgId: string;
       readonly userId: string;
-      readonly membershipId?: string;
-      readonly role?: string;
       readonly purchaseId?: string;
       readonly getStartedClaimId?: string;
       readonly createdAt?: Date;
@@ -87,7 +86,6 @@ function organizationMembershipIdentity(data: unknown):
     stringPropertyOf(publicUserData, "userId") ??
     stringPropertyOf(publicUserData, "user_id") ??
     stringPropertyOf(data, "user_id");
-  const role = stringPropertyOf(data, "role");
   const privateMetadata =
     propertyOf(data, "privateMetadata") ?? propertyOf(data, "private_metadata");
   const purchaseId = stringPropertyOf(
@@ -105,8 +103,6 @@ function organizationMembershipIdentity(data: unknown):
     ? {
         orgId,
         userId,
-        role,
-        membershipId: eventDataId(data),
         ...(purchaseId ? { purchaseId } : {}),
         ...(getStartedClaimId ? { getStartedClaimId } : {}),
         ...(createdAt === undefined ? {} : { createdAt: new Date(createdAt) }),
@@ -139,27 +135,6 @@ function organizationCreatedIdentity(data: unknown):
     : undefined;
 }
 
-function isAdminMembershipRole(role: string | undefined): boolean {
-  return role === "org:admin" || role === "admin";
-}
-
-function enqueueOrgBootstrap(args: {
-  readonly eventType: string;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly task: Promise<unknown>;
-}): void {
-  waitUntil(
-    tapError(args.task, (error) => {
-      L.error(`${args.eventType} bootstrap failed`, {
-        orgId: args.orgId,
-        userId: args.userId,
-        error,
-      });
-    }),
-  );
-}
-
 interface WelcomeThreadDelivery {
   readonly trigger: string;
   readonly orgId: string;
@@ -180,10 +155,8 @@ async function observeWelcomeThreadDelivery(
 }
 
 /**
- * Welcome delivery is a one-shot registration side effect, guarded like the
- * other bootstrap work here: the handler answers 200 either way, a failure
- * cannot block org bootstrap, and a workspace that
- * is not ready is logged and abandoned rather than retried.
+ * Welcome delivery is a one-shot registration side effect. A failure is
+ * logged independently of the workspace initialization acknowledged by Clerk.
  */
 function enqueueWelcomeThreadDelivery(args: WelcomeThreadDelivery): void {
   waitUntil(
@@ -345,30 +318,6 @@ const handleOrganizationMembershipCreatedWebhook$ = command(
         signal,
       ),
     });
-    if (!isAdminMembershipRole(identity.role)) {
-      if (!identity.purchaseId) {
-        L.debug("ignoring non-admin organizationMembership.created event", {
-          orgId: identity.orgId,
-          userId: identity.userId,
-          role: identity.role,
-        });
-      }
-      return new Response("OK", { status: 200 });
-    }
-    enqueueOrgBootstrap({
-      eventType: "organizationMembership.created",
-      orgId: identity.orgId,
-      userId: identity.userId,
-      task: set(
-        bootstrapOrgAndDeliverWelcome$,
-        {
-          eventType: "organizationMembership.created",
-          orgId: identity.orgId,
-          userId: identity.userId,
-        },
-        signal,
-      ),
-    });
     return new Response("OK", { status: 200 });
   },
 );
@@ -414,35 +363,6 @@ const handleOrganizationDeletedWebhook$ = command(
   },
 );
 
-const bootstrapOrgAndDeliverWelcome$ = command(
-  async (
-    { set },
-    args: {
-      readonly eventType: string;
-      readonly orgId: string;
-      readonly userId: string;
-    },
-    signal: AbortSignal,
-  ): Promise<void> => {
-    await set(
-      ensureOrgLimitedFreeBootstrap$,
-      { orgId: args.orgId, ownerUserId: args.userId },
-      signal,
-    );
-    signal.throwIfAborted();
-    enqueueWelcomeThreadDelivery({
-      trigger: args.eventType,
-      orgId: args.orgId,
-      userId: args.userId,
-      task: set(
-        deliverWelcomeChatThread$,
-        { orgId: args.orgId, userId: args.userId },
-        signal,
-      ),
-    });
-  },
-);
-
 const handleOrganizationCreatedWebhook$ = command(
   async ({ set }, data: unknown, signal: AbortSignal): Promise<Response> => {
     const identity = organizationCreatedIdentity(data);
@@ -454,20 +374,11 @@ const handleOrganizationCreatedWebhook$ = command(
       return new Response("OK", { status: 200 });
     }
 
-    enqueueOrgBootstrap({
-      eventType: "organization.created",
-      orgId: identity.orgId,
-      userId: identity.userId,
-      task: set(
-        bootstrapOrgAndDeliverWelcome$,
-        {
-          eventType: "organization.created",
-          orgId: identity.orgId,
-          userId: identity.userId,
-        },
-        signal,
-      ),
-    });
+    const creator = { orgId: identity.orgId, ownerUserId: identity.userId };
+    await set(ensureOrgLimitedFreeBootstrap$, creator, signal);
+    signal.throwIfAborted();
+    await set(ensureSharedExecutor$, creator, signal);
+    signal.throwIfAborted();
 
     const name = stringPropertyOf(data, "name");
     if (name?.trim()) {
@@ -483,6 +394,12 @@ const handleOrganizationCreatedWebhook$ = command(
         .onConflictDoNothing({ target: orgCache.orgId });
       signal.throwIfAborted();
     }
+    enqueueWelcomeThreadDelivery({
+      trigger: "organization.created",
+      orgId: identity.orgId,
+      userId: identity.userId,
+      task: set(deliverWelcomeChatThread$, identity, signal),
+    });
     return new Response("OK", { status: 200 });
   },
 );
