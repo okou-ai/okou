@@ -1,8 +1,10 @@
 package ai.okou.android
 
+import ai.okou.android.artifacts.ArtifactSaveResult
 import ai.okou.android.auth.SessionModel
 import android.app.Activity
 import android.content.Intent
+import android.os.Looper
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -107,15 +109,26 @@ class ArtifactCatalogRootTest {
         compose.onNodeWithTag("artifact_preview_title").assertIsDisplayed()
         compose.onNodeWithText("Save file").assertIsDisplayed()
         val model = artifactModel
+        fun awaitSaveResult(result: ArtifactSaveResult) {
+            val expected = fixture.checklist.id to result
+            compose.waitUntil(10_000) {
+                // Deliver the network result before asking Compose to synchronize the UI.
+                shadowOf(Looper.getMainLooper()).idle()
+                model.state.value.saveResult == expected
+            }
+        }
+
         val saved = ByteArrayOutputStream()
         compose.runOnIdle { model.save(fixture.checklist.id) { saved } }
-        awaitText("File saved")
+        awaitSaveResult(ArtifactSaveResult.Saved)
+        compose.onNodeWithText("File saved").assertIsDisplayed()
         assertEquals(fixture.checklistBody, saved.toString(Charsets.UTF_8.name()))
         fixture.downloadGranted = false
         compose.runOnIdle {
             model.save(fixture.checklist.id) { error("Denied save opened the destination") }
         }
-        awaitText("Download access is unavailable")
+        awaitSaveResult(ArtifactSaveResult.Denied)
+        compose.onNodeWithText("Download access is unavailable").assertIsDisplayed()
         compose.onNodeWithText("Save file").assertDoesNotExist()
         assertEquals(2, fixture.requestedDownloads.size)
     }
