@@ -154,6 +154,8 @@ internal data class WorkspaceNavigation(
     val search: SearchRoute = SearchRoute.Closed,
     val artifacts: ArtifactsDestination? = null,
     val chatResourcesId: String? = null,
+    val chatArtifactLink: String? = null,
+    val chatArtifactFocusKey: String? = null,
 )
 
 internal data class ArtifactsDestination(val sourceId: String? = null)
@@ -178,6 +180,8 @@ internal fun rememberWorkspaceNavigation(): MutableState<WorkspaceNavigation> =
                         navigation.artifacts != null,
                         navigation.artifacts?.sourceId.orEmpty(),
                         navigation.chatResourcesId.orEmpty(),
+                        navigation.chatArtifactLink.orEmpty(),
+                        navigation.chatArtifactFocusKey.orEmpty(),
                     )
                 },
                 restore = { fields ->
@@ -203,6 +207,8 @@ internal fun rememberWorkspaceNavigation(): MutableState<WorkspaceNavigation> =
                         search ?: SearchRoute.Closed,
                         artifacts,
                         (fields.getOrNull(6) as? String)?.ifEmpty { null },
+                        (fields.getOrNull(7) as? String)?.ifEmpty { null },
+                        (fields.getOrNull(8) as? String)?.ifEmpty { null },
                     )
                 },
             )

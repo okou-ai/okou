@@ -85,6 +85,7 @@ internal fun ConversationRoute(
     historyAvailable: Boolean = true,
     realtime: ChatUpdatesModel? = null,
     controls: ConversationRunControls? = null,
+    artifactActions: ChatArtifactActions? = null,
     recovery: @Composable (failureId: String) -> Unit = {},
 ) {
     // Deferred work must acknowledge this composition's confirmation, never a newer State.value.
@@ -418,6 +419,7 @@ internal fun ConversationRoute(
                                 ConversationMessageRow(
                                     entry,
                                     revoke = controls?.revoke(entry.message.id),
+                                    artifactActions = artifactActions,
                                 )
                                 if (entry.message.status == "run.failed") recovery(entry.message.id)
                             }

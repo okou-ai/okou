@@ -109,7 +109,11 @@ internal fun conversationMessages(messages: List<HistoryMessage>): List<Conversa
 private fun HistoryMessage.isReply() = role == HistoryRole.Assistant && blocks.isNotEmpty()
 
 @Composable
-internal fun ConversationMessageRow(entry: ConversationMessage, revoke: (() -> Unit)?) {
+internal fun ConversationMessageRow(
+    entry: ConversationMessage,
+    revoke: (() -> Unit)?,
+    artifactActions: ChatArtifactActions? = null,
+) {
     val message = entry.message
     val colors = MaterialTheme.colorScheme
     when {
@@ -190,12 +194,12 @@ internal fun ConversationMessageRow(entry: ConversationMessage, revoke: (() -> U
                         ) {
                             for (earlier in entry.earlier) {
                                 Column(Modifier.testTag("message_${earlier.id}")) {
-                                    MessageBody(earlier)
+                                    MessageBody(earlier, artifactActions = artifactActions)
                                 }
                             }
                         }
                 }
-                MessageBody(message)
+                MessageBody(message, artifactActions = artifactActions)
             }
         else ->
             Column(Modifier.fillMaxWidth().testTag("message_${message.id}")) {
@@ -340,14 +344,18 @@ private fun ConversationMeta(text: String, maxLines: Int = Int.MAX_VALUE) {
 }
 
 @Composable
-private fun MessageBody(message: HistoryMessage, compact: Boolean = false) {
+private fun MessageBody(
+    message: HistoryMessage,
+    compact: Boolean = false,
+    artifactActions: ChatArtifactActions? = null,
+) {
     val typography = MaterialTheme.typography
     val style =
         if (compact) typography.bodyMedium
         else typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 28.sp, letterSpacing = 0.sp)
     SelectionContainer {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            for (block in message.blocks) {
+            for ((index, block) in message.blocks.withIndex()) {
                 when (block.kind) {
                     HistoryBlockKind.Unsupported ->
                         ConversationMeta(stringResource(R.string.history_unsupported))
@@ -356,7 +364,7 @@ private fun MessageBody(message: HistoryMessage, compact: Boolean = false) {
                     else -> Unit
                 }
                 if (block.kind == HistoryBlockKind.Text && message.role == HistoryRole.Assistant)
-                    HistoryMarkdown(block.text, style)
+                    HistoryMarkdown(block.text, style, artifactActions, "${message.id}/$index")
                 else Text(block.text, style = style, color = MaterialTheme.colorScheme.onSurface)
             }
         }

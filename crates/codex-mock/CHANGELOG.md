@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.93](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.92...codex-mock-v0.12.93) (2026-11-22)
+
+
+### Refactoring
+
+* **codex-mock:** share warning notification construction ([#49941](https://github.com/okou-ai/okou/issues/49941)) ([9b73d47](https://github.com/okou-ai/okou/commit/9b73d4739a37ce02417974f8c154bce01b6a5f38))
+
 ## [0.12.92](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.91...codex-mock-v0.12.92) (2026-11-22)
 
 

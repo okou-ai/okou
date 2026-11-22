@@ -840,12 +840,21 @@ impl HttpClient {
         data: Bytes,
         content_type: &str,
     ) -> Result<(), AgentError> {
-        let response = self
-            .inner()?
+        let client = self.inner()?;
+        Self::send_presigned_put(client, url, data.into(), content_type).await
+    }
+
+    async fn send_presigned_put(
+        client: &Client,
+        url: &str,
+        body: reqwest::Body,
+        content_type: &str,
+    ) -> Result<(), AgentError> {
+        let response = client
             .put(url)
             .timeout(Duration::from_secs(constants::HTTP_UPLOAD_TIMEOUT_SECS))
             .header("Content-Type", content_type)
-            .body(data)
+            .body(body)
             .send()
             .await
             .map_err(|error| {
@@ -1025,23 +1034,7 @@ impl HttpClient {
         let file = tokio::fs::File::open(path).await?;
         let file_len = file.metadata().await?.len();
         let body = reqwest::Body::wrap(SizedBody::new(file, file_len));
-        let response = client
-            .put(url)
-            .timeout(Duration::from_secs(constants::HTTP_UPLOAD_TIMEOUT_SECS))
-            .header("Content-Type", content_type)
-            .body(body)
-            .send()
-            .await
-            .map_err(|error| {
-                AgentError::Http(format!("PUT presigned: {}", format_reqwest_error(error)))
-            })?;
-        if !response.status().is_success() {
-            return Err(AgentError::Http(format!(
-                "PUT presigned: HTTP {}",
-                response.status()
-            )));
-        }
-        Ok(())
+        Self::send_presigned_put(client, url, body, content_type).await
     }
 }
 
