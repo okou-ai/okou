@@ -102,7 +102,7 @@ def report_connector_usage(flow: http.HTTPFlow, run_id: str) -> None:
         return
     firewall_name = flow_metadata.firewall_name(flow.metadata)
     # Router consumption is queried once by the platform at Run completion.
-    if firewall_name.startswith("model-provider:") or firewall_name == "data-router":
+    if flow_metadata.is_model_provider_firewall(firewall_name) or firewall_name == "data-router":
         return
     registration = _REGISTRATIONS.get(firewall_name)
     if registration is None:

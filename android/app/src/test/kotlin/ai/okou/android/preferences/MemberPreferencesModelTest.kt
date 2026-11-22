@@ -9,6 +9,7 @@ import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesSupportedLocalesItem
 import ai.okou.android.api.generated.UserPreferencesTheme
+import ai.okou.android.artifacts.ArtifactService
 import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.testOrganization
@@ -41,6 +42,9 @@ class MemberPreferencesModelTest {
         ai.okou.android.chat.RealtimeService by ai.okou.android.TestRealtimeService(),
         ChatListService by TestChatService(),
         ai.okou.android.chat.ChatComposerService by ai.okou.android.TestChatComposerService() {
+        override val artifacts: ArtifactService
+            get() = error("Artifacts are outside this fixture")
+
         override suspend fun sendControl(
             request: ai.okou.android.api.generated.SendRequest
         ): ai.okou.android.api.generated.AcceptedInput = error("No control backend in this fixture")
