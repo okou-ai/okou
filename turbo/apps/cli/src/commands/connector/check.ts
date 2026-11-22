@@ -1,5 +1,4 @@
 import { connectorAccountTargetKey } from "@okouai/api-contracts/contracts/connector-accounts";
-import { getOkouAgentId } from "../../lib/okou-env";
 import { Command, Option } from "commander";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectorRuntimeTarget } from "@okouai/api-contracts/contracts/runners";
@@ -46,9 +45,9 @@ import {
 import {
   CALLBACK_PROMPT_PLACEHOLDER,
   connectorActionUrl,
-  currentPermissionCallbackThread,
   printCallbackActionUrlExample,
 } from "./action-url";
+import { currentPermissionCallbackThread } from "./permission-action-url";
 import {
   isRunBoundConnectorContext,
   resolveRunConnectorAccountLookups,
@@ -68,7 +67,6 @@ interface DiagContext {
   readonly credentialResolution: "network-boundary" | "none";
   readonly run: ResolvedDiagnostic["run"];
   readonly platformOrigin: string;
-  readonly agentId: string | undefined;
   readonly runBound: boolean;
 }
 
@@ -89,13 +87,12 @@ function printMemberConnectionStatus(
     const url = connectorActionUrl({
       origin: ctx.platformOrigin,
       path: `/connectors/${ctx.connectorSlug}/reconnect/${account.id}`,
-      agentId: ctx.agentId,
     });
     console.log(
       `The ${ctx.label} connector has a saved account that needs to be reconnected.`,
     );
     console.log(`Reconnect it at: [Reconnect ${ctx.label}](${url})`);
-    printCallbackActionUrlExample(url, ctx.agentId);
+    printCallbackActionUrlExample(url);
   } else if (facts.memberStatus === "connected") {
     console.log(`The ${ctx.label} connector is connected and active.`);
   } else if (facts.memberStatus === "not-connected") {
@@ -103,15 +100,13 @@ function printMemberConnectionStatus(
     const url = connectorActionUrl({
       origin: ctx.platformOrigin,
       path: `/connectors/${ctx.connectorSlug}/connect`,
-      agentId: ctx.agentId,
     });
     console.log(`Connect it at: [Connect ${ctx.label}](${url})`);
-    printCallbackActionUrlExample(url, ctx.agentId);
+    printCallbackActionUrlExample(url);
   } else {
     const url = connectorActionUrl({
       origin: ctx.platformOrigin,
       path: "/connectors",
-      agentId: ctx.agentId,
     });
     console.log(
       `Review the ${ctx.label} accounts: [Manage ${ctx.label} accounts](${url})`,
@@ -154,11 +149,10 @@ function printRunConnectionStatus(
     const url = connectorActionUrl({
       origin: ctx.platformOrigin,
       path: `/connectors/${ctx.connectorSlug}/reconnect/${runAccount.connectionId}`,
-      agentId: ctx.agentId,
     });
     console.log(`The ${ctx.label} connector needs to be reconnected.`);
     console.log(`Reconnect it at: [Reconnect ${ctx.label}](${url})`);
-    printCallbackActionUrlExample(url, ctx.agentId);
+    printCallbackActionUrlExample(url);
     console.log("After reconnecting, start a new run.");
   } else {
     console.log(`The ${ctx.label} connector is connected and active.`);
@@ -718,7 +712,6 @@ Permission recovery:
         credentialResolution: result.connector.credentialResolution,
         run: result.run,
         platformOrigin: platformUrl.origin,
-        agentId: getOkouAgentId(),
         runBound: isRunBoundConnectorContext(),
       };
 

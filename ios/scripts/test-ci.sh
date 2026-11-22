@@ -26,7 +26,7 @@ expect() {
   local expected=$1
   shift
   local actual
-  actual=$(detect "$@")
+  actual=$(detect "$@" | sed -n "s/^${selection:-needed}=//p")
   if [ "$actual" != "$expected" ]; then
     echo "Expected iOS check selection $expected, got $actual" >&2
     exit 1
@@ -133,6 +133,26 @@ reject EVENT_NAME=push
 reject EVENT_NAME=pull_request CHECKOUT_REF=refs/heads/ios-pr
 reject EVENT_NAME=unexpected
 
+# A release metadata change skips the script suite, but a script change in an
+# earlier queue entry or a deleted input still selects it.
+metadata_base=$(git rev-parse HEAD)
+echo 1.2.3 > ios/version.txt
+commit release-metadata
+selection=scripts-needed expect false EVENT_NAME=merge_group MERGE_GROUP_BASE_SHA="$metadata_base"
+mkdir -p ios/scripts
+touch ios/scripts/example.sh
+commit add-script
+script_head=$(git rev-parse HEAD)
+echo later >> turbo/app.ts
+commit later
+selection=scripts-needed expect true EVENT_NAME=merge_group MERGE_GROUP_BASE_SHA="$metadata_base"
+selection=scripts-needed expect false EVENT_NAME=merge_group MERGE_GROUP_BASE_SHA="$script_head"
+git rm --quiet ios/scripts/example.sh
+commit remove-script
+selection=scripts-needed expect true EVENT_NAME=pull_request HEAD_REF=release-please--branches--main PULL_REQUEST_BASE_SHA="$script_head"
+selection=scripts-needed expect true EVENT_NAME=workflow_dispatch
+
+export SCRIPTS_NEEDED=true
 gate() {
   local lint_result=success
   local preview_result=success
@@ -142,6 +162,13 @@ gate() {
 }
 gate success true success
 gate success false skipped
+SCRIPTS_NEEDED=false gate success false skipped skipped skipped
+for unexpected in success failure cancelled; do
+  if SCRIPTS_NEEDED=false gate success false skipped skipped "$unexpected" > "$test_root/rejected.log" 2>&1; then
+    echo "Gate accepted unexpected script result $unexpected" >&2
+    exit 1
+  fi
+done
 for preview_result in failure cancelled skipped ''; do
   if gate success true success success success success "$preview_result" > "$test_root/rejected.log" 2>&1; then
     echo "Gate accepted failed/missing staging device artifacts $preview_result" >&2

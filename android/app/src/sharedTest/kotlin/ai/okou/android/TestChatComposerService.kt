@@ -10,7 +10,7 @@ import ai.okou.android.chat.plainDraftDocument
 
 /** Existing shell/auth fixtures do not expose a remote text-write capability. */
 class TestChatComposerService : ChatComposerService {
-    override suspend fun newChatAgent(): String? = null
+    override suspend fun newChatReady(): Boolean = false
 
     override suspend fun composerDraft(target: ServerDraftTarget): ComposerDraft =
         plainDraftDocument("")

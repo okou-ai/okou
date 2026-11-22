@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 import { array, boolean, literal, number, object, string } from "zod";
+import { migrationTimestamp } from "../../migration-timestamp";
 import { applyPendingMigrations } from "../../migration-runner";
 import { parseSnapshot, type Snapshot } from "./snapshot";
 
@@ -230,7 +231,12 @@ try {
   proxyUrl.hostname = "127.0.0.1";
   proxyUrl.port = String(proxyAddress.port);
   await admin.unsafe(`CREATE DATABASE "${databaseName}"`);
-  await applyPendingMigrations(sql);
+  // This operator migrates historical Agent associations before their columns are retired.
+  await applyPendingMigrations(sql, {
+    beforeMillis: await migrationTimestamp(
+      "1610_contract_chat_run_agent_storage",
+    ),
+  });
   await sql`INSERT INTO agents (id, org_id, owner, name, display_name, visibility, instructions, instructions_bundle)
     VALUES (${defaultAgent}, ${org}, ${administrator}, 'okou', 'Okou', 'public', ${canary}, ${sql.json(bundle)}),
       (${oldAgent}, ${org}, ${owner}, 'Research', 'Research Agent', 'private', ${canary}, ${sql.json(bundle)}),

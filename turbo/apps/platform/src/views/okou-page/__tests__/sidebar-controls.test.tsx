@@ -96,7 +96,6 @@ test("Recognize and pin sidebar conversation states", async () => {
   });
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: { [AGENT_ID]: "unread" },
       threads: {
         [INCIDENT_THREAD_ID]: "unread",
         [AUTOMATION_THREAD_ID]: "active",
@@ -200,7 +199,6 @@ test("Refresh the thread unread indicator", async () => {
   let hasUnread = false;
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: hasUnread ? { [AGENT_ID]: "unread" } : {},
       threads: hasUnread ? { [EXISTING_THREAD_ID]: "unread" } : {},
       unreadAt: hasUnread
         ? { [EXISTING_THREAD_ID]: "2026-03-10T00:05:00Z" }
@@ -247,7 +245,6 @@ test.each(["indicator", "read cursor"] as const)(
     let running = false;
     context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
       return respond(200, {
-        agents: {},
         threads: { [EXISTING_THREAD_ID]: running ? "active" : "unread" },
         unreadAt: running
           ? {}
@@ -323,7 +320,6 @@ test.each([false, true])(
         }
       }
       return respond(200, {
-        agents: unread ? { [AGENT_ID]: "unread" } : {},
         threads: unread ? { [EXISTING_THREAD_ID]: "unread" } : {},
         unreadAt: unread
           ? { [EXISTING_THREAD_ID]: "2026-03-10T00:05:00Z" }

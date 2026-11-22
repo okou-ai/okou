@@ -1,6 +1,4 @@
-import { uuid } from "zod";
-import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
-import { getOkouAgentId, getOkouChatThreadId } from "../../lib/okou-env";
+import { getOkouChatThreadId } from "../../lib/okou-env";
 
 export const CALLBACK_PROMPT_PLACEHOLDER =
   "SOMETHING_AGENT_WANT_TO_BE_CALLBACK";
@@ -10,21 +8,6 @@ export const CALLBACK_PROMPT_GUIDANCE = `Keep callback prompts concise and withi
 
 export function connectorActionCallbackAvailable(): boolean {
   return Boolean(getOkouChatThreadId()?.trim());
-}
-
-function currentChatThreadId(agentId: string | undefined): string | null {
-  const threadId = getOkouChatThreadId()?.trim();
-  const currentAgentId = getOkouAgentId()?.trim();
-  if (!threadId || !currentAgentId || agentId !== currentAgentId) {
-    return null;
-  }
-  return threadId;
-}
-
-export function currentChatSupportsActionCallback(
-  agentId: string | undefined,
-): boolean {
-  return currentChatThreadId(agentId) !== null;
 }
 
 function serializeCallbackActionUrl(
@@ -44,36 +27,7 @@ function serializeCallbackActionUrl(
 export function finalizeActionUrl(
   actionUrl: URL,
   callbackPrompt: string | undefined,
-  agentId: string | undefined,
-): string {
-  return finalizeCallbackUrl(actionUrl, callbackPrompt, () => {
-    return currentChatThreadId(agentId);
-  });
-}
-
-const threadIdSchema = uuid();
-export function currentPermissionCallbackThread(): string | undefined {
-  const parsed = threadIdSchema.safeParse(getOkouChatThreadId());
-  return parsed.success && decodeSandboxTokenPayload()?.runId
-    ? parsed.data
-    : undefined;
-}
-
-export function finalizePermissionActionUrl(
-  actionUrl: URL,
-  callbackPrompt: string | undefined,
-): string {
-  return finalizeCallbackUrl(
-    actionUrl,
-    callbackPrompt,
-    currentPermissionCallbackThread,
-  );
-}
-
-function finalizeCallbackUrl(
-  actionUrl: URL,
-  callbackPrompt: string | undefined,
-  resolveThreadId: () => string | null | undefined,
+  resolveThreadId = getOkouChatThreadId,
 ): string {
   if (callbackPrompt === undefined) {
     return actionUrl.toString();
@@ -89,7 +43,7 @@ function finalizeCallbackUrl(
     );
   }
 
-  const threadId = resolveThreadId();
+  const threadId = resolveThreadId()?.trim();
   if (!threadId) {
     throw new Error(
       "--callback-prompt requires the current web chat and its execution context",
@@ -101,20 +55,17 @@ function finalizeCallbackUrl(
 export function connectorActionUrl(args: {
   readonly origin: string;
   readonly path: string;
-  readonly agentId?: string;
 }): string {
   const url = new URL(args.path, args.origin);
-  if (args.agentId) {
-    url.searchParams.set("agentId", args.agentId);
+  const threadId = getOkouChatThreadId()?.trim();
+  if (threadId && url.pathname !== "/connectors") {
+    url.searchParams.set("threadId", threadId);
   }
   return url.toString();
 }
 
-function callbackActionUrlExample(
-  actionUrl: string,
-  agentId: string | undefined,
-): string | null {
-  const threadId = currentChatThreadId(agentId);
+function callbackActionUrlExample(actionUrl: string): string | null {
+  const threadId = getOkouChatThreadId()?.trim();
   if (!threadId) {
     return null;
   }
@@ -126,11 +77,8 @@ function callbackActionUrlExample(
   );
 }
 
-export function printCallbackActionUrlExample(
-  actionUrl: string,
-  agentId: string | undefined,
-): void {
-  const callbackUrl = callbackActionUrlExample(actionUrl, agentId);
+export function printCallbackActionUrlExample(actionUrl: string): void {
+  const callbackUrl = callbackActionUrlExample(actionUrl);
   if (!callbackUrl) {
     return;
   }

@@ -14,7 +14,7 @@ from mitmproxy import http
 
 import flow_metadata
 import flow_metadata_keys as metadata_keys
-import runtime_url_parsing
+import model_usage_request
 from usage.model_tokens import MODEL_USAGE_CATEGORIES
 from usage.openai_responses import merge_openai_responses_usage_result
 from usage.quantities import MAX_USAGE_QUANTITY, is_usage_quantity
@@ -178,14 +178,11 @@ def admit(flow: http.HTTPFlow, *, namespace: str | None = None) -> None:
         if len(namespace.encode()) > MAX_ID_BYTES or len(run.pending) >= MAX_RESPONSES_PER_RUN:
             _mark(run, "retention_lost")
             return
-        path = runtime_url_parsing.strip_url_query_and_fragment(
-            flow_metadata.original_url(flow.metadata) or flow.request.path
-        ).rstrip("/")
-        state = _Flow(
-            run, namespace, flow.id, websocket, path.endswith(("/responses", "/chat/completions"))
-        )
+        target = model_usage_request.normalized_target(flow)
+        openai = model_usage_request.openai_protocol(target) is not None
+        state = _Flow(run, namespace, flow.id, websocket, openai)
         flow.metadata[_FLOW_STATE] = state
-        if not path.endswith(("/messages", "/responses", "/chat/completions")):
+        if not openai and not target.endswith("/messages"):
             _mark(run, "unsupported_protocol")
         if not websocket:
             run.pending.add(flow.id)

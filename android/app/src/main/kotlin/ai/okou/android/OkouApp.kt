@@ -11,7 +11,6 @@ import ai.okou.android.chat.ChatListScreen
 import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.ChatRowAction
-import ai.okou.android.chat.ChatRowUndo
 import ai.okou.android.chat.ChatTitleSearch
 import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.ConfirmedChat
@@ -47,7 +46,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -57,11 +55,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.SnackbarVisuals
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -81,7 +76,6 @@ import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -94,7 +88,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -214,46 +207,36 @@ internal fun OkouApp(
         }
 
     LaunchedEffect(chats, showChatList) { if (!showChatList) chats?.clearRowUndo() }
-    list.rowUndo
-        ?.takeIf { showChatList }
-        ?.let { undo ->
-            val message =
-                stringResource(
-                    when (undo.action) {
-                        ChatRowAction.Archive -> R.string.chat_undo_archived
-                        ChatRowAction.Unarchive -> R.string.chat_undo_unarchived
-                        else -> R.string.chat_undo_marked_read
-                    }
-                )
-            val label = stringResource(R.string.chat_undo)
-            LaunchedEffect(chats, undo, message, label) {
-                snackbar.currentSnackbarData?.dismiss()
-                snackbar.showSnackbar(ChatUndoSnackbar(undo, message, label))
-                chats?.dismissRowUndo(undo)
-            }
-        }
+    if (showChatList && chats != null) ChatUndoFeedback(chats, list, snackbar)
     list.failedRowAction
         ?.takeIf { list.rowUndo == null }
-        ?.let { action ->
+        ?.let { failure ->
+            val action = failure.action
             val message =
                 stringResource(
-                    if (action.updatesChat) R.string.chat_row_action_failed
-                    else R.string.chat_read_action_failed
+                    when {
+                        failure.rejected -> R.string.chat_row_action_rejected
+                        action.updatesChat -> R.string.chat_row_action_failed
+                        else -> R.string.chat_read_action_failed
+                    }
                 )
-            val refreshLabel = stringResource(R.string.chat_refresh)
-            LaunchedEffect(chats, action, message, showChatList) {
+            val refreshLabel = if (failure.rejected) null else stringResource(R.string.chat_refresh)
+            LaunchedEffect(chats, failure, message, showChatList) {
                 if (
                     showChatList &&
                         snackbar.showSnackbar(
                             message,
                             actionLabel = refreshLabel,
-                            duration = SnackbarDuration.Indefinite,
+                            withDismissAction = !failure.rejected,
+                            duration =
+                                if (failure.rejected) SnackbarDuration.Short
+                                else SnackbarDuration.Indefinite,
                         ) == SnackbarResult.ActionPerformed
                 ) {
                     if (action.updatesChat) chats?.reloadAfterRowActionFailure()
                     else chats?.refreshIndicators()
                 }
-                chats?.dismissRowActionFailure(action)
+                chats?.dismissRowActionFailure(failure)
             }
         }
     list.markAllReadResult
@@ -529,10 +512,7 @@ internal fun OkouApp(
         contentWindowInsets = WindowInsets.safeDrawing,
         snackbarHost = {
             if (!showChatList) {
-                WorkspaceFeedbackHost(
-                    snackbar,
-                    Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-                )
+                WorkspaceFeedbackHost(snackbar, Modifier.padding(bottom = 16.dp))
             }
         },
         topBar = {
@@ -651,13 +631,7 @@ internal fun OkouApp(
                                     feedback = {
                                         WorkspaceFeedbackHost(
                                             snackbar,
-                                            Modifier.padding(horizontal = 16.dp)
-                                                .testTag("chat_list_feedback"),
-                                            undoEnabled = { undo ->
-                                                list.rowUndo === undo &&
-                                                    undo.threadId !in list.pendingRowActions
-                                            },
-                                            onUndo = { chats?.undoRowAction(it) },
+                                            Modifier.testTag("chat_list_feedback"),
                                         )
                                     },
                                 )
@@ -729,9 +703,8 @@ internal fun OkouApp(
                                             ) {
                                                 val composerTarget =
                                                     ComposerTarget(
-                                                        thread.id,
-                                                        thread.agentId,
-                                                        thread.projectId,
+                                                        threadId = thread.id,
+                                                        projectId = thread.projectId,
                                                     )
                                                 RunControlsPanel(controls, chats.history, thread.id)
                                                 recovery?.let {
@@ -788,87 +761,6 @@ internal fun OkouApp(
                                 }
                             }
                         }
-                    }
-                }
-            }
-        }
-    }
-}
-
-private data class ChatUndoSnackbar(
-    val undo: ChatRowUndo,
-    override val message: String,
-    override val actionLabel: String,
-) : SnackbarVisuals {
-    override val withDismissAction = true
-    override val duration = SnackbarDuration.Indefinite
-}
-
-@Composable
-private fun WorkspaceFeedbackHost(
-    state: SnackbarHostState,
-    modifier: Modifier,
-    undoEnabled: (ChatRowUndo) -> Boolean = { false },
-    onUndo: (ChatRowUndo) -> Unit = {},
-) {
-    val accessibility = LocalAccessibilityManager.current
-    val current = state.currentSnackbarData
-    LaunchedEffect(current, accessibility) {
-        if (current != null && !current.visuals.withDismissAction) {
-            val duration =
-                accessibility?.calculateRecommendedTimeoutMillis(
-                    5_000L,
-                    containsText = true,
-                    containsControls = current.visuals.actionLabel != null,
-                ) ?: 5_000L
-            delay(duration)
-            current.dismiss()
-        }
-    }
-    SnackbarHost(state) { data ->
-        Surface(
-            modifier = modifier.widthIn(max = 480.dp).fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.inverseSurface,
-            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-            shadowElevation = 4.dp,
-        ) {
-            Row(
-                Modifier.heightIn(min = 48.dp).padding(horizontal = 14.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                val action = data.visuals.actionLabel
-                Text(
-                    data.visuals.message,
-                    modifier = if (action == null) Modifier else Modifier.weight(1f),
-                    style =
-                        MaterialTheme.typography.bodyMedium.copy(
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp,
-                            letterSpacing = 0.sp,
-                        ),
-                )
-                if (action != null) {
-                    val undo = (data.visuals as? ChatUndoSnackbar)?.undo
-                    TextButton(
-                        onClick = { if (undo == null) data.performAction() else onUndo(undo) },
-                        enabled = undo == null || undoEnabled(undo),
-                        colors =
-                            ButtonDefaults.textButtonColors(
-                                contentColor =
-                                    if (data.visuals.withDismissAction) LocalUndoActionColor.current
-                                    else MaterialTheme.colorScheme.inversePrimary
-                            ),
-                    ) {
-                        Text(action)
-                    }
-                }
-                if (data.visuals.withDismissAction) {
-                    IconButton(onClick = data::dismiss) {
-                        Icon(
-                            painterResource(R.drawable.ic_close),
-                            stringResource(R.string.chat_feedback_dismiss),
-                        )
                     }
                 }
             }

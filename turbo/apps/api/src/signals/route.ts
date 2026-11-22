@@ -11,6 +11,7 @@ import { integrationsWechatMessagesRoutes } from "./routes/integrations-wechat-m
 import type { RouteEntry } from "./route-entry";
 import {
   agentDraftRoutes,
+  composerDraftRoutes,
   projectAgentDraftRoutes,
 } from "./routes/agent-draft";
 import { feedRoutes } from "./routes/feed";
@@ -328,6 +329,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronTelegramCleanupRoutes,
   ...emailUnsubscribeRoutes,
   ...agentDraftRoutes,
+  ...composerDraftRoutes,
   ...feedRoutes,
   ...agentInstructionsRoutes,
   ...instructionsRoutes,

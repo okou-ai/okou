@@ -70,6 +70,7 @@ class MemberPreferencesModelTest {
                     locale =
                         request.locale?.let { UserPreferencesLocale.valueOf(it.name) }
                             ?: stored.locale,
+                    timezone = request.timezone ?: stored.timezone,
                 )
             stored
         }
@@ -284,20 +285,122 @@ class MemberPreferencesModelTest {
     }
 
     @Test
+    fun timezoneConflictRetriesAfterReconnectAndPreservesLaterAppearanceChanges() {
+        val online = MutableStateFlow(false)
+        val service = Service()
+        val save = service.write
+        service.write = { request ->
+            save(request)
+            throw ApiFailure.Http(409, "CONFLICT", null, null)
+        }
+        check(service, online) { model, api, _ ->
+            runCurrent()
+            model.selectTheme(UserPreferencesTheme.DARK)
+            model.selectTimezone("Asia/Tokyo")
+            online.value = true
+            runCurrent()
+            assertEquals(PreferenceStatus.SaveFailed, model.uiState.value.status)
+            assertEquals("Asia/Tokyo", api.stored.timezone)
+            assertEquals(UserPreferencesTheme.DARK, api.stored.theme)
+
+            api.stored = api.stored.copy(theme = UserPreferencesTheme.LIGHT)
+            api.write = save
+            online.value = false
+            runCurrent()
+            model.retry()
+            runCurrent()
+            assertEquals(1, api.requests.size)
+
+            online.value = true
+            runCurrent()
+
+            assertEquals(
+                listOf(
+                    UpdatePreferencesRequest(
+                        timezone = "Asia/Tokyo",
+                        theme = UpdatePreferencesRequestTheme.DARK,
+                    ),
+                    UpdatePreferencesRequest(timezone = "Asia/Tokyo"),
+                ),
+                api.requests,
+            )
+            assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
+            assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.confirmed.theme)
+            assertNull(model.uiState.value.pending)
+        }
+    }
+
+    @Test
+    fun timezoneConflictRetryRespectsANewerSavedTimezone() {
+        val service = Service()
+        val save = service.write
+        service.write = { request ->
+            save(request)
+            throw ApiFailure.Http(409, "CONFLICT", null, null)
+        }
+        check(service) { model, api, _ ->
+            model.selectTimezone("Asia/Tokyo")
+            runCurrent()
+            assertEquals(PreferenceStatus.SaveFailed, model.uiState.value.status)
+
+            api.stored = api.stored.copy(timezone = "Asia/Shanghai")
+            api.write = save
+            model.retry()
+            runCurrent()
+
+            assertEquals(listOf(UpdatePreferencesRequest(timezone = "Asia/Tokyo")), api.requests)
+            assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
+            assertEquals("Asia/Shanghai", model.uiState.value.timezone)
+            assertNull(model.uiState.value.pending)
+        }
+    }
+
+    @Test
+    fun lostTimezoneWriteResponseRetriesTheScheduleAfterReadingTheSavedValue() {
+        val service = Service()
+        val save = service.write
+        service.write = { request ->
+            save(request)
+            throw IOException("response lost before schedule confirmation")
+        }
+        check(service) { model, api, _ ->
+            model.selectTimezone("Asia/Tokyo")
+            runCurrent()
+            assertEquals(PreferenceStatus.SaveFailed, model.uiState.value.status)
+            assertEquals("Asia/Tokyo", api.stored.timezone)
+
+            api.write = save
+            model.retry()
+            runCurrent()
+
+            val update = UpdatePreferencesRequest(timezone = "Asia/Tokyo")
+            assertEquals(listOf(update, update), api.requests)
+            assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
+            assertNull(model.uiState.value.pending)
+        }
+    }
+
+    @Test
     fun offlineChoicesStayLocalUntilReconnectAndOnlyTheLastValueIsSent() {
         val online = MutableStateFlow(false)
         check(online = online) { model, api, _ ->
             runCurrent()
             model.selectTheme(UserPreferencesTheme.DARK)
             model.selectTheme(UserPreferencesTheme.LIGHT)
+            model.selectTimezone("Asia/Tokyo")
+            model.selectTimezone("Asia/Shanghai")
             runCurrent()
             assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.theme)
+            assertEquals("Asia/Shanghai", model.uiState.value.timezone)
+            assertEquals("UTC", model.uiState.value.confirmed.timezone)
             assertTrue(api.requests.isEmpty())
 
             online.value = true
             runCurrent()
             assertEquals(UserPreferencesTheme.LIGHT, model.uiState.value.confirmed.theme)
             assertEquals(UpdatePreferencesRequestTheme.LIGHT, api.requests.single().theme)
+            assertEquals("Asia/Shanghai", api.requests.single().timezone)
+            assertEquals("Asia/Shanghai", model.uiState.value.confirmed.timezone)
         }
     }
 

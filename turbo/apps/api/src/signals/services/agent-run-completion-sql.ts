@@ -36,7 +36,6 @@ interface CompletionPublicationInput {
 
 const completionRunColumns = Object.freeze({
   id: agentRuns.id,
-  agentId: agentRuns.agentId,
   orgId: agentRuns.orgId,
   userId: agentRuns.userId,
   chatThreadId: agentRuns.chatThreadId,
@@ -205,7 +204,6 @@ function mutationPlan(
     ),
     returning: returned({
       id: agentRuns.id,
-      agentId: agentRuns.agentId,
       userId: agentRuns.userId,
       orgId: agentRuns.orgId,
       chatThreadId: agentRuns.chatThreadId,

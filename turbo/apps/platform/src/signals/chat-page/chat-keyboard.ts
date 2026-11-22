@@ -384,7 +384,6 @@ const renameDialogRequestForThread$ = command(
     return {
       threadId,
       title: threadMeta?.title,
-      agentId: threadMeta?.agentId,
     };
   },
 );

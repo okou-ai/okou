@@ -551,7 +551,7 @@ jobs:
         run: >-
           git -c protocol.version=2 fetch --no-tags --no-recurse-submodules
           --unshallow --filter=tree:0 origin "$ANDROID_RELEASE_SOURCE_SHA"
-      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
           java-version: "21"
@@ -2953,6 +2953,7 @@ jobs:
         release-please,
         builds-complete,
         promote-api-production,
+        promote-app-worker-production,
         build-runner-production,
         runner-production-host-groups,
       ]
@@ -2962,7 +2963,9 @@ jobs:
       needs.builds-complete.result == 'success' &&
       needs.build-runner-production.result == 'success' &&
       (needs.release-please.outputs.api_deploy_required != 'true' ||
-       needs.promote-api-production.result == 'success')
+       needs.promote-api-production.result == 'success') &&
+      (needs.release-please.outputs.app_deploy_required != 'true' ||
+       needs.promote-app-worker-production.result == 'success')
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116

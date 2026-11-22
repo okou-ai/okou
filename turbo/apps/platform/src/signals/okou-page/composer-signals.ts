@@ -265,7 +265,6 @@ export interface ComposerSignals {
   readonly create: ComposerCreateSignals;
   readonly addMenu: ComposerUiSignalGroups["addMenu"];
   readonly taskChips: ComposerTaskChipsSignals;
-  readonly agentId?: string;
   readonly threadId?: string;
   /** Present on a new chat's page composer, which can start it in a Project. */
   readonly project?: ComposerProjectSignals;
@@ -306,7 +305,6 @@ export interface ComposerSignals {
 }
 
 interface CreateComposerSignalsOptions {
-  readonly agentId?: string;
   readonly draft: {
     readonly signals: DraftSignals;
     readonly load$: ComposerDraftSignals["load$"];
@@ -560,14 +558,10 @@ export function createComposerSignals(
 ): ComposerSignals {
   const eventSignals = createComposerChatEventSignals(options.eventSignals);
   const draft = options.draft.signals;
-  const agentId$ = computed((): string | null => {
-    return options.agentId ?? null;
-  });
   const ui = createComposerUiSignals();
   const workflowComposer = createWorkflowComposerSignals(
     draft,
     ui.openTemplatePickerDialog$,
-    agentId$,
     {
       autoFocus: true,
       ...(options.forwardComposer
@@ -599,7 +593,6 @@ export function createComposerSignals(
   const annotation = createComposerAttachmentAnnotation(draft, draftSignals);
   const connectorCompletion = createComposerConnectorCompletion(connector);
   return {
-    agentId: options.agentId,
     threadId: options.threadId,
     /** Starts the composer's owner-scoped work under its owner's signal. */
     setup$: command(({ set }, signal: AbortSignal) => {
@@ -630,7 +623,7 @@ export function createComposerSignals(
     },
     computer: {
       ...createComputerUseGuideSignals(
-        `${options.forwardComposer ? "forward" : "composer"}:${options.threadId ?? options.agentId}`,
+        `${options.forwardComposer ? "forward" : "composer"}:${options.threadId ?? "new-chat"}`,
       ),
       computerUseHostId$: options.computerUseHostId$,
       cloudBrowserEnabled$: options.cloudBrowserEnabled$,

@@ -70,6 +70,7 @@ import { MarkdownColorPreview } from "./markdown-color-preview.tsx";
 import { MarkdownTable } from "./markdown-table.tsx";
 import { MarkdownFrame } from "./markdown-frame.tsx";
 import { MathFormulaView } from "./math-formula.tsx";
+import { urlLabel } from "./url-label.tsx";
 import { MermaidDiagramView } from "./mermaid-diagram.tsx";
 
 type MarkdownNodeProp = { node?: Element };
@@ -91,11 +92,26 @@ function omitMarkdownNodeProp<Props extends object>(
   return cleanProps;
 }
 
-function PlainLink({ href, children, ...rest }: MarkdownAnchorProps) {
+function PlainLink({
+  href,
+  children,
+  icon,
+  ...rest
+}: MarkdownAnchorProps & { icon?: ReactNode }) {
   const linkProps = omitMarkdownNodeProp(rest);
+  const address =
+    typeof children === "string" && /^(?:https?:\/\/|www\.)/iu.test(children)
+      ? children
+      : undefined;
+  const absolute = address?.startsWith("www.") ? `http://${address}` : address;
+  const displaysDestination =
+    absolute !== undefined &&
+    (absolute === href ||
+      (URL.canParse(absolute) && new URL(absolute).href === href));
   return (
     <a {...linkProps} href={href} target="_blank" rel="noopener noreferrer">
-      {children}
+      {icon}
+      {address && displaysDestination ? urlLabel(address) : children}
     </a>
   );
 }
@@ -315,6 +331,11 @@ function MediaLink({ href, children, ...rest }: MarkdownAnchorProps) {
     <PlainLink
       href={href}
       {...rest}
+      icon={
+        card?.kind === "artifact" && (
+          <ArtifactLinkIcon artifact={card.signals} />
+        )
+      }
       onClick={(event) => {
         if (shouldUseNativeAnchorNavigation(event)) {
           return;
@@ -341,9 +362,6 @@ function MediaLink({ href, children, ...rest }: MarkdownAnchorProps) {
         }
       }}
     >
-      {card?.kind === "artifact" && (
-        <ArtifactLinkIcon artifact={card.signals} />
-      )}
       {children}
     </PlainLink>
   );

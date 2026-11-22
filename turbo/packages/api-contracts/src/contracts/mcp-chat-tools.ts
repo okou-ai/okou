@@ -102,15 +102,10 @@ export const mcpCancelRunOutputSchema = runsCancelContract.cancel.responses[200]
   .omit({ id: true })
   .extend({ runId: mcpRunIdSchema });
 
-export const mcpGetChatIndicatorsOutputSchema = indicatorsSchema
-  .omit({ agents: true })
-  .extend({
-    threads: record(
-      mcpThreadIdSchema,
-      indicatorsSchema.shape.threads.valueType,
-    ),
-    unreadAt: record(
-      mcpThreadIdSchema,
-      indicatorsSchema.shape.unreadAt.valueType,
-    ),
-  });
+export const mcpGetChatIndicatorsOutputSchema = indicatorsSchema.extend({
+  threads: record(mcpThreadIdSchema, indicatorsSchema.shape.threads.valueType),
+  unreadAt: record(
+    mcpThreadIdSchema,
+    indicatorsSchema.shape.unreadAt.valueType,
+  ),
+});

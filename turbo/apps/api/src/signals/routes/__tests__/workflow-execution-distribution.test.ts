@@ -705,7 +705,7 @@ test("preserves a running Agent after rejected completion and accepts cancellati
   await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
     status: "running",
   });
-  await bdd.deleteAgent(actor, agent.agentId);
+  await bdd.expectAgentDeleteUnavailable(actor, agent.agentId);
   await runs.requestCancelRun(actor, run.runId, [200]);
   await flushWaitUntilForTest();
   await finish(run.runId, execution.sandboxToken);
@@ -715,14 +715,14 @@ test("preserves a running Agent after rejected completion and accepts cancellati
   });
 });
 
-test("preserves member Workflow files after deleting a legacy Agent", async () => {
+test("preserves member Workflow files after a rejected legacy Agent deletion", async () => {
   const { actor, agent, s3 } = await fixture("claude-code", true);
   const memberAgent = (await bdd.readOnboardingStatus(actor)).defaultAgentId!;
   installWorkflowVolumeS3Fixture(context, s3.objects);
   const survivor = await createWorkflow(actor, memberAgent, {
     files: [{ path: "keep.md", content: "keep" }],
   });
-  await bdd.deleteAgent(actor, agent.agentId);
+  await bdd.expectAgentDeleteUnavailable(actor, agent.agentId);
   const read = await accept(
     detailClient().get({
       headers: headers(actor),

@@ -19,11 +19,8 @@ import retrofit2.http.Query
 import retrofit2.http.QueryMap
 
 internal interface CanonicalApi {
-    @GET("/api/agents/{id}/draft")
-    suspend fun `agentDraft`(
-        @Header("Authorization") token: String,
-        @Path("id") `pathId`: String,
-    ): Response<ComposerDraft>
+    @GET("/api/chat-drafts/composer")
+    suspend fun `workspaceDraft`(@Header("Authorization") token: String): Response<ComposerDraft>
 
     @GET("/api/chat-threads/{id}/draft")
     suspend fun `threadDraft`(
@@ -31,11 +28,10 @@ internal interface CanonicalApi {
         @Path("id") `pathId`: String,
     ): Response<ComposerDraft>
 
-    @PATCH("/api/agents/{id}/draft")
-    suspend fun `saveAgentDraft`(
+    @PATCH("/api/chat-drafts/composer")
+    suspend fun `saveWorkspaceDraft`(
         @Header("Authorization") token: String,
-        @Path("id") `pathId`: String,
-        @Body body: SaveAgentDraft,
+        @Body body: SaveWorkspaceDraft,
     ): Response<Unit>
 
     @PATCH("/api/chat-threads/{id}")
@@ -141,9 +137,6 @@ internal interface CanonicalApi {
         @Header("Authorization") token: String,
         @Query("includeActiveUnread") `queryIncludeActiveUnread`: String? = null,
     ): Response<Indicators>
-
-    @GET("/api/agents")
-    suspend fun `agents`(@Header("Authorization") token: String): Response<Agents>
 
     @GET("/api/projects/snapshot")
     suspend fun `projectSnapshot`(@Header("Authorization") token: String): Response<ProjectSnapshot>

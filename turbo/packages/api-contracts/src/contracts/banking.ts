@@ -11,6 +11,7 @@ import {
   enum as zEnum,
   unknown as zUnknown,
   type infer as zInfer,
+  type RefinementCtx,
 } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
@@ -135,11 +136,16 @@ export const bankingAccessRequestStatusResponseSchema = object({
   }).nullable(),
 });
 
-export const bankingConnectSessionRequestSchema = object({
+const bankingConnectSessionShape = {
   agentId: uuid(),
   mode: zEnum(["connect", "fix"]),
   institutionLoginId: string().trim().min(1).max(128).optional(),
-}).superRefine((value, context) => {
+};
+
+const validateBankingConnectSession = (
+  value: { mode: "connect" | "fix"; institutionLoginId?: string },
+  context: RefinementCtx,
+) => {
   if (value.mode === "fix" && !value.institutionLoginId) {
     context.addIssue({
       code: "custom",
@@ -154,7 +160,11 @@ export const bankingConnectSessionRequestSchema = object({
       message: "institutionLoginId is only valid for a fix session",
     });
   }
-});
+};
+
+export const bankingConnectSessionRequestSchema = object(
+  bankingConnectSessionShape,
+).superRefine(validateBankingConnectSession);
 
 export const bankingConnectSessionResponseSchema = object({
   sessionId: uuid(),
@@ -283,6 +293,39 @@ export const bankingUserContract = c.router({
     body: bankingAgentGrantRevokeRequestSchema,
     responses: bankingUserMutationResponses,
     summary: "Revoke an agent banking grant",
+  },
+});
+
+export const bankingWorkspaceContract = c.router({
+  accessRequestStatus: {
+    method: "GET",
+    path: "/api/banking/access-requests/current",
+    headers: authHeadersSchema,
+    responses: bankingUserContract.accessRequestStatus.responses,
+  },
+  createConnectSession: {
+    method: "POST",
+    path: "/api/banking/workspace/connect-sessions",
+    headers: authHeadersSchema,
+    body: object({
+      mode: bankingConnectSessionShape.mode,
+      institutionLoginId: bankingConnectSessionShape.institutionLoginId,
+    }).superRefine(validateBankingConnectSession),
+    responses: bankingUserContract.createConnectSession.responses,
+  },
+  saveGrant: {
+    method: "POST",
+    path: "/api/banking/workspace/grant",
+    headers: authHeadersSchema,
+    body: bankingAgentGrantRequestSchema.omit({ agentId: true }),
+    responses: bankingUserMutationResponses,
+  },
+  revokeGrant: {
+    method: "POST",
+    path: "/api/banking/workspace/grant/revoke",
+    headers: authHeadersSchema,
+    body: object({}),
+    responses: bankingUserMutationResponses,
   },
 });
 

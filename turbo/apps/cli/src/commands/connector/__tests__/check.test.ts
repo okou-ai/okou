@@ -32,7 +32,6 @@ import {
 import { checkConnectorCommand } from "../check";
 
 const API_BASE_URL = "https://app.okou.ai";
-const AGENT_ID = "00000000-0000-4000-8000-000000000001";
 const SELECTED_CONNECTION_ID = "00000000-0000-4000-8000-000000000099";
 
 type ResolvedDiagnostic = Extract<
@@ -356,7 +355,6 @@ describe("okou connector check command", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", API_BASE_URL);
     vi.stubEnv("OKOU_TOKEN", buildOkouToken());
-    vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
     vi.stubEnv("OKOU_CHAT_THREAD_ID", "");
     vi.stubEnv("GH_TOKEN", "");
@@ -424,7 +422,6 @@ describe("okou connector check command", () => {
 
     beforeEach(() => {
       vi.stubEnv("OKOU_TOKEN", "test-session-token");
-      vi.stubEnv("OKOU_AGENT_ID", "");
       vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", "");
       stubDiagnostic(resolvedEnvironment({ run: { status: "not-scoped" } }));
     });
@@ -810,7 +807,7 @@ describe("okou connector check command", () => {
           },
         ),
       );
-      vi.stubEnv("OKOU_AGENT_ID", "");
+      vi.stubEnv("OKOU_TOKEN", "test-session-token");
       stubDiagnostic(
         resolvedEnvironment({
           run: { status: "not-scoped" },
@@ -1069,7 +1066,6 @@ describe("okou connector check command", () => {
     });
 
     it("requires a URL diagnostic before printing a callback permission command", async () => {
-      vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
       vi.stubEnv("OKOU_CHAT_THREAD_ID", "thread-abc-123");
       stubDiagnostic(
         resolvedEnvironment({
@@ -1448,7 +1444,7 @@ describe("okou connector check command", () => {
       expect(text).toContain("Account used by this run: Run account B");
       expect(text).toContain(`Connection ID: ${SELECTED_CONNECTION_ID}`);
       expect(text).toContain(
-        `/connectors/github/reconnect/${SELECTED_CONNECTION_ID}?agentId=${AGENT_ID}`,
+        `/connectors/github/reconnect/${SELECTED_CONNECTION_ID}`,
       );
       expect(text).toContain("After reconnecting, start a new run.");
       expect(text).toContain("Reconnect reason: configuration_invalid");
@@ -1504,7 +1500,7 @@ describe("okou connector check command", () => {
         expect(text).toContain("Account used by this run: Run account B");
         expect(text).toContain(`Reconnect reason: ${reconnectReason}`);
         expect(text).toContain("Missing required configuration: apiKey");
-        const actionPath = `/connectors/openai/reconnect/${SELECTED_CONNECTION_ID}?agentId=`;
+        const actionPath = `/connectors/openai/reconnect/${SELECTED_CONNECTION_ID}`;
         expect(text).toContain(actionPath);
         expect(text).toContain("has an allowed account in this Chat");
         expect(text).not.toMatch(
@@ -1644,7 +1640,6 @@ describe("okou connector check command", () => {
 
     it("preserves the exact reconnect-required current default beside a healthy sibling", async () => {
       vi.stubEnv("OKOU_TOKEN", "test-session-token");
-      vi.stubEnv("OKOU_AGENT_ID", "");
       vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", "");
       stubDiagnostic(resolvedEnvironment({ run: { status: "not-scoped" } }));
       const account = connectorAccount(
@@ -1758,7 +1753,7 @@ describe("okou connector check command", () => {
         ]);
 
         expect(getOutput()).toContain(
-          `[Reconnect GitHub](${platformOrigin}/connectors/github/reconnect/${SELECTED_CONNECTION_ID}?agentId=${AGENT_ID})`,
+          `[Reconnect GitHub](${platformOrigin}/connectors/github/reconnect/${SELECTED_CONNECTION_ID})`,
         );
       },
     );
@@ -1792,7 +1787,6 @@ describe("okou connector check command", () => {
         `/connectors/github/reconnect/${SELECTED_CONNECTION_ID}`,
       );
       expect(Array.from(callbackUrl.searchParams.entries())).toStrictEqual([
-        ["agentId", AGENT_ID],
         ["callbackPrompt", "SOMETHING_AGENT_WANT_TO_BE_CALLBACK"],
         ["threadId", "thread-abc-123"],
       ]);
@@ -2000,7 +1994,6 @@ describe("okou connector check command", () => {
     );
 
     it("renders multiple matched URL permissions from final server outcomes", async () => {
-      vi.stubEnv("OKOU_AGENT_ID", undefined);
       vi.stubEnv("OKOU_CHAT_THREAD_ID", "20000000-0000-4000-8000-000000000001");
       stubDiagnostic(
         resolvedUrl({
@@ -2049,6 +2042,20 @@ describe("okou connector check command", () => {
         "--json",
       ]);
       expect(getOutput()).toContain('"callbackCommand"');
+
+      vi.stubEnv("OKOU_CHAT_THREAD_ID", "invalid-chat");
+      for (const flags of [[], ["--json"]]) {
+        mockConsoleLog.mockClear();
+        await checkConnectorCommand.parseAsync([
+          "node",
+          "cli",
+          "--url",
+          "https://api.github.com/repos/okou-ai/okou",
+          ...flags,
+        ]);
+        expect(getOutput()).toContain("okou connector permission-request");
+        expect(getOutput()).not.toContain("--callback-prompt");
+      }
     });
 
     interface UnknownPolicyCase {

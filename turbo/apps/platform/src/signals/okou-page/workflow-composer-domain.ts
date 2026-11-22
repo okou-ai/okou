@@ -142,17 +142,9 @@ export function workflowTokenPattern(
   return new RegExp(`(?:^|\\s)/(?:${escaped.join("|")})(?=$|\\s)`, "g");
 }
 
-export function buildComposerSlashWorkflows({
-  agentId,
-  workflows,
-}: {
-  readonly agentId: string | null | undefined;
-  readonly workflows: readonly ComposerWorkflow[];
-}): readonly ComposerSlashWorkflow[] {
-  if (!agentId) {
-    return [];
-  }
-
+export function buildComposerSlashWorkflows(
+  workflows: readonly ComposerWorkflow[],
+): readonly ComposerSlashWorkflow[] {
   return workflows.map((workflow) => {
     const name = workflow.name;
     return {

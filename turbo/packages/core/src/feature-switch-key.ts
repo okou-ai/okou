@@ -12,7 +12,6 @@ export enum FeatureSwitchKey {
   MarkdownFirstOutput = "markdownFirstOutput",
   MarkdownDocumentTypography = "markdownDocumentTypography",
   ProjectTitleReveal = "projectTitleReveal",
-  ProjectThreadDeletion = "projectThreadDeletion",
   OkouAnimatedAvatar = "okouAnimatedAvatar",
   BatchConnectorPermissions = "batchConnectorPermissions",
   DesktopShell = "desktopShell",

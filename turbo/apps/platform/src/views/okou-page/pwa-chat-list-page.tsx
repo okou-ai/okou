@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { MessageSquare, Search, SquarePen } from "lucide-react";
 import { Button } from "@okouai/ui";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
-import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
+
 import { mainStylesheetLoaded$ } from "../../signals/app-skeleton.ts";
 import { chatThreadOnlyArchived$ } from "../../signals/chat-page/chat-thread-only-archived.ts";
 import { chatThreadOnlyMuted$ } from "../../signals/chat-page/chat-thread-only-muted.ts";
@@ -40,11 +40,9 @@ function useSelectFilter() {
 }
 
 function useOpenNewChat() {
-  const currentAgentId = useLastResolved(currentChatAgentId$);
   const openNewChat = useSet(navigateToNewChat$);
   const pageSignal = useGet(pageSignal$);
   return {
-    disabled: !currentAgentId,
     open: () => {
       detach(openNewChat(pageSignal), Reason.DomCallback);
     },
@@ -81,7 +79,6 @@ function PwaChatListHeader() {
           size="icon"
           iconSize="lg"
           className="min-h-11 min-w-11 shrink-0"
-          disabled={newChat.disabled}
           aria-label={t(($) => {
             return $.chat.newChat;
           })}
@@ -119,12 +116,7 @@ function StartChatButton() {
   const { t } = useTranslation();
   const newChat = useOpenNewChat();
   return (
-    <Button
-      variant="neutral"
-      className="min-h-11 gap-2"
-      disabled={newChat.disabled}
-      onClick={newChat.open}
-    >
+    <Button variant="neutral" className="min-h-11 gap-2" onClick={newChat.open}>
       <SquarePen aria-hidden="true" />
       {t(($) => {
         return $.chat.newChat;

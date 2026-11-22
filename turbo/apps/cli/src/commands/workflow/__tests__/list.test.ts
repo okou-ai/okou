@@ -14,8 +14,6 @@ import { server } from "../../../mocks/server";
 import { listCommand } from "../list";
 import chalk from "chalk";
 
-const AGENT_ID = "11111111-1111-1111-1111-111111111111";
-
 describe("okou workflow list command", () => {
   const mockExit = vi.spyOn(process, "exit").mockImplementation((() => {
     throw new Error("process.exit called");
@@ -31,11 +29,6 @@ describe("okou workflow list command", () => {
 
   beforeEach(() => {
     server.use(
-      http.get("*/api/agents", () => {
-        return HttpResponse.json([{ agentId: AGENT_ID, isDefaultAgent: true }]);
-      }),
-    );
-    server.use(
       http.get(
         "http://localhost:3000/api/workflows/:workflowId/owner-profile",
         ownerProfileRequest,
@@ -43,7 +36,7 @@ describe("okou workflow list command", () => {
     );
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
-    vi.stubEnv("OKOU_TOKEN", capturedRunToken(["agent:read"]));
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken([]));
   });
 
   afterEach(() => {
@@ -61,9 +54,6 @@ describe("okou workflow list command", () => {
           return HttpResponse.json([
             {
               id: "22222222-2222-2222-2222-222222222222",
-              agentId: AGENT_ID,
-              agentName: "my-agent",
-              agentDisplayName: "My Agent",
               name: "code-review",
               displayName: "Code Review",
               description: "Reviews code",
@@ -74,9 +64,6 @@ describe("okou workflow list command", () => {
             },
             {
               id: "33333333-3333-3333-3333-333333333333",
-              agentId: AGENT_ID,
-              agentName: "my-agent",
-              agentDisplayName: "My Agent",
               name: "deploy",
               displayName: null,
               description: null,
@@ -94,9 +81,7 @@ describe("okou workflow list command", () => {
       const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
       expect(logCalls).toContain("code-review");
       expect(logCalls).not.toContain("AGENT NAME");
-      expect(logCalls).not.toContain("AGENT ID");
       expect(logCalls).not.toContain("My Agent");
-      expect(logCalls).not.toContain(AGENT_ID);
       expect(logCalls).toContain("private");
       expect(logCalls).toContain("deploy");
     });
@@ -107,9 +92,6 @@ describe("okou workflow list command", () => {
           return HttpResponse.json([
             {
               id: "22222222-2222-2222-2222-222222222222",
-              agentId: AGENT_ID,
-              agentName: "my-agent",
-              agentDisplayName: "My Agent",
               name: "code-review",
               displayName: "Code Review",
               description: "Reviews code",
@@ -121,9 +103,6 @@ describe("okou workflow list command", () => {
             },
             {
               id: "44444444-4444-4444-4444-444444444444",
-              agentId: AGENT_ID,
-              agentName: "my-agent",
-              agentDisplayName: "My Agent",
               name: "internal-test-morning-brief",
               displayName: null,
               description: null,
@@ -160,7 +139,7 @@ describe("okou workflow list command", () => {
 
       await listCommand.parseAsync(["node", "cli"]);
 
-      expect(capturedUrl).toContain(`agentId=${AGENT_ID}`);
+      expect(capturedUrl).toContain("scope=workspace");
     });
 
     it("should show empty state when no workflows", async () => {

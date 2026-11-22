@@ -10,7 +10,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import {
-  agentDraftContract,
+  composerDraftContract,
   type AgentDraftRequest,
 } from "@okouai/api-contracts/contracts/agent-draft";
 import {
@@ -145,7 +145,7 @@ test("Select a presentation theme from its preview", async () => {
 function mockSavedThemeDraft(colorSystemId: string) {
   const template = builtInTemplate();
   const drafts: AgentDraftRequest[] = [];
-  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: {
         version: 1,
@@ -166,7 +166,7 @@ function mockSavedThemeDraft(colorSystemId: string) {
       draftAttachments: null,
     });
   });
-  context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
+  context.mocks.api(composerDraftContract.patch, ({ body, respond }) => {
     drafts.push(body);
     return respond(204);
   });

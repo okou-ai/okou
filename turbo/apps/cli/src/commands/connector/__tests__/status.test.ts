@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 /**
  * Tests for okou connector status command
  *
@@ -22,8 +23,6 @@ import {
   stubConnectorCatalog,
   stubConnectorCatalogDetail,
 } from "../../__tests__/helpers/connector-catalog";
-
-const AGENT_UUID = "550e8400-e29b-41d4-a716-446655440000";
 
 const githubAccount = {
   authMethod: "oauth",
@@ -81,7 +80,6 @@ describe("okou connector status command", () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", undefined);
-    vi.stubEnv("OKOU_AGENT_ID", "");
     vi.stubEnv("OKOU_CHAT_THREAD_ID", "");
     statusCommand.setOptionValue("json", false);
     server.use(stubConnectorAccounts([]));
@@ -186,7 +184,7 @@ describe("okou connector status command", () => {
   });
 
   it("reports unavailable account context in a Run", async () => {
-    vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken(["connector:read"]));
     await statusCommand.parseAsync(["node", "cli", "github", "--json"]);
     expect(
       JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),

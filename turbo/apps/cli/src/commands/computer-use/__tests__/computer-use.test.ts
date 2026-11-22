@@ -132,7 +132,7 @@ describe("computer-use command visibility", () => {
       runId: "r1",
       orgId: "o1",
       scope: "okou",
-      capabilities: ["agent:read"],
+      capabilities: [],
       iat: 1000,
       exp: 2000,
     });

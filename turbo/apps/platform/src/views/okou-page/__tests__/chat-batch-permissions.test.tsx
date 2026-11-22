@@ -24,7 +24,6 @@ import {
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { permissionMetadata } from "./chat-capability-connector-test-helpers.ts";
 import {
-  CAPABILITY_AGENT_ID,
   completedConversation,
   createChatCapabilityHelpers,
   readyChat,
@@ -58,10 +57,9 @@ function batchUrl(
     readonly callbackPrompt?: string;
   } = {},
 ): string {
-  const url = new URL(
-    `/agents/${CAPABILITY_AGENT_ID}/permissions/batch`,
-    "https://app.okou.ai",
-  );
+  const url = new URL(`/connectors/permissions/batch`, "https://app.okou.ai");
+  url.searchParams.set("orgId", "org_default");
+  url.searchParams.set("userId", "test-user-123");
   url.searchParams.set("items", JSON.stringify(args.rows ?? items));
   url.searchParams.set("action", "allow");
   url.searchParams.set("expiresIn", "1h");
@@ -134,7 +132,6 @@ function installConversation(url: string): void {
   context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
     return respond(200, {
       id: params.id,
-      agentId: CAPABILITY_AGENT_ID,
       title: "Capability conversation",
       selectedModel: null,
       modelSettings: {},
@@ -520,10 +517,9 @@ test("A batch save does not empty sibling permission cards during a grants reloa
       refreshing = true;
     },
   );
-  const single = new URL(
-    `/agents/${CAPABILITY_AGENT_ID}/permissions`,
-    "https://app.okou.ai",
-  );
+  const single = new URL(`/connectors/permissions`, "https://app.okou.ai");
+  single.searchParams.set("orgId", "org_default");
+  single.searchParams.set("userId", "test-user-123");
   single.searchParams.set("connectorSlug", "reports-service");
   single.searchParams.set("permission", items[2]!.permission);
   single.searchParams.set("action", "allow");

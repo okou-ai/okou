@@ -4,7 +4,6 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { user$ } from "../../signals/auth.ts";
 import { cn } from "@okouai/ui/lib/utils";
-import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
 
 import {
   chatGreetingShouldAnimate$,
@@ -234,8 +233,6 @@ function GreetingTokens({
  * Okou, and the composer's toolbar names the Project the chat starts in.
  */
 export function AgentComposerPage() {
-  const currentChatAgentId = useLastResolved(currentChatAgentId$);
-
   const user = useLastResolved(user$);
   const userFirstName =
     user === undefined ? undefined : (user.firstName ?? null);
@@ -245,7 +242,7 @@ export function AgentComposerPage() {
   const tagline = useTagline(userFirstName, taglineIndex);
   const animateGreeting = useGet(chatGreetingShouldAnimate$);
   const finishGreetingEntrance = useSet(finishChatGreetingEntrance$);
-  const greetingIdentity = `${currentChatAgentId ?? "none"}:${tagline}`;
+  const greetingIdentity = tagline;
 
   const taglineHeading = (
     <h2
@@ -261,7 +258,7 @@ export function AgentComposerPage() {
     </h2>
   );
   const heading =
-    currentChatAgentId === undefined || tagline === "" ? null : (
+    tagline === "" ? null : (
       <div
         key={greetingIdentity}
         data-slot="chat-greeting"

@@ -16,7 +16,6 @@ import { command, computed, state } from "ccstate";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { resolvePlatformEnvironment } from "../../lib/platform-host.ts";
-import { reloadAgents$ } from "../agent.ts";
 import { discardApiBootstrapResponse } from "../api-client-base.ts";
 import { apiClient$ } from "../api-client.ts";
 import { invalidateAvailableRunModels$ } from "../external/run-models.ts";
@@ -145,9 +144,6 @@ export const completeOnboarding$ = command(
     set(refreshOrg$);
     set(invalidateAvailableRunModels$);
     set(reloadUserModelPreference$);
-    // Both a prior route and the Worker's HTML prefetch can retain an empty
-    // list from before the status endpoint provisioned the default agent.
-    set(reloadAgents$);
     set(reloadOnboardingStatus$);
     // The answers stay until the first chat replaces the step showing them. A
     // later onboarding visit or app start clears them for an onboarded user.

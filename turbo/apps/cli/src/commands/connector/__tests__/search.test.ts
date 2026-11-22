@@ -1,3 +1,4 @@
+import { capturedRunToken } from "../../../test/fixtures/captured-run-token";
 /**
  * Tests for okou connector search command
  *
@@ -33,7 +34,6 @@ import {
   writeRunConnectorAccountContext,
 } from "../../__tests__/helpers/run-connector-accounts";
 
-const AGENT_UUID = "550e8400-e29b-41d4-a716-446655440000";
 const RUN_CONNECTION_ID = "11111111-1111-4111-8111-111111111111";
 const THREAD_UUID = "22222222-2222-4222-8222-222222222222";
 
@@ -96,7 +96,6 @@ describe("okou connector search command", () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", undefined);
-    vi.stubEnv("OKOU_AGENT_ID", undefined);
     searchCommand.setOptionValue("limit", undefined);
     searchCommand.setOptionValue("callbackPrompt", undefined);
     searchCommand.setOptionValue("json", false);
@@ -209,7 +208,7 @@ describe("okou connector search command", () => {
     it("reports the exact reconnect-required Run account", async () => {
       const target = { kind: "builtin", connectorSlug: "github" } as const;
       vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
-      vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
+      vi.stubEnv("OKOU_TOKEN", capturedRunToken(["connector:read"]));
       writeRunConnectorAccountContext(contextPath, [
         { ...target, connectionId: RUN_CONNECTION_ID },
       ]);
@@ -270,7 +269,7 @@ describe("okou connector search command", () => {
       "metadata-unavailable",
     ] as const)("preserves the %s run state in JSON", async (state) => {
       vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
-      vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
+      vi.stubEnv("OKOU_TOKEN", capturedRunToken(["connector:read"]));
       if (state === "not-admitted") {
         writeRunConnectorAccountContext(contextPath, []);
       } else if (state === "context-unavailable") {
@@ -311,7 +310,7 @@ describe("okou connector search command", () => {
 
     it("preserves the callback URL and task inside the JSON action", async () => {
       vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
-      vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
+      vi.stubEnv("OKOU_TOKEN", capturedRunToken(["connector:read"]));
       vi.stubEnv("OKOU_CHAT_THREAD_ID", THREAD_UUID);
       writeRunConnectorAccountContext(contextPath, []);
       server.use(
@@ -354,7 +353,7 @@ describe("okou connector search command", () => {
     });
   });
 
-  describe("without agent context", () => {
+  describe("without Run context", () => {
     it("returns github first for an exact slug match", async () => {
       await searchCommand.parseAsync(["node", "cli", "github"]);
 
@@ -596,7 +595,7 @@ describe("okou connector search command", () => {
               : ({ kind, customConnectorId: custom.id } as const);
           const slug = kind === "builtin" ? "openai" : custom.slug;
           vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
-          vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
+          vi.stubEnv("OKOU_TOKEN", capturedRunToken(["connector:read"]));
           writeRunConnectorAccountContext(contextPath, [
             { ...target, connectionId: RUN_CONNECTION_ID },
           ]);
@@ -651,8 +650,8 @@ describe("okou connector search command", () => {
               {
                 url: expect.stringContaining(
                   kind === "builtin"
-                    ? `/connectors/openai/reconnect/${RUN_CONNECTION_ID}?`
-                    : "http://localhost:3000/connectors?",
+                    ? `/connectors/openai/reconnect/${RUN_CONNECTION_ID}`
+                    : "http://localhost:3000/connectors",
                 ),
                 supportsCallback: kind === "builtin",
               },
@@ -667,8 +666,8 @@ describe("okou connector search command", () => {
           expect(text).toContain("Run-selected account");
           expect(text).toContain(
             kind === "builtin"
-              ? `/connectors/openai/reconnect/${RUN_CONNECTION_ID}?`
-              : "http://localhost:3000/connectors?",
+              ? `/connectors/openai/reconnect/${RUN_CONNECTION_ID}`
+              : "http://localhost:3000/connectors",
           );
         },
       );
@@ -678,7 +677,7 @@ describe("okou connector search command", () => {
   describe("run account column", () => {
     it("renders the exact reconnect-required run account independently of saved-account directory membership", async () => {
       vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
-      vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
+      vi.stubEnv("OKOU_TOKEN", capturedRunToken(["connector:read"]));
       writeRunConnectorAccountContext(contextPath, [
         {
           kind: "builtin",
@@ -723,14 +722,14 @@ describe("okou connector search command", () => {
       expect(text).toContain("Run account B");
       expect(text).toContain("no (reconnect needed)");
       expect(text).toContain(
-        `http://localhost:3000/connectors/github/reconnect/${RUN_CONNECTION_ID}?agentId=${AGENT_UUID}`,
+        `http://localhost:3000/connectors/github/reconnect/${RUN_CONNECTION_ID}`,
       );
     });
 
     it("matches a custom run account by custom connector ID", async () => {
       const definition = customConnector({});
       vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
-      vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
+      vi.stubEnv("OKOU_TOKEN", capturedRunToken(["connector:read"]));
       writeRunConnectorAccountContext(contextPath, [
         {
           kind: "custom",
@@ -768,7 +767,7 @@ describe("okou connector search command", () => {
 
     it("returns every supported run match and distinguishes availability", async () => {
       vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
-      vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
+      vi.stubEnv("OKOU_TOKEN", capturedRunToken(["connector:read"]));
       writeRunConnectorAccountContext(contextPath, [
         {
           kind: "builtin",
@@ -815,7 +814,7 @@ describe("okou connector search command", () => {
 
     it("retains a deleted exact ID and fails closed for missing legacy context", async () => {
       vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
-      vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
+      vi.stubEnv("OKOU_TOKEN", capturedRunToken(["connector:read"]));
       writeRunConnectorAccountContext(contextPath, [
         {
           kind: "builtin",
@@ -839,7 +838,7 @@ describe("okou connector search command", () => {
         "no (metadata unavailable or deleted)",
       );
       expect(metadataUnavailableOutput).toContain(
-        `[Review GitHub accounts](http://localhost:3000/connectors?agentId=${AGENT_UUID})`,
+        `[Review GitHub accounts](http://localhost:3000/connectors)`,
       );
       expect(metadataUnavailableOutput).not.toContain(
         "/connectors/github/connect",
@@ -857,7 +856,7 @@ describe("okou connector search command", () => {
   describe("connection guidance", () => {
     beforeEach(() => {
       vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", contextPath);
-      vi.stubEnv("OKOU_AGENT_ID", AGENT_UUID);
+      vi.stubEnv("OKOU_TOKEN", capturedRunToken(["connector:read"]));
       vi.stubEnv("OKOU_CHAT_THREAD_ID", THREAD_UUID);
       writeRunConnectorAccountContext(contextPath, []);
       server.use(
@@ -876,10 +875,10 @@ describe("okou connector search command", () => {
 
       const output = mockConsoleLog.mock.calls.flat().join("\n");
       expect(output).toContain(
-        `[Connect Google Sheets](http://localhost:3000/connectors/google-sheets/connect?agentId=${AGENT_UUID})`,
+        `[Connect Google Sheets](http://localhost:3000/connectors/google-sheets/connect?threadId=${THREAD_UUID})`,
       );
       expect(output).toContain(
-        `[Connect SheetDB](http://localhost:3000/connectors/sheetdb/connect?agentId=${AGENT_UUID})`,
+        `[Connect SheetDB](http://localhost:3000/connectors/sheetdb/connect?threadId=${THREAD_UUID})`,
       );
       expect(output).toContain("--callback-prompt");
       expect(output).not.toContain("callbackPrompt=");
@@ -907,7 +906,6 @@ describe("okou connector search command", () => {
       expect(url.origin).toBe("https://app.example.com");
       expect(url.pathname).toBe("/connectors/google-sheets/connect");
       expect(Object.fromEntries(url.searchParams)).toEqual({
-        agentId: AGENT_UUID,
         threadId: THREAD_UUID,
         callbackPrompt,
       });
@@ -941,7 +939,7 @@ describe("okou connector search command", () => {
 
       const output = mockConsoleLog.mock.calls.flat().join("\n");
       expect(output).toContain(
-        `[Review ${connector.displayName} accounts](http://localhost:3000/connectors?agentId=${AGENT_UUID})`,
+        `[Review ${connector.displayName} accounts](http://localhost:3000/connectors)`,
       );
       expect(output).not.toContain(`/connectors/${connector.slug}/authorize`);
     });

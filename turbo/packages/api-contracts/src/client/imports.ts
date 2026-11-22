@@ -4,7 +4,7 @@
 export const clientContractImportManifest = [
   {
     module: "agent-draft",
-    contracts: ["agentDraftContract"],
+    contracts: ["agentDraftContract", "composerDraftContract"],
     bindings: [
       {
         name: "agentDraftResponseSchema",
@@ -123,6 +123,7 @@ export const clientContractImportManifest = [
       "bankingContract",
       "bankingPublicContract",
       "bankingUserContract",
+      "bankingWorkspaceContract",
     ],
     bindings: [],
   },
@@ -1225,7 +1226,7 @@ export const clientContractImportManifest = [
   },
   {
     module: "mcp-chat-search",
-    contracts: ["mcpChatSearchContract", "mcpProjectChatSearchContract"],
+    contracts: ["mcpProjectChatSearchContract"],
     bindings: [],
   },
   {

@@ -13,11 +13,13 @@ import { ApiRequestError } from "../../lib/api/core/client-factory";
 import { createBrowserAuthorizationRequest } from "../../lib/api/domains/browser";
 import { createComputerUseAuthorizationRequest } from "../../lib/api/domains/computer-use";
 import { getOkouToken } from "../../lib/okou-env";
-import { memberPermissionUrl } from "./member-permission-url";
 import {
-  CALLBACK_PROMPT_MAX_LENGTH,
   currentPermissionCallbackThread,
   finalizePermissionActionUrl,
+  permissionActionUrl,
+} from "./permission-action-url";
+import {
+  CALLBACK_PROMPT_MAX_LENGTH,
   printCallbackTurnInstruction,
 } from "./action-url";
 import {
@@ -228,7 +230,7 @@ async function outputPermissionRequestMessage(
   permission: string,
   callbackPrompt: string | undefined,
 ): Promise<void> {
-  const actionUrl = await memberPermissionUrl("single");
+  const actionUrl = await permissionActionUrl("single");
   actionUrl.searchParams.set("connectorSlug", connectorSlug);
   actionUrl.searchParams.set("permission", permission);
   actionUrl.searchParams.set("action", "allow");
@@ -249,8 +251,7 @@ const callbackPromptOption = new Option(
   "--callback-prompt <prompt>",
   `Start the next web chat round with this prompt after the permission is granted (max ${CALLBACK_PROMPT_MAX_LENGTH} characters)`,
 );
-const callbackPromptAvailable = Boolean(currentPermissionCallbackThread());
-if (!callbackPromptAvailable) {
+if (!currentPermissionCallbackThread()) {
   callbackPromptOption.hideHelp();
 }
 export const permissionRequestCommand = addAwsDiagnosticOptions(

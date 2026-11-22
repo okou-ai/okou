@@ -1,5 +1,53 @@
 # Changelog
 
+## [0.249.90](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.89...runner-rs-v0.249.90) (2026-11-22)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.89](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.88...runner-rs-v0.249.89) (2026-11-21)
+
+
+### Refactoring
+
+* **runner:** centralize registry observation publication ([#49887](https://github.com/okou-ai/okou/issues/49887)) ([6794d49](https://github.com/okou-ai/okou/commit/6794d49aaaee14c79cb82f75a9e62428a705a7b3))
+
+## [0.249.88](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.87...runner-rs-v0.249.88) (2026-11-21)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.87](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.86...runner-rs-v0.249.87) (2026-11-21)
+
+
+### Refactoring
+
+* **runner:** share sandbox log attribution metadata ([#49867](https://github.com/okou-ai/okou/issues/49867)) ([79d1300](https://github.com/okou-ai/okou/commit/79d13003d3910cac22ab9ba8009da78727220043))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.86](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.85...runner-rs-v0.249.86) (2026-11-21)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.85](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.84...runner-rs-v0.249.85) (2026-11-21)
+
+
+### Refactoring
+
+* **runner:** centralize response inspection interruption diagnostics ([#49809](https://github.com/okou-ai/okou/issues/49809)) ([605efe1](https://github.com/okou-ai/okou/commit/605efe1d0381d914a3ef76460cb266a71f408572))
+* **runner:** share model usage parse warning budgets ([#49784](https://github.com/okou-ai/okou/issues/49784)) ([4d217d4](https://github.com/okou-ai/okou/commit/4d217d4fb20e828c207f4e78e1bc3e1224a64e31))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.84](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.83...runner-rs-v0.249.84) (2026-11-21)
 
 

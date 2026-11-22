@@ -1,7 +1,7 @@
 import type { RemoteAccessProtocol } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { command } from "ccstate";
-import { and, eq, isNotNull, ne } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
 import { db$ } from "../external/db";
@@ -18,14 +18,11 @@ type Recipient = {
   readonly runnerGroup: string | null;
 };
 
-type VncLifecycleScope =
-  | { readonly kind: "owner"; readonly orgId: string; readonly userId: string }
-  | {
-      readonly kind: "agent";
-      readonly orgId: string;
-      readonly agentId: string;
-      readonly ownerId: string;
-    };
+type VncLifecycleScope = {
+  readonly kind: "owner";
+  readonly orgId: string;
+  readonly userId: string;
+};
 
 async function publishInvalidations(
   recipients: readonly Recipient[],
@@ -114,7 +111,7 @@ export const publishRemoteRunnerInvalidation$ = command(
   },
 );
 
-/** Membership removal or loss of agent access invalidates matching VNC Runs. */
+/** Membership removal invalidates matching VNC Runs. */
 export const publishVncLifecycleInvalidation$ = command(
   async (
     { get },
@@ -131,15 +128,7 @@ export const publishVncLifecycleInvalidation$ = command(
             eq(agentRuns.status, "running"),
             isNotNull(agentRuns.runnerGroup),
             eq(agentRuns.orgId, scope.orgId),
-            scope.kind === "owner"
-              ? eq(agentRuns.userId, scope.userId)
-              : undefined,
-            scope.kind === "agent"
-              ? ne(agentRuns.userId, scope.ownerId)
-              : undefined,
-            scope.kind === "agent"
-              ? eq(agentRuns.agentId, scope.agentId)
-              : undefined,
+            eq(agentRuns.userId, scope.userId),
           ),
         ),
     );

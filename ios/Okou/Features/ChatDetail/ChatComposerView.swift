@@ -303,9 +303,9 @@ struct ChatComposerView: View {
       draftState?.editor.mentionSource = source
     }
     .onChange(
-      of: "\(workflowSource?.id.uuidString ?? "")/\(agentID ?? "")", initial: true
+      of: workflowSource?.id, initial: true
     ) { _, _ in
-      draftState?.editor.workflows.configure(source: workflowSource, agentID: agentID)
+      draftState?.editor.workflows.configure(source: workflowSource)
     }
     .onChange(of: draftState.map(ObjectIdentifier.init), initial: true) { _, _ in
       mountedVoice?.suspend()

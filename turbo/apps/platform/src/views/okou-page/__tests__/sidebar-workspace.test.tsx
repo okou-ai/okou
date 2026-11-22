@@ -47,7 +47,6 @@ async function setupWorkspaceSearch({
   ]);
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: {},
       threads: Object.fromEntries([
         ...runningThreadIds.map((threadId) => {
           return [threadId, "active" as const];
@@ -70,7 +69,6 @@ async function setupWorkspaceSearch({
           ? [
               {
                 chatThreadId: INCIDENT_THREAD_ID,
-                agentName: "Support Agent",
                 matchedMessage: {
                   chatThreadId: INCIDENT_THREAD_ID,
                   role: "user" as const,

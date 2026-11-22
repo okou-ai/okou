@@ -503,10 +503,10 @@ def load_registry_state(registry_path: str) -> RegistryState:
     """Load through the event-loop owner and expose only its completed observation."""
     state = _load_registry_state(registry_path)
     if isinstance(state, RegistryUnavailable):
-        registry_observation.publish_unavailable(state)
+        registry_observation.publish(state, registry_observation.project_unavailable)
     else:
         run_usage.reconcile(state.sandboxes, state.publication_identity)
-        registry_observation.publish_available(state)
+        registry_observation.publish(state, registry_observation.project_available)
     return state
 
 

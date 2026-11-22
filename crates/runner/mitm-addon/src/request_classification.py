@@ -830,9 +830,7 @@ def _store_registered_request_metadata(
     sandbox_info: dict,
     run_id: str,
 ) -> None:
-    flow.metadata[metadata_keys.SANDBOX_RUN_ID] = run_id
-    flow.metadata[metadata_keys.SANDBOX_NETWORK_LOG_PATH] = sandbox_info.get("networkLogPath", "")
-    flow.metadata[metadata_keys.SANDBOX_PROXY_LOG_PATH] = sandbox_info.get("proxyLogPath", "")
+    flow_metadata.set_sandbox_log_context(flow.metadata, sandbox_info, run_id=run_id)
     flow.metadata[metadata_keys.CAPTURE_BODY] = sandbox_info.get("captureNetworkBodies", False)
     flow.metadata[metadata_keys.SANDBOX_AUTH_KEY] = sandbox_info.get("sandboxToken", "")
     flow.metadata[metadata_keys.CLI_AGENT_TYPE] = sandbox_info["cliAgentType"]

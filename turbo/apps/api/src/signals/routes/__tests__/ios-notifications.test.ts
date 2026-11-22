@@ -117,7 +117,6 @@ describe("iOS notification read-state reconciliation", () => {
       removeIdentifiers: ["unread"],
     });
     const archivedIndicators = await chat.listIndicators(actor);
-    expect(archivedIndicators.agents).toStrictEqual({});
     expect(archivedIndicators.threads[unread.threadId]).toBe("unread");
     expect(archivedIndicators.unreadAt[unread.threadId]).toBeDefined();
     await expect(

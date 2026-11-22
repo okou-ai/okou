@@ -1092,7 +1092,6 @@ describe("canonical Discord ingress", () => {
       expect(created).toHaveLength(1);
       expect(created[0]).toMatchObject({
         chatThreadId: thread.id,
-        agentId: actor.defaultAgentId,
         selectedModel: thread.selectedModel,
         modelSettings: thread.modelSettings,
         cloudBrowserEnabled: thread.cloudBrowserEnabled,
@@ -1497,7 +1496,6 @@ describe("canonical Discord ingress", () => {
         id: errors[0]?.id,
         kind: "sort_touched",
         chatThreadId: thread.id,
-        agentId: thread.agentId,
       }),
     );
 
@@ -1921,7 +1919,6 @@ describe("canonical Discord ingress", () => {
     expect(sticky).toHaveLength(1);
     expect(sticky[0]).toMatchObject({
       id: guildThread.id,
-      agentId: guildThread.agentId,
       selectedModel: guildThread.selectedModel,
     });
     expect(currentInputs(await events(actor, guildThread.id))).toHaveLength(2);

@@ -13,10 +13,9 @@ import { findWebsiteTemplateItem } from "@okouai/core/website-template-items";
 import { i18n } from "../../i18n/index.ts";
 import { sendNewThread$ } from "../chat-page/optimistic-chat-thread-page.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
-import { defaultAgentId$ } from "../agent.ts";
+
 import { rootSignal$ } from "../root-signal.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
-import { redirectToConfiguredOnboarding$ } from "../okou-page/onboard-guard.ts";
 
 interface ResolvedGenerationTemplate {
   readonly template: GenerationTemplateRequest;
@@ -195,13 +194,6 @@ export const setupPromptPage$ = command(
       return;
     }
 
-    const agentId = await get(defaultAgentId$);
-    signal.throwIfAborted();
-    if (!agentId) {
-      await set(redirectToConfiguredOnboarding$, params, signal);
-      return;
-    }
-
     const catalog = await get(modelCatalog$);
     signal.throwIfAborted();
     const resolvedRequestedModel = catalog.resolve(requestedModel);
@@ -227,7 +219,6 @@ export const setupPromptPage$ = command(
     await set(
       sendNewThread$,
       {
-        agentId,
         prompt: prompt ?? "",
         ...(draft ? { draft, preserveAgentDraft: true } : {}),
         ...(handoff

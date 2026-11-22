@@ -86,7 +86,6 @@
           "title": "提供方暂时不可用"
         }
       },
-      "fallbackAgent": "智能体",
       "fields": {
         "duration": "时长",
         "model": "模型",
@@ -378,7 +377,6 @@
         "openAutomations": "打开自动化面板"
       },
       "navigation": {
-        "agents": "智能体",
         "artifacts": "成果",
         "connectors": "连接器",
         "settings": "设置",
@@ -1811,7 +1809,7 @@
       "repair": "修复",
       "repairRequired": "{{institution}} 需要修复",
       "revoke": "撤销",
-      "revokeConfirm": "撤销这个智能体的银行访问权限？",
+      "revokeConfirm": "撤销此工作区的银行访问权限？",
       "selectAccounts": "选择账户",
       "sevenDays": "7 天",
       "thirtyDays": "30 天",
@@ -2786,7 +2784,6 @@
       "noEmojiFound": "没有找到表情",
       "notFound": "找不到该聊天会话",
       "openBrowser": "打开浏览器",
-      "openNamedAgent": "打开智能体 {{name}}",
       "openNamedChat": "打开聊天 {{title}}",
       "pickEmoji": "选择表情",
       "scrollToBottom": "滚动到底部",
@@ -4799,7 +4796,6 @@
     "create": "创建 Project",
     "delete": "删除",
     "deleteChoiceDescription": "可以只删除 Project 并保留聊天，也可以同时删除其中的聊天。",
-    "deleteDescription": "仅删除 Project，聊天及其历史记录会保留。",
     "deleteError": "无法删除 Project",
     "deleteProjectAndThreads_other": "删除 Project 和 {{count}} 个聊天…",
     "deleteProjectOnly": "仅删除 Project",

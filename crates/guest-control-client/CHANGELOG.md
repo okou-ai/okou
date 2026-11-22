@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.23.124](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.123...guest-control-client-v0.23.124) (2026-11-21)
+
+
+### Refactoring
+
+* **guest-control:** share pending exec control index removal ([#49848](https://github.com/okou-ai/okou/issues/49848)) ([e206beb](https://github.com/okou-ai/okou/commit/e206bebc8f406843cda9439977d1dff5340ceae3))
+
+## [0.23.123](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.122...guest-control-client-v0.23.123) (2026-11-21)
+
+
+### Refactoring
+
+* **guest-control:** share exec control reply settlement ([#49788](https://github.com/okou-ai/okou/issues/49788)) ([021eedc](https://github.com/okou-ai/okou/commit/021eedc0a4faef018dfc266ddfb6d745b17127f3))
+
 ## [0.23.122](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.121...guest-control-client-v0.23.122) (2026-11-21)
 
 

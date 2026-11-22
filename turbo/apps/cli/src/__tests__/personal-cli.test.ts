@@ -4,8 +4,7 @@ import { http, HttpResponse } from "msw";
 import { server } from "../mocks/server";
 import { registerRequestedCommand } from "../okou";
 
-const executorId = "00000000-0000-4000-8000-000000000001";
-function token(personal = true) {
+function token() {
   return `vm0_sandbox_e30.${Buffer.from(
     JSON.stringify({
       scope: "okou",
@@ -13,15 +12,12 @@ function token(personal = true) {
       userId: "member-a",
       orgId: "org-a",
       capabilities: [
-        "agent:read",
-        "agent:write",
         "instructions:read",
         "instructions:write",
         "chat-thread:read",
         "chat-thread:write",
         "connector:read",
       ],
-      ...(personal ? { singleAgent: true } : {}),
     }),
   ).toString("base64url")}.signature`;
 }
@@ -54,15 +50,12 @@ afterEach(() => {
 });
 
 describe("captured personal CLI help and dispatch", () => {
-  it("hides product Agent management and advertises personal Instructions at the root", async () => {
+  it("advertises personal Instructions at the root", async () => {
     vi.stubEnv("OKOU_TOKEN", token());
     const { help } = await cli(["--help"]);
     const text = await help();
     expect(text).toContain("instructions");
     expect(text).toContain("okou instructions view");
-    expect(text).not.toContain("View or manage agents");
-    expect(text).not.toContain("okou agent --help");
-    expect(text).not.toContain("cross-agent Projects");
   });
 
   it.each([
@@ -77,7 +70,7 @@ describe("captured personal CLI help and dispatch", () => {
     ["connector", "custom", "create"],
     ["whoami"],
     ["search"],
-  ])("keeps enabled help free of Agent selection: %s %s", async (...path) => {
+  ])("loads help for enabled commands: %s %s", async (...path) => {
     vi.stubEnv("OKOU_TOKEN", token());
     const { command } = await cli(path);
     let selected = command;
@@ -97,9 +90,6 @@ describe("captured personal CLI help and dispatch", () => {
     ).rejects.toMatchObject({
       code: "commander.helpDisplayed",
     });
-    expect(text).not.toContain("--agent");
-    expect(text).not.toContain("--all-agents");
-    expect(text).not.toContain("agent access");
     if (path[0] === "search") expect(text).toContain("agent-session");
     if (path[1] === "custom" && path[2] === "create") {
       expect(text).toContain('"authMode": "automatic"');
@@ -118,44 +108,9 @@ describe("captured personal CLI help and dispatch", () => {
     }
   });
 
-  it("rejects stale Agent mutations without requesting any Agent or Instructions write", async () => {
-    vi.stubEnv("OKOU_TOKEN", token());
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    const exit = vi.spyOn(process, "exit").mockImplementation(() => {
-      throw new Error("exit");
-    });
-    let writes = 0;
-    server.use(
-      http.all("*/api/*", () => {
-        writes++;
-        return HttpResponse.json({});
-      }),
-    );
-    try {
-      const { command } = await cli([
-        "agent",
-        "edit",
-        executorId,
-        "--description",
-        "shared role",
-      ]);
-      await expect(
-        command.parseAsync(
-          ["agent", "edit", executorId, "--description", "shared role"],
-          { from: "user" },
-        ),
-      ).rejects.toThrow("unknown command 'agent'");
-      expect(writes).toBe(0);
-    } finally {
-      error.mockRestore();
-      exit.mockRestore();
-    }
-  });
-
-  it("creates member chats even when the environment carries a legacy Agent ID", async () => {
+  it("creates member chats", async () => {
     vi.stubEnv("OKOU_TOKEN", token());
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
-    vi.stubEnv("OKOU_AGENT_ID", "00000000-0000-4000-8000-000000000002");
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     let created: unknown;
     server.use(
@@ -182,21 +137,19 @@ describe("captured personal CLI help and dispatch", () => {
       await command.parseAsync(["chat", "create", "Personal plan", "--json"], {
         from: "user",
       });
-      expect(created).not.toHaveProperty("agentId");
       expect(created).toMatchObject({
         title: "Personal plan",
       });
-      expect(JSON.parse(log.mock.calls[0]![0] as string)).not.toHaveProperty(
-        "agentId",
-      );
+      expect(JSON.parse(String(log.mock.calls[0]?.[0]))).toMatchObject({
+        title: "Personal plan",
+      });
     } finally {
       log.mockRestore();
     }
   });
 
-  it("identifies the personal Run by its user and workspace without exposing an Agent profile", async () => {
+  it("identifies the personal Run by its user and workspace", async () => {
     vi.stubEnv("OKOU_TOKEN", token());
-    vi.stubEnv("OKOU_AGENT_ID", executorId);
     vi.stubEnv("OKOU_CHAT_THREAD_ID", "personal-chat");
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -212,7 +165,6 @@ describe("captured personal CLI help and dispatch", () => {
       expect(output).toContain("User ID:    member-a");
       expect(output).toContain("Chat ID:    personal-chat");
       expect(output).toContain("Run ID:     captured-run");
-      expect(output).not.toContain("Agent ID:");
     } finally {
       log.mockRestore();
     }
@@ -240,23 +192,9 @@ describe("captured personal CLI help and dispatch", () => {
       const output = log.mock.calls.flat().join("\n");
       expect(output).toContain("outside-member");
       expect(output).toContain("Workspace A");
-      expect(output).not.toContain("Invalid OKOU_TOKEN");
     } finally {
       log.mockRestore();
     }
-  });
-
-  it("keeps workspace help when the Run snapshot has no marker", async () => {
-    vi.stubEnv("OKOU_TOKEN", token(false));
-    const { help } = await cli(["--help"]);
-    expect(await help()).not.toContain("okou agent --help");
-    expect(await help()).toContain("Personal Instructions?");
-    const { command } = await cli(["chat", "create"]);
-    expect(
-      command.commands[0]!.commands.find((child) => {
-        return child.name() === "create";
-      })!.helpInformation(),
-    ).not.toContain("--agent");
   });
 
   it("uses authenticated mode outside a Run for help as well as dispatch", async () => {
@@ -264,6 +202,5 @@ describe("captured personal CLI help and dispatch", () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     const { help } = await cli(["--help"]);
     expect(await help()).toContain("okou instructions view");
-    expect(await help()).not.toContain("okou agent --help");
   });
 });

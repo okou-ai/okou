@@ -18,9 +18,7 @@ interface UpdateOptions {
 function requireCustomConnectorWriteCapability(): void {
   const payload = decodeSandboxTokenPayload();
   if (payload && !payload.capabilities.includes("connector:write")) {
-    throw new Error(
-      "Custom connector update is not enabled for this agent run",
-    );
+    throw new Error("Custom connector update is not enabled for this Run");
   }
 }
 

@@ -5,8 +5,10 @@ import {
   userPermissionGrantBatchItemsSchema,
   type UserPermissionGrantBatchItem,
 } from "@okouai/api-contracts/validators/user-permission-grants";
-import { memberPermissionUrl } from "./member-permission-url";
-import { finalizePermissionActionUrl } from "./action-url";
+import {
+  finalizePermissionActionUrl,
+  permissionActionUrl,
+} from "./permission-action-url";
 import { diagnosePermissionRequest } from "./permission-request-diagnostic";
 
 const nonemptyString = string().trim().min(1);
@@ -71,7 +73,7 @@ export async function resolvePermissionRequestBatch(args: {
     }
   }
   if (items.length === 0) return { items, summaries, hasAws, url: undefined };
-  const actionUrl = await memberPermissionUrl("batch");
+  const actionUrl = await permissionActionUrl("batch");
   actionUrl.searchParams.set(
     "items",
     JSON.stringify(userPermissionGrantBatchItemsSchema.parse(items)),

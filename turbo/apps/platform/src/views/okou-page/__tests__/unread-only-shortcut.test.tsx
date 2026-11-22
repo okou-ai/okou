@@ -118,7 +118,6 @@ test("Open the first unread chat from the shortcut", async () => {
   ]);
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: {},
       threads: { [INCIDENT_THREAD_ID]: "unread" },
       unreadAt: { [INCIDENT_THREAD_ID]: "2026-03-10T00:05:00Z" },
     });
@@ -149,7 +148,6 @@ test("Only the latest shortcut toggle navigates", async () => {
   ]);
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      agents: {},
       threads: { [INCIDENT_THREAD_ID]: "unread" },
       unreadAt: { [INCIDENT_THREAD_ID]: "2026-03-10T00:05:00Z" },
     });

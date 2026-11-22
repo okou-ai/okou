@@ -3,6 +3,10 @@
     <string name="chat_undo_unarchived">Discussion désarchivée</string>
     <string name="chat_undo_marked_read">Discussion marquée comme lue</string>
     <string name="chat_undo">Annuler</string>
+    <string name="chat_undo_offline">%1$s\nVous pourrez annuler la modification une fois la connexion rétablie.</string>
+    <string name="chat_undo_checking">Vérification de l’annulation…</string>
+    <string name="chat_undo_failed">Impossible d’annuler la modification.</string>
+    <string name="chat_undo_unconfirmed">Impossible de confirmer l’annulation.</string>
     <string name="chat_feedback_dismiss">Fermer</string>
     <string name="chat_list_offline">Hors ligne</string>
     <string name="chat_list_refresh_failed">Échec de l’actualisation de la liste des chats</string>
@@ -44,6 +48,7 @@
     <string name="chat_unarchive">Désarchiver la discussion</string>
     <string name="chat_row_action_pending">Mise à jour de la discussion…</string>
     <string name="chat_row_action_failed">Impossible de confirmer la modification de la discussion.</string>
+    <string name="chat_row_action_rejected">Impossible de terminer la modification de la discussion.</string>
     <string name="chat_rename">Renommer la discussion</string>
     <string name="chat_pin">Épingler la discussion</string>
     <string name="chat_unpin">Détacher la discussion</string>

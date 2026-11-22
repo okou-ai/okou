@@ -46,7 +46,7 @@ class NativeComposerDraftTest {
         val journal = ComposerJournalStore(app, directory)
         val fixture = ComposerApiFixture()
         val held = CountDownLatch(1)
-        val path = "/api/agents/$CHAT_AGENT/draft"
+        val path = "/api/chat-drafts/composer"
         fixture.drafts[path] = plainDraftDocument("Saved on Web")
         fixture.beforeDraftRead = { held.await() }
         app.chatService = fixture.service

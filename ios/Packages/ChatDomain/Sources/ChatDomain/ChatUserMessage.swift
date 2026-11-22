@@ -14,7 +14,7 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
 
   public var bodyParts: [Part] {
     let visible = parts.filter {
-      ["text", "chat_thread", "agent", "project", "template", "feedback"].contains($0.type)
+      ["text", "chat_thread", "project", "template", "feedback"].contains($0.type)
     }
     if annotation?.type == "automation",
       visible.map(\.displayText).joined()
@@ -78,7 +78,6 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
     public let clientName: String?
     public let threadId: String?
     public let projectId: String?
-    public let agentId: String?
     public let runId: String?
     public let workflowId: String?
     public let automationBrief: String?
@@ -97,7 +96,7 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
       filenameSnapshot: String? = nil, workflowName: String? = nil,
       kind: String? = nil, href: String? = nil, clientName: String? = nil,
       threadId: String? = nil, projectId: String? = nil,
-      agentId: String? = nil, runId: String? = nil,
+      runId: String? = nil,
       workflowId: String? = nil, automationBrief: String? = nil,
       quote: String? = nil, note: [Part]? = nil, source: FeedbackSource? = nil,
       eventId: String? = nil, range: FeedbackRange? = nil,
@@ -116,7 +115,6 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
       self.clientName = clientName
       self.threadId = threadId
       self.projectId = projectId
-      self.agentId = agentId
       self.runId = runId
       self.workflowId = workflowId
       self.automationBrief = automationBrief
@@ -134,7 +132,7 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
       switch type {
       case "text": text ?? ""
       case "chat_thread", "template": titleSnapshot ?? ""
-      case "agent", "project": nameSnapshot ?? ""
+      case "project": nameSnapshot ?? ""
       case "feedback": "\n" + (quote ?? "") + "\n" + (note ?? []).map(\.displayText).joined() + "\n"
       default: ""
       }
@@ -147,7 +145,6 @@ public struct ChatUserMessage: Decodable, Equatable, Sendable {
       switch type {
       case "text": valid = present(text)
       case "chat_thread": valid = present(titleSnapshot) && identity(threadId)
-      case "agent": valid = present(nameSnapshot) && identity(agentId)
       case "project": valid = present(nameSnapshot) && identity(projectId)
       case "template": valid = present(titleSnapshot)
       case "automation":

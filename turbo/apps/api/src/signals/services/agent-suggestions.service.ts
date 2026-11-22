@@ -13,12 +13,11 @@ import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-t
 import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
 import { isDeepStrictEqual } from "node:util";
 import { command } from "ccstate";
-import { and, arrayContains, eq, isNull, or, not, sql } from "drizzle-orm";
+import { and, arrayContains, eq, not, sql } from "drizzle-orm";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { feedItems } from "@okouai/db/schema/feed-item";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   suggestionSchema,
@@ -119,21 +118,10 @@ export const suggestionAccess$ = command(
       const [run] = await get(db$)
         .select({
           id: agentRuns.id,
-          agentId: agentRuns.agentId,
           triggerSource: agentRuns.triggerSource,
           provenance: agentRuns.officialWorkflowProvenance,
         })
         .from(agentRuns)
-        .innerJoin(
-          orgMetadata,
-          and(
-            eq(orgMetadata.orgId, auth.orgId),
-            or(
-              isNull(agentRuns.agentId),
-              eq(orgMetadata.defaultAgentId, agentRuns.agentId),
-            ),
-          ),
-        )
         .where(
           and(
             eq(agentRuns.id, auth.runId),
@@ -146,7 +134,7 @@ export const suggestionAccess$ = command(
       signal.throwIfAborted();
       if (!run) {
         return resourceUnavailable(
-          "Suggestions are available only to a running Okou primary Agent.",
+          "Suggestions are available only to a running Okou session.",
         );
       }
       if (
@@ -173,10 +161,7 @@ export const suggestionAccess$ = command(
           auth,
           signal,
         );
-        if (
-          !preference.suggestions.active ||
-          (run.agentId !== null && preference.agentId !== run.agentId)
-        ) {
+        if (!preference.suggestions.active) {
           return resourceUnavailable(
             "Automatic suggestion curation is disabled or no longer available. Continue without changing suggestions.",
           );

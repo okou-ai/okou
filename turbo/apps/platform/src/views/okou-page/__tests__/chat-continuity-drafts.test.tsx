@@ -1,4 +1,4 @@
-import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
+import { composerDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -136,7 +136,7 @@ test("Protect local edits while a saved draft is loading", async () => {
   installChatListRunModels(context);
   installChatListStream(context, { caseId: 2, snapshot: [] });
   installActiveChatBoundaries(context);
-  context.mocks.api(agentDraftContract.get, async ({ respond }) => {
+  context.mocks.api(composerDraftContract.get, async ({ respond }) => {
     draftRequested.resolve();
     await delayedDraft.promise;
     draftResponseCompleted = true;
@@ -145,7 +145,7 @@ test("Protect local edits while a saved draft is loading", async () => {
       textContinuityDraft("Older server draft", [oldAttachment]),
     );
   });
-  context.mocks.api(agentDraftContract.patch, ({ respond }) => {
+  context.mocks.api(composerDraftContract.patch, ({ respond }) => {
     return respond(204);
   });
 

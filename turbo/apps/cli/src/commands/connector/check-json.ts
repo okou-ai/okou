@@ -14,12 +14,9 @@ import {
   getCustomConnector,
   type ConnectorDiagnosticRequest,
 } from "../../lib/api/domains/connectors";
-import { getOkouAgentId } from "../../lib/okou-env";
 import { getPlatformOrigin } from "../../lib/platform-url";
-import {
-  CALLBACK_PROMPT_PLACEHOLDER,
-  currentPermissionCallbackThread,
-} from "./action-url";
+import { CALLBACK_PROMPT_PLACEHOLDER } from "./action-url";
+import { currentPermissionCallbackThread } from "./permission-action-url";
 import {
   AWS_INCOMPLETE_CONTEXT_GUIDANCE,
   connectorCheckDiagnosticError,
@@ -270,7 +267,6 @@ export async function printConnectorCheckJson(
 ): Promise<void> {
   const runBound = isRunBoundConnectorContext();
   const context = runBound ? "run" : "current";
-  const agentId = getOkouAgentId();
   const retry: CheckAction = {
     kind: "command",
     command: `${connectorCheckRetryCommand(request)} --json`,
@@ -312,7 +308,6 @@ export async function printConnectorCheckJson(
     ...connectorSearchActionLinks({
       actions: connectionActions,
       origin,
-      agentId,
       callbackPrompt: undefined,
     }).map((link): CheckAction => {
       return { kind: "link", ...link };

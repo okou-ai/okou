@@ -14,7 +14,6 @@ const MAX_VISIBLE_CHAT_THREAD_RESULTS = 25;
 export interface WorkspaceSearchChatThread {
   readonly id: string;
   readonly title: string;
-  readonly agentId?: string;
   readonly sortAt: string;
 }
 
@@ -38,7 +37,6 @@ function workspaceSearchChatThread(
       i18n.t(($) => {
         return $.chat.newChat;
       }),
-    agentId: thread.agentId,
     sortAt: thread.sortAt,
   };
 }

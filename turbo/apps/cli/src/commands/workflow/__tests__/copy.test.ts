@@ -15,9 +15,7 @@ import { copyCommand } from "../copy";
 import chalk from "chalk";
 
 const SOURCE_ID = "22222222-2222-2222-2222-222222222222";
-const TARGET_AGENT_ID = "33333333-3333-3333-3333-333333333333";
 const NEW_ID = "44444444-4444-4444-4444-444444444444";
-const SOURCE_AGENT_ID = "55555555-5555-4555-8555-555555555555";
 const RESOLVED_SOURCE_ID = "66666666-6666-4666-8666-666666666666";
 const AUTOMATION_ID = "77777777-7777-4777-8777-777777777777";
 const THREAD_ID = "88888888-8888-4888-8888-888888888888";
@@ -41,9 +39,6 @@ const copiedAutomation = {
 function workflowSummary(overrides: Record<string, unknown> = {}) {
   return {
     id: RESOLVED_SOURCE_ID,
-    agentId: SOURCE_AGENT_ID,
-    agentName: "source-agent",
-    agentDisplayName: "Source Agent",
     name: "tell-a-joke",
     displayName: "Tell a joke",
     description: null,
@@ -66,16 +61,9 @@ describe("okou workflow copy command", () => {
     .mockImplementation(() => {});
 
   beforeEach(() => {
-    server.use(
-      http.get("*/api/agents", () => {
-        return HttpResponse.json([
-          { agentId: TARGET_AGENT_ID, isDefaultAgent: true },
-        ]);
-      }),
-    );
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
-    vi.stubEnv("OKOU_TOKEN", capturedRunToken(["agent:write"]));
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken([]));
   });
 
   afterEach(() => {
@@ -107,9 +95,6 @@ describe("okou workflow copy command", () => {
             return HttpResponse.json(
               {
                 id: NEW_ID,
-                agentId: TARGET_AGENT_ID,
-                agentName: "target-agent",
-                agentDisplayName: "Target Agent",
                 name: "my-workflow",
                 displayName: "My Workflow",
                 description: "Research customer activity",
@@ -133,14 +118,12 @@ describe("okou workflow copy command", () => {
 
       await copyCommand.parseAsync(["node", "cli", SOURCE_ID]);
 
-      expect(capturedBody?.toAgentId).toBe(TARGET_AGENT_ID);
+      expect(capturedBody).toStrictEqual({});
       const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
       expect(logCalls).toContain("copied");
       expect(logCalls).toContain(NEW_ID);
       expect(logCalls).toContain("Name:         my-workflow");
       expect(logCalls).toContain("Visibility:   private");
-      expect(logCalls).not.toContain("Agent Name:   Target Agent");
-      expect(logCalls).not.toContain(`Agent ID:     ${TARGET_AGENT_ID}`);
       expect(logCalls).toContain("Display Name: My Workflow");
       expect(logCalls).toContain("Description:  Research customer activity");
       expect(logCalls).toContain("Copied automations (1)");
@@ -164,9 +147,6 @@ describe("okou workflow copy command", () => {
             return HttpResponse.json(
               {
                 id: NEW_ID,
-                agentId: TARGET_AGENT_ID,
-                agentName: "target-agent",
-                agentDisplayName: "Target Agent",
                 name: "tell-a-joke",
                 displayName: "Tell a joke",
                 description: null,

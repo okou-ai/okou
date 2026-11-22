@@ -21,10 +21,10 @@ final class ComposerWorkflowSource {
     self.didFail = didFail
   }
 
-  func load(agentID: String?) async throws -> [ComposerWorkflow] {
+  func load() async throws -> [ComposerWorkflow] {
     guard !isClosed else { throw CancellationError() }
     do {
-      let workflows = try await client.composerWorkflows(agentID: agentID)
+      let workflows = try await client.composerWorkflows()
       try Task.checkCancellation()
       guard !isClosed else { throw CancellationError() }
       return workflows
@@ -41,12 +41,12 @@ final class ComposerWorkflowSource {
     }
   }
 
-  func prepareUse(in text: String, document: ChatDraftDocument?, agentID: String?) async throws
+  func prepareUse(in text: String, document: ChatDraftDocument?) async throws
     -> [String]
   {
     let text = document.map { visibleText($0.parts) } ?? text
     guard text.contains("/"), !isClosed else { return [] }
-    return try await load(agentID: agentID).filter { workflow in
+    return try await load().filter { workflow in
       let pattern =
         #"(?:^|\s)/"# + NSRegularExpression.escapedPattern(for: workflow.name)
         + #"(?=$|\s)"#

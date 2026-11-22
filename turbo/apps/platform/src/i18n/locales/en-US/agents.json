@@ -1,73 +1,7 @@
 {
   "actions": {
-    "cancel": "Cancel",
-    "close": "Close",
-    "copying": "Copying…",
-    "delete": "Delete agent",
-    "deleting": "Deleting…",
-    "discard": "Discard",
-    "save": "Save",
-    "saving": "Saving…"
+    "close": "Close"
   },
-  "avatar": {
-    "accessibilityDescription": "Customize the agent avatar style, color, and facial details.",
-    "actions": {
-      "customize": "Customize avatar"
-    },
-    "create": "Create custom avatar",
-    "description": "Pick a style or hit shuffle for a surprise.",
-    "editDescription": "Tweak any part, or shuffle for a new look.",
-    "editTitle": "Edit avatar",
-    "nextStep": "Next step",
-    "previousStep": "Previous step",
-    "randomize": "Randomize avatar",
-    "shuffleHint": "Shuffle — try a random look!",
-    "steps": {
-      "color": "Color",
-      "face": "Face",
-      "hair": "Hair",
-      "mood": "Mood",
-      "skin": "Skin",
-      "sweater": "Sweater"
-    },
-    "title": "Give your agent a face",
-    "use": "Use this avatar"
-  },
-  "delete": {
-    "dangerZone": "Danger zone",
-    "dangerZoneDescription": "Permanently remove this agent and all its data. This action cannot be undone.",
-    "description": "Deletes the agent, its workflows, automations, and everyone's chat history.",
-    "irreversible": "This can't be undone.",
-    "success": "Agent deleted",
-    "title": "Delete {{agentName}}?",
-    "workflows": {
-      "copyTo": "Copy to {{agentName}}",
-      "deleteWithAgent": "Delete with agent",
-      "description": "Copy a workflow to another agent to keep it. Anything left is deleted.",
-      "handle": "Handle workflow {{workflowTitle}}",
-      "loadFailed": "Could not load workflows.",
-      "loading": "Loading workflows…",
-      "title": "Keep any workflows?"
-    }
-  },
-  "detail": {
-    "chatWith": "Chat with {{agentName}}",
-    "defaultDescription": "Your AI teammate, tuned to you",
-    "notFound": {
-      "back": "Back to team",
-      "description": "The agent “{{agentId}}” doesn't exist or you don't have access to it.",
-      "title": "Agent not found"
-    },
-    "sectionNavigation": "Agent details section",
-    "tabs": {
-      "instructions": "Instructions",
-      "profile": "Profile"
-    }
-  },
-  "errors": {
-    "unknown": "Unknown error"
-  },
-  "fallbackName": "Agent",
   "ideation": {
     "all": "All",
     "catalog": {
@@ -194,10 +128,6 @@
           "personal-weekly-digest": {
             "description": "Pull requests, email, and calendar in one Slack update",
             "title": "Personal weekly digest"
-          },
-          "self-update-instructions": {
-            "description": "Update the agent instructions right in chat",
-            "title": "Self-update instructions"
           },
           "send-messages-on-your-behalf": {
             "description": "Posts team announcements to Slack for you",
@@ -434,91 +364,6 @@
     },
     "title": "Ideas & Use Cases"
   },
-  "instructions": {
-    "editor": {
-      "accessibilityLabel": "Instructions editor",
-      "footerHint": "Edit the instructions directly to customize your agent's behavior.",
-      "placeholder": "Write instructions for your agent...",
-      "toolbar": {
-        "blockquote": "Blockquote",
-        "bold": "Bold",
-        "bulletList": "Bullet list",
-        "heading1": "Heading 1",
-        "heading2": "Heading 2",
-        "heading3": "Heading 3",
-        "inlineCode": "Inline code",
-        "italic": "Italic",
-        "orderedList": "Ordered list",
-        "strikethrough": "Strikethrough"
-      }
-    },
-    "saved": "Instructions saved"
-  },
-  "list": {
-    "title": "Agents"
-  },
-  "profile": {
-    "fields": {
-      "avatar": {
-        "description": "Create your own avatar.",
-        "label": "Avatar"
-      },
-      "description": {
-        "description": "What this agent helps with—visible to teammates.",
-        "label": "Description",
-        "placeholder": "What does this agent do?"
-      },
-      "name": {
-        "description": "Shown in the team list and when this agent speaks.",
-        "label": "Name",
-        "placeholder": "What should we call them?"
-      },
-      "tone": {
-        "accessibilityLabel": "How {{agentName}} sounds",
-        "description": "Voice style for replies. Preview updates when you change tone.",
-        "groupLabel": "Tone",
-        "label": "How they sound"
-      },
-      "visibility": {
-        "description": "Visible to everyone in this workspace.",
-        "label": "Make public"
-      }
-    },
-    "makePrivate": {
-      "confirm": "Make private",
-      "description": "While this agent is private, other members lose access to their chat history under it. They regain access if you make it public again.",
-      "title": "Make {{agentName}} private?",
-      "warningDescription": "Other members will no longer see {{agentName}} or their chats under it.",
-      "warningTitle": "Members lose access"
-    },
-    "saved": "Profile saved",
-    "tones": {
-      "direct": {
-        "agentSample": "Friday. I'll send a draft Thursday.",
-        "hint": "To the point",
-        "label": "Direct",
-        "userSample": "I need the Q3 report by Friday."
-      },
-      "friendly": {
-        "agentSample": "Sure thing! I'll get that Q3 report to you by Friday—I'll send over a draft Thursday so you can take a look.",
-        "hint": "Warm and approachable",
-        "label": "Friendly",
-        "userSample": "I need the Q3 report by Friday."
-      },
-      "professional": {
-        "agentSample": "I'll have the Q3 report ready by Friday. I'll send a draft by Thursday for your review.",
-        "hint": "Clear and polished",
-        "label": "Professional",
-        "userSample": "I need the Q3 report by Friday."
-      },
-      "supportive": {
-        "agentSample": "I'll make sure you have the Q3 report by Friday. I'll send a draft on Thursday so you have time to review—let me know if you'd like anything else.",
-        "hint": "In your corner",
-        "label": "Supportive",
-        "userSample": "I need the Q3 report by Friday."
-      }
-    }
-  },
   "sidebar": {
     "escapeShortcut": "Esc",
     "filterAll": "All",
@@ -537,8 +382,5 @@
   },
   "status": {
     "unread": "Unread"
-  },
-  "unsaved": {
-    "message": "You have unsaved changes"
   }
 }

@@ -6,10 +6,13 @@ if [ "${DETECT_RESULT:?DETECT_RESULT is required}" != success ]; then
   exit 1
 fi
 
-if [ "${SCRIPT_CHECKS_RESULT:?SCRIPT_CHECKS_RESULT is required}" != success ]; then
-  echo "::error::iOS script checks must succeed; got $SCRIPT_CHECKS_RESULT"
-  exit 1
-fi
+case "${SCRIPTS_NEEDED:?SCRIPTS_NEEDED is required}:${SCRIPT_CHECKS_RESULT:?SCRIPT_CHECKS_RESULT is required}" in
+  true:success | false:skipped) ;;
+  *)
+    echo "::error::Unexpected iOS script checks: needed=$SCRIPTS_NEEDED, result=$SCRIPT_CHECKS_RESULT"
+    exit 1
+    ;;
+esac
 
 # Only a main merge group whose resolver verified a published archive and its
 # tests may omit native jobs. A skipped resolver selects the ordinary path.

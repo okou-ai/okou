@@ -164,8 +164,6 @@ data class ChatEventsEventsItemVariant1(
     val `kind`: ChatEventsEventsItemVariant1Kind,
     val `chatThreadId`: String,
     val `projectId`: String? = null,
-    val `agentId`: String? = null,
-    val `reassignedAgentId`: String? = null,
     val `title`: String?,
     val `pinOrder`: String? = null,
     val `muted`: Boolean? = null,
@@ -245,8 +243,6 @@ data class ChatEventsEventsItemVariant2(
     val `kind`: ChatEventsEventsItemVariant2Kind,
     val `chatThreadId`: String,
     val `projectId`: String?,
-    val `agentId`: String? = null,
-    val `reassignedAgentId`: String? = null,
     val `title`: String?,
     val `pinOrder`: String? = null,
     val `muted`: Boolean? = null,
@@ -318,12 +314,6 @@ object ChatEventsEventsItemSerializer : KSerializer<ChatEventsEventsItem> {
 data class ChatEvents(val `events`: List<ChatEventsEventsItem>, val `hasMore`: Boolean)
 
 @Serializable
-enum class IndicatorsAgentsValue {
-    @SerialName("active") ACTIVE,
-    @SerialName("unread") UNREAD,
-}
-
-@Serializable
 enum class IndicatorsThreadsValue {
     @SerialName("active") ACTIVE,
     @SerialName("unread") UNREAD,
@@ -331,30 +321,9 @@ enum class IndicatorsThreadsValue {
 
 @Serializable
 data class Indicators(
-    val `agents`: Map<String, IndicatorsAgentsValue>,
     val `threads`: Map<String, IndicatorsThreadsValue>,
     val `unreadAt`: Map<String, String>,
 )
-
-@Serializable
-enum class AgentsItemVisibility {
-    @SerialName("public") PUBLIC,
-    @SerialName("private") PRIVATE,
-}
-
-@Serializable
-data class AgentsItem(
-    val `agentId`: String,
-    val `isDefaultAgent`: Boolean,
-    val `ownerId`: String,
-    val `description`: String?,
-    val `displayName`: String?,
-    val `sound`: String?,
-    val `avatarUrl`: String?,
-    val `visibility`: AgentsItemVisibility,
-)
-
-typealias Agents = List<AgentsItem>
 
 @Serializable
 data class ProjectsProjectsItem(
@@ -406,7 +375,6 @@ enum class ChatArchiveChatThreadsItemServiceTier {
 data class ChatArchiveChatThreadsItem(
     val `id`: String,
     val `projectId`: String? = null,
-    val `agentId`: String? = null,
     val `title`: String?,
     val `sortAt`: String,
     val `createdAt`: String,

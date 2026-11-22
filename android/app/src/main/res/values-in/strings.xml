@@ -48,7 +48,7 @@
     <string name="auth_workspace">Ruang kerja saat ini</string>
     <string name="auth_switch_workspace">Ganti ruang kerja</string>
     <string name="auth_browser_unavailable">Instal browser untuk membuka pengaturan ruang kerja.</string>
-    <string name="preferences_title">Preferensi bersama</string>
+    <string name="preferences_title">Tampilan dan wilayah</string>
     <string name="preference_save_failed">Preferensi tidak dapat disimpan. Pilihan Anda tetap aktif.</string>
     <string name="preference_refresh_failed">Preferensi tidak dapat dimuat ulang. Coba lagi.</string>
     <string name="preference_color_theme">Tema warna</string>
@@ -150,8 +150,6 @@
     <string name="settings_account">Akun</string>
     <string name="chat_project_expansion_read_failed">Status buka atau tutup proyek tidak dapat dimuat di perangkat ini.</string>
     <string name="chat_project_expansion_save_failed">Status buka atau tutup proyek tidak dapat disimpan di perangkat ini.</string>
-    <string name="settings_switch">Ganti</string>
-    <string name="settings_view">Lihat</string>
     <string name="settings_cancel">Batal</string>
     <string name="settings_saving">Menyimpan…</string>
     <string name="settings_sign_out_title">Keluar?</string>
@@ -159,4 +157,9 @@
     <string name="updates_waiting_to_check">Menunggu pemeriksaan</string>
     <string name="updates_waiting_to_download">Menunggu unduhan</string>
     <string name="instructions_placeholder">Apa yang ingin Anda minta Okou perhatikan?</string>
+    <string name="instructions_save_when_online">Sambungkan ke internet untuk menyimpan perubahan.</string>
+    <string name="settings_conversation">Percakapan</string>
+    <string name="settings_timezone">Zona waktu</string>
+    <string name="settings_timezone_hint">Zona waktu default untuk tugas terjadwal baru.</string>
+    <string name="settings_timezone_utc">Waktu Universal Terkoordinasi (UTC)</string>
 </resources>

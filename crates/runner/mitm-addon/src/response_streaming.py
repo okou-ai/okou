@@ -22,10 +22,10 @@ import body_decoding
 import flow_metadata
 import flow_metadata_keys as metadata_keys
 import http_response_classification
+import model_usage_request
 import model_websocket_usage
 import response_inspection
 import run_usage
-import runtime_url_parsing
 import stream_capture
 import usage
 import websocket_handshake
@@ -129,12 +129,10 @@ class _ConnectorResponseFinalizer:
 
 def model_usage_protocol(flow: http.HTTPFlow) -> usage.ModelUsageProtocol:
     """Classify model usage from the observed request and CLI fallback."""
-    request_target = flow_metadata.original_url(flow.metadata) or flow.request.path
-    request_path = runtime_url_parsing.strip_url_query_and_fragment(request_target).rstrip("/")
-    if request_path.endswith("/chat/completions"):
-        return "openai_chat_completions"
-    if request_path.endswith("/responses"):
-        return "openai_responses"
+    target = model_usage_request.normalized_target(flow)
+    protocol = model_usage_request.openai_protocol(target)
+    if protocol is not None:
+        return protocol
     if flow_metadata.cli_agent_type(flow.metadata) == "codex":
         return "openai_responses"
     return "anthropic_messages"

@@ -88,7 +88,6 @@
           "title": "Fournisseur temporairement indisponible"
         }
       },
-      "fallbackAgent": "Agent",
       "fields": {
         "duration": "Durée",
         "model": "Modèle",
@@ -392,7 +391,6 @@
         "openAutomations": "Ouvrir les automatisations mobiles"
       },
       "navigation": {
-        "agents": "Agents",
         "artifacts": "Artéfacts",
         "connectors": "Connecteurs",
         "settings": "Paramètres",
@@ -1847,7 +1845,7 @@
       "repair": "Réparer",
       "repairRequired": "{{institution}} doit être réparé",
       "revoke": "Révoquer",
-      "revokeConfirm": "Révoquer l'accès bancaire de cet Agent ?",
+      "revokeConfirm": "Révoquer l’accès bancaire de cet espace de travail ?",
       "selectAccounts": "Sélectionner les comptes",
       "sevenDays": "7 jours",
       "thirtyDays": "30 jours",
@@ -2851,7 +2849,6 @@
       "noEmojiFound": "Aucun emoji trouvé",
       "notFound": "Fil de discussion introuvable",
       "openBrowser": "Ouvrir le navigateur",
-      "openNamedAgent": "Ouvrir l'agent {{name}}",
       "openNamedChat": "Ouvrir le chat {{title}}",
       "pickEmoji": "Choisissez un emoji",
       "scrollToBottom": "Faire défiler vers le bas",
@@ -4881,7 +4878,6 @@
     "create": "Create Project",
     "delete": "Delete",
     "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
-    "deleteDescription": "Only the Project will be deleted. Your chats and their histories will be kept.",
     "deleteError": "Could not delete Project",
     "deleteProjectAndThreads_one": "Delete project and {{count}} thread…",
     "deleteProjectAndThreads_many": "Delete project and {{count}} threads…",

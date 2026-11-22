@@ -1,7 +1,6 @@
 import { command, type Command, type Computed } from "ccstate";
 import type {
   ChatRunOptionsRequest,
-  UserMessageDocument,
   UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ChatEvent } from "./chat-event-types.ts";
@@ -24,40 +23,15 @@ import {
 import { registerActiveChatEventSignals$ } from "./chat-event-signal-registry.ts";
 import { withSelectedModelAnnotation } from "./model-selection-request.ts";
 
-export interface ChatAgentRunSource {
+export interface ChatRunSource {
   readonly runId: string;
   readonly threadId: string;
-  readonly agentId?: string;
   readonly titleSnapshot: string;
-}
-
-export function withOptimisticAgentRunSource(
-  document: UserMessageDocument,
-  source: ChatAgentRunSource,
-): UserMessageDocument {
-  return {
-    version: 1,
-    parts: [
-      ...document.parts.filter((part) => {
-        return part.type !== "source" && part.type !== "automation";
-      }),
-      {
-        type: "source",
-        kind: "agent",
-        runId: source.runId,
-        threadId: source.threadId,
-        agentId: source.agentId,
-        titleSnapshot: source.titleSnapshot,
-        href: `/chats/${source.threadId}#run-${source.runId}`,
-      },
-    ],
-  };
 }
 
 export interface SendInputChatEvent {
   readonly kind: "input";
   readonly delivery: "run" | "queue";
-  readonly agentId?: string;
   readonly prompt: string;
   readonly hasTextContent: boolean;
   readonly userMessage: UserMessageInputDocument;
@@ -67,19 +41,17 @@ export interface SendInputChatEvent {
   readonly computerUseHostId?: string | null;
   readonly cloudBrowserEnabled?: boolean;
   readonly revokesEventId?: string;
-  readonly source?: ChatAgentRunSource;
+  readonly source?: ChatRunSource;
   readonly onOptimisticSend?: () => void;
 }
 
 export interface SendRevokeChatEvent {
   readonly kind: "revoke";
-  readonly agentId?: string;
   readonly revokesEventId: string;
 }
 
 export interface SendInterruptChatEvent {
   readonly kind: "interrupt";
-  readonly agentId?: string;
   readonly interruptsRunId: string;
 }
 
@@ -114,13 +86,9 @@ function createSendInputChatEvent({
                 : input.runOptions?.codexServiceTier,
             )
           : input.userMessage;
-      const optimisticUserMessage = input.source
-        ? withOptimisticAgentRunSource(userMessage, input.source)
-        : userMessage;
       set(touchOptimisticChatThreadSort$, {
         id: chatThreadSortEventId,
         threadId,
-        agentId: input.agentId,
         createdAt,
       });
       const optimisticEventChanged = set(
@@ -133,7 +101,7 @@ function createSendInputChatEvent({
             threadId,
             eventType: "input.prompt",
             content: null,
-            userMessage: optimisticUserMessage,
+            userMessage,
             ...(input.revokesEventId === undefined
               ? {}
               : { revokesEventId: input.revokesEventId }),

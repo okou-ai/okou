@@ -35,7 +35,6 @@ import {
 } from "../../../__tests__/browser-cdp-fixture.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
-  CAPABILITY_AGENT_ID,
   completedConversation,
   readyChat,
   RUN_PATH,
@@ -51,7 +50,6 @@ import {
 const context = testContext();
 const { installCapabilityChat } = createChatCapabilityHelpers(context);
 
-const OTHER_AGENT_ID = "c0000000-0000-4000-a000-000000001101";
 const OTHER_THREAD_ID = "b0000000-0000-4000-a000-000000001102";
 const ACTION_RUN_ID = "d0000000-0000-4000-a000-000000001103";
 const INITIAL_SCREENSHOT_URL =
@@ -599,22 +597,15 @@ test("Recognize trusted assistant actions without trusting lookalikes", async ()
     `[Assistant computer action](${trustedComputer})`,
     `[Malformed browser input](${browserInputUrl()}&extra=unexpected)`,
     `[Forged action](${computerAuthorizationUrl("https://app.okou.ai.evil.test", "forged")})`,
-    "Wrong agent:",
-    connectorAuthorizationUrl({
-      agentId: OTHER_AGENT_ID,
-      threadId: RUN_THREAD_ID,
-      callbackPrompt: "Continue after authorization",
-    }),
     "Wrong conversation:",
     connectorAuthorizationUrl({
-      agentId: CAPABILITY_AGENT_ID,
       threadId: OTHER_THREAD_ID,
       callbackPrompt: "Continue in another conversation",
     }),
     "Missing action context:",
     connectorAuthorizationUrl({}),
-    "Unavailable agent:",
-    `https://app.okou.ai/agents/${OTHER_AGENT_ID}/permissions?connectorSlug=slack&permission=messages.read`,
+    "Missing permission owner:",
+    "https://app.okou.ai/connectors/permissions?connectorSlug=slack&permission=messages.read",
   ].join("\n\n");
   installCapabilityChat({
     cloudBrowserEnabled: true,
@@ -658,7 +649,7 @@ test("Recognize trusted assistant actions without trusting lookalikes", async ()
   expect(linkByName("Forged action")).toBeVisible();
 
   await waitFor(() => {
-    expect(screen.getAllByText("Action unavailable")).toHaveLength(5);
+    expect(screen.getAllByText("Action unavailable")).toHaveLength(4);
   });
   const unavailableCards = screen
     .getAllByText("Action unavailable")

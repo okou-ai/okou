@@ -505,9 +505,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         }
       }
       await flushWaitUntilForTest();
-      if (owned.agentId) {
-        await createBddApi(context).deleteAgent(owned.actor, owned.agentId);
-      }
+
       if (owned.connectorId) {
         await createConnectorBddApi(context).deleteCustomConnector(
           owned.actor,

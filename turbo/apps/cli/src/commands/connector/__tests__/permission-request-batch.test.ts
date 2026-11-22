@@ -15,6 +15,8 @@ import {
 } from "../../__tests__/helpers/connector-catalog";
 import { permissionRequestCommand } from "../permission-request";
 
+const CHAT_THREAD_ID = "20000000-0000-4000-8000-000000000001";
+
 const slack = {
   connector: "slack",
   permission: "chat:write",
@@ -120,10 +122,9 @@ describe("okou connector permission-request --batch-file", () => {
   }
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), "okou-permission-batch-"));
-    vi.stubEnv("OKOU_TOKEN", capturedRunToken(["agent:read"]));
+    vi.stubEnv("OKOU_TOKEN", capturedRunToken([]));
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://app.okou.ai");
-    vi.stubEnv("OKOU_AGENT_ID", undefined);
-    vi.stubEnv("OKOU_CHAT_THREAD_ID", "20000000-0000-4000-8000-000000000001");
+    vi.stubEnv("OKOU_CHAT_THREAD_ID", CHAT_THREAD_ID);
     diagnostics();
   });
   afterEach(async () => {
@@ -177,11 +178,20 @@ describe("okou connector permission-request --batch-file", () => {
     expect(output()).not.toContain("end the current turn");
   });
 
+  it("rejects a callback to a malformed Chat before printing a batch link", async () => {
+    vi.stubEnv("OKOU_CHAT_THREAD_ID", "invalid-chat");
+    await expect(
+      run([slack, gmail], ["--callback-prompt", "Continue"]),
+    ).rejects.toThrow("exit");
+    expect(errors()).toContain(
+      "--callback-prompt requires the current web chat",
+    );
+    expect(output()).not.toContain("action=allow");
+  });
+
   it("adds exactly one callback to the single batch action", async () => {
     await run([slack, gmail], ["--callback-prompt", "Continue & verify"]);
-    expect(actionUrl().searchParams.get("threadId")).toBe(
-      "20000000-0000-4000-8000-000000000001",
-    );
+    expect(actionUrl().searchParams.get("threadId")).toBe(CHAT_THREAD_ID);
     expect(actionUrl().searchParams.getAll("callbackPrompt")).toStrictEqual([
       "Continue & verify",
     ]);
@@ -246,21 +256,14 @@ describe("okou connector permission-request --batch-file", () => {
         permission: `${"x:".repeat(63)}${index}`,
       };
     });
-    diagnostics(
-      undefined,
-      operations.map(({ permission }) => {
-        return permission;
-      }),
-    );
+    const permissions = operations.map(({ permission }) => {
+      return permission;
+    });
+    diagnostics(undefined, permissions);
     await run(operations);
     expect(Buffer.byteLength(actionUrl().href)).toBeLessThanOrEqual(8192);
     log.mockClear();
-    diagnostics(
-      undefined,
-      operations.map(({ permission }) => {
-        return permission;
-      }),
-    );
+    diagnostics(undefined, permissions);
     await expect(
       run(operations, ["--callback-prompt", "继".repeat(200)]),
     ).rejects.toThrow("exit");

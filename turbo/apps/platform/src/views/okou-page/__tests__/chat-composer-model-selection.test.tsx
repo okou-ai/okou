@@ -587,7 +587,6 @@ test("Follow model-scoped effort changes made in another session", async () => {
       seqId: events.length + 1,
       kind: "model_selection_updated",
       chatThreadId: RUN_THREAD_ID,
-      agentId: "c0000000-0000-4000-a000-000000000001",
       title: null,
       selectedModel: "claude-sonnet-5",
       modelSettingsPatch: {
