@@ -60,12 +60,15 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -195,34 +198,55 @@ internal fun ArtifactPreview(
                     ArtifactSaveResult.Saved -> R.string.artifact_saved
                     ArtifactSaveResult.Denied -> R.string.artifact_save_denied
                     ArtifactSaveResult.Failed -> R.string.artifact_save_failed
-                    null ->
-                        R.string.artifact_browser_unavailable.takeIf {
-                            browserUnavailable && !offline
-                        }
+                    null -> R.string.artifact_browser_unavailable.takeIf { browserUnavailable }
                 }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PreviewContent(preview, offline)
                 if (feedback != null) {
-                    Text(
-                        stringResource(feedback),
-                        Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = colors.onSurfaceVariant,
-                    )
+                    KeepSpaceWhenHidden(visible = saveResult != null || !offline) {
+                        Text(
+                            stringResource(feedback),
+                            Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.onSurfaceVariant,
+                        )
+                    }
                 }
             }
             val open = preview?.info?.browserUrl
-            if (open != null && !offline) {
-                ArtifactAction(R.string.artifact_open_website, icon = R.drawable.ic_open_in_new) {
-                    browserUnavailable =
-                        try {
-                            browser.openUri(open.toString())
-                            false
-                        } catch (_: IllegalArgumentException) {
-                            true
-                        }
+            if (open != null) {
+                KeepSpaceWhenHidden(visible = !offline) {
+                    ArtifactAction(
+                        R.string.artifact_open_website,
+                        icon = R.drawable.ic_open_in_new,
+                        enabled = !offline,
+                    ) {
+                        browserUnavailable =
+                            try {
+                                browser.openUri(open.toString())
+                                false
+                            } catch (_: IllegalArgumentException) {
+                                true
+                            }
+                    }
                 }
             }
+        }
+    }
+}
+
+/** Keep the scroll range stable when browser controls disappear on disconnect. */
+@Composable
+private fun KeepSpaceWhenHidden(visible: Boolean, content: @Composable () -> Unit) {
+    if (visible) {
+        content()
+    } else {
+        Layout(
+            content = content,
+            modifier = Modifier.clearAndSetSemantics { hideFromAccessibility() },
+        ) { measurables, constraints ->
+            val child = measurables.single().measure(constraints)
+            layout(child.width, child.height) {}
         }
     }
 }

@@ -29,6 +29,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
@@ -280,10 +281,14 @@ class ArtifactCatalogRootTest {
         awaitText(fixture.image.title)
         compose.onNodeWithText(fixture.image.title).performClick()
         compose.waitUntilExactlyOneExists(hasContentDescription(fixture.image.title), 10_000)
+        backToCatalog.performClick()
+
         compose.runOnIdle { app.connectivity.value = false }
+        awaitText("Showing saved results offline")
+        compose.onNodeWithText(fixture.image.title).performClick()
         compose.onNodeWithContentDescription(fixture.image.title).assertIsDisplayed()
         backToCatalog.performClick()
-        awaitText("Showing saved results offline")
+
         compose.onNodeWithText(fixture.summary.title).performClick()
         compose.onNodeWithText(documentText, substring = true).assertIsDisplayed()
     }
@@ -349,6 +354,36 @@ class ArtifactCatalogRootTest {
             releaseGrant.countDown()
             instrumentation.resetInTouchMode()
         }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w720dp-h360dp")
+    fun websitePreviewKeepsTheReadingPositionInAShortWindow() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        awaitText(fixture.checklist.title)
+        compose.onNodeWithTag("artifact_list").performScrollToNode(hasText(fixture.site.title))
+        compose.onNodeWithText(fixture.site.title).performClick()
+
+        val browser = compose.onNodeWithText("Open in browser")
+        val surface = compose.onNodeWithTag("artifact_preview_surface")
+        awaitText("Open in browser")
+        val initialBounds = surface.getUnclippedBoundsInRoot()
+        browser.performScrollTo().assertIsDisplayed()
+        val readingBounds = surface.getUnclippedBoundsInRoot()
+        assertTrue(readingBounds.top < initialBounds.top)
+
+        compose.runOnIdle { app.connectivity.value = false }
+        awaitText("Connect to load the preview")
+        browser.assertDoesNotExist()
+        assertEquals(readingBounds, surface.getUnclippedBoundsInRoot())
+
+        compose.runOnIdle { app.connectivity.value = true }
+        awaitText("Open in browser")
+        assertEquals(readingBounds, surface.getUnclippedBoundsInRoot())
     }
 
     @Test
