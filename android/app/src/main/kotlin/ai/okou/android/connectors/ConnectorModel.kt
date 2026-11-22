@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.HttpUrl
 
 internal data class ConnectorRead<T>(val data: T? = null, val failures: Int = 0)
@@ -768,13 +769,8 @@ class ConnectorModel(
                         error.status !in setOf(408, 429)
                 )
                     return
-                delay(
-                    when (failures) {
-                        1 -> 2.seconds
-                        2 -> 8.seconds
-                        else -> 30.seconds
-                    }
-                )
+                val retryIn = connectorReadRetryDelays.getOrElse(failures - 1) { 60.seconds }
+                withTimeoutOrNull(retryIn) { uiState.first { it.offline } }
             }
         }
     }
@@ -785,6 +781,8 @@ class ConnectorModel(
         val matches: (ConnectorSavedAccount?) -> Boolean,
     )
 }
+
+private val connectorReadRetryDelays = listOf(5.seconds, 10.seconds, 20.seconds, 40.seconds)
 
 private fun Exception.uncertainWrite() =
     this is ApiFailure.Network ||

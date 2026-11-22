@@ -20,6 +20,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.isOff
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -42,6 +43,21 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], qualifiers = "en-rUS-w412dp-h892dp", application = TestOkouApplication::class)
 class ConnectorAccountFlowTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun loadingRowsStayHiddenDuringTheInitialReadGracePeriod() {
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.setContent { OkouTheme(false) { ConnectorSkeleton("Loading connectors", 1) } }
+            val skeleton = compose.onNodeWithContentDescription("Loading connectors")
+            compose.mainClock.advanceTimeBy(80)
+            skeleton.assertDoesNotExist()
+            compose.mainClock.advanceTimeBy(64)
+            skeleton.assertIsDisplayed()
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
 
     @Test
     fun changingTheDefaultSwitchUpdatesTheAccountRow() = withCalendar { _, _ ->

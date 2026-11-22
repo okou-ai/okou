@@ -2,6 +2,8 @@ package ai.okou.android.connectors
 
 import ai.okou.android.R
 import ai.okou.android.SettingsModal
+import ai.okou.android.chat.ChatSkeletonBlock
+import ai.okou.android.chat.rememberChatWaitIndicator
 import ai.okou.android.currentWindowSizeDp
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -292,7 +294,16 @@ internal fun ConnectorDetails(
                 }
                 if (panel == null) ConnectorActionFeedback(action)
             } else if (!state.offline && state.detail.failures == 0) {
-                ConnectorSkeleton(stringResource(R.string.connector_loading), rows = 2)
+                if (rememberChatWaitIndicator(waiting = true)) {
+                    val label = stringResource(R.string.connector_loading)
+                    Column(
+                        Modifier.fillMaxWidth().semantics { contentDescription = label },
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        ChatSkeletonBlock(Modifier.widthIn(max = 220.dp).fillMaxWidth().height(24.dp))
+                        ChatSkeletonBlock(Modifier.widthIn(max = 300.dp).fillMaxWidth().height(14.dp))
+                    }
+                }
             } else {
                 ConnectorStatusBanner(
                     if (state.offline) R.string.connector_offline
