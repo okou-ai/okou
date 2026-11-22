@@ -97,35 +97,35 @@ Original test `The VNC entry opens protocol selection and Back returns to it`. [
 - **Given** The user opens VNC setup from the add-connection URL.
 - **When** They choose screen control and then select Back.
 - **Then** The VNC login-method choice appears, with a Remote control action; Back returns to the add-connection choices. No connection-method selector, Back action, private-network action, or Tailscale installation prompt appears on the initial add-connection page."
-remote-control-guided-setup-027	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	757	pending					"## remote-control-guided-setup-027
+remote-control-guided-setup-027	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	757	first-verified	remote-control-guided-setup-027 Restarting SSH separates the retained network from the discarded login and address	turbo/apps/platform/src/views/okou-page/__tests__/choosing-a-local-device-route.test.ts	stage10-new.json	chosen-device-and-route-red.json	"## remote-control-guided-setup-027
 
 Original test `Manual SSH retains its selected tailscale network and clears login drafts when restarted`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L757).
 
 - **Given** A saved Tailscale network is available for manual SSH setup.
 - **When** The user leaves VNC setup, starts SSH, enters login drafts and a device address, selects that Tailscale network, then backs out and restarts SSH.
 - **Then** The selected network is retained, while the restarted SSH username, address, and password are blank. Leaving for Remote control returns to the empty remote directory."
-remote-control-guided-setup-028	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	757	pending					"## remote-control-guided-setup-028
+remote-control-guided-setup-028	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	757	first-verified	remote-control-guided-setup-028 Restarting SSH separates the retained network from the discarded login and address	turbo/apps/platform/src/views/okou-page/__tests__/choosing-a-local-device-route.test.ts	stage10-new.json	chosen-device-and-route-red.json	"## remote-control-guided-setup-028
 
 Original test `Manual SSH retains its selected cloudflare network and clears login drafts when restarted`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L757).
 
 - **Given** A saved Cloudflare Access network is available for manual SSH setup.
 - **When** The user leaves VNC setup, starts SSH, enters login drafts and a device address, selects that Cloudflare network, then backs out and restarts SSH.
 - **Then** The selected network is retained, while the restarted SSH username, address, and password are blank. Leaving for Remote control returns to the empty remote directory."
-remote-control-guided-setup-029	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	802	pending					"## remote-control-guided-setup-029
+remote-control-guided-setup-029	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	802	first-verified	remote-control-guided-setup-029 Changing the VNC profile retains the selected private route and its device address	turbo/apps/platform/src/views/okou-page/__tests__/choosing-a-local-device-route.test.ts	stage10-new.json	chosen-device-and-route-red.json	"## remote-control-guided-setup-029
 
 Original test `Manual VNC keeps its selected tailscale network during protective profile changes`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L802).
 
 - **Given** A saved Tailscale network is available for manual VNC setup, and the user has selected Apple screen sharing and entered a device address.
 - **When** They return to the login-method choice, change the profile to certificate-based VNC, and continue.
 - **Then** The selected Tailscale network and device address remain in the connection step, with no Add SSH connection action. Leaving for Remote control returns to the empty remote directory."
-remote-control-guided-setup-031	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	842	pending					"## remote-control-guided-setup-031
+remote-control-guided-setup-031	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	842	first-verified	remote-control-guided-setup-031 Leaving a Cloudflare SSH draft for private networks starts a fresh add-connection page	turbo/apps/platform/src/views/okou-page/__tests__/choosing-a-local-device-route.test.ts	stage10-new.json	new-connection-destination-red.json	"## remote-control-guided-setup-031
 
 Original test `Manual setup clears the chosen network when leaving for the remote directory`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L842).
 
 - **Given** The user selects a saved Cloudflare Access network during manual SSH setup.
 - **When** They leave to the private-networks page, then return to the remote directory and start adding a connection.
 - **Then** The remote directory shows its empty state, and the new add-connection page has no Back action."
-remote-control-guided-setup-032	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	859	pending					"## remote-control-guided-setup-032
+remote-control-guided-setup-032	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	859	first-verified	remote-control-guided-setup-032 Switching between Cloudflare and Tailscale SSH keeps the route's system username and saves the chosen device	turbo/apps/platform/src/views/okou-page/__tests__/choosing-a-local-device-route.test.ts	stage10-new.json	chosen-device-and-route-red.json	"## remote-control-guided-setup-032
 
 Original test `Manual SSH chooses a saved Tailscale SSH route and saves without SSH credentials`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L859).
 
@@ -167,14 +167,14 @@ Original test `The remote selector lists all saved networks without auto-selecti
 - **Given** The user is adding an SSH connection while two Tailscale networks and one Cloudflare Access network are saved.
 - **When** They open the connection-method menu and choose the Home network Tailscale entry.
 - **Then** The selector initially remains on Direct connection rather than auto-selecting a provider; the menu lists saved networks, and choosing Home network selects it without showing empty-state guidance."
-remote-control-guided-setup-044	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1258	pending					"## remote-control-guided-setup-044
+remote-control-guided-setup-044	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1258	first-verified	remote-control-guided-setup-044 The VNC network choice gates device fields and retains a nondefault port across steps	turbo/apps/platform/src/views/okou-page/__tests__/choosing-a-local-device-route.test.ts	stage10-new.json	chosen-device-and-route-red.json	"## remote-control-guided-setup-044
 
 Original test `VNC keeps empty SSH selection disabled and preserves the draft between steps`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L1258).
 
 - **Given** The user is adding VNC with a saved Tailscale network but no saved SSH connections.
 - **When** They choose Apple screen sharing, continue, and then select Tailscale and a saved network before entering port 5901 and going back and forward.
 - **Then** The empty SSH-host choice is disabled with guidance; dependent address and advanced fields are hidden until a usable network is selected. The VNC draft retains port 5901 across the step change, and no Add SSH connection action is offered."
-remote-control-guided-setup-046	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1360	pending					"## remote-control-guided-setup-046
+remote-control-guided-setup-046	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	1360	first-verified	remote-control-guided-setup-046 A Cloudflare VNC route enforces origin TLS and retains the device hostname through address help	turbo/apps/platform/src/views/okou-page/__tests__/choosing-a-local-device-route.test.ts	stage10-new.json	chosen-device-and-route-red.json	"## remote-control-guided-setup-046
 
 Original test `VNC displays saved Cloudflare connection details`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L1360).
 
@@ -265,14 +265,14 @@ Original test `An unknown SSH save outcome locks the connection draft`. [Registr
 - **Given** The user is adding direct SSH with an entered name, address, username, and password.
 - **When** The server returns an unknown save outcome with HTTP 500.
 - **Then** A “Save failed.” notice appears and the draft becomes locked: the name field and both login-method choices are disabled."
-remote-control-guided-setup-071	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	2213	pending					"## remote-control-guided-setup-071
+remote-control-guided-setup-071	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	2213	first-verified	remote-control-guided-setup-071 A refreshed connection keeps the pending removal locked until the unavailable detail replaces it	turbo/apps/platform/src/views/okou-page/__tests__/maintaining-saved-device-logins.test.ts	stage10-new.json	saved-device-remote-outcomes-red.json	"## remote-control-guided-setup-071
 
 Original test `An SSH deletion stays pending while its details refresh`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L2213).
 
 - **Given** A member is viewing a saved SSH connection and has confirmed its deletion.
 - **When** The connection details refresh while deletion is pending.
 - **Then** The delete dialog remains visible and Cancel is disabled. After deletion completes, the dialog closes and the unavailable-or-no-access message appears."
-remote-control-guided-setup-074	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	2329	pending					"## remote-control-guided-setup-074
+remote-control-guided-setup-074	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	2329	first-verified	remote-control-guided-setup-074 A delayed credential lookup keeps Edit busy and reports its failure on the connection	turbo/apps/platform/src/views/okou-page/__tests__/maintaining-saved-device-logins.test.ts	stage10-new.json	saved-device-remote-outcomes-red.json	"## remote-control-guided-setup-074
 
 Original test `The guided ssh edit entry displays pending credentials and a failed load`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L2329).
 
@@ -307,14 +307,14 @@ Original test `Editing vnc credentials keeps secrets hidden until replacement is
 - **Given** A saved VNC credential with Apple DH username-and-password authentication is being edited and its password is hidden.
 - **When** The user selects Change login details, enters a replacement password, hides the replacement fields, and selects them again.
 - **Then** The replacement password field is required, masked, and initially blank; hiding removes it and reopening it starts blank. The existing login details remain visible and cancel closes the dialog."
-remote-control-guided-setup-088	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	2725	pending					"## remote-control-guided-setup-088
+remote-control-guided-setup-088	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	2725	first-verified	remote-control-guided-setup-088 A saved password login can be created, renamed and removed from the credentials directory	turbo/apps/platform/src/views/okou-page/__tests__/maintaining-saved-device-logins.test.ts	stage10-new.json	saved-device-remote-outcomes-red.json	"## remote-control-guided-setup-088
 
 Original test `The standalone ssh credentials page supports adding, renaming, and deleting an unused credential`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L2725).
 
 - **Given** The standalone SSH credentials page has no saved credentials.
 - **When** The user adds a password login named Reusable login, renames it Renamed login, and deletes it.
 - **Then** The credential is created, renamed, and removed; the page returns to zero credentials and Add credential is enabled."
-remote-control-guided-setup-089	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	2725	pending					"## remote-control-guided-setup-089
+remote-control-guided-setup-089	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	2725	first-verified	remote-control-guided-setup-089 A saved password login can be created, renamed and removed from the credentials directory	turbo/apps/platform/src/views/okou-page/__tests__/maintaining-saved-device-logins.test.ts	stage10-new.json	saved-device-remote-outcomes-red.json	"## remote-control-guided-setup-089
 
 Original test `The standalone vnc credentials page supports adding, renaming, and deleting an unused credential`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L2725).
 
@@ -342,7 +342,7 @@ Original test `ssh shared login requires confirmation; cancelling retains the dr
 - **Given** An SSH connection shares its saved login with two connections.
 - **When** The user changes the password, chooses Continue editing at the confirmation, then saves and confirms the update.
 - **Then** The first save prompts with the affected connection and count, and cancellation retains the password draft without writing either connection or login. The confirmed save writes the shared password update using expected credential revision 3 and updates the connection."
-remote-control-guided-setup-098	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3159	pending					"## remote-control-guided-setup-098
+remote-control-guided-setup-098	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3159	first-verified	remote-control-guided-setup-098 Dismissing the saved-login picker preserves a manual draft and choosing a login resets only the credentials	turbo/apps/platform/src/views/okou-page/__tests__/choosing-a-local-device-route.test.ts	stage10-new.json	chosen-device-and-route-red.json	"## remote-control-guided-setup-098
 
 Original test `SSH login reuse is optional, shows the selected account, and can return to manual entry`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L3159).
 
@@ -377,21 +377,21 @@ Original test `A member cannot open an organization tailscale editor through a U
 - **Given** A member opens a URL for an organization-scoped Tailscale network.
 - **When** The edit page attempts to load the network.
 - **Then** An Unable to load alert appears and no network-name field is shown."
-remote-control-guided-setup-111	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3453	pending					"## remote-control-guided-setup-111
+remote-control-guided-setup-111	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3453	first-verified	remote-control-guided-setup-111 The three Cloudflare steps and dashboard link can be revisited without losing the secret draft	turbo/apps/platform/src/views/okou-page/__tests__/private-network-credential-walkthroughs.test.ts	stage10-new.json	provider-guide-state-red.json,guide-return-and-native-copy-red.json	"## remote-control-guided-setup-111
 
 Original test `Cloudflare three-step guide preserves the draft and resumes after returning`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L3453).
 
 - **Given** The user is creating a Cloudflare Access network with a draft name and client secret entered.
 - **When** They open the three-step credential guide, advance, close it with Escape, reopen it, move backward and forward, and return to the form.
 - **Then** The guide shows the documented three steps and Cloudflare dashboard link; the name and secret draft remain intact, the secret can be shown and hidden, and the form still offers Save network after returning."
-remote-control-guided-setup-112	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3516	pending					"## remote-control-guided-setup-112
+remote-control-guided-setup-112	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3516	first-verified	remote-control-guided-setup-112 The Tailscale guide copies the drafted tags and Write permission and preserves the network draft	turbo/apps/platform/src/views/okou-page/__tests__/private-network-credential-walkthroughs.test.ts	stage10-new.json	provider-guide-state-red.json,guide-return-and-native-copy-red.json	"## remote-control-guided-setup-112
 
 Original test `Tailscale guide uses current form tags and keeps secret inputs mounted through close`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L3516).
 
 - **Given** The user is creating a Tailscale network with a draft name, allowed tags, and client secret entered.
 - **When** They navigate the credential guide, copy the displayed tags and keys, open tag-help information, close and reopen the guide, and return to the form.
 - **Then** The guide reflects the current tags, copies the entered tags and the Write key, and preserves the name and secret draft throughout closing and reopening; the secret remains available in the form and Save network is offered on return."
-remote-control-guided-setup-113	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3575	pending					"## remote-control-guided-setup-113
+remote-control-guided-setup-113	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.bdd.md	3575	first-verified	remote-control-guided-setup-113 Entering existing credentials from either provider returns directly through the network directory	turbo/apps/platform/src/views/okou-page/__tests__/private-network-credential-walkthroughs.test.ts	stage10-new.json	provider-guide-state-red.json	"## remote-control-guided-setup-113
 
 Original test `Private network starts with a provider selector and each guide can be closed without a redundant back action`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/remote-control-guided-setup.test.tsx#L3575).
 
@@ -564,7 +564,7 @@ Original test `a Morning brief refresh failure still reports the error and disab
 - **Given** Morning brief is enabled and its preference can be saved.
 - **When** The user turns it off, but refreshing the saved preference returns an error.
 - **Then** An error indicating the preference could not be loaded or updated is shown, and the Morning brief switch is unavailable."
-sidebar-chat-history-001	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	80	pending					"## sidebar-chat-history-001
+sidebar-chat-history-001	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.bdd.md	80	first-verified	sidebar-chat-history-001 Scrolling the overflow reveals Archived context and moves Release plan out of the chat list	turbo/apps/platform/src/views/okou-page/__tests__/navigating-the-measured-chat-list.test.ts	stage10-new.json	sidebar-range-fold-and-selection-red.json	"## sidebar-chat-history-001
 
 Original test `Browse a long sidebar chat history`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-chat-history.test.tsx#L80).
 
@@ -821,7 +821,7 @@ Original test `Alt-click still opens a thread in the sidebar pane`. [Registratio
 - **Given** The current chat is open with a separate conversation available in the sidebar.
 - **When** The user Alt-clicks the separate conversation.
 - **Then** The current chat URL remains unchanged, the separate conversation appears in the sidebar pane, and its ID is present in the sidebar query parameter."
-sidebar-virtualization-001	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	165	pending					"## sidebar-virtualization-001
+sidebar-virtualization-001	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	165	first-verified	sidebar-virtualization-001 Opening a conversation adds keyboard focus to its viewport and starting a new chat removes it	turbo/apps/platform/src/views/okou-page/__tests__/navigating-the-measured-chat-list.test.ts	stage10-new.json	sidebar-range-fold-and-selection-red.json	"## sidebar-virtualization-001
 
 Original test `Keep the chat viewport keyboard-focusable only while a conversation is open`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx#L165).
 
@@ -829,91 +829,91 @@ Original test `Keep the chat viewport keyboard-focusable only while a conversati
 - **When** The user opens a conversation and then starts a new chat.
 - **Then** The viewport is keyboard-focusable while the conversation is open and is no longer keyboard-focusable after starting a new chat.
 - **Upstream change** `4e5707de` (#49556) makes `/` the only chat page (`/agents/{id}/chat` redirects there) and replaces the header New chat button with a New chat row linking to `/` at the top of the list; the upstream test is now `Keep the chat viewport keyboard-focusable only while a conversation is open` ([Registration](https://github.com/okou-ai/okou/blob/4e5707de3e/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx#L165)). Rebuild this scenario by starting the new chat from the New chat row."
-sidebar-virtualization-002	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	194	pending					"## sidebar-virtualization-002
+sidebar-virtualization-002	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	194	first-verified	sidebar-virtualization-002 Adjacent-chat navigation scrolls the focused viewport back from History 17 to History 2	turbo/apps/platform/src/views/okou-page/__tests__/navigating-the-measured-chat-list.test.ts	stage10-new.json	sidebar-range-fold-and-selection-red.json	"## sidebar-virtualization-002
 
 Original test `Keyboard navigation reveals an adjacent conversation outside the virtual window`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx#L194).
 
 - **Given** A conversation is open in a 32-conversation list with a five-row viewport, and the viewport is keyboard-focused and scrolled to History 17.
 - **When** The user presses Ctrl+Shift+ArrowDown to navigate to the adjacent conversation.
 - **Then** History 2 becomes current, the viewport scrolls to one row down, and it remains keyboard-focusable."
-sidebar-virtualization-003	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	227	pending					"## sidebar-virtualization-003
+sidebar-virtualization-003	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	227	first-verified	sidebar-virtualization-003 Expanding the last Project reveals both chats and the list remains navigable after collapsing	turbo/apps/platform/src/views/okou-page/__tests__/navigating-the-measured-chat-list.test.ts	stage10-new.json	sidebar-range-fold-and-selection-red.json	"## sidebar-virtualization-003
 
 Original test `Collapse and expand a Project inside a scrolled virtual window`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx#L227).
 
 - **Given** A virtualized sidebar shows 17 Projects and 32 conversations, with History 1 and History 2 in Project 17.
 - **When** The user expands and collapses Project 17 while scrolled to it, then expands it again and opens History 1.
 - **Then** Expanding shows History 1 and History 2; collapsing hides them while History 3 remains visible. The user can reopen the Project and navigate to History 1."
-sidebar-virtualization-004	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	470	pending					"## sidebar-virtualization-004
+sidebar-virtualization-004	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	470	first-verified	sidebar-virtualization-004 A two-chat Project adds exactly two row heights and its neighbor remains navigable during collapse	turbo/apps/platform/src/views/okou-page/__tests__/navigating-the-measured-chat-list.test.ts	stage10-new.json	sidebar-range-fold-and-selection-red.json	"## sidebar-virtualization-004
 
 Original test `Project fold shares one CSS reveal length and completion (mobile: false)`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx#L470).
 
 - **Given** On desktop, a collapsed Project contains two conversations in a list with 25 rows of base height.
 - **When** The user expands the Project and then collapses it after the reveal finishes.
 - **Then** Expansion adds a single two-row reveal height to the list; collapse hides the children and returns the list to 25 rows. History 3 remains usable during collapse and opens its conversation."
-sidebar-virtualization-006	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	525	pending					"## sidebar-virtualization-006
+sidebar-virtualization-006	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	525	first-verified	sidebar-virtualization-006 Reopening before the first collapse frame keeps both children usable	turbo/apps/platform/src/views/okou-page/__tests__/navigating-the-measured-chat-list.test.ts	stage10-new.json	sidebar-range-fold-and-selection-red.json	"## sidebar-virtualization-006
 
 Original test `A pointer reversal before the fold frame keeps children usable (mobile: false)`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx#L525).
 
 - **Given** On desktop, a collapsed Project contains History 1, and its children are usable.
 - **When** The user starts collapsing the Project and immediately reverses by expanding it before the fold frame.
 - **Then** The children remain usable and History 1 can be opened as a conversation."
-sidebar-virtualization-008	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	555	pending					"## sidebar-virtualization-008
+sidebar-virtualization-008	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	555	first-verified	sidebar-virtualization-008 Reversing a running fold begins at its measured child height and leaves the restored conversation usable	turbo/apps/platform/src/views/okou-page/__tests__/navigating-the-measured-chat-list.test.ts	stage10-new.json	sidebar-range-fold-and-selection-red.json	"## sidebar-virtualization-008
 
 Original test `A running fold reverses from its displayed CSS length (mobile: false)`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx#L555).
 
 - **Given** On desktop, a Project with two conversations is in the middle of its collapse animation.
 - **When** The user reverses the fold while it is running.
 - **Then** The reveal resumes from the displayed child height, keeps History 1 usable, and allows the conversation to be opened after the reveal finishes."
-sidebar-virtualization-011	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	603	pending					"## sidebar-virtualization-011
+sidebar-virtualization-011	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	603	first-verified	sidebar-virtualization-011 A touch movement before the reveal frame ends mobile motion at the full height	turbo/apps/platform/src/views/okou-page/__tests__/navigating-the-measured-chat-list.test.ts	stage10-new.json	sidebar-range-fold-and-selection-red.json	"## sidebar-virtualization-011
 
 Original test `List touchmove cancels Project motion without undoing the click (mobile: true)`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx#L603).
 
 - **Given** On mobile, a Project with two conversations is beginning to expand.
 - **When** The user moves a touch on the list before the reveal frame.
 - **Then** The reveal motion ends with the Project still expanded and the list at its full 27-row height; History 1 remains usable and opens its conversation."
-sidebar-virtualization-018	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	693	pending					"## sidebar-virtualization-018
+sidebar-virtualization-018	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	693	first-verified	sidebar-virtualization-018 A ten-thousand-chat Project keeps a bounded set of rows mounted across both ends and collapse	turbo/apps/platform/src/views/okou-page/__tests__/navigating-the-measured-chat-list.test.ts	stage10-new.json	sidebar-range-fold-and-selection-red.json	"## sidebar-virtualization-018
 
 Original test `A 10,000-chat Project stays bounded while opening and cancelling its reveal`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx#L693).
 
 - **Given** A desktop Project contains 10,000 conversations and is initially collapsed.
 - **When** The user opens the Project, cancels the reveal with a wheel event, scrolls to History 10000, returns to the top, and collapses the Project.
 - **Then** At most 68 conversation rows are rendered throughout; the expanded list reaches 10,025 rows, and after collapse History 1 is no longer shown."
-sidebar-virtualization-019	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	735	pending					"## sidebar-virtualization-019
+sidebar-virtualization-019	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	735	first-verified	sidebar-virtualization-019 Returning from a conversation during mobile expansion restores the expanded Project without motion	turbo/apps/platform/src/views/okou-page/__tests__/navigating-the-measured-chat-list.test.ts	stage10-new.json	mobile-project-collapsed-before-leaving-red.json	"## sidebar-virtualization-019
 
 Original test `Navigating away from a mobile reveal cancels its viewport lifetime`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx#L735).
 
 - **Given** On mobile, a collapsed Project is ready to expand.
 - **When** The user begins expanding it, opens History 3, waits for the conversation, and returns to the chat list.
 - **Then** The conversation viewport is gone while away, and the restored Project remains expanded with no unfinished fold state."
-sidebar-virtualization-020	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	756	pending					"## sidebar-virtualization-020
+sidebar-virtualization-020	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	756	first-verified	sidebar-virtualization-020 The archived footer stays outside the desktop list through expansion and wheel cancellation	turbo/apps/platform/src/views/okou-page/__tests__/navigating-the-measured-chat-list.test.ts	stage10-new.json	sidebar-range-fold-and-selection-red.json	"## sidebar-virtualization-020
 
 Original test `A filtered desktop list excludes its external footer from the reveal height`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx#L756).
 
 - **Given** A desktop archived-chat list has an external “Show all chats” footer and a collapsed Project; the list itself is three rows high.
 - **When** The user expands and collapses the Project, cancels the collapse with a wheel event, and chooses “Show all chats.”
 - **Then** The footer is excluded from the Project reveal height, which expands the list to five rows. Cancelling collapse returns it to three rows, and choosing “Show all chats” removes the footer."
-sidebar-virtualization-022	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	823	pending					"## sidebar-virtualization-022
+sidebar-virtualization-022	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	823	first-verified	sidebar-virtualization-022 The mobile unread footer occupies one row throughout touch cancellation and disappears when all chats are shown	turbo/apps/platform/src/views/okou-page/__tests__/navigating-the-measured-chat-list.test.ts	stage10-new.json	sidebar-range-fold-and-selection-red.json	"## sidebar-virtualization-022
 
 Original test `The mobile unread footer shares the Project reveal's list height`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx#L823).
 
 - **Given** On mobile, an unread chat list has a collapsed Project and a “Show all chats” footer within the list; the list is four rows high.
 - **When** The user expands the Project, cancels the reveal with a touch movement, collapses it, cancels that motion, and selects “Show all chats.”
 - **Then** The expanded list reaches six rows with the footer included in its height; collapse returns it to four rows. Selecting the footer shows History 3 and removes the footer."
-sidebar-virtualization-023	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	857	pending					"## sidebar-virtualization-023
+sidebar-virtualization-023	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	857	first-verified	sidebar-virtualization-023 Collapsing at the expanded bottom immediately returns the 19-row list and keeps the next chat visible	turbo/apps/platform/src/views/okou-page/__tests__/navigating-the-measured-chat-list.test.ts	stage10-new.json	sidebar-range-fold-and-selection-red.json	"## sidebar-virtualization-023
 
 Original test `A bottom-clamping Project collapse commits its smaller list immediately`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx#L857).
 
 - **Given** A desktop list has 17 Projects and two conversations outside the Projects, and the user has scrolled near the bottom with a Project header visible.
 - **When** The user expands that Project, scrolls to the expanded list's bottom, and collapses the Project.
 - **Then** The collapse immediately commits a 19-row list; History 1 is no longer visible and History 3 remains visible."
-sidebar-virtualization-024	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	880	pending					"## sidebar-virtualization-024
+sidebar-virtualization-024	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	880	first-verified	sidebar-virtualization-024 A resized 6406-chat viewport redraws its visible range and keeps that range while opening History 2	turbo/apps/platform/src/views/okou-page/__tests__/navigating-the-measured-chat-list.test.ts	stage10-new.json	sidebar-range-fold-and-selection-red.json	"## sidebar-virtualization-024
 
 Original test `Resize and navigate a loaded virtual viewport`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx#L880).
 
 - **Given** A conversation is open in a virtualized list of 6,406 conversations with a 612-pixel viewport.
 - **When** The viewport is resized to 900 pixels and then 360 pixels, and the user opens History 2.
 - **Then** The list shows 25 rows initially, 33 after enlarging, and 18 after shrinking; opening History 2 preserves the 18-row rendering and marks that conversation current."
-sidebar-virtualization-026	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	986	pending					"## sidebar-virtualization-026
+sidebar-virtualization-026	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	986	first-verified	sidebar-virtualization-026 Running waves use the full row index after scrolling and follow the new order after pinning	turbo/apps/platform/src/views/okou-page/__tests__/navigating-the-measured-chat-list.test.ts	stage10-new.json	sidebar-range-fold-and-selection-red.json	"## sidebar-virtualization-026
 
 Original test `Follow full-list wave positions across scrolling and pinning`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx#L986).
 
@@ -928,7 +928,7 @@ Original test `Refresh virtualization after pinning adds a grid row and unpinnin
 - **When** The user pins another agent and then unpins it.
 - **Then** With five cards, the list refreshes to 18 rows; after returning to four cards, it refreshes to 25 rows.
 - **Upstream change** `4e5707de` (#49556) retires pinned agents and the pinned-agent grid and removes this upstream test. Retire this scenario."
-sidebar-virtualization-031	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	1258	pending					"## sidebar-virtualization-031
+sidebar-virtualization-031	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.bdd.md	1258	first-verified	sidebar-virtualization-031 A delayed service incident shrinks the mobile chat viewport and dismissing it restores twenty rows	turbo/apps/platform/src/views/okou-page/__tests__/navigating-the-measured-chat-list.test.ts	stage10-new.json	sidebar-range-fold-and-selection-red.json	"## sidebar-virtualization-031
 
 Original test `Remeasure the mobile chat list when a service notice arrives and is dismissed`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/sidebar-virtualization.test.tsx#L1258).
 
@@ -1089,7 +1089,7 @@ Original test `Native direct RFB and detached KDC routes preserve identity and o
 - **Given** A saved VNC connection uses a direct RFB route and has a detached KDC route marked for rebind.
 - **When** The owner opens its details and edits the connection.
 - **Then** The card preserves the direct RFB route and shows the Tailscale KDC route and RFB server identity. The edit form explicitly shows both routes, and Save is disabled until the KDC route is rebound."
-vnc-settings-003	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	353	pending					"## vnc-settings-003
+vnc-settings-003	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	353	first-verified	vnc-settings-003 A competing generation prevents another save and keeps the owner's new name in the editor	turbo/apps/platform/src/views/okou-page/__tests__/maintaining-saved-device-logins.test.ts	stage10-new.json	saved-device-remote-outcomes-red.json	"## vnc-settings-003
 
 Original test `A conflicting VNC edit preserves the draft and blocks saving`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx#L353).
 
@@ -1117,7 +1117,7 @@ Original test `VNC settings never retain the previous owner's diagnostic warning
 - **Given** The current owner sees an authentication-failure warning on a VNC host.
 - **When** The signed-in owner changes and the new owner's host list loads while observations are pending.
 - **Then** The previous owner's warning is removed before the new owner's host is displayed."
-vnc-settings-012	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	808	pending					"## vnc-settings-012
+vnc-settings-012	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx	turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.bdd.md	808	first-verified	vnc-settings-012 Returning from Connectors displays the newly named desktop and discards the old name	turbo/apps/platform/src/views/okou-page/__tests__/maintaining-saved-device-logins.test.ts	stage10-new.json	saved-device-remote-outcomes-red.json	"## vnc-settings-012
 
 Original test `Returning to Connectors refreshes VNC hosts changed elsewhere`. [Registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/okou-page/__tests__/vnc-settings.test.tsx#L808).
 
