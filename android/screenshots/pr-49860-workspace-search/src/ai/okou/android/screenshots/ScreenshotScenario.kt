@@ -34,7 +34,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -90,6 +89,13 @@ class ScreenshotScenario {
             ) {
                 "The search input is not visible"
             }
+        fun awaitSearchText(value: String) {
+            val restored = By.pkg(app.packageName).clazz("android.widget.EditText").text(value)
+            assertTrue(
+                "The search input should show $value",
+                device.wait(Until.hasObject(restored), 12_000),
+            )
+        }
         fun tab(id: Int) {
             val selector = By.pkg(app.packageName).text(label(id))
             val control =
@@ -246,7 +252,7 @@ class ScreenshotScenario {
                     assertFalse(device.hasObject(By.pkg(app.packageName).text(hiddenReply)))
                     capture("search-message.png")
                     button(R.string.back).click()
-                    assertEquals("launch", field().text)
+                    awaitSearchText("launch")
                     text(earlierReply)
 
                     text(workflows.releaseTitle).click()
@@ -255,7 +261,7 @@ class ScreenshotScenario {
                     press(R.string.chat_search_workflow_details)
                     contains("Review launch copy and product notes.")
                     device.pressBack()
-                    assertEquals("launch", field().text)
+                    awaitSearchText("launch")
                     text(workflows.releaseTitle).click()
                     press(R.string.chat_search_workflow_add_draft)
                     contains("/release-review Keep my existing draft")
@@ -269,7 +275,7 @@ class ScreenshotScenario {
                     hideKeyboard()
                     capture("search-draft.png")
                     button(R.string.back).click()
-                    assertEquals("launch", field().text)
+                    awaitSearchText("launch")
 
                     tab(R.string.chat_search_artifacts)
                     text(artifacts.summary.title).click()
@@ -282,7 +288,7 @@ class ScreenshotScenario {
                     button(R.string.artifact_return_preview).click()
                     contains("Positioning:")
                     button(R.string.chat_search_close_artifact_preview).click()
-                    assertEquals("launch", field().text)
+                    awaitSearchText("launch")
                     text(artifacts.summary.title)
 
                     tab(R.string.chat_search_messages)
@@ -291,7 +297,7 @@ class ScreenshotScenario {
                     text(label(R.string.chat_search_all_types))
                     capture("search-empty.png")
                     press(R.string.chat_search_all_types)
-                    assertEquals("no match", field().text)
+                    awaitSearchText("no match")
 
                     enter("launch")
                     app.connectivity.value = false
