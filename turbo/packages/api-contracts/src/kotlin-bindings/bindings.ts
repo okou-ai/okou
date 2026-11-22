@@ -32,6 +32,7 @@ import { platformRealtimeTokenContract } from "../contracts/realtime";
 import { sessionOutputDeltaSchema } from "../validators/realtime";
 import { modelCatalogContract } from "../contracts/model-catalog";
 import { runModelsMainContract } from "../contracts/run-models";
+import { userModelPreferenceContract } from "../contracts/user-model-preference";
 import { thirdPartySubscriptionsMainContract } from "../contracts/third-party-subscriptions";
 import {
   billingStatusContract,
@@ -314,6 +315,17 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: runModelsMainContract.list,
   },
   {
+    name: "defaultModelPreference",
+    response: "DefaultModelPreference",
+    route: userModelPreferenceContract.get,
+  },
+  {
+    name: "updateDefaultModelPreference",
+    request: "UpdateDefaultModelPreference",
+    response: "DefaultModelPreference",
+    route: userModelPreferenceContract.update,
+  },
+  {
     name: "recoverySubscriptions",
     response: "RecoverySubscriptions",
     route: thirdPartySubscriptionsMainContract.list,
@@ -574,6 +586,21 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     name: "RecoveryModels",
     schema: runModelsMainContract.list.responses[200],
     direction: "output",
+  },
+  {
+    name: "DefaultModelPreference",
+    schema: userModelPreferenceContract.get.responses[200],
+    readSchema: userModelPreferenceContract.get.responses[200].pick({
+      selectedModel: true,
+      serviceTier: true,
+      modelSettings: true,
+    }),
+    direction: "output",
+  },
+  {
+    name: "UpdateDefaultModelPreference",
+    schema: userModelPreferenceContract.update.body,
+    direction: "input",
   },
   {
     name: "RecoverySubscriptions",

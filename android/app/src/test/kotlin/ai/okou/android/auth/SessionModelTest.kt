@@ -74,6 +74,12 @@ class SessionModelTest {
 
         override suspend fun usagePackCredits() = canonical.usagePackCredits()
 
+        override suspend fun defaultModelPreference() = canonical.defaultModelPreference()
+
+        override suspend fun updateDefaultModelPreference(
+            update: ai.okou.android.api.generated.UpdateDefaultModelPreference
+        ) = canonical.updateDefaultModelPreference(update)
+
         override suspend fun activateModelAccount(accountId: String) =
             canonical.activateModelAccount(accountId)
 
