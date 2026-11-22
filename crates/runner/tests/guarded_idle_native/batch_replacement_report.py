@@ -61,9 +61,7 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
             ordered, "replacement original saving/old refusal/new recovery order changed")
         blocked, tail, pool, progress, saved, waiting, refused, retired, joined = [e["evidence"] for e in events]
         path = blocked.get("status_path")
-        if not status_evidence.valid_status_path(path) or path in paths:
-            raise ValueError("replacement private status path changed")
-        paths.add(path)
+        status_evidence.claim_status_path(path, paths, "replacement private status path changed")
         initial = blocked.get("published_status")
         status_evidence.original_status(initial,sandbox=identity[0])
         reuse = initial["idle_sandboxes"][0]["reuse_key"]

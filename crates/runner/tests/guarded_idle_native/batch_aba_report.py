@@ -52,9 +52,7 @@ def validate(directory, *, cases=None, policy_key="native_batch_aba_policy_json"
             ordered, "old refusal and new physical recovery ordering changed")
         blocked, pool, admission, waiting, refused, tail, complete, joined = [e["evidence"] for e in events]
         path = blocked.get("status_path")
-        if not status_evidence.valid_status_path(path) or path in paths:
-            raise ValueError("batch ABA private status path changed")
-        paths.add(path)
+        status_evidence.claim_status_path(path, paths, "batch ABA private status path changed")
         initial = blocked.get("published_status")
         status_evidence.original_status(initial, sandbox=identity[0])
         reuse = initial["idle_sandboxes"][0]["reuse_key"]
