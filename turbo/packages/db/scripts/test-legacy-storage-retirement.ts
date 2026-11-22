@@ -30,8 +30,9 @@ export async function validateLegacyStorageRetirement(
   const sql = postgres(databaseUrl, { max: 1 });
   const root = randomUUID();
   const version = randomUUID();
-  const retire = () =>
-    applyPendingMigrations(sql, { beforeMillis: migrationMillis + 1 });
+  const retire = () => {
+    return applyPendingMigrations(sql, { beforeMillis: migrationMillis + 1 });
+  };
   try {
     await applyPendingMigrations(sql, { beforeMillis: migrationMillis });
     await sql`INSERT INTO storages (id, org_id, user_id, name, s3_prefix)
