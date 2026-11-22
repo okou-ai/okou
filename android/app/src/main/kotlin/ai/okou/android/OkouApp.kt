@@ -380,11 +380,7 @@ internal fun OkouApp(
                 else -> SearchRoute.Closed
             }
         if (fromSearch) releaseSearchFocus()
-        when (search) {
-            SearchRoute.Closed -> searchState.reset()
-            SearchRoute.ReturnOnBack -> searchState.edit(searchState.query.copy(composition = null))
-            SearchRoute.Open -> Unit
-        }
+        if (search == SearchRoute.Closed) searchState.reset()
         conversations.open(threadId)
         navigation = navigation.copy(target = destination, settings = null, search = search)
     }

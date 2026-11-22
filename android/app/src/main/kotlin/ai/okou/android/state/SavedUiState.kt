@@ -76,25 +76,39 @@ internal class ChatSearchState(
     query: TextFieldValue = TextFieldValue(),
     anchor: SearchResultAnchor? = null,
 ) {
-    var query by mutableStateOf(query)
-        private set
+    private data class SearchInput(
+        val current: TextFieldValue,
+        val committed: TextFieldValue = current,
+    )
+
+    private var input by mutableStateOf(SearchInput(query))
+    val query: TextFieldValue
+        get() = input.current
+
+    val committedQuery: TextFieldValue
+        get() = input.committed
 
     val position = LazyListState()
     var pendingAnchor by mutableStateOf(anchor)
         private set
 
     fun edit(value: TextFieldValue) {
-        if (query.text != value.text) {
+        val committed = if (value.composition == null) value else committedQuery
+        if (committedQuery.text != committed.text) {
             pendingAnchor = null
             position.requestScrollToItem(0)
         }
-        query = value
+        input = SearchInput(value, committed)
     }
 
     fun reset() {
         pendingAnchor = null
         position.requestScrollToItem(0)
-        query = TextFieldValue()
+        input = SearchInput(TextFieldValue())
+    }
+
+    fun cancelComposition() {
+        if (query.composition != null) input = SearchInput(committedQuery)
     }
 
     fun restorePosition(index: Int?) {
@@ -118,12 +132,16 @@ internal class ChatSearchState(
 }
 
 @Composable
+internal fun <T> ChatSearchState.retainWhileComposing(value: T): T =
+    if (query.composition == null) value else remember(this) { value }
+
+@Composable
 internal fun rememberChatSearchState(): ChatSearchState =
     rememberSaveable(
         saver =
             listSaver<ChatSearchState, Any>(
                 save = {
-                    val query = it.query
+                    val query = it.committedQuery
                     if (query.text.length <= MAX_SAVED_SEARCH_QUERY_CHARS) {
                         val anchor = it.savedAnchor()
                         listOf(

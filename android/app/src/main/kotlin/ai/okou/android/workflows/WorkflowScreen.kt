@@ -14,6 +14,7 @@ import ai.okou.android.state.ChatSearchState
 import ai.okou.android.state.WorkflowScope
 import ai.okou.android.state.WorkflowTab
 import ai.okou.android.state.WorkflowsRoute
+import ai.okou.android.state.retainWhileComposing
 import ai.okou.android.updates.updateFocusOutline
 import ai.okou.android.workspaceSearchTextStyle
 import androidx.activity.compose.BackHandler
@@ -306,14 +307,18 @@ private fun WorkflowDirectory(
     restoreRow: String?,
     onRowRestored: () -> Unit,
 ) {
-    val text = query.query.text.trim()
+    val text = query.committedQuery.text.trim()
+    val displayedState =
+        if (state.catalogFailure == WorkflowReadFailure.Unavailable) state
+        else query.retainWhileComposing(state)
+    val catalog = displayedState.catalog
     val rows =
-        remember(state.catalog, route.scope, text) {
-            state.catalog?.filter { it.matches(route.scope, text) }.orEmpty()
+        remember(catalog, route.scope, text) {
+            catalog?.filter { it.matches(route.scope, text) }.orEmpty()
         }
     val anchor = query.pendingAnchor
-    LaunchedEffect(rows, anchor, state.catalog) {
-        if (anchor != null && state.catalog != null)
+    LaunchedEffect(rows, anchor, catalog) {
+        if (anchor != null && catalog != null)
             query.restorePosition(rows.indexOfFirst { it.id == anchor.chatId }.takeIf { it >= 0 })
     }
     Column(
@@ -380,11 +385,10 @@ private fun WorkflowDirectory(
         if (handoffFailed) WorkflowNotice(R.string.workflow_draft_unavailable)
         Box(Modifier.weight(1f).widthIn(max = 730.dp).fillMaxWidth()) {
             when {
-                state.catalog == null && state.offline ->
-                    WorkflowPlaceholder(R.string.workflow_offline)
-                state.catalog == null && state.catalogFailure != null ->
+                catalog == null && state.offline -> WorkflowPlaceholder(R.string.workflow_offline)
+                catalog == null && state.catalogFailure != null ->
                     WorkflowPlaceholder(R.string.workflow_load_failed)
-                state.catalog == null -> WorkflowSkeleton(directory = true)
+                catalog == null -> WorkflowSkeleton(directory = true)
                 rows.isEmpty() -> WorkflowEmpty(route.scope, text, query::reset, onScope)
                 else ->
                     LazyColumn(
@@ -395,8 +399,9 @@ private fun WorkflowDirectory(
                         items(rows, key = { it.id }) { row ->
                             WorkflowRow(
                                 row,
-                                state.rules?.get(row.id) ?: state.rules?.let { emptyList() },
-                                state.connections,
+                                displayedState.rules?.get(row.id)
+                                    ?: displayedState.rules?.let { emptyList() },
+                                displayedState.connections,
                                 row.id == route.id,
                                 canNavigate,
                                 row.id == restoreRow,
@@ -407,7 +412,7 @@ private fun WorkflowDirectory(
                     }
             }
         }
-        if (state.catalog != null) {
+        if (catalog != null) {
             WorkflowReadFeedback(state.offline, state.catalogFailure)
         }
     }
@@ -448,7 +453,10 @@ private fun WorkflowQuery(query: ChatSearchState) {
         modifier =
             Modifier.fillMaxWidth()
                 .focusRequester(requester)
-                .onFocusChanged { focused = it.isFocused }
+                .onFocusChanged {
+                    focused = it.isFocused
+                    if (!it.isFocused) query.cancelComposition()
+                }
                 .testTag("workflow_query")
                 .semantics { contentDescription = name },
         textStyle = style.copy(color = colors.onBackground),
