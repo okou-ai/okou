@@ -28,6 +28,7 @@ final class WorkspaceResources {
   private let sidebarDrafts: WorkspaceRead<Set<String>>
   private let billing: WorkspaceRead<WorkspaceBilling>
   private let creditBalance: WorkspaceRead<WorkspaceCreditBalance>
+  var featureSwitches: Computed<Task<SidebarFeatureSwitches, Error>> { features.value }
   let billingValue: Computed<Task<WorkspaceBilling, Error>>
   let billingCreditsValue: Computed<Task<Double, Error>>
   let configuration: Computed<Task<ChatModelConfiguration, Error>>
@@ -185,6 +186,7 @@ final class WorkspaceResources {
   }
 
   func prepareSettings() throws {
+    try features.retryFailed(in: store)
     try store.set(billing.reload)
     try store.set(creditBalance.reload)
   }
