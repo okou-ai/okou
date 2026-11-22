@@ -407,7 +407,7 @@ class DefaultModelSettingsTest {
     }
 
     @Test
-    fun repeatedSaveFailuresShowOneNoticeAndOrdinaryReadReplacesTheLocalEdit() = runTest {
+    fun saveRetryLimitSurvivesReconnectAndReopeningUntilOrdinaryReadReplacesTheEdit() = runTest {
         ChatListApiFixture().use { api ->
             DefaultModelApiFixture(api)
             val confirmed = api.service.defaultModelPreference()
@@ -434,31 +434,73 @@ class DefaultModelSettingsTest {
                     }
                 }
             val store = store(backgroundScope)
-            val model = model(api, store, service = remote, onFailure = {})
-            val notices = mutableListOf<DefaultModelNotice>()
-            backgroundScope.launch { model.notices.collect { notices += it } }
+            val owner = SupervisorJob(backgroundScope.coroutineContext[Job])
+            val scope = CoroutineScope(backgroundScope.coroutineContext + owner)
+            val model = model(api, store, scope, service = remote, onFailure = {})
             model.openAfterSync()
             model.fast(true)
             runCurrent()
             assertTrue(model.state.value.fast)
-            advanceTimeBy(14_999)
+
+            advanceTimeBy(1_000)
+            model.online(false)
+            runCurrent()
+            advanceTimeBy(1_000)
+            model.online(true)
+            runCurrent()
+            assertEquals(listOf(0L), writes)
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(listOf(0L, 5_000L), writes)
+            owner.cancelAndJoin()
+
+            val reopened = model(api, store, service = remote, onFailure = {})
+            val notices = mutableListOf<DefaultModelNotice>()
+            backgroundScope.launch { reopened.notices.collect { notices += it } }
+            reopened.showSettings(SettingsDestination.Overview)
+            reopened.foreground(true)
+            val restored = reopened.state.first { it.options != null && it.record != null }
+            assertTrue(restored.fast)
+            advanceTimeBy(9_999)
             assertTrue(notices.isEmpty())
             advanceTimeBy(1)
             runCurrent()
             assertEquals(listOf(0L, 5_000L, 15_000L), writes)
             assertEquals(listOf(DefaultModelNotice.SyncFailed), notices)
-            assertTrue(model.state.value.fast)
-            assertTrue(store.load(api.identity).pending != null)
+            assertTrue(reopened.state.value.fast)
+            assertEquals(false, store.load(api.identity).edit?.pending)
 
             advanceTimeBy(30_000)
+            reopened.online(false)
+            reopened.online(true)
+            runCurrent()
+            assertEquals(listOf(0L, 5_000L, 15_000L), writes)
             assertEquals(listOf(DefaultModelNotice.SyncFailed), notices)
-            model.showSettings(null)
+            reopened.showSettings(null)
             advanceTimeBy(600_000 - currentTime)
             runCurrent()
             assertEquals(600_000L, reads.last())
-            assertFalse(model.state.value.fast)
-            assertNull(model.state.value.pending)
+            assertFalse(reopened.state.value.fast)
+            assertNull(reopened.state.value.pending)
             assertNull(store.load(api.identity).edit)
+
+            reopened.showSettings(SettingsDestination.Overview)
+            advanceTimeBy(599_000)
+            reopened.fast(true)
+            runCurrent()
+            assertTrue(reopened.state.value.fast)
+            val attemptTimes = listOf(0L, 5_000L, 15_000L, 1_199_000L)
+            assertEquals(attemptTimes, writes)
+
+            reopened.showSettings(null)
+            advanceTimeBy(1_000)
+            runCurrent()
+            assertEquals(1_200_000L, reads.last())
+            assertFalse(reopened.state.value.fast)
+            assertNull(store.load(api.identity).edit)
+            advanceTimeBy(20_000)
+            assertEquals(attemptTimes, writes)
+            assertEquals(listOf(DefaultModelNotice.SyncFailed), notices)
         }
     }
 

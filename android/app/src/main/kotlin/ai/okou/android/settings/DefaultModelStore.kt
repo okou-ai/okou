@@ -24,6 +24,8 @@ import kotlinx.serialization.json.Json
 internal data class DefaultModelEdit(
     val request: UpdateDefaultModelPreference,
     val pending: Boolean = true,
+    val failedAttempts: Int = 0,
+    val lastFailureMillis: Long? = null,
 )
 
 @Serializable

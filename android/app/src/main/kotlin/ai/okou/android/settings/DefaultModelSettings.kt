@@ -34,6 +34,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 private val retryDelays = listOf(5_000L, 10_000L, 20_000L, 40_000L, 60_000L)
+private val preferenceSaveRetryDelays = listOf(5_000L, 10_000L)
 private const val preferenceRefreshMillis = 10 * 60_000L
 private const val catalogFailureWindowMillis = 30_000L
 
@@ -264,9 +265,8 @@ internal class DefaultModelSettings(
             )
         clearSaveFailure()
         publish(record.copy(edit = DefaultModelEdit(request), efforts = efforts))
-        if (readbackBlocked) reportSaveFailure(requireNotNull(storageWrite))
         saveWait?.cancel()
-        synchronizeSaves()
+        resumeReadback()
     }
 
     private fun resumeReadback() {
@@ -305,15 +305,15 @@ internal class DefaultModelSettings(
             if (age != null && age in 0 until preferenceRefreshMillis) {
                 delay(preferenceRefreshMillis - age)
             }
-            state.first { it.pending == null || it.saveDegraded }
+            state.first { it.canApplyScheduledRead }
             try {
                 preferenceRequests.withLock {
                     val before = mutable.value
-                    if (before.pending != null && !before.saveDegraded) return@withLock
+                    if (!before.canApplyScheduledRead) return@withLock
                     val remote = service.defaultModelPreference()
                     currentCoroutineContext().ensureActive()
                     if (!authorized()) return
-                    if (before.record?.edit != mutable.value.record?.edit) return@withLock
+                    if (before.record?.edit !== mutable.value.record?.edit) return@withLock
                     needsReadback = false
                     readbackBlocked = false
                     clearSaveFailure()
@@ -391,21 +391,21 @@ internal class DefaultModelSettings(
         authorized() && !mutable.value.offline && !readbackBlocked && mutable.value.pending != null
 
     private suspend fun savePreferences() {
-        var previous: UpdateDefaultModelPreference? = null
-        var failures = 0
         while (canSave()) {
             val retryMillis =
                 preferenceRequests.withLock {
                     if (!canSave()) return
-                    val request = mutable.value.pending ?: return
-                    if (previous != request) {
-                        failures = 0
-                        previous = request
+                    val edit = checkNotNull(mutable.value.record?.edit)
+                    val elapsed = edit.lastFailureMillis?.let { nowMillis() - it }
+                    val delay = preferenceSaveRetryDelays.getOrNull(edit.failedAttempts - 1)
+                    if (elapsed != null && delay != null && elapsed in 0 until delay) {
+                        return@withLock delay - elapsed
                     }
                     val disk = storageWrite
                     val durable = disk?.await() ?: true
                     if (!canSave()) return
-                    if (request != mutable.value.pending) return@withLock 0L
+                    if (edit !== mutable.value.record?.edit) return@withLock 0L
+                    val request = edit.request
                     val readback = needsReadback
                     try {
                         val remote =
@@ -421,10 +421,7 @@ internal class DefaultModelSettings(
                         val fulfilled =
                             if (readback) latest?.matches(remote) == true else latest == request
                         needsReadback = false
-                        if (fulfilled) {
-                            failures = 0
-                            clearSaveFailure()
-                        }
+                        if (fulfilled) clearSaveFailure()
                         publish(
                             current.copy(
                                 confirmed = remote,
@@ -443,24 +440,31 @@ internal class DefaultModelSettings(
                         currentCoroutineContext().ensureActive()
                         onFailure(error)
                         if (!authorized()) return
-                        if (!error.retryable() && error !is ApiFailure.IncompatibleResponse) {
-                            if (readback) {
-                                // A rejected read cannot tell us whether the write committed.
-                                readbackBlocked = true
-                                reportSaveFailure(durable)
-                                return
-                            }
-                            needsReadback = false
-                            val current = checkNotNull(mutable.value.record)
-                            if (current.pending == request) {
-                                reportSaveFailure(durable)
-                                publish(current.copy(edit = current.edit?.copy(pending = false)))
-                            }
-                            return@withLock 0L
+                        val retryable =
+                            error.retryable() || error is ApiFailure.IncompatibleResponse
+                        if (!retryable && !readback) needsReadback = false
+                        val current = checkNotNull(mutable.value.record)
+                        if (current.edit !== edit) return@withLock 0L
+                        if (!retryable && readback) {
+                            // A rejected read cannot tell us whether the write committed.
+                            readbackBlocked = true
+                            reportSaveFailure(durable)
+                            return
                         }
-                        if (request != mutable.value.pending) return@withLock 0L
-                        if (++failures >= 3) reportSaveFailure(durable)
-                        retryDelay(failures)
+                        val canRetry =
+                            retryable && edit.failedAttempts < preferenceSaveRetryDelays.size
+                        if (!canRetry) reportSaveFailure(durable)
+                        publish(
+                            current.copy(
+                                edit =
+                                    edit.copy(
+                                        pending = canRetry,
+                                        failedAttempts = edit.failedAttempts + 1,
+                                        lastFailureMillis = nowMillis(),
+                                    )
+                            )
+                        )
+                        0L
                     }
                 }
             if (retryMillis > 0 && canSave()) waitToSave(retryMillis)
@@ -474,14 +478,6 @@ internal class DefaultModelSettings(
             wait.join()
         } finally {
             saveWait = null
-        }
-    }
-
-    private fun reportSaveFailure(disk: Deferred<Boolean>) {
-        val edit = mutable.value.record?.edit
-        scope.launch {
-            val durable = disk.await()
-            if (authorized() && edit == mutable.value.record?.edit) reportSaveFailure(durable)
         }
     }
 
@@ -543,6 +539,9 @@ internal class DefaultModelSettings(
         modelOptions(available, currentCatalog, codexExecution)
     }
 }
+
+private val DefaultModelState.canApplyScheduledRead: Boolean
+    get() = pending == null || saveDegraded || (record?.edit?.failedAttempts ?: 0) > 0
 
 private fun Exception.retryable(): Boolean =
     this is ApiFailure.Network ||
