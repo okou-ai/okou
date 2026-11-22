@@ -660,13 +660,20 @@ class OkouAppTest {
             val width = mutableStateOf(320.dp)
             val fontScale = mutableStateOf(1f)
             val requestFocus = FocusRequester()
+            val connectorFocus = FocusRequester()
             compose.setContent {
                 CompositionLocalProvider(
                     LocalDensity provides Density(LocalDensity.current.density, fontScale.value)
                 ) {
                     OkouTheme(dark = false) {
                         Box(Modifier.width(width.value)) {
-                            WorkspaceToolEntries(openArtifacts = {}, artifactFocus = requestFocus)
+                            WorkspaceToolEntries(
+                                openArtifacts = {},
+                                artifactFocus = requestFocus,
+                                connectorFocus = connectorFocus,
+                                onConnectorFocusChanged = {},
+                                openConnectors = null,
+                            )
                         }
                     }
                 }
