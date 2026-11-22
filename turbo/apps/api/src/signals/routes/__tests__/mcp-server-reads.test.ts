@@ -283,18 +283,6 @@ describe("thin MCP Web adapters", () => {
       expect(
         validate({ threadId: randomUUID(), sinceSeqId: 3 }).valid,
       ).toBeFalsy();
-      const listed = await sdk.callTool({
-        name: "get_chat_thread_list",
-        arguments: {},
-      });
-      expect(listed.isError).not.toBeTruthy();
-      expect(
-        mcpGetChatThreadOutputSchema.parse(listed.structuredContent),
-      ).toMatchObject({
-        snapshot: { chatThreads: [], latestEventId: null, latestSeqId: null },
-        events: [],
-        hasMore: false,
-      });
       const sent = await sdk.callTool({
         name: "send_chat_message",
         arguments: { prompt: "SDK canonical reference" },

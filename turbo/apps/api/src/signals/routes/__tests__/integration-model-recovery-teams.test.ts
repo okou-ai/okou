@@ -88,20 +88,7 @@ describe("integration model recovery in Teams", () => {
         throw new Error("Expected the error's switch-model action");
       }
       expect(action.title).toBe("Switch model");
-      const threadEvents = await chat.requestThreadEvents(
-        fixture.actor,
-        {},
-        [200],
-      );
-      if (threadEvents.status !== 200) {
-        throw new Error("Expected the conversation list");
-      }
-      const thread = threadEvents.body.events.find((event) => {
-        return event.kind === "created";
-      });
-      if (!thread) {
-        throw new Error("Expected the canonical Teams conversation");
-      }
+      const threadId = execution.platformEnvironment.OKOU_CHAT_THREAD_ID;
       const activity = teamsMessageActivityForTest(fixture.installation, {
         type: "invoke",
         name: "task/fetch",
@@ -159,8 +146,7 @@ describe("integration model recovery in Teams", () => {
         },
       });
       expect(
-        (await chat.readThreadMetadata(fixture.actor, thread.chatThreadId))
-          .selectedModel,
+        (await chat.readThreadMetadata(fixture.actor, threadId)).selectedModel,
       ).toBe("claude-fable-5-1");
       const saved = await postTeamsActivityForTest({
         signal: context.signal,
@@ -177,8 +163,7 @@ describe("integration model recovery in Teams", () => {
         },
       });
       expect(
-        (await chat.readThreadMetadata(fixture.actor, thread.chatThreadId))
-          .selectedModel,
+        (await chat.readThreadMetadata(fixture.actor, threadId)).selectedModel,
       ).toBe("auto");
       await flushWaitUntilForTest();
       expect(indicators).toContainEqual(

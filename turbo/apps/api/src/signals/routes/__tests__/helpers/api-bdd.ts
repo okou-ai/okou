@@ -149,7 +149,11 @@ export function createBddApi(context: TestContext) {
 
   async function listedDefaultAgentId(headers: AuthHeaders) {
     const listed = await accept(agentsClient().list({ headers }), [200]);
-    return listed.body.find((entry) => entry.isDefaultAgent)?.agentId ?? null;
+    return (
+      listed.body.find((entry) => {
+        return entry.isDefaultAgent;
+      })?.agentId ?? null
+    );
   }
 
   async function readDefaultAgentId(user: ApiTestUser) {

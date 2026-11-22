@@ -32,7 +32,10 @@ import { connectorPermissionsRoutes } from "../connector-permissions";
 import { chatConnectorAccessRoutes } from "../chat-connector-access";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import {
+  createChatFilesBddApi,
+  threadEventCursor,
+} from "./helpers/api-bdd-chat-files";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { mockGoogleText } from "./helpers/google-text";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -685,17 +688,9 @@ async function entitledActor(email?: string) {
   const group = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
-  const mailboxActor = await startEmailThreadHistory({ ...actor, orgId });
+  const emailSinceSeqId = await threadEventCursor(context, actor);
   verifiedDirectory(actor);
-  return { actor: mailboxActor, group };
-}
-
-async function startEmailThreadHistory<T extends ApiTestUser>(actor: T) {
-  const events = await files.requestThreadEvents(actor, {}, [200]);
-  if (events.status !== 200 || events.body.hasMore) {
-    throw new Error("Expected the initial workspace thread events");
-  }
-  return { ...actor, emailSinceSeqId: events.body.events.at(-1)?.seqId };
+  return { actor: { ...actor, orgId, emailSinceSeqId }, group };
 }
 
 async function createdThreads(
@@ -2650,7 +2645,10 @@ describe("Email workspace binding", () => {
     });
     await runs.grantProEntitlement(targetAccount);
     await runs.ensurePersonalSubscriptionModel(targetAccount);
-    const target = await startEmailThreadHistory(targetAccount);
+    const target = {
+      ...targetAccount,
+      emailSinceSeqId: await threadEventCursor(context, targetAccount),
+    };
     verifiedDirectory(actor);
     const workspaces = [
       { id: actor.orgId!, name: "Original workspace" },

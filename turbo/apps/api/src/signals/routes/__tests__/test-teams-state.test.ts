@@ -213,21 +213,9 @@ describe("Teams message launch context", () => {
       );
 
       const chat = createChatFilesBddApi(context);
-      const threads = await chat.requestThreadEvents(owned.actor, {}, [200]);
-      if (threads.status !== 200) {
-        throw new Error("Expected public Teams thread events");
-      }
-      const thread = threads.body.events.find((event) => {
-        return event.kind === "created";
-      });
-      if (!thread) {
-        throw new Error(
-          "Expected the Teams Run to use a canonical chat thread",
-        );
-      }
       const page = await chat.listThreadEvents(
         owned.actor,
-        thread.chatThreadId,
+        execution.platformEnvironment.OKOU_CHAT_THREAD_ID,
       );
       const input = page.events.find((event) => {
         return (

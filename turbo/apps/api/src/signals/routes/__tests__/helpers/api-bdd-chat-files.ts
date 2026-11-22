@@ -321,6 +321,21 @@ function modelSelectionBody(
   };
 }
 
+export async function threadEventCursor(
+  context: TestContext,
+  actor: ApiTestUser,
+) {
+  const history = await createChatFilesBddApi(context).requestThreadEvents(
+    actor,
+    {},
+    [200],
+  );
+  if (history.status !== 200 || history.body.hasMore) {
+    throw new Error("Expected the initial workspace thread events");
+  }
+  return history.body.events.at(-1)?.seqId;
+}
+
 export function createChatFilesBddApi(context: TestContext) {
   const mocks = createRouteMocks(context);
 

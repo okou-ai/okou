@@ -21,7 +21,10 @@ import { Buffer } from "node:buffer";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { array, object, string } from "zod";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import {
+  createChatFilesBddApi,
+  threadEventCursor,
+} from "./helpers/api-bdd-chat-files";
 
 import {
   chatThreadConnectorSelectionContract,
@@ -233,6 +236,7 @@ interface FeishuInstallationFixture {
 }
 
 interface FeishuRunFixture extends FeishuInstallationFixture {
+  readonly sinceSetupSeqId?: number;
   readonly subscription: {
     readonly customerId: string;
     readonly subscriptionId: string;
@@ -1264,7 +1268,11 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     const { callbackUrl, installationId } = await configureTestInstallation({
       appId,
     });
+    const sinceSetupSeqId = await own(() => {
+      return threadEventCursor(context, actor);
+    });
     return {
+      sinceSetupSeqId,
       actor,
       runnerGroup,
       subscription,
@@ -5699,7 +5707,7 @@ export function registerFeishuIntegrationTests(
               chatThreadsContract,
             ).events({
               headers: { authorization: "Bearer clerk-session" },
-              query: {},
+              query: { sinceSeqId: fixture.sinceSetupSeqId },
             }),
             [200],
           );
@@ -5976,7 +5984,7 @@ export function registerFeishuIntegrationTests(
                 chatThreadsContract,
               ).events({
                 headers: { authorization: "Bearer clerk-session" },
-                query: {},
+                query: { sinceSeqId: fixture.sinceSetupSeqId },
               }),
               [200],
             );
@@ -6503,7 +6511,7 @@ export function registerFeishuIntegrationTests(
               chatThreadsContract,
             ).events({
               headers: { authorization: "Bearer clerk-session" },
-              query: {},
+              query: { sinceSeqId: fixture.sinceSetupSeqId },
             }),
             [200],
           );
@@ -6607,7 +6615,7 @@ export function registerFeishuIntegrationTests(
               chatThreadsContract,
             ).events({
               headers: { authorization: "Bearer clerk-session" },
-              query: {},
+              query: { sinceSeqId: fixture.sinceSetupSeqId },
             }),
             [200],
           );
@@ -6769,7 +6777,7 @@ export function registerFeishuIntegrationTests(
               chatThreadsContract,
             ).events({
               headers: { authorization: "Bearer clerk-session" },
-              query: {},
+              query: { sinceSeqId: fixture.sinceSetupSeqId },
             }),
             [200],
           );
@@ -8127,7 +8135,7 @@ export function registerSharedFeishuConversationTests(): void {
             chatThreadsContract,
           ).events({
             headers: { authorization: "Bearer clerk-session" },
-            query: {},
+            query: { sinceSeqId: fixture.sinceSetupSeqId },
           }),
           [200],
         );
@@ -8321,7 +8329,7 @@ export function registerSharedFeishuConversationTests(): void {
             chatThreadsContract,
           ).events({
             headers: { authorization: "Bearer clerk-session" },
-            query: {},
+            query: { sinceSeqId: fixture.sinceSetupSeqId },
           }),
           [200],
         );

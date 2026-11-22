@@ -1,3 +1,4 @@
+import { threadEventCursor } from "./helpers/api-bdd-chat-files";
 import {
   HeadObjectCommand,
   ListObjectsV2Command,
@@ -1637,6 +1638,7 @@ describe("CHAT-02: generation templates and attachments", () => {
 
   it("rejects unknown generation template selections", async () => {
     const { actor } = await entitledChatActor();
+    const sinceSeqId = await threadEventCursor(context, actor);
     const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
     if (!template) {
       throw new Error("Expected a registered presentation runbook item");
@@ -1705,7 +1707,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       expect(rejected.body.error.message).toBe(arm.message);
     }
 
-    const events = await chat.requestThreadEvents(actor, {}, [200]);
+    const events = await chat.requestThreadEvents(actor, { sinceSeqId }, [200]);
     expect(events.status).toBe(200);
     if (events.status !== 200) {
       throw new Error("Expected chat thread events to load");

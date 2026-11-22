@@ -514,22 +514,13 @@ async function completeCanonicalChatRun(args: {
 
 async function readTelegramSourcePart(
   fixture: Pick<TelegramPostFixture, "userId" | "orgId" | "composeId">,
+  threadId: string,
   prompt: string,
   foreground?: TestContext,
 ) {
   const actor = actorForFixture(fixture);
   const chat = foreground ? createChatFilesBddApi(foreground) : chatApi;
-  const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
-  if (lifecycle.status !== 200) {
-    throw new Error("Expected Telegram thread lifecycle events");
-  }
-  const thread = lifecycle.body.events.find((event) => {
-    return event.kind === "created";
-  });
-  if (!thread) {
-    throw new Error("Expected a Telegram chat thread");
-  }
-  const { events } = await chat.listThreadEvents(actor, thread.chatThreadId);
+  const { events } = await chat.listThreadEvents(actor, threadId);
   const input = events.find((event) => {
     return (
       event.eventType === "input.prompt" &&
@@ -2289,7 +2280,12 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         }
         const execution = await runsApi.executionInput(run.id);
         await expect(
-          readTelegramSourcePart(fixture, `@${botUsername}`, fixture.context),
+          readTelegramSourcePart(
+            fixture,
+            execution.platformEnvironment.OKOU_CHAT_THREAD_ID,
+            `@${botUsername}`,
+            fixture.context,
+          ),
         ).resolves.toStrictEqual({
           type: "source",
           kind: "telegram",
@@ -2361,7 +2357,11 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     }
     const execution = await readTelegramExecution(run.id, runnerGroup, fixture);
     await expect(
-      readTelegramSourcePart(fixture, "run through official bot"),
+      readTelegramSourcePart(
+        fixture,
+        execution.platformEnvironment.OKOU_CHAT_THREAD_ID,
+        "run through official bot",
+      ),
     ).resolves.toStrictEqual({
       type: "source",
       kind: "telegram",

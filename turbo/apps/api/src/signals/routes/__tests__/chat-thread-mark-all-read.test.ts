@@ -135,9 +135,9 @@ describe("workspace bulk read", () => {
     ]);
 
     expect(
-      context.mocks.ably.publish.mock.calls.filter(
-        ([topic]) => topic === "chatIndicatorsChanged",
-      ),
+      context.mocks.ably.publish.mock.calls.filter(([topic]) => {
+        return topic === "chatIndicatorsChanged";
+      }),
     ).toHaveLength(1);
     await expect(visibleUnreadThreadIds(fixture)).resolves.toStrictEqual(
       new Set(),

@@ -1,3 +1,4 @@
+import { threadEventCursor } from "./helpers/api-bdd-chat-files";
 import { connectTeamsAccountForTest } from "./helpers/teams-account";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
 import {
@@ -2312,23 +2313,8 @@ describe("POST /api/webhooks/teams/bot", () => {
     expect(fileId).toMatch(/^[0-9a-f-]{36}$/u);
 
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const threadEvents = await accept(
-      setupApp({ context, routes: chatThreadRoutes })(
-        chatThreadsContract,
-      ).events({
-        headers: { authorization: "Bearer clerk-session" },
-        query: {},
-      }),
-      [200],
-    );
-    const chatThreadCreated = threadEvents.body.events.find((event) => {
-      return event.kind === "created";
-    });
-    if (!chatThreadCreated) {
-      throw new Error("Expected the canonical Teams file chat thread");
-    }
     const threadEventsPage = await readProjectedChatEvents(context, {
-      threadId: chatThreadCreated.chatThreadId,
+      threadId: execution.platformEnvironment.OKOU_CHAT_THREAD_ID,
       headers: { authorization: "Bearer clerk-session" },
     });
     expect(threadEventsPage).toContainEqual(
@@ -2370,6 +2356,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     "provides a source link for a Teams %s message",
     async (conversationType) => {
       const { fixture, actor } = await setupConnectedTeamsBotActor();
+      const sinceSeqId = await threadEventCursor(context, actor);
       const activityId = teamsFixtureExternalId(fixture, "source-link");
       const conversationId =
         conversationType === "personal"
@@ -2396,7 +2383,7 @@ describe("POST /api/webhooks/teams/bot", () => {
           chatThreadsContract,
         ).events({
           headers: { authorization: "Bearer clerk-session" },
-          query: {},
+          query: { sinceSeqId },
         }),
         [200],
       );

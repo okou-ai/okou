@@ -155,8 +155,9 @@ describe("automatic welcome thread delivery", () => {
   it.each([
     {
       registration: "organization.created",
-      deliver: (actor: ApiTestUser) =>
-        deliverOrganizationCreated(context, actor),
+      deliver: (actor: ApiTestUser) => {
+        return deliverOrganizationCreated(context, actor);
+      },
     },
     {
       registration: "organizationMembership.created",
