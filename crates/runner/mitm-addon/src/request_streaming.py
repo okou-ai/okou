@@ -84,5 +84,4 @@ def release_request_stream_state(flow: http.HTTPFlow) -> None:
     flow.metadata.pop(metadata_keys.REQUEST_STREAM_CAPTURE, None)
     flow.metadata.pop(metadata_keys.REQUEST_STREAM_STATE, None)
     flow.metadata.pop(metadata_keys.REQUEST_STREAM_COMPLETE, None)
-    if stream_callback is not None and flow.request.stream is stream_callback:
-        flow.request.stream = False
+    stream_capture.replace_owned_stream(flow.request, stream_callback)
