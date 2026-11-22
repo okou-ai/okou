@@ -205,46 +205,30 @@ async fn run_with_execution_deadline(
 ) -> AppServerRunOutcome {
     tokio::pin!(run);
 
-    match deadline {
-        Some(deadline) => {
-            let deadline_sleep =
-                tokio::time::sleep_until(tokio::time::Instant::from_std(deadline.at));
-            tokio::pin!(deadline_sleep);
-            tokio::select! {
-                biased;
-                result = &mut run => AppServerRunOutcome::Completed(Box::new(result)),
-                () = user_cancellation.cancelled() => {
-                    settle_active_input_before_stop(
-                        run.as_mut(),
-                        active_input,
-                        AppServerRunOutcome::UserCancelled,
-                    ).await
-                },
-                () = &mut deadline_sleep => {
-                    settle_active_input_before_stop(
-                        run.as_mut(),
-                        active_input,
-                        AppServerRunOutcome::ExecutionTimedOut {
-                            timeout_secs: deadline.timeout_secs,
-                        },
-                    ).await
-                },
+    let deadline = deadline.map(|deadline| {
+        let at = tokio::time::Instant::from_std(deadline.at);
+        (tokio::time::sleep_until(at), deadline.timeout_secs)
+    });
+    let deadline_elapsed = async move {
+        match deadline {
+            Some((sleep, timeout_secs)) => {
+                sleep.await;
+                timeout_secs
             }
+            None => std::future::pending().await,
         }
-        None => {
-            tokio::select! {
-                biased;
-                result = &mut run => AppServerRunOutcome::Completed(Box::new(result)),
-                () = user_cancellation.cancelled() => {
-                    settle_active_input_before_stop(
-                        run.as_mut(),
-                        active_input,
-                        AppServerRunOutcome::UserCancelled,
-                    ).await
-                },
-            }
-        }
-    }
+    };
+    tokio::pin!(deadline_elapsed);
+
+    let stopped = tokio::select! {
+        biased;
+        result = &mut run => return AppServerRunOutcome::Completed(Box::new(result)),
+        () = user_cancellation.cancelled() => AppServerRunOutcome::UserCancelled,
+        timeout_secs = &mut deadline_elapsed => AppServerRunOutcome::ExecutionTimedOut {
+            timeout_secs,
+        },
+    };
+    settle_active_input_before_stop(run.as_mut(), active_input, stopped).await
 }
 
 async fn interrupt_active_turn(
