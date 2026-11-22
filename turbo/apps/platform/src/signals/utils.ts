@@ -445,7 +445,8 @@ export function waitForToken<T>(
   });
 }
 
-export function waitForBrowserPaint(signal: AbortSignal): Promise<void> {
+export function waitForAnimationFrame(signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted();
   if (
     typeof window === "undefined" ||
     typeof globalThis.window.requestAnimationFrame !== "function" ||
@@ -455,35 +456,22 @@ export function waitForBrowserPaint(signal: AbortSignal): Promise<void> {
   }
 
   const deferred = createDeferredPromise<void>(signal);
-  let firstFrameId: number | null = null;
-  let secondFrameId: number | null = null;
-
-  function cleanup(): void {
-    signal.removeEventListener("abort", handleAbort);
-  }
-
-  function finish(): void {
-    cleanup();
+  const frame = globalThis.window.requestAnimationFrame(() => {
+    signal.removeEventListener("abort", cancel);
     if (!deferred.settled()) {
       deferred.resolve(undefined);
     }
-  }
-
-  function handleAbort(): void {
-    if (firstFrameId !== null) {
-      globalThis.window.cancelAnimationFrame(firstFrameId);
-    }
-    if (secondFrameId !== null) {
-      globalThis.window.cancelAnimationFrame(secondFrameId);
-    }
-    finish();
-  }
-
-  signal.addEventListener("abort", handleAbort, { once: true });
-  firstFrameId = globalThis.window.requestAnimationFrame(() => {
-    secondFrameId = globalThis.window.requestAnimationFrame(finish);
   });
+  function cancel(): void {
+    globalThis.window.cancelAnimationFrame(frame);
+  }
+  signal.addEventListener("abort", cancel, { once: true });
   return deferred.promise;
+}
+
+export async function waitForBrowserPaint(signal: AbortSignal): Promise<void> {
+  await waitForAnimationFrame(signal);
+  await waitForAnimationFrame(signal);
 }
 
 /** Report local voice failures while preserving the operation's rejection. */

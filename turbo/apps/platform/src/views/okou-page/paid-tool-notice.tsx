@@ -10,7 +10,6 @@ import {
 import { openSettingsDialogAt$ } from "../../signals/okou-page/settings/settings-dialog.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ComposerNoticeTray } from "./composer-notice-tray.tsx";
 
 interface PaidToolNoticeRow {
@@ -130,7 +129,7 @@ function ComposerPaidToolNoticeContent({
   if (!row || row.kind === "pending") {
     return fallback;
   }
-  return withChatScrollLayout(
+  return (
     <ComposerNoticeTray role="status">
       <span className="min-w-0 max-w-full text-muted-foreground">
         {row.message}
@@ -161,7 +160,7 @@ function ComposerPaidToolNoticeContent({
           )}
         </div>
       )}
-    </ComposerNoticeTray>,
+    </ComposerNoticeTray>
   );
 }
 

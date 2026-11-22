@@ -36,8 +36,12 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -105,6 +109,7 @@ class SessionModelTest {
         auth: TestAuthentication = TestAuthentication(),
         configure: (Resource) -> Unit = {},
         prepareAppearance: suspend MemberAppearanceCache.() -> Unit = {},
+        connectivity: Flow<Boolean> = emptyFlow(),
         block: suspend TestScope.(SessionModel, MutableList<Resource>) -> Unit,
     ) = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -165,6 +170,7 @@ class SessionModelTest {
                                 appearance,
                                 expansion,
                                 dispatcher,
+                                connectivity = connectivity,
                             )
                         }
                     },
@@ -468,6 +474,68 @@ class SessionModelTest {
                 assertNull(model.uiState.value.ready)
                 assertTrue(resources.single().closed)
             }
+        }
+    }
+
+    @Test
+    fun temporaryPreparationFailuresRetryWithTheSameOwnerWhenActiveAndOnline() {
+        val auth =
+            TestAuthentication(
+                testAuthenticationState()
+                    .copy(
+                        membershipAccess =
+                            listOf(MembershipAccess("org-a", "org:member", emptyList()))
+                    )
+            )
+        val connected = MutableStateFlow(true)
+        var organizations = 0
+        var preferences = 0
+        check(
+            auth,
+            connectivity = connected,
+            configure = { resource ->
+                resource.verifyOrganization = {
+                    if (++organizations == 1) throw ApiFailure.Http(503, null, null, null)
+                    testOrganization(resource.identity.workspaceId)
+                }
+                resource.loadPreferences = {
+                    if (++preferences == 1) throw ApiFailure.Http(503, null, null, null)
+                    testPreferences()
+                }
+            },
+        ) { model, resources ->
+            model.foregroundChanged(true)
+            runCurrent()
+            val opened = model.uiState.value.opening as OpeningWorkspace.Authorized
+            assertEquals(SessionStage.Unavailable, model.uiState.value.stage)
+            assertTrue(model.uiState.value.working)
+            assertEquals(1, organizations)
+            assertEquals(0, preferences)
+
+            advanceTimeBy(4_999)
+            runCurrent()
+            assertEquals(1, organizations)
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(2, organizations)
+            assertEquals(1, preferences)
+
+            model.foregroundChanged(false)
+            connected.value = false
+            runCurrent()
+            advanceTimeBy(10_000)
+            runCurrent()
+            connected.value = true
+            runCurrent()
+            assertEquals(1, preferences)
+
+            model.foregroundChanged(true)
+            runCurrent()
+            val ready = requireNotNull(model.uiState.value.ready)
+            assertSame(opened.chats, ready.chats)
+            assertEquals(2, organizations)
+            assertEquals(2, preferences)
+            assertFalse(resources.single().closed)
         }
     }
 

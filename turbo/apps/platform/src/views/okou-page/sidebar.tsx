@@ -329,7 +329,9 @@ function LabeledChatRailLink() {
             })
       }
       icon={okouEntry ? OkouRailIcon : (MessageCircle as NavIcon)}
-      isActive={activeId !== null && ["home", "chat"].includes(activeId)}
+      isActive={
+        activeId === "home" || activeId === "chat" || activeId === "project"
+      }
       showBadge={false}
       onNavigate={showInbox}
     />

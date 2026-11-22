@@ -1,6 +1,7 @@
 package ai.okou.android.auth
 
 import ai.okou.android.TEST_PREFERENCES
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.InitializePreferencesRequestLocale
 import ai.okou.android.api.generated.UpdatePreferencesRequest
@@ -92,7 +93,9 @@ class CanonicalWorkspaceSessionTest {
     fun organizationMustMatchTheActiveWorkspace() = runTest {
         server.enqueue(MockResponse().setBody("""{"id":"org-b","name":"Other"}"""))
         owner().use {
-            assertTrue(runCatching { it.organization() }.exceptionOrNull() is IllegalStateException)
+            assertTrue(
+                runCatching { it.organization() }.exceptionOrNull() is ApiFailure.Unauthenticated
+            )
         }
         assertEquals("/api/org", server.takeRequest().path)
         server.enqueue(MockResponse().setBody("""{"id":"org-a","name":"A"}"""))
