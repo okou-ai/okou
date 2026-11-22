@@ -1305,6 +1305,12 @@ describe("RUN-04: agent run telemetry families", () => {
       noCache: true,
       format: "tabular",
     });
+
+    const outgoingTab = await reads.rawApiRequest(
+      actor,
+      `/api/runs/${run.runId}/telemetry/agent?limit=1&order=asc`,
+    );
+    expect(outgoingTab).toStrictEqual({ status: 200, body: firstPage.body });
   });
 
   it.each(["asc", "desc"] as const)(

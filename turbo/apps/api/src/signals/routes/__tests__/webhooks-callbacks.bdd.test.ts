@@ -10,6 +10,7 @@ import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/cont
 import { runWebhookContract } from "@okouai/api-contracts/contracts/webhooks";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
+import { webhooksAgentStorageRoutes } from "../webhooks-agent-storage";
 import { webhooksAgentEventsRoutes } from "../webhooks-agent-events";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../webhooks-agent-health-usage-telemetry";
 import { chatThreadRoutes } from "../chat-threads";
@@ -2115,14 +2116,30 @@ describe("WHCB-09: sandbox storage writes and native history blobs land in the r
       // Canonical writes land under the run organization's Storage prefix.
       const storageName = writebackMount.name;
       const files = [storageFile("index.html", 2048)];
-      const prepared = await api.requestAgentStoragePrepare(
-        {
-          runId: run.runId,
-          storageId: writebackMount.storageId,
-          parentVersionId: writebackMount.versionId,
-          files,
+      // The outgoing Runner uses both original storage URLs for writeback.
+      const outgoingRunner = setupApp({
+        context,
+        routes: webhooksAgentStorageRoutes,
+      })({
+        prepare: {
+          ...runWebhookContract.storagePrepare,
+          path: "/api/webhooks/agent/storages/prepare",
         },
-        headers,
+        commit: {
+          ...runWebhookContract.storageCommit,
+          path: "/api/webhooks/agent/storages/commit",
+        },
+      } as const);
+      const prepared = await accept(
+        outgoingRunner.prepare({
+          headers,
+          body: {
+            runId: run.runId,
+            storageId: writebackMount.storageId,
+            parentVersionId: writebackMount.versionId,
+            files,
+          },
+        }),
         [200],
       );
       if (prepared.status !== 200) {
@@ -2139,16 +2156,18 @@ describe("WHCB-09: sandbox storage writes and native history blobs land in the r
 
       const committed = await fixture.run(() => {
         acceptPreparedStorageBytes(prepared.body, files);
-        return api.requestAgentStorageCommit(
-          {
-            runId: run.runId,
-            storageId: writebackMount.storageId,
-            versionId: prepared.body.versionId,
-            parentVersionId: writebackMount.versionId,
-            files,
-            message: "bdd sandbox commit",
-          },
-          headers,
+        return accept(
+          outgoingRunner.commit({
+            headers,
+            body: {
+              runId: run.runId,
+              storageId: writebackMount.storageId,
+              versionId: prepared.body.versionId,
+              parentVersionId: writebackMount.versionId,
+              files,
+              message: "bdd sandbox commit",
+            },
+          }),
           [200],
         );
       });
