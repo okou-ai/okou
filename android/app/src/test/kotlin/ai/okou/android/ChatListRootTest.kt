@@ -172,6 +172,8 @@ class ChatListRootTest {
         val logo = compose.onNodeWithTag("workspace_search_leading")
         val initialBounds = entry.getUnclippedBoundsInRoot()
         assertEquals(8.dp, initialBounds.left - logo.getUnclippedBoundsInRoot().right)
+        val filter = compose.onNodeWithContentDescription("Filter")
+        assertEquals(8.dp, filter.getUnclippedBoundsInRoot().left - initialBounds.right)
         entry.performClick()
         val inputBounds = compose.onNodeWithTag("chat_search_query").getUnclippedBoundsInRoot()
         assertEquals(initialBounds.left, inputBounds.left)

@@ -66,6 +66,53 @@ class SavedUiStateTest {
     }
 
     @Test
+    fun searchKeepsPresentedResultsAndSelectionUntilCompositionEnds() {
+        val search = ChatSearchState(TextFieldValue("Release"))
+        val date = "2026-11-13T00:00:00Z"
+        val chat =
+            ConfirmedChat(
+                id = "chat",
+                agentId = "agent",
+                title = "Release before refresh",
+                sortAt = date,
+                createdAt = date,
+                updatedAt = date,
+                pinnedAt = null,
+                archived = false,
+                renamedAt = null,
+            )
+        var row by mutableStateOf(chat)
+        compose.setContent {
+            OkouTheme(false) {
+                WorkspaceSearchScreen(
+                    state = ChatListUiState(confirmedAt = 1, threadsByRecency = listOf(row)),
+                    search = search,
+                    widthDp = 400,
+                    listWidth = null,
+                    workspaceName = null,
+                    focusOnEntry = false,
+                    onFocused = {},
+                    onClose = {},
+                    onOpen = {},
+                    retry = {},
+                )
+            }
+        }
+        compose.onNodeWithText(chat.title!!).assertIsDisplayed()
+        val composing =
+            TextFieldValue("Releasebu", selection = TextRange(8), composition = TextRange(7, 9))
+        compose.runOnIdle { search.edit(composing) }
+        compose.runOnIdle { row = chat.copy(title = "Release after refresh") }
+        compose.onNodeWithText("Release before refresh").assertIsDisplayed()
+        compose.onNodeWithText("Release after refresh").assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals(composing, search.query)
+            search.edit(TextFieldValue("Release", selection = TextRange(7)))
+        }
+        compose.onNodeWithText("Release after refresh").assertIsDisplayed()
+    }
+
+    @Test
     fun searchRestoresTheSameResultWhenCacheAddsAnEarlierMatch() {
         checkSearchRestoration("Result", "Result 5")
     }

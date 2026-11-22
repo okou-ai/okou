@@ -126,7 +126,7 @@ internal fun WorkspaceSearchToolbar(
         Spacer(Modifier.width(8.dp))
         field(Modifier.weight(1f))
         if (actions != null) {
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(8.dp))
             Row(
                 Modifier.widthIn(min = 100.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
@@ -349,7 +349,9 @@ internal fun WorkspaceToolbarActions(
     var anchorFocused by remember { mutableStateOf(false) }
     var restoreSettingsAnchor by remember { mutableStateOf(false) }
     val settingsAnchor =
-        Modifier.focusRequester(settingsFocus).onFocusChanged { anchorFocused = it.isFocused }
+        Modifier.size(48.dp).focusRequester(settingsFocus).onFocusChanged {
+            anchorFocused = it.isFocused
+        }
     val colors = MaterialTheme.colorScheme
     val currentFilter = stringResource(list.filter.label())
     val filterApplied = showFilter && list.filter != ChatListFilter.Inbox
@@ -438,9 +440,10 @@ internal fun WorkspaceToolbarActions(
                 IconButton(
                     onClick = { menu = WorkspaceMenuPage.Filter },
                     modifier =
-                        Modifier.focusRequester(filterFocus).then(filterTreatment).semantics {
-                            stateDescription = currentFilter
-                        },
+                        Modifier.size(48.dp)
+                            .focusRequester(filterFocus)
+                            .then(filterTreatment)
+                            .semantics { stateDescription = currentFilter },
                 ) {
                     Icon(
                         painterResource(R.drawable.ic_filter_list),

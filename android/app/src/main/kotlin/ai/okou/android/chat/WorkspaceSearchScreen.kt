@@ -42,6 +42,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -101,6 +102,15 @@ internal fun WorkspaceSearchScreen(
     onMoreArtifacts: (String, String) -> Unit = { _, _ -> },
 ) {
     val query = search.query
+    val incomingResults = Triple(state, remote, recentlyOpened)
+    var presentedResults by
+        remember(search, state.offline, onOpenWorkflow != null, onOpenArtifact != null) {
+            mutableStateOf(incomingResults)
+        }
+    val composing = query.composition != null
+    if (!composing) SideEffect { presentedResults = incomingResults }
+    val (resultList, resultRemote, resultRecents) =
+        if (composing) presentedResults else incomingResults
     val colors = MaterialTheme.colorScheme
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
@@ -214,10 +224,10 @@ internal fun WorkspaceSearchScreen(
         }
         SearchTypes(search.type, allTabFocus, contentWidth, ::selectType)
         SearchResults(
-            state,
+            resultList,
             search,
-            remote,
-            recentlyOpened,
+            resultRemote,
+            resultRecents,
             contentWidth.weight(1f),
             onOpen,
             onOpenMessage,
