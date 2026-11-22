@@ -18,6 +18,7 @@ import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.Direction
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -99,11 +100,26 @@ class NativeUpdateTest {
             scenario = ActivityScenario.launch(MainActivity::class.java)
             fun find(label: BySelector) = device.wait(Until.findObject(label), 10_000)
             fun text(value: String) = find(By.pkg(app.packageName).text(value))
-            fun button(label: BySelector): UiObject2 {
-                val node = checkNotNull(find(label)) { "Expected update control $label" }
-                return generateSequence(node) { it.parent }.first { it.isClickable }
-            }
-            fun click(label: Int) = requireNotNull(text(app.getString(label))).click()
+            fun button(label: BySelector): UiObject2 =
+                checkNotNull(
+                    device.wait(
+                        object : Condition<UiDevice, UiObject2?> {
+                            override fun apply(device: UiDevice): UiObject2? =
+                                try {
+                                    generateSequence(device.findObject(label)) { it.parent }
+                                        .firstOrNull { it.isClickable }
+                                        ?.takeIf { it.isEnabled }
+                                } catch (_: StaleObjectException) {
+                                    null
+                                }
+                        },
+                        10_000,
+                    )
+                ) {
+                    "Expected enabled update control $label"
+                }
+            fun click(label: Int) =
+                button(By.pkg(app.packageName).text(app.getString(label))).click()
             fun exists(label: Int) = assertNotNull(text(app.getString(label)))
             fun revealSettingsUpdate(label: String = app.getString(R.string.updates_title)) {
                 val target = By.pkg(app.packageName).text(label)
@@ -141,20 +157,19 @@ class NativeUpdateTest {
             captureState("toolbar-current")
             val updateTarget = app.getString(R.string.updates_version, "99.0.0")
             fun closeDetails() {
-                device.pressBack()
+                val close = By.pkg(app.packageName).text(app.getString(R.string.updates_close))
+                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
                 assertTrue(
-                    device.wait(Until.gone(By.pkg(app.packageName).text(updateTarget)), 10_000)
+                    "Back did not dismiss the update details",
+                    device.wait(Until.gone(close), 10_000),
                 )
-                exists(R.string.updates_title)
+                button(By.pkg(app.packageName).text(app.getString(R.string.updates_title)))
             }
             fun backToChatList() {
-                device.pressBack()
+                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
                 device.awaitChatList(app)
             }
-            requireNotNull(
-                    device.wait(Until.findObject(By.desc(app.getString(R.string.settings))), 10_000)
-                )
-                .click()
+            button(By.pkg(app.packageName).desc(app.getString(R.string.settings))).click()
             revealSettingsUpdate()
             click(R.string.updates_title)
             exists(R.string.updates_check_in_progress)
