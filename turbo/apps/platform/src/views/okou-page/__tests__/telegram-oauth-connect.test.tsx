@@ -1,3 +1,4 @@
+import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { screen, waitFor, within } from "@testing-library/react";
 import { test, expect } from "vitest";
 import { click } from "../../../__tests__/page-helper.ts";
@@ -117,4 +118,67 @@ test("telegram-oauth-connect-013 Leaving for Workflows interrupts the tab before
   expect(location.pathname).toBe("/works");
   expect(screen.queryByTestId("telegram-connected-indicator")).toBeNull();
   bridge.tab.close();
+});
+test("telegram-oauth-connect-003 Works shows the identity supplied by the opened provider tab", async () => {
+  const bot = botState(context);
+  let linked: typeof bot.connectedUser = null;
+  context.mocks.api(integrationsTelegramContract.link, ({ body, respond }) => {
+    const auth = body.telegramAuth;
+    if (!auth) throw new Error("Expected a provider identity");
+    linked = {
+      telegramUserId: String(auth.id),
+      telegramUsername: auth.username ?? null,
+      telegramDisplayName: auth.first_name ?? null,
+    };
+    return respond(200, {
+      botUsername: "support_bot",
+      telegramUserId: String(auth.id),
+    });
+  });
+  context.mocks.api(integrationsTelegramContract.list, ({ respond }) => {
+    return respond(200, {
+      bots: [
+        {
+          ...bot,
+          isConnected: linked !== null,
+          connectedUser: linked,
+          official: {
+            ...bot.official!,
+            linkedTelegramUserId: linked?.telegramUserId ?? null,
+          },
+        },
+      ],
+    });
+  });
+  await openTelegram(context, "/works");
+  const { tab } = await authorize(context, await connectControl());
+  function deliver(
+    source: Window,
+    origin: string,
+    id: number,
+    username: string,
+  ) {
+    context.mocks.browser.message(
+      {
+        event: "auth_result",
+        result: {
+          id,
+          username,
+          first_name: username,
+          auth_date: 1795000000,
+          hash: "bc".repeat(32),
+        },
+      },
+      { source, origin },
+    );
+  }
+  deliver(window, "https://oauth.telegram.org", 7101, "another_window");
+  deliver(tab, "https://unrelated.example.test", 7102, "another_origin");
+  deliver(tab, "https://oauth.telegram.org", 7103, "chosen_identity");
+  await screen.findByText("Connected to Telegram!");
+  expect(
+    await screen.findByTestId("telegram-connected-indicator"),
+  ).toHaveTextContent("chosen_identity");
+  expect(screen.queryByTestId("telegram-connect-button")).toBeNull();
+  expect(location.pathname).toBe("/works");
 });

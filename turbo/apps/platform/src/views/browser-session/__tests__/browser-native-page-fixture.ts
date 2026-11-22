@@ -68,9 +68,9 @@ export function arrangeNativePage(
   return {
     cdp,
     viewer,
-    async openPage() {
+    async openPage(pageContext = context) {
       await setupPage({
-        context,
+        context: pageContext,
         path,
         host: "app.okou.ai",
         featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
