@@ -115,7 +115,7 @@ internal fun SessionRoot(
             ) {
                 if (ready != null) WorkspaceRealtimeLifecycle(ready.chats.updates)
                 val startupRecovery: (@Composable () -> Unit)? =
-                    if (state.stage == SessionStage.Unavailable) {
+                    if (state.stage == SessionStage.Unavailable && !state.working) {
                         { WorkspaceStartupRecovery(retry, signOut) }
                     } else null
                 OkouApp(
@@ -402,7 +402,10 @@ private fun WorkspaceSettingsContent(
 private fun WorkspaceSettingsPreparation(state: SessionUiState, retry: () -> Unit) {
     if (state.working) {
         Text(
-            stringResource(R.string.auth_preparing_workspace),
+            stringResource(
+                if (state.stage == SessionStage.Unavailable) R.string.chat_list_first_load_failed
+                else R.string.auth_preparing_workspace
+            ),
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium,

@@ -4,6 +4,7 @@ import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.Organization
 import ai.okou.android.api.generated.OrganizationRole
+import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.artifacts.ArtifactCatalogModel
 import ai.okou.android.chat.AssistantRecoveryModel
 import ai.okou.android.chat.ChatCacheStore
@@ -35,14 +36,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 enum class SessionStage {
     Restoring,
@@ -126,9 +131,14 @@ class SessionModel(
     private var workspace: WorkspaceSession? = null
     private var presentation: ViewModelStore? = null
     private var requiredUpdate = false
+    private val foreground = MutableStateFlow(false)
+    private val connected = MutableStateFlow(true)
+    private val canRetryPreparation =
+        combine(foreground, connected) { active, online -> active && online }
 
     init {
         viewModelScope.launch { authentication.state.collect { reconcile(it) } }
+        viewModelScope.launch { connectivity.collect { connected.value = it } }
         viewModelScope.launch {
             updatesRequired.collect { required ->
                 if (required && !requiredUpdate) enterRequiredUpdate()
@@ -448,39 +458,29 @@ class SessionModel(
         requireCurrent(ticket, snapshot)
         val owner = checkNotNull(workspace)
         val store = checkNotNull(presentation)
-        val organization: Organization
+        var organization = opened.organization
         val initial =
-            try {
-                organization =
-                    opened.organization
-                        ?: owner.organization().also { resolved ->
-                            currentCoroutineContext().ensureActive()
-                            requireCurrent(ticket, snapshot)
-                            val state = mutable.value
-                            val memberships =
-                                if (membershipsComplete) state.memberships
-                                else
-                                    listOf(
-                                        WorkspaceMembership(resolved.id, resolved.name, opened.role)
-                                    )
-                            mutable.value =
-                                state.copy(
-                                    memberships = memberships,
-                                    opening = opened.copy(organization = resolved),
-                                )
-                        }
-                owner.preferences()
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                if (current(ticket, snapshot) && !workspaceFailure(ticket, snapshot, error)) {
+            readWorkspacePreparation(ticket, snapshot) {
+                if (organization == null) {
+                    val resolved = owner.organization()
+                    currentCoroutineContext().ensureActive()
+                    requireCurrent(ticket, snapshot)
+                    val state = mutable.value
+                    val memberships =
+                        if (membershipsComplete) state.memberships
+                        else listOf(WorkspaceMembership(resolved.id, resolved.name, opened.role))
+                    organization = resolved
                     mutable.value =
-                        mutable.value.copy(stage = SessionStage.Unavailable, working = false)
+                        state.copy(
+                            memberships = memberships,
+                            opening = opened.copy(organization = resolved),
+                        )
                 }
-                return
-            }
+                owner.preferences()
+            } ?: return
         currentCoroutineContext().ensureActive()
         requireCurrent(ticket, snapshot)
+        val resolvedOrganization = checkNotNull(organization)
         val preferences =
             store.workspaceModel {
                 MemberPreferencesModel(
@@ -507,7 +507,7 @@ class SessionModel(
             store.workspaceModel {
                 WorkspaceSettingsModel(
                     owner,
-                    organization.role == OrganizationRole.ADMIN,
+                    resolvedOrganization.role == OrganizationRole.ADMIN,
                     { current(ticket, snapshot) },
                     { workspaceFailure(ticket, snapshot, it) },
                     connectivity,
@@ -519,7 +519,7 @@ class SessionModel(
                 ready =
                     ReadyWorkspace(
                         opened.identity,
-                        organization,
+                        resolvedOrganization,
                         preferences,
                         opened.chats,
                         opened.projectExpansion,
@@ -540,6 +540,41 @@ class SessionModel(
             .collect { appearanceCache.save(opened.identity, it) }
     }
 
+    private suspend fun readWorkspacePreparation(
+        ticket: Long,
+        snapshot: AuthenticationState,
+        read: suspend () -> UserPreferences,
+    ): UserPreferences? {
+        var backoff = 5_000L
+        while (true) {
+            requireCurrent(ticket, snapshot)
+            try {
+                return read()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (!current(ticket, snapshot) || workspaceFailure(ticket, snapshot, error))
+                    return null
+                val retryAfter = error.bootstrapRetryAfterMillis()
+                mutable.value =
+                    mutable.value.copy(
+                        stage = SessionStage.Unavailable,
+                        working = retryAfter != null,
+                    )
+                if (retryAfter == null) return null
+                val interrupted =
+                    if (retryAfter > 0) {
+                        delay(maxOf(backoff, retryAfter))
+                        false
+                    } else {
+                        withTimeoutOrNull(backoff) { canRetryPreparation.first { !it } } != null
+                    }
+                canRetryPreparation.first { it }
+                backoff = if (interrupted) 5_000L else (backoff * 2).coerceAtMost(60_000L)
+            }
+        }
+    }
+
     private fun current(ticket: Long, snapshot: AuthenticationState): Boolean {
         return ticket == generation &&
             snapshot.initialized &&
@@ -557,7 +592,9 @@ class SessionModel(
 
     fun isPresentationCurrent(expectedGeneration: Long): Boolean = acceptsAction(expectedGeneration)
 
-    fun refreshPreferences() {
+    fun foregroundChanged(active: Boolean) {
+        foreground.value = active
+        if (!active) return
         val state = mutable.value
         state.ready?.preferences?.refreshFromForeground()
         (state.ready?.chats ?: (state.opening as? OpeningWorkspace.Authorized)?.chats)?.refresh()
@@ -651,6 +688,16 @@ class SessionModel(
         retire()
     }
 }
+
+private fun Exception.bootstrapRetryAfterMillis(): Long? =
+    when (this) {
+        is ApiFailure.Network -> 0L
+        is ApiFailure.Http ->
+            if (status == 408 || status == 429 || status in 500..599)
+                (retryAfterSeconds ?: 0L).coerceIn(0, Long.MAX_VALUE / 1_000) * 1_000
+            else null
+        else -> null
+    }
 
 private inline fun <reified T : ViewModel> ViewModelStore.workspaceModel(
     crossinline create: () -> T

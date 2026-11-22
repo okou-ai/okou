@@ -612,7 +612,7 @@ internal fun OkouApp(
                     list = list,
                     selectFilter = chats?.let { it::selectFilter },
                     markAllRead = { chats?.markAllRead() },
-                    update = updateToolbarAction.takeIf { showList && workspaceReady },
+                    update = updateToolbarAction.takeIf { showList },
                     settingsFocus = settingsFocus,
                     openSettings =
                         if (chats == null) null
@@ -645,12 +645,10 @@ internal fun OkouApp(
                     openSearch = if (chats != null) ::openSearch else null,
                     actions = toolbarActions,
                 )
-                if (chats != null) {
-                    WorkspaceToolEntries(
-                        openArtifacts = if (artifacts == null) null else ::openArtifacts,
-                        artifactFocus = artifactEntryFocus,
-                    )
-                }
+                WorkspaceToolEntries(
+                    openArtifacts = if (artifacts == null) null else ::openArtifacts,
+                    artifactFocus = artifactEntryFocus,
+                )
             }
             LaunchedEffect(Unit) {
                 if (restoreSearchFocus) {

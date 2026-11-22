@@ -16,6 +16,7 @@ import ai.okou.android.auth.Authentication
 import ai.okou.android.auth.MembershipAccess
 import ai.okou.android.auth.OpeningWorkspace
 import ai.okou.android.auth.SessionModel
+import ai.okou.android.auth.SessionStage
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.auth.scopeHash
@@ -48,6 +49,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
@@ -249,6 +251,13 @@ class PendingWorkspaceRootTest {
         settings.assertIsDisplayed().assertIsNotEnabled()
         val searchBounds = search.getUnclippedBoundsInRoot()
         val avatarBounds = avatar.getUnclippedBoundsInRoot()
+        val list = compose.onNodeWithTag("chat_list")
+        val listBounds = list.getUnclippedBoundsInRoot()
+        val tools =
+            listOf("Workflows", "Connectors", "Artifacts").map {
+                compose.onNodeWithContentDescription(it).assertIsDisplayed().assertIsNotEnabled()
+            }
+        val toolBounds = tools.map { it.getUnclippedBoundsInRoot() }
         compose.onNodeWithText(CACHED_CHAT).assertDoesNotExist()
 
         compose.runOnIdle { app.authorizationResponse.complete(Unit) }
@@ -256,6 +265,8 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithContentDescription("Loading chats…").assertDoesNotExist()
         assertEquals(searchBounds, search.getUnclippedBoundsInRoot())
         assertEquals(avatarBounds, avatar.getUnclippedBoundsInRoot())
+        assertEquals(listBounds, list.getUnclippedBoundsInRoot())
+        assertEquals(toolBounds, tools.map { it.getUnclippedBoundsInRoot() })
         filter.assertIsEnabled().performClick()
         compose.onNodeWithText("Archived").performClick()
         compose.onNodeWithTag("chat_filter_heading").assert(hasText("Archived"))
@@ -265,6 +276,9 @@ class PendingWorkspaceRootTest {
 
         settings.assertIsEnabled().performClick()
         compose.onNodeWithText("Display mode").assertIsNotEnabled()
+        compose.onNodeWithText("Credit balance").assertIsNotEnabled()
+        compose.onNodeWithText("Model accounts").assertIsNotEnabled()
+        compose.onNodeWithText("Cloud Browser").assertIsNotEnabled()
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText("Dark").fetchSemanticsNodes().isNotEmpty()
         }
@@ -283,8 +297,61 @@ class PendingWorkspaceRootTest {
         compose.runOnIdle { app.organizationResponse.complete(Unit) }
         compose.onNodeWithText("Dark").assertExists()
         compose.runOnIdle { app.preferencesResponse.complete(Unit) }
+        compose.waitUntil(10_000) { sessionState().stage == SessionStage.Ready }
         compose.onNodeWithText("Display mode").assertIsEnabled()
+        compose.onNodeWithText("Credit balance").assertIsEnabled()
+        compose.onNodeWithText("Model accounts").assertIsEnabled()
+        compose.onNodeWithText("Cloud Browser").assertIsEnabled()
         compose.onNodeWithText("Follow system").assertExists()
+    }
+
+    @Test
+    @Config(application = FreshWorkspaceAccessApplication::class)
+    fun updateDiscoveredDuringWorkspaceOpeningKeepsTheToolbarStable() {
+        val search = compose.onNodeWithTag("workspace_search_entry")
+        val startupBounds = search.getUnclippedBoundsInRoot()
+        val release = updateRelease("99.0.0")
+        val action = app.getString(R.string.updates_toolbar)
+        val button = compose.onNodeWithContentDescription(action)
+        val overflow = compose.onNodeWithContentDescription("More actions")
+        val previousService = app.updateService
+        try {
+            compose.waitUntil(10_000) { app.updates.state.value.check == UpdateCheck.Checked }
+            compose.runOnIdle {
+                app.updateService =
+                    ControlledUpdates().apply { response = AndroidUpdates(null, release) }
+                app.updates.check()
+            }
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithContentDescription(action).fetchSemanticsNodes().isNotEmpty()
+            }
+            button.assertIsDisplayed().assertIsEnabled()
+            compose
+                .onNodeWithText(app.getString(R.string.updates_available, "99.0.0"))
+                .assertDoesNotExist()
+            assertEquals(startupBounds, search.getUnclippedBoundsInRoot())
+
+            overflow.performClick()
+            compose.onNodeWithText("Filter").assertIsNotEnabled()
+            compose.onNodeWithText("Settings").assertIsNotEnabled()
+            compose.runOnIdle { app.authorizationResponse.complete(Unit) }
+            awaitCachedRow()
+            compose.onNodeWithText("Filter").assertIsEnabled()
+            compose.onNodeWithText("Settings").assertIsEnabled().performClick()
+            compose.onNodeWithContentDescription("Back").performClick()
+            button.assertIsDisplayed()
+            assertEquals(startupBounds, search.getUnclippedBoundsInRoot())
+
+            compose.runOnIdle {
+                app.organizationResponse.complete(Unit)
+                app.preferencesResponse.complete(Unit)
+            }
+            compose.waitUntil(10_000) { sessionState().stage == SessionStage.Ready }
+            button.assertIsDisplayed().assertIsEnabled()
+            assertEquals(startupBounds, search.getUnclippedBoundsInRoot())
+        } finally {
+            compose.runOnIdle { app.updateService = previousService }
+        }
     }
 
     @Test
@@ -334,7 +401,7 @@ class PendingWorkspaceRootTest {
             listOf("Workflows", "Connectors", "Artifacts").map {
                 compose.onNodeWithContentDescription(it)
             }
-        toolEntries.forEach { it.assertDoesNotExist() }
+        toolEntries.forEach { it.assertIsDisplayed().assertIsNotEnabled() }
         val searchEntry = compose.onNodeWithTag("workspace_search_entry")
         val startupBounds = searchEntry.getUnclippedBoundsInRoot()
         compose.runOnIdle { app.organizationResponse.complete(Unit) }
@@ -372,42 +439,7 @@ class PendingWorkspaceRootTest {
     }
 
     @Test
-    fun updateDiscoveredDuringWorkspaceOpeningUsesOnlyTheReadyToolbar() {
-        val search = compose.onNodeWithTag("workspace_search_entry")
-        val startupBounds = search.getUnclippedBoundsInRoot()
-        val release = updateRelease("99.0.0")
-        val action = app.getString(R.string.updates_toolbar)
-        val update = compose.onNodeWithContentDescription(action)
-        val previousService = app.updateService
-        try {
-            compose.waitUntil(10_000) { app.updates.state.value.check == UpdateCheck.Checked }
-            compose.runOnIdle {
-                app.updateService =
-                    ControlledUpdates().apply { response = AndroidUpdates(null, release) }
-                app.updates.check()
-            }
-            compose.waitUntil(10_000) { app.updates.state.value.canDownload }
-            update.assertDoesNotExist()
-            assertEquals(startupBounds, search.getUnclippedBoundsInRoot())
-
-            compose.runOnIdle { app.organizationResponse.complete(Unit) }
-            awaitCachedRow()
-            update.assertDoesNotExist()
-            assertEquals(startupBounds, search.getUnclippedBoundsInRoot())
-
-            compose.runOnIdle { app.preferencesResponse.complete(Unit) }
-            compose.waitUntil(10_000) {
-                compose.onAllNodesWithContentDescription(action).fetchSemanticsNodes().isNotEmpty()
-            }
-            update.assertIsDisplayed().assertIsEnabled()
-            assertEquals(startupBounds, search.getUnclippedBoundsInRoot())
-        } finally {
-            compose.runOnIdle { app.updateService = previousService }
-        }
-    }
-
-    @Test
-    fun preferenceFailureAndRetryKeepTheAuthorizedCachedRowsActionable() {
+    fun temporaryPreferenceFailureRecoversOnReconnectWithoutInterruptingCachedChats() {
         compose.runOnIdle { app.organizationResponse.complete(Unit) }
         awaitCachedRow()
         compose.onNodeWithContentDescription("Search workspace").performClick()
@@ -415,14 +447,20 @@ class PendingWorkspaceRootTest {
         compose.runOnIdle {
             app.preferencesResponse.completeExceptionally(ApiFailure.Http(503, null, null, null))
         }
-        val retry = compose.onNodeWithText("Try again")
-        retry.assertIsDisplayed()
+        compose.waitUntil(10_000) { sessionState().stage == SessionStage.Unavailable }
+        compose.onNodeWithText("Try again").assertDoesNotExist()
         compose.onNodeWithText(CACHED_CHAT).assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
 
-        val list = compose.onNodeWithTag("chat_list")
-        list.performScrollToNode(hasText("Try again"))
-        list.performScrollToNode(hasText(CACHED_CHAT))
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose
+            .onNodeWithText(app.getString(R.string.chat_list_first_load_failed))
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose.onNodeWithText("Try again").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Back").performClick()
+
+        compose.onNodeWithTag("chat_list").performScrollToNode(hasText(CACHED_CHAT))
         val row = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
         row.assertIsEnabled().performSemanticsAction(SemanticsActions.OnLongClick)
         compose.onNodeWithText("Mute chat").performClick()
@@ -436,15 +474,18 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithText("New chat").assertIsNotEnabled()
         row.performClick()
         compose.onNodeWithTag("conversation").assertExists()
-        retry.assertIsDisplayed()
+        compose.onNodeWithText("Try again").assertDoesNotExist()
         compose.runOnIdle {
+            app.connectivity.value = false
             app.organizationResponse = CompletableDeferred()
             app.preferencesResponse = CompletableDeferred()
         }
-        retry.performClick()
+        compose.waitUntil(10_000) { listState()?.offline == true }
+        compose.runOnIdle { app.connectivity.value = true }
         compose.onNodeWithTag("conversation").assertExists()
         compose.onNodeWithTag("message_input").assertDoesNotExist()
         compose.runOnIdle { app.preferencesResponse.complete(Unit) }
+        compose.waitUntil(10_000) { sessionState().stage == SessionStage.Ready }
         compose.onNodeWithTag("message_input").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
         row.assertExists()
@@ -493,13 +534,14 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithText(CACHED_CHAT).assertExists()
     }
 
-    private fun listState() =
+    private fun sessionState() =
         compose.runOnIdle {
-            val session =
-                ViewModelProvider(compose.activity)[SessionModel::class.java].uiState.value
-            (session.ready?.chats ?: (session.opening as? OpeningWorkspace.Authorized)?.chats)
-                ?.uiState
-                ?.value
+            ViewModelProvider(compose.activity)[SessionModel::class.java].uiState.value
+        }
+
+    private fun listState() =
+        sessionState().let {
+            (it.ready?.chats ?: (it.opening as? OpeningWorkspace.Authorized)?.chats)?.uiState?.value
         }
 }
 

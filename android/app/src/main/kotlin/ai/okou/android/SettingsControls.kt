@@ -193,8 +193,9 @@ internal fun SettingsSwitchRow(
     supportingText: String? = null,
 ) {
     val action =
-        if (checked == null || onCheckedChange == null) Modifier.semantics { disabled() }
-        else Modifier.toggleable(checked, role = Role.Switch, onValueChange = onCheckedChange)
+        if (checked == null || onCheckedChange == null) {
+            Modifier.semantics(mergeDescendants = true) { disabled() }
+        } else Modifier.toggleable(checked, role = Role.Switch, onValueChange = onCheckedChange)
     Row(
         Modifier.fillMaxWidth()
             .then(action)

@@ -5,6 +5,7 @@ import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.auth.OpeningWorkspace
 import ai.okou.android.auth.SessionModel
+import ai.okou.android.auth.SessionStage
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.chat.ChatReadPhase
@@ -383,8 +384,14 @@ class ChatComposerRootTest {
             }
             val unavailable = "Could not load your session or workspace. Please try again."
             awaitConversation {
-                compose.onAllNodesWithText(unavailable).fetchSemanticsNodes().isNotEmpty()
+                compose.runOnIdle {
+                    ViewModelProvider(checkNotNull(activity))[SessionModel::class.java]
+                        .uiState
+                        .value
+                        .stage == SessionStage.Unavailable
+                }
             }
+            compose.onNodeWithText(unavailable).assertDoesNotExist()
             compose.onNodeWithTag(row).assertIsDisplayed().performClick()
             messageText(pending.eventId, prompt).assertIsDisplayed()
             compose.onNodeWithText("Check delivery").assertExists()

@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -386,17 +385,16 @@ internal fun WorkspaceToolbarActions(
                                 }
                             )
                         }
-                        if (openSettings != null) {
-                            add(
-                                WorkspaceMenuItem(
-                                    stringResource(R.string.settings),
-                                    R.drawable.ic_settings,
-                                ) {
-                                    menu = null
-                                    openSettings(restoreSettingsAnchor)
-                                }
-                            )
-                        }
+                        add(
+                            WorkspaceMenuItem(
+                                stringResource(R.string.settings),
+                                R.drawable.ic_settings,
+                                enabled = openSettings != null,
+                            ) {
+                                menu = null
+                                openSettings?.invoke(restoreSettingsAnchor)
+                            }
+                        )
                     } else {
                         add(
                             WorkspaceMenuItem(
@@ -548,10 +546,11 @@ private fun WorkspaceMenuItems(
     val popupFocus = remember { FocusRequester() }
     val itemFocus = remember(items.size) { List(items.size) { FocusRequester() } }
     val enabled = items.indices.filter { items[it].enabled }
+    val containerFocusable = inputMode == InputMode.Touch || enabled.isEmpty()
     var focusedIndex by remember { mutableIntStateOf(-1) }
-    LaunchedEffect(inputMode, enabled) {
-        if (inputMode == InputMode.Touch) {
-            // Keep legacy Back keys in this window without highlighting a row on touch.
+    LaunchedEffect(containerFocusable, enabled) {
+        if (containerFocusable) {
+            // The popup can receive Back even before an option is available.
             popupFocus.requestFocus()
         } else if (focusedIndex !in enabled) {
             itemFocus[enabled.first()].requestFocus()
@@ -576,7 +575,7 @@ private fun WorkspaceMenuItems(
                     Key.DirectionDown,
                     Key.MoveHome,
                     Key.MoveEnd -> {
-                        if (event.type == KeyEventType.KeyDown) {
+                        if (event.type == KeyEventType.KeyDown && enabled.isNotEmpty()) {
                             val position = enabled.indexOf(focusedIndex)
                             val next =
                                 when (event.key) {
@@ -593,7 +592,7 @@ private fun WorkspaceMenuItems(
                     else -> false
                 }
             }
-            .focusProperties { canFocus = inputMode == InputMode.Touch }
+            .focusProperties { canFocus = containerFocusable }
             .focusRequester(popupFocus)
             .focusTarget()
             .verticalScroll(rememberScrollState())

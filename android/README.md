@@ -7,11 +7,12 @@ database, API service, account credentials, or local Web server is needed.
 Signed-out launches open the native Clerk login page. A restored active session
 with a selected workspace opens the native conversation list while access is
 checked. The toolbar uses the bundled workspace logo and shows filter and
-Settings as soon as the selected workspace is identified. A fresh selected
-membership with known permissions allows cached conversations and Projects to
-appear while the app refreshes the list and loads workspace metadata and member
-preferences. The full membership check and organization gate still apply when
-selected permissions are unavailable.
+Settings as soon as the selected workspace is identified. The tool shortcuts
+stay in place in the same shell, and a known optional update uses the toolbar.
+A fresh selected membership with known permissions allows cached conversations
+and Projects to appear while the app refreshes the list and loads workspace
+metadata and member preferences. The full membership check and organization
+gate still apply when selected permissions are unavailable.
 The workspace chat list uses single-line rows, indented
 Project chats, and separators within groups that have pins and ordinary chats.
 Collapsed Projects summarize unread or running chats. Selecting a chat opens
@@ -34,6 +35,9 @@ values after workspace authorization while its preference controls wait for
 the initial response. The server response takes precedence and refreshes the
 cache. Workspace content requires current authorization for the selected
 workspace.
+Temporary workspace metadata and preference failures after authorization retry
+in the foreground and on reconnect. Cached chats stay usable, and Settings
+shows a load failure in its affected section while it recovers.
 
 My Okou in Settings reads and edits the signed-in user's personal Instructions
 for the selected workspace through the canonical Instructions API. Loading
