@@ -51,6 +51,10 @@
     <string name="chat_unmute">चैट अनम्यूट करें</string>
     <string name="chat_archive">चैट आर्काइव करें</string>
     <string name="chat_unarchive">आर्काइव से निकालें</string>
+    <string name="chat_swipe_read">पढ़ा</string>
+    <string name="chat_swipe_unread">अपठित</string>
+    <string name="chat_swipe_archive">आर्काइव</string>
+    <string name="chat_swipe_restore">बहाल करें</string>
     <string name="chat_row_action_pending">चैट अपडेट हो रही है…</string>
     <string name="chat_row_action_failed">चैट में हुए बदलाव की पुष्टि नहीं हो सकी।</string>
     <string name="chat_row_action_rejected">चैट में बदलाव पूरा नहीं हो सका।</string>

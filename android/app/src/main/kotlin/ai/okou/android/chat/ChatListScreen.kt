@@ -7,6 +7,9 @@ import ai.okou.android.WorkspaceMenuItem
 import ai.okou.android.currentWindowSizeDp
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -88,12 +91,19 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.text.NumberFormat
+
+private const val ProjectMotionMillis = 250
+internal val ChatListMotionEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+private val projectPlacement = tween<IntOffset>(ProjectMotionMillis, easing = ChatListMotionEasing)
+private val projectChildFade = tween<Float>(ProjectMotionMillis, easing = ChatListMotionEasing)
+private val immediatePlacement = snap<IntOffset>()
 
 @Composable
 internal fun ChatListScreen(
@@ -208,7 +218,23 @@ internal fun ChatListScreen(
     val renameNoticeIds =
         state.unconfirmedProjectRenames + listOfNotNull(renameRejection?.projectId)
     val expansion = projectExpansion?.state?.collectAsStateWithLifecycle()?.value
-    val expandedProjectIds = expansion?.expandedIds.orEmpty()
+    val savedExpansion = expansion?.expandedIds
+    val expandedProjectIds = savedExpansion.orEmpty()
+    val previousExpansion =
+        remember(listState, projectExpansion) { ChatListProjectIds(savedExpansion) }
+    val precedingIds = previousExpansion.ids
+    val expansionChanged =
+        precedingIds != null && savedExpansion != null && precedingIds != savedExpansion
+    val newlyExpanded =
+        if (expansionChanged) expandedProjectIds - precedingIds.orEmpty() else emptySet()
+    // Give Compose stable lazy item positions without animating the initial disk restore.
+    val placement =
+        when {
+            knownProjects.isEmpty() -> null
+            expansionChanged -> projectPlacement
+            else -> immediatePlacement
+        }
+    SideEffect { previousExpansion.ids = savedExpansion }
     val sections =
         remember(groups, expandedProjectIds, indicators, unreadChatIds, pendingByProject) {
             chatListSections(
@@ -411,6 +437,7 @@ internal fun ChatListScreen(
                         item(key = projectRowKey(project.id)) {
                             ProjectRow(
                                 project.name,
+                                modifier = Modifier.animateItem(null, placement, null),
                                 activity = section.foldedActivity,
                                 runningFrame = runningFrame,
                                 row = section.firstRow,
@@ -425,13 +452,19 @@ internal fun ChatListScreen(
                         }
                         if (renameRejection != null && renameRejection.projectId == project.id) {
                             item(key = "project_rename_${project.id}") {
-                                ProjectRenameRejectionNotice(Modifier.projectChildIndent(outline)) {
+                                ProjectRenameRejectionNotice(
+                                    Modifier.animateItem(null, placement, null)
+                                        .projectChildIndent(outline)
+                                ) {
                                     dismissProjectRenameRejection(renameRejection)
                                 }
                             }
                         } else if (project.id in state.unconfirmedProjectRenames) {
                             item(key = "project_rename_${project.id}") {
-                                Column(Modifier.projectChildIndent(outline)) {
+                                Column(
+                                    Modifier.animateItem(null, placement, null)
+                                        .projectChildIndent(outline)
+                                ) {
                                     ChatNotice(R.string.chat_project_rename_unconfirmed)
                                     ChatAction(
                                         R.string.retry,
@@ -443,7 +476,17 @@ internal fun ChatListScreen(
                         }
                         if (section.showsEmptyProjectAction) {
                             item(key = "project_actions_${project.id}") {
-                                Column(Modifier.projectChildIndent(outline)) {
+                                Column(
+                                    Modifier.animateItem(
+                                            fadeInSpec =
+                                                projectChildFade.takeIf {
+                                                    project.id in newlyExpanded
+                                                },
+                                            placementSpec = placement,
+                                            fadeOutSpec = projectChildFade,
+                                        )
+                                        .projectChildIndent(outline)
+                                ) {
                                     if (!newChatEnabled) {
                                         ChatNotice(R.string.chat_project_empty)
                                     }
@@ -470,9 +513,18 @@ internal fun ChatListScreen(
                                     ?: group.threads[confirmedIndex(index)].id
                             },
                         ) { index ->
+                            val rowModifier =
+                                Modifier.animateItem(
+                                    fadeInSpec =
+                                        projectChildFade.takeIf {
+                                            project != null && project.id in newlyExpanded
+                                        },
+                                    placementSpec = placement,
+                                    fadeOutSpec = projectChildFade.takeIf { project != null },
+                                )
                             Column(
-                                if (group.projectId == null) Modifier
-                                else Modifier.projectChildIndent(outline)
+                                if (group.projectId == null) rowModifier
+                                else rowModifier.projectChildIndent(outline)
                             ) {
                                 val provisional = pending.getOrNull(index - firstPending)
                                 val threadIndex = confirmedIndex(index)
@@ -561,7 +613,7 @@ private fun ChatListEmptyState(filter: ChatListFilter, showInbox: () -> Unit) {
 
 private data class ChatListScrollAnchor(val index: Int, val offset: Int)
 
-private class ChatListProjectIds(var ids: Set<String>)
+private class ChatListProjectIds(var ids: Set<String>?)
 
 @Composable
 private fun KeepChatListProjectAnchor(
@@ -710,6 +762,7 @@ private fun projectRowKey(id: String) = "group_$id"
 @Composable
 private fun ProjectRow(
     name: String,
+    modifier: Modifier,
     activity: ProjectActivity?,
     runningFrame: LongState,
     row: Int,
@@ -749,7 +802,7 @@ private fun ProjectRow(
             rowFocus.requestFocus()
         }
     }
-    Box {
+    Box(modifier) {
         Row(
             Modifier.fillMaxWidth()
                 .heightIn(min = ChatListRowHeight)
@@ -993,14 +1046,16 @@ internal fun chatListTitleStyle() =
         letterSpacing = 0.sp,
     )
 
-internal fun ChatRowAction.label(): Int =
+internal fun ChatRowAction.label(short: Boolean = false): Int =
     when (this) {
-        ChatRowAction.MarkRead -> R.string.chat_mark_read
-        ChatRowAction.MarkUnread -> R.string.chat_mark_unread
+        ChatRowAction.MarkRead -> if (short) R.string.chat_swipe_read else R.string.chat_mark_read
+        ChatRowAction.MarkUnread ->
+            if (short) R.string.chat_swipe_unread else R.string.chat_mark_unread
         ChatRowAction.Mute -> R.string.chat_mute
         ChatRowAction.Unmute -> R.string.chat_unmute
-        ChatRowAction.Archive -> R.string.chat_archive
-        ChatRowAction.Unarchive -> R.string.chat_unarchive
+        ChatRowAction.Archive -> if (short) R.string.chat_swipe_archive else R.string.chat_archive
+        ChatRowAction.Unarchive ->
+            if (short) R.string.chat_swipe_restore else R.string.chat_unarchive
         ChatRowAction.Delete -> R.string.chat_delete
         ChatRowAction.Rename -> R.string.chat_rename
         ChatRowAction.Pin -> R.string.chat_pin

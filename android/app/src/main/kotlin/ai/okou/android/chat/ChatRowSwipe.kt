@@ -1,19 +1,23 @@
 package ai.okou.android.chat
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitDragOrCancellation
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
-import androidx.compose.foundation.gestures.horizontalDrag
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemGestures
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,17 +31,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -45,8 +56,23 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-private val swipeReveal = 112.dp
-private val swipeLabelInset = 12.dp
+private val swipeRevealLimit = 112.dp
+private val swipeActionInset = 12.dp
+private val swipeIconSize = 18.dp
+private val swipeActionGap = 6.dp
+private const val SwipeHorizontalRatio = 1.5f
+private const val SwipeFeedbackMillis = 150
+private val swipeReturn = tween<Float>(200, easing = ChatListMotionEasing)
+private val swipeColorFeedback = tween<Color>(SwipeFeedbackMillis, easing = ChatListMotionEasing)
+private val swipeIconFeedback = tween<Float>(SwipeFeedbackMillis, easing = ChatListMotionEasing)
+
+private data class SwipeReveal(val offset: Float = 0f, val ready: Boolean = false) {
+    val fromStart: Boolean
+        get() = offset > 0f
+}
+
+private fun Offset.reachesSwipeThreshold(threshold: Float): Boolean =
+    abs(x) >= maxOf(threshold, SwipeHorizontalRatio * abs(y))
 
 @Composable
 internal fun ChatRowSwipe(
@@ -56,7 +82,8 @@ internal fun ChatRowSwipe(
     content: @Composable (Modifier) -> Unit,
 ) {
     val action by rememberUpdatedState(performAction)
-    var offset by remember { mutableFloatStateOf(0f) }
+    val hapticFeedback by rememberUpdatedState(LocalHapticFeedback.current)
+    var reveal by remember { mutableStateOf(SwipeReveal()) }
     var returning by remember { mutableStateOf(false) }
     var windowX by remember { mutableFloatStateOf(0f) }
     val density = LocalDensity.current
@@ -67,7 +94,9 @@ internal fun ChatRowSwipe(
     val rightEdge = gestures.getRight(density, direction)
     LaunchedEffect(returning) {
         if (returning) {
-            animate(offset, 0f, animationSpec = tween(160)) { value, _ -> offset = value }
+            animate(reveal.offset, 0f, animationSpec = swipeReturn) { value, _ ->
+                reveal = SwipeReveal(offset = value)
+            }
             returning = false
         }
     }
@@ -77,12 +106,26 @@ internal fun ChatRowSwipe(
             Modifier.pointerInput(readAction, archiveAction, direction, leftEdge, rightEdge) {
                 val directionSign = if (direction == LayoutDirection.Ltr) 1f else -1f
                 val threshold = 72.dp.toPx()
-                val reveal = swipeReveal.toPx()
+                val limit = swipeRevealLimit.toPx()
+                val minimum = if (archiveAction == null) 0f else -limit
+                val maximum = if (readAction == null) 0f else limit
+                fun updateReveal(delta: Offset) {
+                    val offset = (delta.x * directionSign).coerceIn(minimum, maximum)
+                    val next =
+                        SwipeReveal(offset, offset != 0f && delta.reachesSwipeThreshold(threshold))
+                    if (next.ready && (!reveal.ready || reveal.fromStart != next.fromStart)) {
+                        hapticFeedback.performHapticFeedback(
+                            HapticFeedbackType.GestureThresholdActivate
+                        )
+                    }
+                    reveal = next
+                }
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val x = windowX + down.position.x
                     if (
-                        down.type != PointerType.Touch ||
+                        returning ||
+                            down.type != PointerType.Touch ||
                             x < leftEdge ||
                             x >= view.width - rightEdge
                     )
@@ -94,66 +137,123 @@ internal fun ChatRowSwipe(
                             val logical = delta.x * directionSign
                             val available =
                                 if (logical > 0) readAction != null else archiveAction != null
-                            if (available && abs(delta.x) > abs(delta.y)) change.consume()
-                        } ?: return@awaitEachGesture
-                    returning = false
-                    val minimum = if (archiveAction == null) 0f else -reveal
-                    val maximum = if (readAction == null) 0f else reveal
-                    var distance = (start.position.x - down.position.x) * directionSign
-                    offset = distance.coerceIn(minimum, maximum)
-                    try {
-                        val released =
-                            horizontalDrag(start.id) { change ->
-                                if (change.id == down.id) {
-                                    distance += change.positionChange().x * directionSign
-                                    offset = distance.coerceIn(minimum, maximum)
-                                    change.consume()
-                                }
+                            if (available && abs(delta.x) >= SwipeHorizontalRatio * abs(delta.y)) {
+                                change.consume()
                             }
-                        if (released) {
-                            val selected =
-                                when {
-                                    distance >= threshold -> readAction
-                                    distance <= -threshold -> archiveAction
-                                    else -> null
+                        } ?: return@awaitEachGesture
+                    try {
+                        updateReveal(start.position - down.position)
+                        while (true) {
+                            val change = awaitDragOrCancellation(down.id) ?: break
+                            if (change.id != down.id) break
+                            val delta = change.position - down.position
+                            if (change.changedToUpIgnoreConsumed()) {
+                                val fromStart = delta.x * directionSign > 0f
+                                val releasedAction = if (fromStart) readAction else archiveAction
+                                if (
+                                    releasedAction != null &&
+                                        reveal.offset != 0f &&
+                                        fromStart == reveal.fromStart &&
+                                        delta.reachesSwipeThreshold(threshold)
+                                ) {
+                                    reveal = SwipeReveal()
+                                    action(releasedAction)
                                 }
-                            selected?.let(action)
+                                break
+                            }
+                            updateReveal(delta)
+                            change.consume()
                         }
                     } finally {
-                        returning = offset != 0f
+                        reveal = reveal.copy(ready = false)
+                        returning = reveal.offset != 0f
                     }
                 }
             }
     Box(
-        Modifier.clip(RoundedCornerShape(8.dp))
+        Modifier.clip(ChatListRowShape)
             .onGloballyPositioned { windowX = it.positionInWindow().x }
             .then(input)
     ) {
-        val revealed = if (offset > 0) readAction else archiveAction
-        if (offset != 0f && revealed != null) {
-            val colors = MaterialTheme.colorScheme
-            Box(
-                Modifier.matchParentSize()
-                    .background(colors.secondaryContainer)
-                    .padding(horizontal = swipeLabelInset)
-                    .clearAndSetSemantics {},
-                contentAlignment = if (offset > 0) Alignment.CenterStart else Alignment.CenterEnd,
-            ) {
-                Text(
-                    stringResource(revealed.label()),
-                    modifier = Modifier.widthIn(max = swipeReveal - swipeLabelInset),
-                    color = colors.onSecondaryContainer,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    style =
-                        MaterialTheme.typography.labelMedium.copy(
-                            fontSize = 13.sp,
-                            lineHeight = 20.sp,
-                            letterSpacing = 0.sp,
-                        ),
-                )
-            }
+        val revealed = if (reveal.fromStart) readAction else archiveAction
+        if (reveal.offset != 0f && revealed != null) {
+            ChatSwipeAction(revealed, reveal, Modifier.matchParentSize())
         }
-        content(Modifier.offset { IntOffset(offset.roundToInt(), 0) })
+        content(Modifier.offset { IntOffset(reveal.offset.roundToInt(), 0) })
+    }
+}
+
+@Composable
+private fun ChatSwipeAction(action: ChatRowAction, reveal: SwipeReveal, modifier: Modifier) {
+    val colors = MaterialTheme.colorScheme
+    val background by
+        animateColorAsState(
+            if (reveal.ready) colors.primary else colors.secondaryContainer,
+            animationSpec = swipeColorFeedback,
+            label = "Swipe action background",
+        )
+    val foreground by
+        animateColorAsState(
+            if (reveal.ready) colors.onPrimary else colors.onSecondaryContainer,
+            animationSpec = swipeColorFeedback,
+            label = "Swipe action foreground",
+        )
+    val scale by
+        animateFloatAsState(
+            if (reveal.ready) 1.12f else 1f,
+            animationSpec = swipeIconFeedback,
+            label = "Swipe action icon scale",
+        )
+    val label = stringResource(action.label(short = true))
+    val style =
+        MaterialTheme.typography.labelMedium.copy(
+            fontSize = 13.sp,
+            lineHeight = 20.sp,
+            letterSpacing = 0.sp,
+        )
+    val textMeasurer = rememberTextMeasurer()
+    val labelWidth =
+        remember(label, style, textMeasurer) {
+            textMeasurer
+                .measure(AnnotatedString(label), style, softWrap = false, maxLines = 1)
+                .size
+                .width
+        }
+    val requiredWidth =
+        with(LocalDensity.current) {
+            swipeActionInset.roundToPx() +
+                swipeIconSize.roundToPx() +
+                swipeActionGap.roundToPx() +
+                labelWidth
+        }
+    val icon: @Composable () -> Unit = {
+        Icon(
+            painterResource(action.icon()),
+            contentDescription = null,
+            tint = foreground,
+            modifier =
+                Modifier.size(swipeIconSize).graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                },
+        )
+    }
+    Box(
+        modifier
+            .background(background)
+            .padding(horizontal = swipeActionInset)
+            .clearAndSetSemantics {},
+        contentAlignment = if (reveal.fromStart) Alignment.CenterStart else Alignment.CenterEnd,
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(swipeActionGap),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (reveal.fromStart) icon()
+            if (abs(reveal.offset.roundToInt()) >= requiredWidth) {
+                Text(label, color = foreground, style = style, maxLines = 1, softWrap = false)
+            }
+            if (!reveal.fromStart) icon()
+        }
     }
 }
