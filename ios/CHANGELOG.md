@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.51.12](https://github.com/okou-ai/okou/compare/ios-v0.51.11...ios-v0.51.12) (2026-11-22)
+
+
+### Refactoring
+
+* **app:** retire agent prerequisites from member flows ([#49854](https://github.com/okou-ai/okou/issues/49854)) ([6eea61b](https://github.com/okou-ai/okou/commit/6eea61b4a4f5c7a3e218bb027b148f10c3d4dab7))
+
 ## [0.51.11](https://github.com/okou-ai/okou/compare/ios-v0.51.10...ios-v0.51.11) (2026-11-22)
 
 

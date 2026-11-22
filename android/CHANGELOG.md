@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.39.1](https://github.com/okou-ai/okou/compare/android-v0.39.0...android-v0.39.1) (2026-11-22)
+
+
+### Refactoring
+
+* **app:** retire agent prerequisites from member flows ([#49854](https://github.com/okou-ai/okou/issues/49854)) ([6eea61b](https://github.com/okou-ai/okou/commit/6eea61b4a4f5c7a3e218bb027b148f10c3d4dab7))
+
 ## [0.39.0](https://github.com/okou-ai/okou/compare/android-v0.38.0...android-v0.39.0) (2026-11-22)
 
 
