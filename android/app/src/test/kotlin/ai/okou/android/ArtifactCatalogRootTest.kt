@@ -3,6 +3,9 @@ package ai.okou.android
 import ai.okou.android.auth.SessionModel
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -22,6 +25,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = ChatListApplication::class)
@@ -29,6 +33,16 @@ class ArtifactCatalogRootTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
     private val app
         get() = compose.activity.application as ChatListApplication
+
+    private val artifactModel
+        get() =
+            checkNotNull(
+                    ViewModelProvider(compose.activity)[SessionModel::class.java]
+                        .uiState
+                        .value
+                        .ready
+                )
+                .artifacts
 
     @Test
     fun firstDisplayAndSourceReturnUseTheNativeCatalogAndReferenceAuthority() {
@@ -88,12 +102,7 @@ class ArtifactCatalogRootTest {
         compose.waitUntil(10_000) { fixture.catalogQueries.contains("image" to null) }
         compose.onNodeWithTag("artifact_preview_title").assertIsDisplayed()
         compose.onNodeWithText("Save file").assertIsDisplayed()
-        val model =
-            ViewModelProvider(compose.activity)[SessionModel::class.java]
-                .uiState
-                .value
-                .ready!!
-                .artifacts
+        val model = artifactModel
         val saved = ByteArrayOutputStream()
         compose.runOnIdle { model.save(fixture.checklist.id) { saved } }
         awaitText("File saved")
@@ -105,6 +114,55 @@ class ArtifactCatalogRootTest {
         awaitText("Download access is unavailable")
         compose.onNodeWithText("Save file").assertDoesNotExist()
         assertEquals(2, fixture.requestedDownloads.size)
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h820dp")
+    fun saveStaysDisabledAfterSelectingAnotherArtifactDuringDownload() {
+        val fixture = ArtifactApiFixture(app.fixture, summaryDownloadAllowed = true)
+        val finishDownload = CountDownLatch(1)
+        fixture.beforeDownload = { finishDownload.await() }
+        fixture.install()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        awaitText(fixture.checklist.title)
+        compose.onNodeWithText(fixture.checklist.title).performClick()
+        awaitText("Save file")
+
+        val saved = ByteArrayOutputStream()
+        val model = artifactModel
+        try {
+            compose.runOnIdle { model.save(fixture.checklist.id) { saved } }
+            compose.waitUntil(10_000) { fixture.requestedDownloads.isNotEmpty() }
+
+            compose.onNodeWithText(fixture.summary.title).performClick()
+            awaitText("Save file")
+            compose.onNodeWithText("Save file").assertIsNotEnabled()
+        } finally {
+            finishDownload.countDown()
+        }
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodes(hasText("Save file") and isEnabled())
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        assertEquals(fixture.checklistBody, saved.toString(Charsets.UTF_8.name()))
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun unreadableImageShowsAnUnsupportedPreview() {
+        val fixture =
+            ArtifactApiFixture(app.fixture, imageBody = "Invalid raster".encodeToByteArray())
+        fixture.install()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        awaitText(fixture.image.title)
+        compose.onNodeWithText(fixture.image.title).performClick()
+        awaitText("No preview is available for this file")
     }
 
     @After

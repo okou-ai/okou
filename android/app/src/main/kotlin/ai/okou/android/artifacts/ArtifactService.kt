@@ -21,7 +21,6 @@ import ai.okou.android.api.generated.ArtifactDownloadVariant1
 import ai.okou.android.api.generated.ArtifactReferenceTargetKind
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import java.io.IOException
 import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -203,7 +202,8 @@ internal constructor(
         val extension = access.name.substringAfterLast('.', "").lowercase(Locale.ROOT)
         return when {
             type.startsWith("image/") && type != "image/svg+xml" ->
-                ArtifactContent.Image(readBitmap(url, 1440, MAX_IMAGE_BYTES))
+                readBitmap(url, 1440, MAX_IMAGE_BYTES)?.let { ArtifactContent.Image(it) }
+                    ?: ArtifactContent.Unsupported
             type.startsWith("video/") -> ArtifactContent.Media(url, video = true)
             type.startsWith("audio/") -> ArtifactContent.Media(url, video = false)
             type in documentTypes ||
@@ -247,18 +247,17 @@ internal constructor(
         transfers.download(url) { source -> destination().use { output -> source.copyTo(output) } }
     }
 
-    private suspend fun readBitmap(url: HttpUrl, edge: Int, limit: Long): Bitmap {
+    private suspend fun readBitmap(url: HttpUrl, edge: Int, limit: Long): Bitmap? {
         val bytes = transfers.download(url, limit)
         return withContext(Dispatchers.Default) {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
             val pixels = maxOf(bounds.outHeight, bounds.outWidth)
-            if (pixels <= 0) throw IOException("Unsupported raster image")
+            if (pixels <= 0) return@withContext null
             var sample = 1
             while (pixels / sample > edge) sample *= 2
             val options = BitmapFactory.Options().apply { inSampleSize = sample }
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-                ?: throw IOException("Unreadable raster image")
         }
     }
 

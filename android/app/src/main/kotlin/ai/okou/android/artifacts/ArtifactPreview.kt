@@ -88,6 +88,7 @@ internal fun ArtifactPreview(
     restoreSourceFocus: Boolean,
     onSourceFocusRestored: () -> Unit,
     onSource: (ConfirmedChat) -> Unit,
+    saveEnabled: Boolean,
     onSave: (ArtifactSave) -> Unit,
     saveResult: ArtifactSaveResult?,
     modifier: Modifier = Modifier,
@@ -177,7 +178,7 @@ internal fun ArtifactPreview(
                         ArtifactAction(
                             R.string.artifact_save,
                             icon = R.drawable.ic_download,
-                            enabled = !offline && saveResult != ArtifactSaveResult.Saving,
+                            enabled = !offline && saveEnabled,
                         ) {
                             onSave(save)
                         }

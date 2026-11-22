@@ -22,6 +22,8 @@ import org.junit.Assert.assertNull
 internal class ArtifactApiFixture(
     private val api: ChatListApiFixture,
     private val chinese: Boolean = false,
+    private val summaryDownloadAllowed: Boolean = false,
+    private val imageBody: ByteArray? = null,
 ) {
     data class Item(val id: String, val kind: String, val title: String, val date: String)
 
@@ -76,6 +78,7 @@ internal class ArtifactApiFixture(
             "1. 定位：帮助团队继续推进在手工作\n2. 受众：创始人和业务团队\n3. 渠道：官网长版、邮件短版和社区配图",
         )
     var beforeCatalog: (RecordedRequest) -> Unit = {}
+    var beforeDownload: () -> Unit = {}
     var pageSize = 40
     var downloadGranted = true
     val catalogQueries = CopyOnWriteArrayList<Pair<String?, String?>>()
@@ -96,15 +99,7 @@ internal class ArtifactApiFixture(
                 "/api/artifacts/catalog" -> page(request)
                 "/artifact-bytes/image" -> {
                     assertNull(request.getHeader("Authorization"))
-                    val bitmap = Bitmap.createBitmap(24, 24, Bitmap.Config.ARGB_8888)
-                    bitmap.eraseColor(Color.rgb(220, 190, 164))
-                    try {
-                        val output = ByteArrayOutputStream()
-                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
-                        MockResponse().setBody(Buffer().write(output.toByteArray()))
-                    } finally {
-                        bitmap.recycle()
-                    }
+                    MockResponse().setBody(Buffer().write(imageBody ?: sampleImage()))
                 }
                 "/artifact-bytes/checklist",
                 "/artifact-bytes/summary" -> {
@@ -119,9 +114,10 @@ internal class ArtifactApiFixture(
                         path == "/api/artifact-references/checklist1.md" ->
                             reference(checklist, "checklist", true)
                         path == "/api/artifact-references/artifacts2.md" ->
-                            reference(summary, "summary", false)
+                            reference(summary, "summary", summaryDownloadAllowed)
                         path == "/api/artifact-references/checklist1.md/download" -> {
                             requestedDownloads.add(path)
+                            beforeDownload()
                             if (downloadGranted)
                                 jsonResponse(
                                     """{"kind":"file","filename":"checklist.md","contentType":"text/markdown","url":"${api.server.url("/artifact-bytes/checklist")}"}"""
@@ -136,6 +132,18 @@ internal class ArtifactApiFixture(
                     }
                 }
             }
+        }
+    }
+
+    private fun sampleImage(): ByteArray {
+        val bitmap = Bitmap.createBitmap(24, 24, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(Color.rgb(220, 190, 164))
+        try {
+            val output = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+            return output.toByteArray()
+        } finally {
+            bitmap.recycle()
         }
     }
 

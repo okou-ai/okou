@@ -177,8 +177,9 @@ internal fun ArtifactsRoute(
                             page.restoreSource = true
                             onSource(it)
                         },
+                        saveEnabled = !state.saving && page.pickerArtifactId == null,
                         onSave = { file ->
-                            if (page.pickerArtifactId == null) {
+                            if (page.pickerArtifactId == null && !model.state.value.saving) {
                                 page.pickerArtifactId = id
                                 pickerFailed = false
                                 try {

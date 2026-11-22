@@ -56,7 +56,10 @@ internal data class ArtifactCatalogState(
     val reading: ArtifactCatalogRead? = null,
     val preview: ArtifactPreviewState? = null,
     val saveResult: Pair<String, ArtifactSaveResult>? = null,
-)
+) {
+    val saving: Boolean
+        get() = saveResult?.second == ArtifactSaveResult.Saving
+}
 
 /** One authorized workspace owns the catalog requests and a small in-memory preview cache. */
 class ArtifactCatalogModel
@@ -73,7 +76,6 @@ internal constructor(
     private var active = false
     private var catalogJob: Job? = null
     private var previewJob: Job? = null
-    private var saveJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -133,7 +135,7 @@ internal constructor(
         mutable.update {
             it.copy(
                 preview = initial,
-                saveResult = it.saveResult?.takeIf { result -> result.first == id },
+                saveResult = it.saveResult?.takeIf { result -> it.saving || result.first == id },
             )
         }
         if (id != null) readPreview(id)
@@ -155,45 +157,44 @@ internal constructor(
 
     internal fun save(id: String, destination: () -> OutputStream) {
         val current = mutable.value
-        if (saveJob?.isActive == true) return
+        if (current.saving) return
         val cached = current.preview?.takeIf { it.id == id }?.access?.save
-        saveJob =
-            viewModelScope.launch {
-                mutable.update { it.copy(saveResult = id to ArtifactSaveResult.Saving) }
-                val result =
-                    try {
-                        val file =
-                            cached
-                                ?: (service.info(id).resource as? ArtifactResource.File)?.let {
-                                    service.fileAccess(it).save
-                                }
-                        if (file == null) ArtifactSaveResult.Denied
-                        else {
-                            service.save(file, destination)
-                            ArtifactSaveResult.Saved
-                        }
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (error: Exception) {
-                        handleSessionFailure(error)
-                        if (error is ApiFailure.Http && error.status in 401..404) {
-                            ArtifactSaveResult.Denied
-                        } else ArtifactSaveResult.Failed
+        mutable.update { it.copy(saveResult = id to ArtifactSaveResult.Saving) }
+        viewModelScope.launch {
+            val result =
+                try {
+                    val file =
+                        cached
+                            ?: (service.info(id).resource as? ArtifactResource.File)?.let {
+                                service.fileAccess(it).save
+                            }
+                    if (file == null) ArtifactSaveResult.Denied
+                    else {
+                        service.save(file, destination)
+                        ArtifactSaveResult.Saved
                     }
-                if (result == ArtifactSaveResult.Denied) {
-                    previews[id]?.let { previews[id] = it.withoutSave() }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    handleSessionFailure(error)
+                    if (error is ApiFailure.Http && error.status in 401..404) {
+                        ArtifactSaveResult.Denied
+                    } else ArtifactSaveResult.Failed
                 }
-                mutable.update {
-                    val preview = it.preview
-                    it.copy(
-                        saveResult = id to result,
-                        preview =
-                            if (result == ArtifactSaveResult.Denied && preview?.id == id)
-                                preview.withoutSave()
-                            else preview,
-                    )
-                }
+            if (result == ArtifactSaveResult.Denied) {
+                previews[id]?.let { previews[id] = it.withoutSave() }
             }
+            mutable.update {
+                val preview = it.preview
+                it.copy(
+                    saveResult = id to result,
+                    preview =
+                        if (result == ArtifactSaveResult.Denied && preview?.id == id)
+                            preview.withoutSave()
+                        else preview,
+                )
+            }
+        }
     }
 
     private fun readCatalog(append: Boolean = false, debounce: Boolean = false) {
